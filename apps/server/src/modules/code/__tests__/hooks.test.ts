@@ -512,7 +512,7 @@ describe("nativeHooks", () => {
       const hooks = nativeHooks(context, workspace(), live);
       const result = await hooks.before("Bash", { command: "vitest run", description: "Testes" }, "tu5");
       expect(result.allow).toBe(true);
-      const command = (result as { input: { command: string } }).input.command;
+      const command = (result as unknown as { input: { command: string } }).input.command;
       expect(command).toContain("flock");
       expect(command).toContain("SECRET=1 vitest run");
       expect(events[0].data.input).toEqual({ command: "vitest run", description: "Testes" });

@@ -5,11 +5,12 @@ import { ValidationError } from "../../../shared/errors";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import type { WorkspaceState } from "../../code/services/workspace.service";
 import { cancel, deliver, isBusy } from "../../engine/services/engine.service";
+import { loadConversationRows } from "../repositories/sessions.repository";
 import {
   archiveConversation,
   autoTitle,
-  type ConversationEvent,
   ConversationError,
+  type ConversationEvent,
   conversationOf,
   conversationSessions,
   createConversation,
@@ -24,7 +25,6 @@ import {
   titleMainFromMessage,
   updateConversation,
 } from "../services/conversations.service";
-import { loadConversationRows } from "../repositories/sessions.repository";
 import { createStoredSession, type StoredSession } from "../services/sessions.service";
 import { ensureThread, recordThreadMessage } from "../services/threads.service";
 
@@ -48,7 +48,7 @@ afterEach(() => {
 });
 
 async function busySession(session: StoredSession) {
-  let release = () => undefined as void;
+  let release = () => undefined as undefined;
   fakeProviders.next(
     ({ emit, signal }) =>
       new Promise<void>((resolve) => {

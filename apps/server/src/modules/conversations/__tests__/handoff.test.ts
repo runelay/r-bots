@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { makeBot, waitFor } from "../../../../test/engine-helpers";
 import { fakeProviders, readyProbe, resetData } from "../../../../test/helpers";
 import type { Account } from "../../accounts/services/accounts.service";
-import * as workspace from "../../code/services/workspace.service";
 import type { WorkspaceState } from "../../code/services/workspace.service";
+import * as workspace from "../../code/services/workspace.service";
 import {
   handoffBlock,
   handoffMode,
@@ -432,7 +432,7 @@ describe("refreshSummary", () => {
 
   test("runs one summary at a time per conversation", async () => {
     messages(40);
-    let release = () => undefined as void;
+    let release = () => undefined as undefined;
     fakeProviders.next(
       ({ emit }) =>
         new Promise<void>((resolve) => {

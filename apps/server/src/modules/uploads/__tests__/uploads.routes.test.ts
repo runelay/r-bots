@@ -21,7 +21,7 @@ interface Sent {
 async function call(
   method: string,
   rest: string[],
-  init: { body?: BodyInit | null; headers?: Record<string, string> } = {},
+  init: { body?: Bun.BodyInit | null; headers?: Record<string, string> } = {},
   target: BotDefinition = bot,
 ): Promise<Sent> {
   const request = new Request(`http://gateway.local/bots/${botId}/uploads/${rest.join("/")}`, {

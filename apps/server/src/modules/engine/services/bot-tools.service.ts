@@ -173,15 +173,15 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
             ...reasonOf(input),
           };
         },
-        run: async (input) => (
-          await ready(),
-          desktop().click(
+        run: async (input) => {
+          await ready();
+          return desktop().click(
             Number(input.x),
             Number(input.y),
             input.button === "right" ? "right" : "left",
             input.double === true,
-          )
-        ),
+          );
+        },
       },
       {
         name: "desktop_type",
@@ -190,7 +190,10 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         details: async (input) => ({ target: { label: "computador do bot", role: "desktop" }, ...reasonOf(input) }),
         approval: (input) => `Posso digitar no computador: "${text(input.text).slice(0, 120)}"?`,
         label: (input) => `Digitar "${text(input.text).slice(0, 40)}"`,
-        run: async (input) => (await ready(), desktop().type(text(input.text))),
+        run: async (input) => {
+          await ready();
+          return desktop().type(text(input.text));
+        },
       },
       {
         name: "desktop_key",
@@ -200,7 +203,10 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         details: async (input) => ({ target: { label: "computador do bot", role: "desktop" }, ...reasonOf(input) }),
         approval: (input) => `Posso apertar ${text(input.combo)} no computador?`,
         label: (input) => `Tecla ${text(input.combo)}`,
-        run: async (input) => (await ready(), desktop().key(text(input.combo))),
+        run: async (input) => {
+          await ready();
+          return desktop().key(text(input.combo));
+        },
       },
       {
         name: "desktop_scroll",
@@ -213,15 +219,15 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         },
         approval: null,
         label: (input) => `Rolar ${input.direction === "down" ? "para baixo" : "para cima"}`,
-        run: async (input) => (
-          await ready(),
-          desktop().scroll(
+        run: async (input) => {
+          await ready();
+          return desktop().scroll(
             Number(input.x),
             Number(input.y),
             input.direction === "down" ? "down" : "up",
             Number(input.amount ?? 3),
-          )
-        ),
+          );
+        },
       },
       {
         name: "desktop_open",
@@ -242,10 +248,12 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
           input.app === "terminal"
             ? "Abrir terminal"
             : `Abrir navegador${input.url ? ` em ${hostOf(text(input.url))}` : ""}`,
-        run: async (input) => (
-          await ready(),
-          input.app === "terminal" ? desktop().openTerminal() : desktop().openBrowser(text(input.url) || "about:blank")
-        ),
+        run: async (input) => {
+          await ready();
+          return input.app === "terminal"
+            ? desktop().openTerminal()
+            : desktop().openBrowser(text(input.url) || "about:blank");
+        },
       },
     );
   }

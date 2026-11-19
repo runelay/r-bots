@@ -22,7 +22,7 @@ async function put(path: string, lines: unknown[]) {
   await mkdir(dirname(path), { recursive: true });
   await writeFile(
     path,
-    lines.map((line) => (typeof line === "string" ? line : JSON.stringify(line))).join("\n") + "\n",
+    `${lines.map((line) => (typeof line === "string" ? line : JSON.stringify(line))).join("\n")}\n`,
   );
 }
 

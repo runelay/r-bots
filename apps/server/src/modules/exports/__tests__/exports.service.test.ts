@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import { readFileSync, writeFileSync } from "node:fs";
 import { inflateRawSync } from "node:zlib";
-import ExcelJS from "exceljs";
 import { eq } from "drizzle-orm";
+import ExcelJS from "exceljs";
 import { fakeProcesses, type ProcessCall, resetData } from "../../../../test/helpers";
 import { getDb } from "../../../db";
 import { exports, noteLinks, notes, sheetCells, sheets, sheetTabs } from "../../../db/tables";

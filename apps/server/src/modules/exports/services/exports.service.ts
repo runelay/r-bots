@@ -9,12 +9,12 @@ import {
   HeadingLevel,
   Packer,
   Paragraph,
+  type ParagraphChild,
   ShadingType,
   TextRun,
-  type ParagraphChild,
 } from "docx";
-import ExcelJS from "exceljs";
 import { and, eq } from "drizzle-orm";
+import ExcelJS from "exceljs";
 import { type Lexer, marked, type Token, type Tokens } from "marked";
 import { env } from "../../../config/env";
 import { getDb } from "../../../db";
@@ -70,12 +70,15 @@ function inlineRuns(
     else if (token.type === "link") runs.push(...inlineRuns((token as Tokens.Link).tokens, { ...style }));
     else if (token.type === "br") runs.push(new TextRun({ text: "", break: 1 }));
     else if ("tokens" in token && Array.isArray(token.tokens)) runs.push(...inlineRuns(token.tokens as Token[], style));
-    else runs.push(new TextRun({ text: wikiText(unescape((token as { text?: string }).text ?? token.raw)), ...style }));
+    else
+      runs.push(
+        new TextRun({ text: wikiText(decodeEntities((token as { text?: string }).text ?? token.raw)), ...style }),
+      );
   }
   return runs;
 }
 
-function unescape(text: string) {
+function decodeEntities(text: string) {
   return text
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
@@ -425,7 +428,7 @@ export async function exportFile(botId: string, exportId: string) {
     .from(exports)
     .where(and(eq(exports.id, exportId), eq(exports.botId, botId)))
     .get();
-  if (!row || row.status !== "ready" || !row.blobKey) throw new BlockError("Exportação não encontrada.", 404);
+  if (row?.status !== "ready" || !row.blobKey) throw new BlockError("Exportação não encontrada.", 404);
   const stream = await getBlobStore().get(row.blobKey);
   if (!stream) throw new BlockError("Arquivo da exportação não encontrado.", 404);
   return { stream, fileName: row.fileName ?? "arquivo", mime: mimeOf(row.format), size: row.size };

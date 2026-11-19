@@ -122,7 +122,7 @@ export function toEngineFormula(input: string) {
   const translated = parts
     .map((part, index) => {
       if (index % 2 === 1) return part;
-      let next = part.replace(/([\p{L}_][\p{L}\p{N}_.]*)(\s*\()/gu, (whole, name: string, paren: string) => {
+      let next = part.replace(/([\p{L}_][\p{L}\p{N}_.]*)(\s*\()/gu, (_whole, name: string, paren: string) => {
         const english = ptLookup.get(strip(name));
         return english ? `${english}${paren}` : `${name.toUpperCase()}${paren}`;
       });
@@ -461,7 +461,7 @@ const extraFunctions: Record<string, (...args: unknown[]) => unknown> = {
     for (let i = 0; i < values.length; i++) {
       const item = values[i] as number | string;
       if (item === null) continue;
-      if (mode > 0 ? item <= (needle as number) : item >= (needle as number)) found = i;
+      if (mode > 0 ? (item as number) <= (needle as number) : (item as number) >= (needle as number)) found = i;
       else break;
     }
     return found < 0 ? new FormulaError("#N/A") : found + 1;

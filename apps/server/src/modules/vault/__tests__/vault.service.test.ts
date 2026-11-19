@@ -105,7 +105,7 @@ describe("names and references", () => {
 
   test("envRefsIn maps known env names and reports unknown ones", async () => {
     await saveSecretMeta("api-key", {});
-    expect(envRefsIn("curl -H $SEGREDO_API_KEY ${SEGREDO_MISSING} segredo:other")).toEqual({
+    expect(envRefsIn(`curl -H $SEGREDO_API_KEY \${SEGREDO_MISSING} segredo:other`)).toEqual({
       names: ["other", "api-key"],
       unknown: ["SEGREDO_MISSING"],
     });

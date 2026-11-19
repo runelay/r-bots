@@ -73,7 +73,7 @@ async function openRepo(options: { files?: Record<string, string>; origin?: bool
 }
 
 async function hold(session: StoredSession) {
-  let release = () => undefined as void;
+  let release = () => undefined as undefined;
   fakeProviders.next(
     ({ emit, signal }) =>
       new Promise<void>((resolve) => {
@@ -144,7 +144,7 @@ describe("global code routes", () => {
 
 describe("bot code state", () => {
   test("reports an empty state and resolves sessions", async () => {
-    const empty = await request<{ workspace: null; checkpoints: unknown[]; running: boolean }>(`/bots/${bot.id}/code`);
+    const empty = await request<Record<string, unknown>>(`/bots/${bot.id}/code`);
     expect(empty.status).toBe(200);
     expect(empty.body).toEqual({ workspace: null, files: [], servers: [], checkpoints: [], running: false });
     const conversation = await createConversation(bot.id, {});
@@ -437,10 +437,10 @@ describe("checkpoints and rewind", () => {
     expect(factsOfType(session, "turn.reverted").at(-1)?.data).toMatchObject({
       turnId: "turn_1",
       files: true,
-      checkpoint: "refs/runelay/checkpoints/" + `${session.meta.sessionId}/turn_1`,
+      checkpoint: `refs/runelay/checkpoints/${session.meta.sessionId}/turn_1`,
     });
 
-    const nothing = await request<{ filesRestored: boolean; turnIds: string[] }>(`/bots/${bot.id}/code/rewind`, {
+    const nothing = await request<Record<string, unknown>>(`/bots/${bot.id}/code/rewind`, {
       method: "POST",
       body: { turnId: "turn_1" },
     });

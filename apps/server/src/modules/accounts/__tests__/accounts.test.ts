@@ -3,6 +3,7 @@ import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { fakeProviders, request, startTestServer, type TestServer, testDataDir } from "../../../../test/helpers";
+import { env } from "../../../config/env";
 import type { Socket } from "../../../shared/ws";
 import {
   findAccount,
@@ -10,8 +11,8 @@ import {
   listAccounts,
   mcpBaseFor,
   refreshAccounts,
-  runOnRunner,
   runnerIds,
+  runOnRunner,
 } from "../services/accounts.service";
 import {
   clearLimit,
@@ -25,7 +26,6 @@ import {
   parseResetAt,
   providerName,
 } from "../services/limits.service";
-import { env } from "../../../config/env";
 import * as macRunner from "../services/mac-runner.service";
 import { macRunnerConnected, runnerSocket } from "../services/mac-runner.service";
 
@@ -359,7 +359,7 @@ describe("runOnRunner", () => {
       () =>
         new Response(
           new ReadableStream({
-            pull(controller) {
+            pull(controller: ReadableStreamDefaultController<Uint8Array>) {
               controller.error(new Error("broken body"));
             },
           }),
@@ -444,12 +444,12 @@ describe("runOnRunner", () => {
         new Response(
           new ReadableStream({
             pulls: 0,
-            pull(controller) {
+            pull(controller: ReadableStreamDefaultController<Uint8Array>) {
               this.pulls++;
               if (this.pulls === 1) controller.enqueue(new TextEncoder().encode('{"type":"done","ok":true}\n'));
               else controller.error(new Error("cut"));
             },
-          } as UnderlyingDefaultSource<Uint8Array> & { pulls: number }),
+          } as Bun.UnderlyingSource<Uint8Array> & { pulls: number }),
         ),
     );
     restores.push(mac.restore);

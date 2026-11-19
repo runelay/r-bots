@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import type { NotePatchOp } from "@runelay-bots/protocol";
 import { resetData } from "../../../../test/helpers";
 import { getDb } from "../../../db";
 import { noteLinks, notes } from "../../../db/tables";
@@ -67,24 +68,26 @@ describe("parsing helpers", () => {
 
   test("patch ops", () => {
     expect(applyOps("a b a", [{ op: "replace", old: "b", new: "c" }])).toBe("a c a");
-    expect(applyOps("a b", [{ op: "replace", old: "b" }])).toBe("a ");
-    expect(blockError(() => applyOps("a", [{ op: "replace", old: "" }])).message).toBe('op 1: "old" vazio.');
-    expect(blockError(() => applyOps("a", [{ op: "replace", old: "z" }])).message).toBe(
+    expect(applyOps("a b", [{ op: "replace", old: "b" } as NotePatchOp])).toBe("a ");
+    expect(blockError(() => applyOps("a", [{ op: "replace", old: "" } as NotePatchOp])).message).toBe(
+      'op 1: "old" vazio.',
+    );
+    expect(blockError(() => applyOps("a", [{ op: "replace", old: "z" } as NotePatchOp])).message).toBe(
       "op 1: o trecho não foi encontrado.",
     );
-    expect(blockError(() => applyOps("a a", [{ op: "replace", old: "a" }])).message).toBe(
+    expect(blockError(() => applyOps("a a", [{ op: "replace", old: "a" } as NotePatchOp])).message).toBe(
       "op 1: o trecho aparece mais de uma vez.",
     );
     expect(applyOps("a", [{ op: "append", text: "b" }])).toBe("a\nb");
     expect(applyOps("a\n", [{ op: "append", text: "b" }])).toBe("a\nb");
-    expect(applyOps("", [{ op: "append" }])).toBe("");
+    expect(applyOps("", [{ op: "append" } as NotePatchOp])).toBe("");
     expect(applyOps("b", [{ op: "prepend", text: "a" }])).toBe("a\nb");
     expect(applyOps("b", [{ op: "prepend", text: "a\n" }])).toBe("a\nb");
-    expect(applyOps("", [{ op: "prepend" }])).toBe("");
+    expect(applyOps("", [{ op: "prepend" } as NotePatchOp])).toBe("");
     expect(applyOps("# A\n## B\nx\n\n# C", [{ op: "insert_after_heading", heading: "## a", text: "y" }])).toBe(
       "# A\n## B\nx\ny\n\n# C",
     );
-    expect(applyOps("# A\n", [{ op: "insert_after_heading", heading: "A" }])).toBe("# A\n\n");
+    expect(applyOps("# A\n", [{ op: "insert_after_heading", heading: "A" } as NotePatchOp])).toBe("# A\n\n");
     expect(blockError(() => applyOps("# A", [{ op: "insert_after_heading", heading: "Z", text: "y" }])).message).toBe(
       'op 1: o título "Z" não foi encontrado.',
     );

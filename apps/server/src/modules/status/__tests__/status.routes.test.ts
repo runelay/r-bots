@@ -67,6 +67,8 @@ describe("GET /status/stream", () => {
   test("streams a snapshot, status, conversation and heartbeat events, then cleans up", async () => {
     let statusListener: ((event: engine.StatusEvent) => void) | null = null;
     let conversationListener: ((event: conversations.ConversationEvent) => void) | null = null;
+    const emitStatus = (event: engine.StatusEvent) => statusListener?.(event);
+    const emitConversation = (event: conversations.ConversationEvent) => conversationListener?.(event);
     let unsubscribed = 0;
     const onStatus = spyOn(engine, "onStatus").mockImplementation((listener) => {
       statusListener = listener;
@@ -102,9 +104,9 @@ describe("GET /status/stream", () => {
     expect(snapshot).toHaveProperty("sessions");
     expect(appWatching(0)).toBe(true);
 
-    statusListener?.({ botId: "b1", status: "working" } as engine.StatusEvent);
-    statusListener?.({ botId: "b1", sessionId: "s1", status: "awaiting" } as engine.StatusEvent);
-    conversationListener?.({ botId: "b1", sessionId: "s1", conversation: null });
+    emitStatus({ botId: "b1", status: "working" } as engine.StatusEvent);
+    emitStatus({ botId: "b1", sessionId: "s1", status: "awaiting" } as engine.StatusEvent);
+    emitConversation({ botId: "b1", sessionId: "s1", conversation: null });
     const seen: Array<Record<string, unknown>> = [];
     while (!seen.some((line) => line.type === "heartbeat") || seen.filter((l) => l.type !== "heartbeat").length < 3)
       seen.push(await next());

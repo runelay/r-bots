@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import type { CellFormat } from "@runelay-bots/protocol";
 import { eq } from "drizzle-orm";
 import { resetData } from "../../../../test/helpers";
 import { getDb } from "../../../db";
@@ -148,7 +149,7 @@ describe("read and write", () => {
     expect(result.cells).toEqual([
       { a: "A1", r: 0, c: 0, input: "5", v: 5, t: "n" },
       { a: "B1", r: 0, c: 1, input: "=A1+A2", v: 5, t: "n" },
-      { a: "A2", r: 1, c: 0, input: "", v: null, t: null, format: { bold: true } },
+      { a: "A2", r: 1, c: 0, input: "", v: null, t: null, format: { bold: true } as CellFormat },
       { a: "C1", r: 0, c: 2, input: "", v: null, t: null },
       { a: "D9", r: 8, c: 3, input: "", v: null, t: null },
     ]);
@@ -242,7 +243,7 @@ describe("read and write", () => {
     expect(preview.rows).toHaveLength(8);
     expect(preview.rows[0]).toHaveLength(6);
     expect(preview.rows[0][0]).toEqual({ v: 1, t: "n" });
-    expect(preview.rows[1][1]).toEqual({ v: "cru", t: "s", format: { bold: true } });
+    expect(preview.rows[1][1]).toEqual({ v: "cru", t: "s", format: { bold: true } as CellFormat });
     expect(preview.colWidths).toEqual([200, 96, 96, 96, 96, 96]);
     getDb().update(sheetTabs).set({ rowCount: 1, colCount: 1 }).where(eq(sheetTabs.id, tab)).run();
     expect(previewOf(sheet.id, tab).rows).toEqual([[{ v: 1, t: "n" }]]);

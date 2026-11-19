@@ -3,6 +3,7 @@ import { notFound, type Req, type Res, readBody, sendJson, validationResponse } 
 import { isPermissionMode } from "../../approvals/services/permissions.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { deliver } from "../../engine/services/engine.service";
+import { searchMessages } from "../repositories/sessions.repository";
 import {
   archiveConversation,
   ConversationError,
@@ -14,7 +15,6 @@ import {
   publicConversation,
   updateConversation,
 } from "../services/conversations.service";
-import { searchMessages } from "../repositories/sessions.repository";
 import { ensureThread, markThreadRead, markThreadUnread } from "../services/threads.service";
 import { checkFields, deliveryText, rejectInactiveBot, resolveAttachments, resolveSkills } from "./delivery-input";
 

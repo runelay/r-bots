@@ -17,8 +17,8 @@ import { type FakeTurn, fakeProviders } from "../../../../test/helpers";
 import * as decisions from "../../approvals/services/decisions.service";
 import { getBot, setArchived } from "../../bots/services/bots.service";
 import * as conversations from "../../conversations/services/conversations.service";
-import * as threads from "../../conversations/services/threads.service";
 import { getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
+import * as threads from "../../conversations/services/threads.service";
 import { createGroup, setGroupArchived } from "../../groups/services/groups.service";
 import { answer, cancel, conversationStatus } from "../services/engine.service";
 

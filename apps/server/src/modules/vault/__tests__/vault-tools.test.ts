@@ -11,6 +11,7 @@ import { vaultAudit, vaultSecrets } from "../../../db/tables";
 import { forgetSecretValue } from "../../../shared/redact";
 import * as decisions from "../../approvals/services/decisions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
+import { loadVault, saveSecretMeta, setServerCopy, takeExecTicket, type VaultError } from "../services/vault.service";
 import {
   computerTypeSecretsOnly,
   prepareSecretInput,
@@ -18,7 +19,6 @@ import {
   secretBashCommand,
   vaultGuide,
 } from "../services/vault-tools.service";
-import { loadVault, saveSecretMeta, setServerCopy, takeExecTicket, VaultError } from "../services/vault.service";
 
 const keyFile = process.env.VAULT_KEY_FILE as string;
 
@@ -218,8 +218,7 @@ describe("secretBashCommand", () => {
     await storedSecret("api", "api-value-123");
     await storedSecret("scoped", "scoped-value-1", { domains: ["api.github.com"] });
     const { context } = makeContext();
-    const command =
-      'curl -H "Authorization: Bearer ${SEGREDO_SCOPED}" -H "k: segredo:api" https://api.github.com/x > /dev/null';
+    const command = `curl -H "Authorization: Bearer \${SEGREDO_SCOPED}" -H "k: segredo:api" https://api.github.com/x > /dev/null`;
     const wrapped = (await secretBashCommand(context, command)) as string;
     const helper = join(rootDir, "bin", "rb-secret-run.mjs");
     const pieces = wrapped.split(" ");
@@ -227,7 +226,7 @@ describe("secretBashCommand", () => {
     expect(pieces[1]).toBe(`'${helper}'`);
     expect(pieces[2]).toBe(process.env.GATEWAY_PORT as string);
     const rewritten = Buffer.from(pieces[4], "base64").toString("utf8");
-    expect(rewritten).toContain('"k: ${SEGREDO_API}"');
+    expect(rewritten).toContain(`"k: \${SEGREDO_API}"`);
     expect(rewritten).not.toContain("segredo:api");
     const grant = takeExecTicket(pieces[3]);
     expect(grant?.env).toEqual({ SEGREDO_API: "api-value-123", SEGREDO_SCOPED: "scoped-value-1" });
@@ -470,7 +469,7 @@ describe("http_request", () => {
     expect(output.body).toStartWith("token was •••• ");
     expect(output.body).toEndWith("… (cortado)");
     const done = events.find((event) => event.type === "call.settled");
-    expect((done?.data.output as { body: string }).body.length).toBeLessThan(4100);
+    expect((done?.data.output as { body: string } | undefined)?.body.length).toBeLessThan(4100);
     expect(settled).toEqual(["http_request(GET api.example.com) → 200"]);
   });
 
@@ -506,7 +505,7 @@ describe("http_request", () => {
     expect(String(fake.calls[0].init.body)).toContain('"key":"api-value-123"');
     expect(decisionsSeen).toHaveLength(1);
     const requested = events.find((event) => event.type === "call.requested");
-    expect(String((requested?.data.input as { body: string }).body)).toEndWith("…");
+    expect(String((requested?.data.input as { body: string } | undefined)?.body)).toEndWith("…");
     const started = events.find((event) => event.type === "call.started");
     expect(started?.data.clearedBy).toEqual({ decision: "jev", model: "jev-test" });
   });

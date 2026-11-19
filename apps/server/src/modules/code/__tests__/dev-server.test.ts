@@ -112,7 +112,7 @@ describe("starting dev servers", () => {
     const call = fake.calls.find((item) => item.command === "bash");
     expect(call?.args).toEqual(["-lc", `npm run dev -- --port ${portBase + 50}`]);
     expect(call?.options.cwd).toBe(ws.path);
-    expect((call?.options.env as Record<string, string>).HOST).toBe("127.0.0.1");
+    expect((call?.options.env as Record<string, string> | undefined)?.HOST).toBe("127.0.0.1");
 
     const token = started.previewPath.split("?t=")[1];
     expect(devServersOf(ws).map((item) => item.id)).toEqual([started.id]);
@@ -234,7 +234,7 @@ describe("stopping and logs", () => {
     const ws = workspace();
     await startDevServer(ws, { cmd: "node keep.js" }, () => undefined);
     const child = children[0];
-    kill.mockImplementation(((pid: number, signal?: NodeJS.Signals) => {
+    kill.mockImplementation(((_pid: number, signal?: NodeJS.Signals) => {
       if (signal === "SIGKILL") child.kill("SIGKILL");
       return true;
     }) as typeof process.kill);

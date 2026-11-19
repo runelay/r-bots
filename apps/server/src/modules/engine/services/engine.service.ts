@@ -967,7 +967,7 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
     throw new Error(`${target.name} está esperando uma resposta sua agora. Resolva você mesmo, sem delegar de volta.`);
   const engine = engineOf(target);
   const account = await findAccount(engine.account);
-  if (!account || account.status !== "ready") throw new Error(unavailableMessage(engine.account, account));
+  if (account?.status !== "ready") throw new Error(unavailableMessage(engine.account, account));
   const deliveryId = randomUUID();
   const session = await createConversation(target.id, {
     title: autoTitle(`${parent.bot.name} pediu: ${message}`),
@@ -993,7 +993,7 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
   const edge = { from: parent.bot.id, to: target.id };
   waits.push(edge);
   parent.turn.slot?.suspend();
-  let detach = () => undefined as void;
+  let detach: () => void = () => undefined;
   try {
     const result = await new Promise<DelegationResult>((resolve) => {
       const hooks: DelegationHooks = {
@@ -1079,7 +1079,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
   let result: DelegationResult = { outcome: "failed", reply: "", error: "O turno não terminou." };
   const isSchedule = delivery.source === "schedule";
   const now = () => new Date().toISOString();
-  let stopLive = () => undefined as void;
+  let stopLive: () => void = () => undefined;
 
   if (showDelivery)
     session.log.emit({
@@ -1162,7 +1162,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     }
     const engine = engineOf(bot);
     const found = await findAccount(engine.account);
-    if (!found || found.status !== "ready") {
+    if (found?.status !== "ready") {
       settle("failed", {
         error: { code: "ACCOUNT_UNAVAILABLE", id: randomUUID(), message: unavailableMessage(engine.account, found) },
       });

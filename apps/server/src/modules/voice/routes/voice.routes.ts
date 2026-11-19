@@ -88,7 +88,7 @@ export async function handleVoice(req: Req, res: Res, method: string, bot: BotDe
     if (action === "stream" && method === "GET") return streamCall(req, res, call);
     if (action === "tokens" && method === "POST") {
       const body = await readJson(req);
-      const types = Array.isArray(body.types)
+      const types: Array<"stt" | "tts"> = Array.isArray(body.types)
         ? (body.types as unknown[]).filter((item): item is "stt" | "tts" => item === "stt" || item === "tts")
         : ["stt", "tts"];
       return sendJson(res, 200, await credentials(bot, types.length > 0 ? types : ["stt", "tts"]));

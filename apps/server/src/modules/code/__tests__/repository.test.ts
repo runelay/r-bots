@@ -18,8 +18,10 @@ import {
   type WorktreeRecord,
 } from "../repositories/code.repository";
 import * as worktreeRows from "../repositories/worktrees.repository";
-import { listRepos, openWorkspace, waitForInstall, type WorkspaceState } from "../services/workspace.service";
+import { listRepos, openWorkspace, type WorkspaceState, waitForInstall } from "../services/workspace.service";
 
+const grantsSpecifier = "../repositories/code.repository.ts?grants";
+const ttlSpecifier = "../repositories/code.repository.ts?ttl";
 const old = new Date(Date.now() - 30 * 24 * 3600_000).toISOString();
 
 beforeEach(async () => {
@@ -59,7 +61,7 @@ describe("grants", () => {
 
   test("loads stored grants and logs write failures", async () => {
     writeSetting("code.grants", { "/repo/stored": [{ key: "k", createdAt: "", uses: 2, lastUsedAt: null }] });
-    const fresh = await import("../repositories/code.repository.ts?grants");
+    const fresh = (await import(grantsSpecifier)) as typeof import("../repositories/code.repository");
     expect(await fresh.listGrants()).toEqual([
       { repo: "/repo/stored", key: "k", createdAt: "", uses: 2, lastUsedAt: null },
     ]);
@@ -217,7 +219,7 @@ describe("worktree collector", () => {
   test("uses the configured time to live", async () => {
     process.env.CODE_WORKTREE_TTL_DAYS = "0";
     try {
-      const fresh = await import("../repositories/code.repository.ts?ttl");
+      const fresh = (await import(ttlSpecifier)) as typeof import("../repositories/code.repository");
       const { workspace } = await realWorktree("gc-ttl");
       await fresh.recordWorktree(workspace, "bot", "s");
       const record = (await fresh.listWorktrees()).find(

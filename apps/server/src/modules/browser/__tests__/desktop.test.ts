@@ -93,10 +93,6 @@ function spawned(name: string) {
   return calls.filter((call) => call.command === "sudo" && call.args.includes(name));
 }
 
-function lastX() {
-  return calls.filter((call) => call.command === "xdotool").at(-1)?.args;
-}
-
 function streamer() {
   return calls.filter((call) => call.command === "ffmpeg" && call.args.includes("mjpeg")).at(-1);
 }
@@ -186,7 +182,7 @@ describe("desktop actions", () => {
         ?.args.slice(-2),
     ).toEqual(["1", "4"]);
     const xcall = calls.find((call) => call.command === "xdotool");
-    expect((xcall?.options.env as Record<string, string>).DISPLAY).toBe(`:${desktop.display}`);
+    expect((xcall?.options.env as Record<string, string> | undefined)?.DISPLAY).toBe(`:${desktop.display}`);
   });
 
   test("opens a browser and a terminal", async () => {

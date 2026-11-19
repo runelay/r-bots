@@ -18,13 +18,11 @@ import { fakeProviders, replyWith } from "../../../../test/helpers";
 import * as accounts from "../../accounts/services/accounts.service";
 import { clearLimit, markLimited } from "../../accounts/services/limits.service";
 import * as decisions from "../../approvals/services/decisions.service";
-import type { BotDefinition } from "../../bots/services/bots.service";
 import { setKnownConnectors } from "../../bots/services/bots.service";
 import * as canvas from "../../canvas/services/canvas.service";
 import * as computer from "../../computer/services/computer.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import * as threads from "../../conversations/services/threads.service";
-import * as memory from "../../memory/services/memory.service";
 import * as uploads from "../../uploads/services/uploads.service";
 import {
   botStatus,

@@ -84,7 +84,7 @@ export function sweepOrphans(extraActive: Iterable<string> = []) {
   const keep = new Set([...active, ...extraActive]);
   const victims = listProcs().filter(
     (proc) =>
-      (proc.marker !== null && proc.marker.startsWith(`${scope}:`) && !keep.has(proc.marker)) ||
+      (proc.marker?.startsWith(`${scope}:`) && !keep.has(proc.marker)) ||
       (inContainer &&
         proc.marker === null &&
         proc.ppid === 1 &&

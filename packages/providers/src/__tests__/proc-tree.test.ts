@@ -3,6 +3,8 @@ import type { ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import { activeMarkers, killMarked, killPids, listProcs, markerVar, spawnMarked, sweepOrphans } from "../proc-tree";
 
+const containerSpecifier = "../proc-tree.ts?container";
+const darwinSpecifier = "../proc-tree.ts?darwin";
 const scope = `rb${process.env.GATEWAY_PORT}`;
 
 interface FakeProc {
@@ -125,7 +127,7 @@ describe("proc-tree", () => {
 
   test("sweepOrphans in a container also kills unmarked SDK processes adopted by init", async () => {
     spyOn(fs, "existsSync").mockImplementation((path: fs.PathLike) => String(path) === "/.dockerenv");
-    const containerTree = await import("../proc-tree.ts?container");
+    const containerTree = (await import(containerSpecifier)) as typeof import("../proc-tree");
     fakeProcFs({
       401: { ppid: 1, cmdline: "node_modules/@anthropic-ai/claude-agent-sdk/x/claude --input-format stream-json" },
       402: { ppid: 77, cmdline: "node_modules/@anthropic-ai/claude-agent-sdk/x/claude --input-format stream-json" },
@@ -137,7 +139,7 @@ describe("proc-tree", () => {
 
   test("outside linux there is no process table and children spawn directly", async () => {
     Object.defineProperty(process, "platform", { value: "darwin" });
-    const darwinTree = await import("../proc-tree.ts?darwin");
+    const darwinTree = (await import(darwinSpecifier)) as typeof import("../proc-tree");
     expect(darwinTree.listProcs()).toEqual([]);
     expect(darwinTree.sweepOrphans()).toEqual([]);
     const child = darwinTree.spawnMarked("sh", ["-c", `printf "$${markerVar}"`], { env: {}, marker: "direct" });

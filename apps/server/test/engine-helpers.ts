@@ -60,7 +60,7 @@ export async function makeBot(overrides: Record<string, unknown> = {}): Promise<
     ...overrides,
   });
   const bot = getBot(created.id) as BotDefinition;
-  bot.capabilities = { ...bot.capabilities, browser: false, prodQuery: false, computer: false, desktop: false };
+  bot.capabilities = { ...bot.capabilities, browser: false, computer: false, desktop: false };
   return bot;
 }
 

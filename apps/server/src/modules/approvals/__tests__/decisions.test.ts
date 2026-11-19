@@ -196,7 +196,7 @@ describe("decideRoute", () => {
     let choice = "bia";
     const bodies: Array<{ questions: { route: { criteria: Record<string, string> } } }> = [];
     fakeJev((body) => {
-      bodies.push(body as (typeof bodies)[number]);
+      bodies.push(body as unknown as (typeof bodies)[number]);
       return {
         answers: { route: { type: "choice", choice, confidence: 0.8, probabilities: { bia: 0.8, ana: 0.2 } } },
       };

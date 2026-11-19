@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { agendaBlockId } from "@runelay-bots/protocol";
 import { fakeAgenda, toolCallsOf } from "../../../../test/agenda-helpers";
-import { agendaVersion, BlockError } from "../../blocks/services/blocks.shared";
+import { agendaVersion, type BlockError } from "../../blocks/services/blocks.shared";
 import * as runelay from "../../connectors/services/runelay.service";
 import {
   agendaPreview,

@@ -788,8 +788,7 @@ async function fullText(
   const path = uploadPath(botId, meta);
   const bytes = await readFile(path);
   const converted = await convertWithAnydoc(meta, bytes);
-  if (converted && converted.text.trim())
-    return { text: converted.text, converter: "anydoc", format: converted.format };
+  if (converted?.text.trim()) return { text: converted.text, converter: "anydoc", format: converted.format };
   if (meta.mime === "application/pdf" || extname(meta.name).toLowerCase() === ".pdf") {
     const { stdout } = await run("pdftotext", ["-layout", "-enc", "UTF-8", path, "-"], { timeout: 120_000 });
     return { text: stdout.toString("utf8"), converter: "pdftotext" };

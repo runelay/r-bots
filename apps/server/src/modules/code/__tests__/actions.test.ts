@@ -15,7 +15,7 @@ import {
   openTaskWorkspace,
   resolvePrBase,
 } from "../services/actions.service";
-import { activeWorkspace, listRepos, waitForInstall, type WorkspaceState } from "../services/workspace.service";
+import { activeWorkspace, listRepos, type WorkspaceState, waitForInstall } from "../services/workspace.service";
 
 beforeEach(async () => {
   await resetData();

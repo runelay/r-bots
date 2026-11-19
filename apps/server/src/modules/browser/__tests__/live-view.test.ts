@@ -38,7 +38,7 @@ function openClient(id: string) {
 async function ready(client: ReturnType<typeof fakeClient>) {
   await until(() => client.sent.filter((message) => message.type === "state").length >= 2, "screencast start");
   const states = client.sent.filter((message) => message.type === "state");
-  for (const message of states) await client.next("state");
+  for (const _message of states) await client.next("state");
   return states.at(-1) as Record<string, unknown>;
 }
 

@@ -23,8 +23,8 @@ import * as actions from "../../code/services/actions.service";
 import * as devServers from "../../code/services/dev-server.service";
 import * as hooks from "../../code/services/hooks.service";
 import { CodeLive } from "../../code/services/live-diff.service";
-import * as workspaces from "../../code/services/workspace.service";
 import type { InstallState, WorkspaceState } from "../../code/services/workspace.service";
+import * as workspaces from "../../code/services/workspace.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import * as uploads from "../../uploads/services/uploads.service";
 

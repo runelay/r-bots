@@ -59,7 +59,7 @@ export function aborted(signal: AbortSignal) {
 }
 
 export function hold(events: ProviderEvent[] = []) {
-  let release = () => undefined as void;
+  let release = () => undefined as undefined;
   const started = Promise.withResolvers<FakeTurn>();
   const script: TurnScript = (turn) =>
     new Promise<void>((resolve) => {

@@ -4,7 +4,7 @@ import { getDb } from "../../../db";
 import { notes, sheets } from "../../../db/tables";
 import { blocksEditNote } from "../../blocks/services/block-tools.service";
 import { createExport, exportBytes } from "../../exports/services/exports.service";
-import { readRange, createSheet, structure, writeCells, addTab } from "../../sheets/services/sheets.service";
+import { addTab, createSheet, readRange, structure, writeCells } from "../../sheets/services/sheets.service";
 import {
   createNote,
   deleteNote,

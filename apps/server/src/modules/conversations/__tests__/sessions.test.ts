@@ -24,7 +24,6 @@ import {
   getStoredSession,
   loadSessions,
   newSessionId,
-  type SessionMeta,
   sessionsOf,
   titleFrom,
 } from "../services/sessions.service";
@@ -185,7 +184,7 @@ describe("stored sessions", () => {
     );
     const every = spyOn(globalThis, "setInterval");
     await loadSessions();
-    const [sweep, period] = every.mock.calls[0] as unknown as [() => void, number];
+    const [sweep, period] = every.mock.calls[0] as unknown as [() => unknown, number];
     clearInterval(every.mock.results[0].value as ReturnType<typeof setInterval>);
     every.mockRestore();
     expect(period).toBe(5 * 60_000);

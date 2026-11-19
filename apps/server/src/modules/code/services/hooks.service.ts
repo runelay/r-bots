@@ -393,7 +393,7 @@ export function nativeHooks(context: ToolContext, workspace: WorkspaceState, liv
       calls.set(toolUseId, { callId: start.callId, absPath, before: absPath ? await readMaybe(absPath) : null, input });
       return rewritten ? { allow: true, input: { ...input, command: rewritten } } : { allow: true };
     },
-    after: async (tool, input, response, toolUseId, failed) => {
+    after: async (tool, _input, response, toolUseId, failed) => {
       const call = calls.get(toolUseId);
       if (!call) return;
       calls.delete(toolUseId);

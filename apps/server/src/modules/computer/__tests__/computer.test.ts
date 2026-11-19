@@ -4,8 +4,8 @@ import { connectFakeRunner } from "../../../../test/media-helpers";
 import type { Socket } from "../../../shared/ws";
 import * as macRunner from "../../accounts/services/mac-runner.service";
 import {
-  ComputerError,
   type ComputerContext,
+  ComputerError,
   callComputer,
   computerHealth,
   computerHumanReason,
@@ -101,7 +101,7 @@ describe("computerHealth", () => {
       code: "COMPUTER_UNAVAILABLE",
       error: "Runner do Mac fora do ar: refused",
     });
-    restores.splice(0).forEach((restore) => restore());
+    for (const restore of restores.splice(0)) restore();
     stubMac(() => Promise.reject("plain"));
     expect((await computerHealth()).error).toBe("Runner do Mac fora do ar: plain");
   });

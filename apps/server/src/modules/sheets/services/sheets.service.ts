@@ -641,7 +641,7 @@ function rewriteAll(sheetId: string, rewrite: (input: string, ownTab: string) =>
   }
 }
 
-function tabResult(botId: string, sheet: SheetRow, tab: TabRow | null, author: BlockAuthor) {
+function tabResult(_botId: string, sheet: SheetRow, tab: TabRow | null, author: BlockAuthor) {
   const next = bump(sheet, author, null);
   return {
     sheet: sheetOf(next),

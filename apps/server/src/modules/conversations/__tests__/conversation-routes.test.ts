@@ -75,7 +75,7 @@ async function settled(sessionId: string) {
 }
 
 async function hold(session: StoredSession) {
-  let release = () => undefined as void;
+  let release = () => undefined as undefined;
   fakeProviders.next(
     ({ emit, signal }) =>
       new Promise<void>((resolve) => {

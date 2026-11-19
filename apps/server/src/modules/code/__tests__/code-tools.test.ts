@@ -328,7 +328,7 @@ describe("with an open workspace", () => {
 
   test("dev_server_start reports a server that exited early and errors", async () => {
     const start = stub(devServers, "startDevServer").mockResolvedValueOnce(
-      devServer({ status: "exited", exitCode: 2, logs: "crash" }) as never,
+      devServer({ status: "exited", exitCode: 2, logs: "crash" } as Partial<PublicDevServer>) as never,
     );
     const { call, settled } = open();
     const exited = await call("dev_server_start", { cmd: "npm run dev" });
@@ -369,7 +369,9 @@ describe("with an open workspace", () => {
   });
 
   test("dev_server_logs shows the tail or the error", async () => {
-    const logs = stub(devServers, "devServerLogs").mockResolvedValueOnce(devServer({ logs: "a\nb" }) as never);
+    const logs = stub(devServers, "devServerLogs").mockResolvedValueOnce(
+      devServer({ logs: "a\nb" } as Partial<PublicDevServer>) as never,
+    );
     const { call, current, settled } = open();
     expect(textOf(await call("dev_server_logs"))).toBe("Servidor running na porta 4100:\na\nb");
     expect(logs).toHaveBeenLastCalledWith(current, undefined, 80);

@@ -129,6 +129,7 @@ describe("notes", () => {
     const renamed = (await run("note_move", { id: created.id, title: "Plano 2027" })) as {
       note: { title: string };
       relinked: number;
+      blockEvent?: { type: string };
     };
     expect(renamed.note.title).toBe("Plano 2027");
     expect(renamed.relinked).toBe(0);
@@ -267,7 +268,10 @@ describe("agenda", () => {
     expect(label("agenda_update", { title: "Foco total" })).toBe("Mudou “Foco total” na agenda");
     expect(label("agenda_update", {})).toBe("Mudou um evento da agenda");
     const soloId = encodeEventId(account.name, "primary", "solo");
-    const updated = (await run("agenda_update", { eventId: soloId, title: "Foco total" })) as { title: string };
+    const updated = (await run("agenda_update", { eventId: soloId, title: "Foco total" })) as {
+      title: string;
+      blockEvent?: { data: { author: string } };
+    };
     expect(updated.title).toBe("Foco total");
     expect(updated.blockEvent?.data.author).toBe("bot");
     expect(account.deleted).toEqual([{ calendarId: "primary", eventId: "solo" }]);

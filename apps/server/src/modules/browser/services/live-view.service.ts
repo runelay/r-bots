@@ -52,7 +52,7 @@ class LiveBrowser {
 
   private send(method: string, params: Json = {}, withSession = true): Promise<Json> {
     const socket = this.cdp;
-    if (!socket || socket.readyState !== 1) return Promise.reject(new Error("CDP desconectado."));
+    if (socket?.readyState !== 1) return Promise.reject(new Error("CDP desconectado."));
     const id = this.nextId++;
     const message: Json = { id, method, params };
     if (withSession && this.sessionId) message.sessionId = this.sessionId;

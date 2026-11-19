@@ -71,7 +71,7 @@ function encodeBody(init: TestRequestInit) {
   const body = init.body;
   if (body === undefined || body === null) return { headers, body: undefined };
   if (typeof body === "string" || body instanceof Uint8Array || body instanceof Blob || body instanceof FormData)
-    return { headers, body: body as BodyInit };
+    return { headers, body: body as Bun.BodyInit };
   if (!headers.has("content-type")) headers.set("content-type", "application/json");
   return { headers, body: JSON.stringify(body) };
 }

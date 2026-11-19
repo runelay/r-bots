@@ -513,7 +513,7 @@ export async function reopenPr(session: StoredSession) {
 
 async function autoClose(session: StoredSession, workspace: WorkspaceState) {
   const pr = workspace.pr;
-  if (!pr || pr.status !== "merged" || !pr.mergedAt) return;
+  if (pr?.status !== "merged" || !pr.mergedAt) return;
   if (Date.now() - Date.parse(pr.mergedAt) < autoCloseMs) return;
   if (isBusy(session.meta.sessionId)) return;
   if (!(await isClean(workspace)).clean) return;

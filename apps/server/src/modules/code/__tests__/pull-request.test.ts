@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, jest, spyOn, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { codeProcesses, factsOf, ghArgs, gitArgs, gitSync, makeRepo, newSession } from "../../../../test/code-helpers";
 import type { ProcessCall, ProcessReply } from "../../../../test/helpers";
 import { resetData } from "../../../../test/helpers";
-import { codeProcesses, factsOf, ghArgs, gitArgs, gitSync, makeRepo, newSession } from "../../../../test/code-helpers";
 import * as engine from "../../engine/services/engine.service";
 import { watchApp } from "../../status/services/viewers.service";
 import { listWorktrees, recordWorktree } from "../repositories/code.repository";
@@ -26,8 +26,8 @@ import {
   activeWorkspace,
   listRepos,
   openWorkspace,
-  waitForInstall,
   type WorkspaceState,
+  waitForInstall,
 } from "../services/workspace.service";
 
 beforeEach(async () => {
@@ -233,7 +233,7 @@ describe("gh lookups", () => {
     expect(await discoverPr(workspaceStub)).toBe(2);
     const list = fake.calls.find((call) => call.args[1] === "list");
     expect(list?.args).toContain("feat/x");
-    expect((list?.options.env as Record<string, string>).GH_PROMPT_DISABLED).toBe("1");
+    expect((list?.options.env as Record<string, string> | undefined)?.GH_PROMPT_DISABLED).toBe("1");
 
     const check = (url: string | null) => ({ name: "c", url }) as PrCheck;
     expect(await failedLog(workspaceStub, check(null))).toBeNull();

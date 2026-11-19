@@ -141,8 +141,12 @@ export function startBackupSchedule(
 ) {
   if (process.env.BOTS_BACKUP === "off") return null;
   job?.stop();
-  job = new Cron(pattern, { protect: true, name: "backup", timezone: process.env.TZ ?? "America/Sao_Paulo" }, () =>
-    scheduledBackup(options),
+  job = new Cron(
+    pattern,
+    { protect: true, name: "backup", timezone: process.env.TZ ?? "America/Sao_Paulo" },
+    async () => {
+      await scheduledBackup(options);
+    },
   );
   return job;
 }

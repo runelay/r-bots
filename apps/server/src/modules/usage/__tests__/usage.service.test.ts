@@ -443,7 +443,7 @@ describe("usageSummary", () => {
     settings.writeSetting("usage.prices", { at: now, table: priceTableFixture });
     await writeFixture(
       join(home, ".claude", "projects", "p", "a.jsonl"),
-      [
+      `${[
         claudeLine(now - 2 * 3_600_000, "claude-a[1m]", {
           input_tokens: 10,
           cache_read_input_tokens: 4,
@@ -455,7 +455,7 @@ describe("usageSummary", () => {
         claudeLine(now - 3 * 3_600_000, "claude-a-20250101", { input_tokens: 1, output_tokens: 1 }, "s2"),
         claudeLine(now - 3 * 3_600_000, "unknown-model", { input_tokens: 5 }, "s3"),
         claudeLine(now - 40 * 86_400_000, "claude-a", { input_tokens: 1000 }, "s4"),
-      ].join("\n") + "\n",
+      ].join("\n")}\n`,
     );
     await writeFixture(
       join(home, ".codex", "sessions", "r.jsonl"),

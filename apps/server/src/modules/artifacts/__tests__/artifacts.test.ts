@@ -1,8 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import { factsOfType, makeBot } from "../../../../test/engine-helpers";
 import { request, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
-import * as canvas from "../../canvas/services/canvas.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
+import * as canvas from "../../canvas/services/canvas.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
 import {

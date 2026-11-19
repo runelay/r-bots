@@ -2,13 +2,13 @@ import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "b
 import { fakeAgenda } from "../../../../test/agenda-helpers";
 import { factsOfType, makeBot } from "../../../../test/engine-helpers";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
+import { Req, Res } from "../../../shared/http";
 import { encodeEventId } from "../../agenda/services/agenda.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import * as runelay from "../../connectors/services/runelay.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
 import { createNote, writeNote } from "../../notes/services/notes.service";
-import { Req, Res } from "../../../shared/http";
 import { blockRoots, handleBotBlocks } from "../routes/blocks.routes";
 
 interface Failure {
@@ -329,7 +329,7 @@ describe("agenda routes", () => {
     spies.push(logged);
     const crash = await request<Failure>(`${base}/agenda/accounts`);
     expect([crash.status, crash.body]).toEqual([500, { ok: false, error: "disco cheio" }]);
-    expect((logged.mock.calls[0]?.[0] as Error).message).toBe("disco cheio");
+    expect((logged.mock.calls[0]?.[0] as Error | undefined)?.message).toBe("disco cheio");
   });
 
   test("unknown agenda routes", async () => {

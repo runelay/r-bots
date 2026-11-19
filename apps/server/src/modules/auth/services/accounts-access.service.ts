@@ -72,7 +72,12 @@ export function createAccessService(auth: Auth, db: AuthDatabase) {
 
   async function createAccount(credentials: Credentials, role: string) {
     const created = await auth.api.createUser({
-      body: { email: credentials.email, password: credentials.password, name: credentials.name, role: role as "admin" },
+      body: {
+        email: credentials.email,
+        password: credentials.password,
+        name: credentials.name,
+        role: role as "member" | "owner",
+      },
     });
     return created.user.id;
   }

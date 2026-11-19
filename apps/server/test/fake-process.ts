@@ -148,11 +148,11 @@ export function fakeProcesses(handler: ProcessHandler) {
           reply.error ??
           (code === 0
             ? null
-            : Object.assign(new Error(`exit ${code ?? signal}`), {
+            : (Object.assign(new Error(`exit ${code ?? signal}`), {
                 code: code ?? undefined,
                 killed: signal !== null,
                 signal,
-              }));
+              }) as unknown as NodeJS.ErrnoException));
         callback(failed, stdout, stderr);
       });
     }

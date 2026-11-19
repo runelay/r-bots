@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { resetData } from "../../../../test/helpers";
-import * as artifacts from "../../artifacts/services/artifacts.service";
 import { artifactContentKey } from "../../artifacts/repositories/artifacts.repository";
+import * as artifacts from "../../artifacts/services/artifacts.service";
 import { type ArtifactMeta, readArtifact, saveArtifactMeta } from "../../artifacts/services/artifacts.service";
 import { getBlobStore } from "../../storage/services/storage.service";
 import {

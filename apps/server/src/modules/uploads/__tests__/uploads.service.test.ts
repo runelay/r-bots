@@ -4,7 +4,7 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import * as anydoc from "@firecrawl/anydoc";
 import { ulid } from "ulid";
-import { fakeProcesses, readData, resetData, testDataDir, writeData } from "../../../../test/helpers";
+import { fakeProcesses, resetData, testDataDir, writeData } from "../../../../test/helpers";
 import { connectFakeRunner, fastTimers, fixtureFile, mediaTools, pcmSamples } from "../../../../test/media-helpers";
 import { getDb, tables } from "../../../db";
 import { Req, Res } from "../../../shared/http";
