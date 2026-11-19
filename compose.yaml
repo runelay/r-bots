@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: apps/server/Dockerfile
+      args:
+        APP_UID: ${BOTS_UID:-1000}
+        APP_GID: ${BOTS_GID:-1000}
     image: ${BOTS_IMAGE:-runelay-bots-server:latest}
     container_name: ${BOTS_CONTAINER_NAME:-runelay-bots}
     network_mode: host
@@ -30,24 +33,24 @@ services:
       BOTS_SCHEDULES: ${BOTS_SCHEDULES:-on}
       BOTS_MAX_TURNS: ${BOTS_MAX_TURNS:-3}
       VOICE_MAX_WARM: ${VOICE_MAX_WARM:-3}
-      CODE_REPO_ROOTS: /home/anderson/projects/conty-dev,/home/anderson/projects
-      CODE_WORKTREES_DIR: /home/anderson/projects/worktrees
-      CONTY_API_DIR: /home/anderson/projects/conty-dev/conty-api
+      CODE_REPO_ROOTS: ${CODE_REPO_ROOTS:-${PROJECTS_DIR:-${HOME}/projects}}
+      CODE_WORKTREES_DIR: ${CODE_WORKTREES_DIR:-${PROJECTS_DIR:-${HOME}/projects}/worktrees}
+      CONTY_API_DIR: ${CONTY_API_DIR:-}
       VAULT_KEY_FILE: /run/runelay-bots/vault.key
     volumes:
-      - /home/anderson/projects:/home/anderson/projects
-      - /home/anderson/projects/worktrees:/home/anderson/projects/worktrees
+      - ${PROJECTS_DIR:-${HOME}/projects}:${PROJECTS_DIR:-${HOME}/projects}
+      - ${CODE_WORKTREES_DIR:-${PROJECTS_DIR:-${HOME}/projects}/worktrees}:${CODE_WORKTREES_DIR:-${PROJECTS_DIR:-${HOME}/projects}/worktrees}
       - ${BOTS_DATA_DIR:-${HOME}/.local/share/runelay-bots}:/data
       - ${BOTS_BACKUP_DIR:-${HOME}/.local/share/runelay-bots-backups}:/backups
-      - ${BOTS_ENV_FILE:-/home/anderson/projects/runelay-bots/.env.local}:/app/apps/server/.env.local:ro
-      - /home/anderson/.claude:/home/anderson/.claude
-      - /home/anderson/.claude.json:/home/anderson/.claude.json
-      - /home/anderson/.codex:/home/anderson/.codex
-      - /home/anderson/.config/gh:/home/anderson/.config/gh
-      - /home/anderson/.supabase:/home/anderson/.supabase
-      - /home/anderson/.gitconfig:/home/anderson/.gitconfig:ro
-      - /home/runelaybot:/home/runelaybot
-      - ${VAULT_KEY_HOST_FILE:-/home/anderson/.config/runelay-bots/vault.key}:/run/runelay-bots/vault.key:ro
+      - ${BOTS_ENV_FILE:-./.env.local}:/app/apps/server/.env.local:ro
+      - ${HOST_HOME:-${HOME}}/.claude:/home/app/.claude
+      - ${HOST_HOME:-${HOME}}/.claude.json:/home/app/.claude.json
+      - ${HOST_HOME:-${HOME}}/.codex:/home/app/.codex
+      - ${HOST_HOME:-${HOME}}/.config/gh:/home/app/.config/gh
+      - ${HOST_HOME:-${HOME}}/.supabase:/home/app/.supabase
+      - ${HOST_HOME:-${HOME}}/.gitconfig:/home/app/.gitconfig:ro
+      - ${DESKTOP_HOME_DIR:-desktop-home}:/home/runelaybot
+      - ${VAULT_KEY_HOST_FILE:-${HOST_HOME:-${HOME}}/.config/runelay-bots/vault.key}:/run/runelay-bots/vault.key:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:$${GATEWAY_PORT}/bots || exit 1"]
       interval: 30s
@@ -114,3 +117,6 @@ services:
       - ${BOTS_STORAGE_DIR:-${HOME}/.local/share/runelay-bots/storage}/secrets:/var/lib/garage/secrets:ro
       - ${BOTS_ENV_DIR:-.}:/env
     restart: "no"
+
+volumes:
+  desktop-home:
