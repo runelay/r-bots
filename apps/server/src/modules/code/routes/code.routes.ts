@@ -329,6 +329,9 @@ const apiPrefixes = new Set([
   "bots",
   "code",
   "preview",
+  "api",
+  "auth",
+  "device",
 ]);
 const cookieName = "rb_preview";
 
@@ -355,6 +358,14 @@ function proxy(req: Req, res: Res, port: number, path: string) {
         sendJson(res, 502, { ok: false, error: `O servidor de desenvolvimento não respondeu: ${error.message}` });
       else res.end();
     });
+}
+
+export function isPreviewTraffic(request: Request) {
+  const first = new URL(request.url).pathname.split("/").filter(Boolean)[0] ?? "";
+  if (first === "preview") return true;
+  if (apiPrefixes.has(first)) return false;
+  const match = (request.headers.get("cookie") ?? "").match(new RegExp(`(?:^|;\\s*)${cookieName}=([\\w-]+)`));
+  return match ? findPreviewByToken(match[1]) !== null : false;
 }
 
 export function handlePreview(req: Req, res: Res, url: URL, parts: string[]) {

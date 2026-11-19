@@ -3,6 +3,7 @@ import type { AccountProbe, ProviderEvent, TurnRequest } from "@runelay-bots/pro
 import { env } from "../../../config/env";
 import type { Req } from "../../../shared/http";
 import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
+import { authActive, principalOf } from "../../auth/gate";
 
 export const runnerConnectPath = "/runner/connect";
 
@@ -30,6 +31,7 @@ const changeListeners = new Set<(connected: boolean) => void>();
 export class MacRunnerUnavailable extends Error {}
 
 function authorized(req: Req) {
+  if (authActive()) return principalOf(req.raw) !== null;
   const header = req.headers.authorization ?? "";
   const given = Buffer.from(header.startsWith("Bearer ") ? header.slice(7).trim() : "");
   const expected = Buffer.from(runnerToken);

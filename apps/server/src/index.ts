@@ -3,6 +3,7 @@ import { activeMarkers, sweepOrphans } from "@runelay-bots/providers/proc-tree";
 import { startServer } from "./app";
 import { dataDir, host, model, port } from "./config/env";
 import { refreshAccounts } from "./modules/accounts/services/accounts.service";
+import { initAuth } from "./modules/auth/gate";
 import { loadBots } from "./modules/bots/services/bots.service";
 import { closeIdleBrowsers } from "./modules/browser/services/browser.service";
 import { stopAllDesktops } from "./modules/browser/services/desktop.service";
@@ -58,6 +59,7 @@ async function main() {
       setTimeout(() => process.exit(0), 500).unref();
     });
   }
+  await initAuth();
   startServer(host, port);
   console.log(`runelay bots (claude-agent-sdk, ${model}) on http://${host}:${port}`);
 }

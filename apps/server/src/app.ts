@@ -1,11 +1,18 @@
 import type { Server } from "bun";
 import { handleAccounts, handleAccountsRefresh } from "./modules/accounts/routes/accounts.routes";
 import { isRunnerUpgrade, runnerSocket, runnerUpgradeAllowed } from "./modules/accounts/services/mac-runner.service";
+import { gate } from "./modules/auth/gate";
 import { handleBots } from "./modules/bots/routes/bots.routes";
 import { getBot } from "./modules/bots/services/bots.service";
 import { desktopSocket, isDesktopUpgrade } from "./modules/browser/services/desktop.service";
 import { isLiveUpgrade, liveSocket } from "./modules/browser/services/live-view.service";
-import { handleCodeRoute, handlePreview, previewSocket, previewUpgradeTarget } from "./modules/code/routes/code.routes";
+import {
+  handleCodeRoute,
+  handlePreview,
+  isPreviewTraffic,
+  previewSocket,
+  previewUpgradeTarget,
+} from "./modules/code/routes/code.routes";
 import { botIsCoding } from "./modules/code/services/bot-code.service";
 import { handleComputerHealth } from "./modules/computer/routes/computer.routes";
 import { handleConnections, handleConnectorActions } from "./modules/connectors/routes/connectors.routes";
@@ -98,9 +105,16 @@ async function upgrade(request: Request, server: Server<SocketData>) {
   return accept({ kind: "live", botId });
 }
 
+async function guarded(request: Request, next: () => Response | Promise<Response | undefined> | undefined) {
+  const blocked = await gate(request, () => isPreviewTraffic(request));
+  return blocked ?? next();
+}
+
 function getOnly(handler: (res: Res, url: URL) => unknown) {
   return (request: Request) =>
-    run(request, (req, res) => (req.method === "GET" ? handler(res, new URL(request.url)) : route(req, res)));
+    guarded(request, () =>
+      run(request, (req, res) => (req.method === "GET" ? handler(res, new URL(request.url)) : route(req, res))),
+    );
 }
 
 export function startServer(hostname: string, port: number) {
@@ -118,8 +132,10 @@ export function startServer(hostname: string, port: number) {
       "/computer/health": getOnly((res) => handleComputerHealth(res)),
     },
     fetch(request, server) {
-      if (request.headers.get("upgrade")?.toLowerCase() === "websocket") return upgrade(request, server);
-      return run(request, route);
+      return guarded(request, () => {
+        if (request.headers.get("upgrade")?.toLowerCase() === "websocket") return upgrade(request, server);
+        return run(request, route);
+      });
     },
     websocket: {
       maxPayloadLength: 32 * 1024 * 1024,
