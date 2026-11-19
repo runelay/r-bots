@@ -1,3 +1,4 @@
+export * from "./schema/artifacts";
 export * from "./schema/blocks";
 export * from "./schema/code";
 export * from "./schema/conversations";
