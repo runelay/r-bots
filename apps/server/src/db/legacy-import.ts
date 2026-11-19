@@ -1,12 +1,20 @@
-import { readdir, stat } from "node:fs/promises";
-import { join, relative, sep } from "node:path";
+import { chmod, cp, readdir, stat } from "node:fs/promises";
+import { basename, join, relative, resolve, sep } from "node:path";
 import { and, count, eq } from "drizzle-orm";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
+import {
+  artifactContentKey,
+  artifactExtension,
+  saveArtifactRow,
+} from "../modules/artifacts/repositories/artifacts.repository";
+import type { ArtifactMeta } from "../modules/artifacts/services/artifacts.service";
 import type { BlobStore } from "../modules/storage/services/blob-store";
 import { sha256Of } from "../modules/storage/services/blob-store";
 import { blobKeys } from "../modules/storage/services/storage.service";
 import type { Db } from "./client";
 import {
+  artifacts,
+  artifactVersions,
   blobs,
   bots,
   codeWorkspaces,
@@ -41,6 +49,8 @@ export interface LegacyCounts {
   secrets: number;
   vaultAudit: number;
   codeWorkspaces: number;
+  artifacts: number;
+  artifactVersions: number;
   eventsBySession: Record<string, number>;
 }
 
@@ -55,6 +65,11 @@ export interface ImportReport {
   after: LegacyCounts;
   mismatches: string[];
   uploadFailures: UploadFailure[];
+  copiedFiles: number;
+}
+
+export interface ImportOptions {
+  targetDataDir?: string;
 }
 
 const botColumns = new Set([
@@ -147,6 +162,19 @@ export function factTypes(facts: unknown[]) {
     .join(" ");
 }
 
+async function legacyArtifacts(legacyDir: string) {
+  const found: ArtifactMeta[] = [];
+  for (const botId of await list(join(legacyDir, "bots"))) {
+    for (const artifactId of await list(join(legacyDir, "bots", botId, "artifacts"))) {
+      const meta = await readJsonFile<ArtifactMeta>(
+        join(legacyDir, "bots", botId, "artifacts", artifactId, "meta.json"),
+      );
+      if (meta?.id) found.push({ ...meta, botId, versions: meta.versions ?? [] });
+    }
+  }
+  return found;
+}
+
 export async function legacyCounts(legacyDir: string): Promise<LegacyCounts> {
   const botFiles = (await list(join(legacyDir, "bots"))).filter((name) => name.endsWith(".json"));
   const sessionFiles = (await list(join(legacyDir, "sessions"))).filter((name) => name.endsWith(".json"));
@@ -166,6 +194,12 @@ export async function legacyCounts(legacyDir: string): Promise<LegacyCounts> {
     uploadCount += (await list(join(legacyDir, "bots", botId, "uploads", ".meta"))).filter((name) =>
       name.endsWith(".json"),
     ).length;
+  let artifactCount = 0;
+  let artifactVersionCount = 0;
+  for (const meta of await legacyArtifacts(legacyDir)) {
+    artifactCount++;
+    artifactVersionCount += meta.versions.length;
+  }
   const vaultIndex = (await readJsonFile<Json>(join(legacyDir, "vault", "index.json"))) ?? {};
   return {
     bots: botFiles.length,
@@ -179,6 +213,8 @@ export async function legacyCounts(legacyDir: string): Promise<LegacyCounts> {
     secrets: Object.keys(vaultIndex).length,
     vaultAudit: (await readLines(join(legacyDir, "vault", "audit.ndjson"))).length,
     codeWorkspaces: ((await readJsonFile<unknown[]>(join(legacyDir, "code", "worktrees.json"))) ?? []).length,
+    artifacts: artifactCount,
+    artifactVersions: artifactVersionCount,
     eventsBySession,
   };
 }
@@ -204,6 +240,8 @@ export function dbCounts(db: Db): LegacyCounts {
     secrets: total(vaultSecrets),
     vaultAudit: total(vaultAudit),
     codeWorkspaces: total(codeWorkspaces),
+    artifacts: total(artifacts),
+    artifactVersions: total(artifactVersions),
     eventsBySession,
   };
 }
@@ -608,6 +646,67 @@ async function importUploads(db: Db, store: BlobStore, legacyDir: string, failur
   }
 }
 
+async function importArtifacts(db: Db, store: BlobStore, legacyDir: string, failures: UploadFailure[]) {
+  for (const meta of await legacyArtifacts(legacyDir)) {
+    try {
+      const dir = join(legacyDir, "bots", meta.botId, "artifacts", meta.id);
+      const mime = meta.kind === "canvas" ? "application/json" : "text/html; charset=utf-8";
+      for (const version of meta.versions) {
+        const file = join(dir, `v${version.n}.${artifactExtension(meta.kind)}`);
+        await uploadVerified(
+          db,
+          store,
+          file,
+          artifactContentKey(meta.botId, meta.id, version.n, meta.kind),
+          mime,
+          meta.botId,
+        );
+      }
+      saveArtifactRow(meta, db);
+    } catch (error) {
+      failures.push({
+        botId: meta.botId,
+        uploadId: meta.id,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
+const skippedOnDisk = new Set(["SingletonLock", "SingletonSocket", "SingletonCookie"]);
+
+async function copyTree(from: string, to: string) {
+  if (!(await stat(from).catch(() => null))) return 0;
+  const before = (await filesUnder(to)).length;
+  await cp(from, to, {
+    recursive: true,
+    force: false,
+    errorOnExist: false,
+    preserveTimestamps: true,
+    verbatimSymlinks: true,
+    filter: (source) => !skippedOnDisk.has(basename(source)) && basename(source) !== "worktrees.json",
+  });
+  return (await filesUnder(to)).length - before;
+}
+
+export async function copyDiskData(legacyDir: string, targetDataDir: string) {
+  if (resolve(legacyDir) === resolve(targetDataDir)) return 0;
+  let copied = 0;
+  for (const name of ["work", "workspaces", "code"])
+    copied += await copyTree(join(legacyDir, name), join(targetDataDir, name));
+  for (const botId of await list(join(legacyDir, "bots")))
+    for (const name of ["browser", "desktop"])
+      copied += await copyTree(join(legacyDir, "bots", botId, name), join(targetDataDir, "bots", botId, name));
+  const secret = Bun.file(join(legacyDir, "auth.secret"));
+  const targetSecret = join(targetDataDir, "auth.secret");
+  if ((await secret.exists()) && !(await Bun.file(targetSecret).exists())) {
+    await Bun.write(targetSecret, secret);
+    await chmod(targetSecret, 0o600);
+    copied++;
+  }
+  return copied;
+}
+
 export function compareCounts(before: LegacyCounts, after: LegacyCounts) {
   const mismatches: string[] = [];
   for (const key of Object.keys(before) as (keyof LegacyCounts)[]) {
@@ -621,7 +720,12 @@ export function compareCounts(before: LegacyCounts, after: LegacyCounts) {
   return mismatches;
 }
 
-export async function importLegacy(db: Db, store: BlobStore, legacyDir: string): Promise<ImportReport> {
+export async function importLegacy(
+  db: Db,
+  store: BlobStore,
+  legacyDir: string,
+  options: ImportOptions = {},
+): Promise<ImportReport> {
   const before = await legacyCounts(legacyDir);
   const uploadFailures: UploadFailure[] = [];
   const botRows: Json[] = [];
@@ -645,10 +749,12 @@ export async function importLegacy(db: Db, store: BlobStore, legacyDir: string):
   await importVault(db, legacyDir);
   await importCode(db, legacyDir);
   await importUploads(db, store, legacyDir, uploadFailures);
+  await importArtifacts(db, store, legacyDir, uploadFailures);
+  const copiedFiles = options.targetDataDir ? await copyDiskData(legacyDir, options.targetDataDir) : 0;
   db.$client.run("INSERT INTO messages_fts(messages_fts) VALUES ('optimize')");
   const after = dbCounts(db);
   const mismatches = compareCounts(before, after);
   for (const failure of uploadFailures)
     mismatches.push(`upload ${failure.botId}/${failure.uploadId}: ${failure.reason}`);
-  return { before, after, mismatches, uploadFailures };
+  return { before, after, mismatches, uploadFailures, copiedFiles };
 }

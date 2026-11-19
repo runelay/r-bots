@@ -169,15 +169,73 @@ function seed() {
   write("bots/boss/uploads/.meta/u3.json", { uploadId: "u3", name: "gone", file: "missing", createdAt: at });
   write("bots/boss/uploads/.meta/u4.json", "null");
   write("bots/bare/notes.txt", "x");
+  write("bots/boss/artifacts/art_page/meta.json", {
+    id: "art_page",
+    botId: "boss",
+    title: "Página",
+    kind: "page",
+    createdAt: at,
+    updatedAt: at,
+    versions: [{ n: 1, createdAt: at, size: 4 }],
+  });
+  write("bots/boss/artifacts/art_page/v1.html", "<p/>");
+  write("bots/boss/artifacts/art_canvas/meta.json", {
+    id: "art_canvas",
+    botId: "boss",
+    title: "Quadro",
+    kind: "canvas",
+    createdAt: at,
+    updatedAt: at,
+    versions: [
+      { n: 1, createdAt: at, size: 2, author: "bot" },
+      { n: 2, createdAt: at, size: 2, author: "user" },
+    ],
+    canvas: { seen: 1, notified: 2 },
+  });
+  write("bots/boss/artifacts/art_canvas/v1.json", "{}");
+  write("bots/boss/artifacts/art_canvas/v2.json", "{}");
+  write("bots/boss/artifacts/art_broken/meta.json", {
+    id: "art_broken",
+    title: "x",
+    kind: "page",
+    createdAt: at,
+    updatedAt: at,
+    versions: [{ n: 1, createdAt: at, size: 1 }],
+  });
+  write("bots/boss/browser/state.json", "{}");
+  write("bots/boss/browser/SingletonLock", "lock");
+  write("work/boss/memory/a.md", "m");
+  write("code/worktrees.json", "[]");
+  write("code/tmp/install.log", "log");
+  write("auth.secret", "s");
 }
 
 describe("legacy import", () => {
+  test("copies what stays on disk", async () => {
+    seed();
+    const db = openDatabase(join(dir, "copy.db"));
+    const target = join(dir, "target");
+    const report = await importLegacy(db, new FsBlobStore(join(dir, "copy-blobs")), join(dir, "data"), {
+      targetDataDir: target,
+    });
+    expect(report.copiedFiles).toBe(4);
+    expect(await Bun.file(join(target, "bots/boss/browser/state.json")).exists()).toBe(true);
+    expect(await Bun.file(join(target, "bots/boss/browser/SingletonLock")).exists()).toBe(false);
+    expect(await Bun.file(join(target, "code/worktrees.json")).exists()).toBe(false);
+    expect(await Bun.file(join(target, "work/boss/memory/a.md")).text()).toBe("m");
+    expect(await Bun.file(join(target, "auth.secret")).text()).toBe("s");
+    const again = await importLegacy(db, new FsBlobStore(join(dir, "copy-blobs")), join(dir, "data"), {
+      targetDataDir: target,
+    });
+    expect(again.copiedFiles).toBe(0);
+  });
+
   test("imports everything and is idempotent", async () => {
     seed();
     const db = openDatabase(join(dir, "a.db"));
     const store = new FsBlobStore(join(dir, "blobs"));
     const first = await importLegacy(db, store, join(dir, "data"));
-    expect(first.uploadFailures.map((failure) => failure.uploadId)).toEqual(["u3"]);
+    expect(first.uploadFailures.map((failure) => failure.uploadId)).toEqual(["u3", "art_broken"]);
     expect(first.mismatches).toContain("uploads: legacy 4 db 2");
     expect(first.mismatches).toContain("conversations: legacy 3 db 2");
     expect(first.mismatches.some((item) => item.startsWith("upload boss/u3: "))).toBe(true);
@@ -185,6 +243,20 @@ describe("legacy import", () => {
     expect(first.after.bots).toBe(2);
     const second = await importLegacy(db, store, join(dir, "data"));
     expect(second.after).toEqual(first.after);
+    expect(first.after.artifacts).toBe(2);
+    expect(first.after.artifactVersions).toBe(3);
+    expect(first.mismatches).toContain("artifacts: legacy 3 db 2");
+    expect(first.uploadFailures.map((failure) => failure.uploadId)).toContain("art_broken");
+    const canvas = db
+      .select()
+      .from(tables.artifactVersions)
+      .all()
+      .filter((row) => row.artifactId === "art_canvas");
+    expect(canvas.map((row) => row.blobKey)).toEqual([
+      "bots/boss/artifacts/art_canvas/v1.json",
+      "bots/boss/artifacts/art_canvas/v2.json",
+    ]);
+    expect(await new Response(await store.get("bots/boss/artifacts/art_page/v1.html")).text()).toBe("<p/>");
     const upload = db
       .select()
       .from(tables.uploads)

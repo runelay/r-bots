@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { repoDir } from "../src/config/env";
+import { dataDir, repoDir } from "../src/config/env";
 import { dbFile } from "../src/config/storage";
 import { closeDb, openDatabase } from "../src/db";
 import { importLegacy, type LegacyCounts } from "../src/db/legacy-import";
@@ -23,12 +23,14 @@ console.log(`legacy: ${legacyDir}`);
 console.log(`database: ${target}`);
 const db = openDatabase(target);
 const store = createBlobStore();
+console.log(`data dir: ${dataDir}`);
 console.log(`blob driver: ${store.driver}`);
 const started = performance.now();
-const report = await importLegacy(db, store, legacyDir);
+const report = await importLegacy(db, store, legacyDir, { targetDataDir: dataDir });
 closeDb();
 db.$client.close();
 console.log(table(report.before, report.after));
+console.log(`files copied to disk: ${report.copiedFiles}`);
 console.log(`took ${Math.round(performance.now() - started)}ms`);
 if (report.mismatches.length) {
   console.error(`mismatches:\n${report.mismatches.map((item) => `  ${item}`).join("\n")}`);
