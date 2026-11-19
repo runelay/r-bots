@@ -119,8 +119,40 @@ As contas Google ligadas na runelay da pessoa (hoje duas) aparecem para todos os
 - Bloco na conversa: o evento `block.created`/`block.updated` com `author:"bot"` entra no transcript como artefato (`.artifact(ArtifactRef)` com `kind` `note`/`sheet`/`agenda`) logo depois da linha compacta da ferramenta. O card desenha a prévia: nota com título + primeiras linhas em markdown; planilha com a miniatura da grade (cabeçalhos A/B/C e 1/2/3, valores calculados); agenda com os eventos do dia ou da semana. Bloco mais antigo do mesmo item vira "Versão anterior" (compacto, esmaecido) e o mais novo mostra o estado atual.
 - Clicar no bloco abre o painel de artefato (o mesmo das apresentações) encaixado à direita, sem escurecer a conversa, para editar com o bot ao lado. O painel aberto atualiza ao vivo com `block.updated` (como o `code.edit`), sem perder o cursor da pessoa; o trecho de `changed` ganha um destaque que some sozinho.
 - Botão "Arquivos do bot" no topo da conversa abre o mesmo painel com Notas, Planilhas e Agenda (listas e busca do servidor).
-- Até o servidor existir, o app usa `FixtureBlocksClient` (protocolo `BlocksClient`); a troca para `RemoteBlocksClient` não mexe nas views.
+- O app usa `RemoteBlocksClient` (servidor real) por padrão; `defaults write RunelayBots blocksSource fixture` volta para o `FixtureBlocksClient`. A troca não mexe nas views.
 
 ### Verificado
 
-Pendente: o servidor dos blocos ainda não existe. Os corpos acima são o contrato; quem implementar o servidor captura os corpos reais aqui.
+19/11, servidor de dev em `:2100` (`BOTS_DATA_DIR` temporário, `BOTS_SCHEDULES=off`, `BLOB_DRIVER=fs`) e bot de teste `teste-blocos`. Módulos: `modules/notes`, `modules/sheets`, `modules/agenda`, `modules/exports` e `modules/blocks` (rotas, ferramentas e eventos). Motor de fórmulas: `fast-formula-parser` (MIT) com tradução pt→en, `;` e vírgula decimal, e as funções que a lib deixa vazias (`MAX`, `MIN`, `MEDIAN`, `LARGE`, `SMALL`, `MATCH`, `COUNTA`, `COUNTBLANK`, `COUNTIFS`, `SUMIFS`, `AVERAGEIFS`, `XLOOKUP`/`PROCX`, `UPPER`, `VALUE`). Export: `docx` (MIT), `exceljs` (MIT), `marked` (MIT) e PDF pelo Chromium headless (`DESKTOP_CHROME`).
+
+Turno real (“crie uma nota Compras e uma planilha Gastos com total por fórmula”): `note_write` e `sheet_create` rodaram sem aprovação, e o stream da thread recebeu, depois de cada `call.settled`:
+
+```json
+{"type":"block.created","data":{"kind":"note","id":"note_01m7tyrjwmc3x1yk9v7frvarhz","title":"Compras","version":1,"author":"bot","action":"created","preview":{"kind":"note","folder":"","excerpt":"- [ ] Café\n- [ ] Pão\n- [ ] Leite\n","words":3},"changed":{"lines":[[0,3]]},"botId":"teste-blocos","callId":"call_fXFxy85HOw6x"}}
+{"type":"block.created","data":{"kind":"sheet","id":"sheet_01m7tyrknwbcsnc1a0kprdqer2","title":"Gastos","version":1,"author":"bot","action":"created","preview":{"kind":"sheet","tab":"Planilha1","tabs":1,"rows":[[{"v":"Item","t":"s"},{"v":"Valor","t":"s"}],[{"v":"Café","t":"s"},{"v":20,"t":"n"}],[{"v":"Pão","t":"s"},{"v":8,"t":"n"}],[{"v":"Total","t":"s"},{"v":28,"t":"n"}]],"rowCount":4,"colCount":2,"frozenRows":0,"colWidths":[96,96]},"changed":{"tabId":"tab_01m7tyrknwmb33gajg93q31h4s","ranges":["A1:B4"]},"botId":"teste-blocos","callId":"call_-qGbDPAR8mFL"}}
+```
+
+Notas pelo curl:
+
+- `POST /notes {"title":"Diário","content":"Revisei o [[Plano Q1|plano]] hoje e anotei em [[Ideias]]."}` → 201 com `"links":[{"target":"Plano Q1","id":"note_01m7typnb6r793c4cd6w1vmzx1","title":"Plano Q1"},{"target":"Ideias","id":null,"title":"Ideias"}]`.
+- `GET /notes/:planoId/backlinks` → `{"items":[{"id":"note_01m7typncx938gd4r3f65ctvjj","title":"Diário","folder":"","snippet":"Revisei o [[Plano Q1|plano]] hoje e anotei em [[Ideias]]."}],"total":1,"nextCursor":null}`.
+- `POST /notes/:planoId/move {"title":"Plano 2027"}` → `relinked: 1`; o Diário passou a ter `[[Plano 2027|plano]]`.
+- `GET /notes/search?q=orcamento` (sem acento) → `{"items":[{"id":"note_…","title":"Plano 2027","folder":"Projetos","snippet":"# Plano Q1 - [ ] Fechar metas #metas - [x] Revisar orçamento","ranges":[[51,60]]}],"total":1,"nextCursor":null}`; `mode=title&q=pla` → `snippet:""`, `ranges:[[0,5]]`.
+- `GET /notes/tree` → `{"folder":"","folders":[{"name":"Projetos","path":"Projetos","notes":1,"folders":0}],"notes":{…}}`.
+
+Planilhas pelo curl:
+
+- `POST …/tabs/:resumo/cells {"cells":[{"a":"B1","input":"=SOMA(Dados!B2:B3)"},{"a":"B2","input":"=PROCV(\"fev\";Dados!A2:B3;2;FALSO)"}]}` → `v` 1720,5 e 200. `R$ 200` virou `{"v":200,"t":"n","format":{"type":"brl","decimals":2}}`.
+- Mudar `Dados!B3` para `300` → `GET …/tabs/:resumo/range?range=A1:B2` devolve `1820.5` e `300`.
+- `POST /exports {"kind":"sheet","format":"xlsx"}` → `{"id":"exp_…","status":"ready","fileName":"Orçamento.xlsx","size":7273,"url":"/bots/teste-blocos/exports/exp_…/file",…}`; o arquivo aberto com exceljs tem `{"formula":"SUM(Dados!B2:B3)","result":1820.5}` e `{"formula":"VLOOKUP(\"fev\",Dados!A2:B3,2,FALSE)","result":300}`. `GET {url}` → `content-disposition: attachment; filename*=UTF-8''Or%C3%A7amento.xlsx`.
+- Nota em `docx`, `pdf`, `md` e planilha em `csv` (BOM, valores pt-BR) e `pdf` saíram `ready` na hora.
+
+Agenda (só leitura): `GET /agenda/accounts` → `[{"id":"google_calendar","label":"Pessoal","color":"blue","primary":true,"status":"ready","calendars":[{"name":"Principal","selected":true},{"name":"Feriados no Brasil","selected":false}]},{"id":"google_calendar_2","label":"Empresa","color":"green",…}]`; `GET /agenda/events?start=2026-11-16T00:00:00-03:00&end=2026-11-23T00:00:00-03:00` → 19 eventos das duas contas, ordenados; a segunda chamada veio do `calendar_cache` (TTL 60 s); período de 120 dias → 400 `Período de no máximo 62 dias.`
+
+Desvios do contrato:
+
+- O conector Google Calendar da runelay só tem `calendar_list_calendars`, `calendar_list_events`, `calendar_create_event`, `calendar_delete_event` e `account_whoami`. Por isso `meet:true` → 400 (o conector não cria Meet), e `PATCH /agenda/events/:id` recria o evento (id novo) só quando ele não tem convidados nem recorrência; senão 409 `{"code":"unsupported"}`. O `eventId` é base64url de `[accountId, calendarId, googleId]`.
+- `selected` não vem do Google: é `true` no calendário principal e nos que a pessoa é dona ou editora.
+- A resposta de `…/cells` traz as células escritas e as dependentes **da mesma aba**; dependentes de outras abas são recalculadas e gravadas, mas a célula não tem `tabId` para ir junto (o app relê a aba ao trocar).
+- `agenda_create` com convidado de fora das contas ligadas passa pelo card de aprovação existente; sem convidado, ou com `permission: full`, roda direto.
+- O download sai pelo servidor em `GET /bots/:id/exports/:exportId/file` (stream do BlobStore, atrás do portão de auth).
