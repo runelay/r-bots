@@ -10,7 +10,7 @@ App nativo de macOS para conversar com o time de bots do runelay (Boss, Davi, Li
 ## Rodar pelo terminal
 
 ```bash
-cd mac
+cd apps/mac
 swift run
 ```
 
@@ -53,11 +53,12 @@ Quando rodar pelo Xcode o domínio do `defaults` pode ser outro; nesse caso use 
 Sources/RunelayBots/
   App/            entrada do app, comandos de menu
   Design/         tokens de cor, tipografia, espaçamento e o spring único
-  Models/         Bot, sessão, transcript e JSONValue tolerante
+  Common/         componentes de UI genéricos
+  Features/       um domínio por pasta: Conversation, Sidebar, Code, Voice, Call, Computer, Artifacts, Settings, Connectors, Vault, Usage, Accounts, Character, Profile, Routines, Inspector
+  Models/         Bot, conta, conversa, skill e JSONValue tolerante
   Networking/     BotsClient (REST) e SessionStream (NDJSON com reconexão)
-  Stores/         AppModel, ConversationStore e BrowserStore (@Observable, @MainActor)
+  Stores/         AppModel, Notifier e BrandIconStore (@Observable, @MainActor)
   Support/        cron, formatação, mensagens de erro
-  Views/          barra lateral, conversas, transcript, inspetor e ajustes
   Resources/      fontes (Anton, DM Sans, JetBrains Mono, licença OFL) e o logo oficial da Conty em SVG
 ```
 
@@ -66,7 +67,7 @@ As fontes vão junto no pacote e são registradas ao abrir o app. Se o registro 
 ## Empacotar como app
 
 ```bash
-cd mac
+cd apps/mac
 ./scripts/make-app.sh
 ```
 
