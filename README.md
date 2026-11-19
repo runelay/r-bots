@@ -77,7 +77,7 @@ flowchart LR
 The server runs in Docker on the VPS, from the repo root:
 
 ```sh
-cd /home/anderson/projects/runelay-bots
+cp .env.example .env       # paths, uid/gid and optional features
 docker compose up -d --build
 ```
 
@@ -113,8 +113,8 @@ cd ~/runelay-bots/mac
 `make-app.sh` builds in release, signs with the local **runelay bots Local** certificate (so macOS keeps the microphone, speech and automation permissions between builds) and installs `~/Applications/RunelayBots.app`. From the server, sync the source first:
 
 ```sh
-rsync -az --delete --exclude .build -e "ssh -i ~/.ssh/id_ed25519_mac_qa" \
-  apps/mac/ andersonbrdev@100.122.172.127:runelay-bots/mac/
+rsync -az --delete --exclude .build \
+  apps/mac/ <seu-usuário>@<mac>:runelay-bots/mac/
 ```
 
 Install an app that calls a new route only after the server with that route is up. Shortcuts, settings and pointing the app at another server: [apps/mac](apps/mac/README.md).

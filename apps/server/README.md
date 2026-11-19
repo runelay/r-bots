@@ -7,7 +7,7 @@ The bots gateway: one Node 24 process (tsx, raw `node:http`, no database) on `12
 Production runs in Docker from the repo root (`compose.yaml`, image built from `apps/server/Dockerfile`, container `runelay-bots`, `network_mode: host`, `restart: unless-stopped`, healthcheck on `GET /bots`):
 
 ```bash
-cd /home/anderson/projects/runelay-bots
+cp .env.example .env                   # once: paths, uid/gid and optional features
 docker compose up -d --build           # rebuild after changing apps/server or packages
 docker compose restart                 # restart (picks up .env.local changes, not code changes)
 docker compose logs -f --tail 200      # logs
@@ -25,11 +25,11 @@ env -u CLAUDE_CONFIG_DIR GATEWAY_PORT=2100 BOTS_DATA_DIR=/path/to/data-copy BOTS
   node --import tsx src/index.ts
 ```
 
-What the image carries: Node 24, git, gh, supabase CLI, ffmpeg, agent-browser + its Chrome, Claude Code and Codex CLIs (versions pinned as build args), pnpm, bun, and the virtual desktop (Xvfb, openbox, xterm, xdotool, user `runelaybot` uid 1501 with sudo from `anderson`, Chrome copied to `/opt/runelay-chrome`). It runs as `anderson` (uid/gid 1000), so files it writes in repos stay yours. Dependencies come from the root `package-lock.json` (npm workspaces, `npm ci --omit=dev`).
+What the image carries: Node 24, git, gh, supabase CLI, ffmpeg, agent-browser + its Chrome, Claude Code and Codex CLIs (versions pinned as build args), pnpm, bun, and the virtual desktop (Xvfb, openbox, xterm, xdotool, user `runelaybot` uid 1501 with sudo from `app`, Chrome copied to `/opt/runelay-chrome`). It runs as `app` with `HOME=/home/app`; its uid/gid come from the build args `APP_UID`/`APP_GID` (compose passes `BOTS_UID`/`BOTS_GID`, default 1000), so files it writes in repos stay yours. Dependencies come from the root `package-lock.json` (npm workspaces, `npm ci --omit=dev`).
 
-Mounts, all at the same absolute path inside and outside: `/home/anderson/projects` (repos and `worktrees/`), the data dir (`/home/anderson/projects/runelay-bots/data` by default), `~/.claude`, `~/.claude.json`, `~/.codex` (read-write, tokens refresh), `~/.config/gh`, `~/.supabase`, `~/.gitconfig` (ro), `/home/runelaybot` (desktop Chrome profiles). The root `.env.local` is mounted read-only at `/app/apps/server/.env.local` and `start.sh` sources it (on the host it reads `../../.env.local`).
+Mounts, every path from `.env` (see `.env.example`): `PROJECTS_DIR` and `CODE_WORKTREES_DIR` at the same absolute path inside and outside (worktrees store absolute paths), the data dir at `/data` (`BOTS_DATA_DIR`, default `~/.local/share/runelay-bots`), from `HOST_HOME` into `/home/app`: `.claude`, `.claude.json`, `.codex` (read-write, tokens refresh), `.config/gh`, `.supabase`, `.gitconfig` (ro), and `DESKTOP_HOME_DIR` at `/home/runelaybot` (desktop Chrome profiles; empty uses the `desktop-home` volume). Optional features stay off without their variable: `CONTY_API_DIR` (prod_query), `MAC_RUNNER_URL` and `PUBLIC_MCP_BASE` (Mac runner over HTTP, in `.env.local`). The root `.env.local` is mounted read-only at `/app/apps/server/.env.local` and `start.sh` sources it (on the host it reads `../../.env.local`).
 
-Test a second instance without touching production: copy `data/` somewhere, write an env file without `RUNELAY_MCP_*`, and an override file with `BOTS_CONTAINER_NAME=runelay-bots-test`, `GATEWAY_PORT=2100`, `BOTS_DATA_DIR=<copy>`, `BOTS_SCHEDULES=off`, `BOTS_ENV_FILE=<env>`, `BOTS_IMAGE=runelay-bots-server:test`; then `docker compose -p runelay-bots-test --env-file <override> up -d --build` (and `down` with the same flags).
+Test a second instance without touching production: copy `data/` somewhere, write an env file without `RUNELAY_MCP_*`, and an override file with `BOTS_CONTAINER_NAME=runelay-bots-test`, `GATEWAY_PORT=2100`, `BOTS_DATA_DIR=<copy>`, `BOTS_SCHEDULES=off`, `BOTS_ENV_FILE=<env>`, `BOTS_IMAGE=runelay-bots-server:test`; then `docker compose -p runelay-bots-test --env-file .env --env-file <override> up -d --build` (and `down` with the same flags).
 
 Roll back to systemd (the unit at `~/.config/systemd/user/runelay-bots.service` runs `apps/server/start.sh`):
 

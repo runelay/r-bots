@@ -1,6 +1,6 @@
 # Grok Bot por dentro: o que aprender para o runelay bots
 
-Pesquisa de 19/11/2026, só leitura, no Mac (`andersonbrdev@100.122.172.127`, macOS 26). Grok Bot 1.2.3, CLI `grok` 1.0.77.
+Pesquisa de 19/11/2026, só leitura, no Mac (macOS 26). Grok Bot 1.2.3, CLI `grok` 1.0.77.
 Fontes: o bundle (`app.asar`, extraído numa pasta temporária e apagado depois), `~/.grok`, `~/.grokbot`, `~/Library/Application Support/Grok Bot`, os processos e conexões, e a documentação da CLI que vem instalada em `~/.grok/docs/user-guide/`.
 Não copiei código. Não guardei nenhum segredo nem conteúdo de conversa: nesta página aparecem só nomes de campos.
 

@@ -25,7 +25,7 @@
 
 ### Bots as data
 
-Since 19/11 (evening) bots are only data: `data/bots/<id>.json`, created by the person or by another bot (`create_bot`). There is no seed and no built-in bot: an empty `BOTS_DATA_DIR` starts with `GET /bots` → `[]` and the app shows "Criar seu primeiro bot". The `builtIn` field was dropped from responses (old files may still carry it; it is ignored), no bot is protected from edit, archive or delete, and the list is ordered by `createdAt` (then `id`). Delegation targets are every other active bot (`delegatesOf`). `LEGACY_SERVER_DIR` is gone; the old eve server lives in `/home/anderson/projects/runelay-bots-archive/server-eve`. The examples below predate this and still show `builtIn`.
+Since 19/11 (evening) bots are only data: `data/bots/<id>.json`, created by the person or by another bot (`create_bot`). There is no seed and no built-in bot: an empty `BOTS_DATA_DIR` starts with `GET /bots` → `[]` and the app shows "Criar seu primeiro bot". The `builtIn` field was dropped from responses (old files may still carry it; it is ignored), no bot is protected from edit, archive or delete, and the list is ordered by `createdAt` (then `id`). Delegation targets are every other active bot (`delegatesOf`). `LEGACY_SERVER_DIR` is gone; the old eve server lives in `runelay-bots-archive/server-eve`, outside this repo. The examples below predate this and still show `builtIn`.
 
 #### `GET /bots` → 200 (archived bots only with `?archived=1`)
 

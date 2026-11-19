@@ -65,7 +65,7 @@ Claude: com imagens, `packages/providers/src/claude.ts` passa o prompt como mens
 ### Ferramentas do bot (todos os bots, sem aprovação)
 
 - `send_file {path, name?}` copia um arquivo do servidor para os uploads (`source:"bot"`) e emite, depois do `call.settled`:
-  `{"type":"file.sent","data":{"attachment":{…formato do upload…},"botId","callId"}}`. Só aceita caminhos (resolvidos com realpath) dentro da pasta de dados, de `/home/anderson/projects/worktrees`, de `/home/runelaybot` ou de `/tmp`; nega `.env*`, `.git`, `.ssh`, `.claude`. Arquivo do Mac da pessoa não dá (ficou para depois).
+  `{"type":"file.sent","data":{"attachment":{…formato do upload…},"botId","callId"}}`. Só aceita caminhos (resolvidos com realpath) dentro da pasta de dados, de `CODE_WORKTREES_DIR`, de `/home/runelaybot` ou de `/tmp`; nega `.env*`, `.git`, `.ssh`, `.claude`. Arquivo do Mac da pessoa não dá (ficou para depois).
 - `attachment_read {uploadId, offset?, limit?}` lê o texto (anydoc/pdftotext/UTF-8) em pedaços de até 200 000 caracteres; para binários devolve tipo, tamanho e caminho.
 - O system prompt ganhou a seção `## Arquivos` (`uploadGuide`).
 

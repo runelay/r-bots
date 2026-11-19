@@ -6,9 +6,9 @@ Code belongs to the conversation, not to the bot. There is no `capabilities.code
 
 ### Repositories
 
-`GET /code/repos?query=&refresh=1` → 200, sorted by name. Scans `CODE_REPO_ROOTS` (default `/home/anderson/projects/conty-dev,/home/anderson/projects`) for folders with a `.git` directory, skipping `worktrees/` and bind-mounted duplicates (same dev+inode). Cached 30 s.
+`GET /code/repos?query=&refresh=1` → 200, sorted by name. Scans `CODE_REPO_ROOTS` (default `~/projects`) for folders with a `.git` directory, skipping `worktrees/` and bind-mounted duplicates (same dev+inode). Cached 30 s.
 ```json
-[{"name":"conty-api","path":"/home/anderson/projects/conty-dev/conty-api","location":"conty-dev","branch":"feat/overlays-compartilhaveis"}]
+[{"name":"my-api","path":"/home/<seu-usuário>/projects/acme/my-api","location":"acme","branch":"feat/overlays-compartilhaveis"}]
 ```
 A name can appear twice when two different clones exist (`conty-lp` under `conty-dev/` and `projects/`); resolution by name takes the first root (`conty-dev`).
 
@@ -21,7 +21,7 @@ Three ways, same result:
 
 What happens:
 - `git fetch origin` (45 s, errors ignored), base = first of `origin/develop`, `origin/main`, `origin/master`, `develop`, `main`, `master`, `HEAD`.
-- `git worktree add -b feat/<slug> <CODE_WORKTREES_DIR>/<repo>-<bot>-<slug> <baseCommit>` (default dir `/home/anderson/projects/worktrees`). Slug from the task (≤ 40 chars); `-2`, `-3`… when the folder or branch exists.
+- `git worktree add -b feat/<slug> <CODE_WORKTREES_DIR>/<repo>-<bot>-<slug> <baseCommit>` (default dir `~/projects/worktrees`). Slug from the task (≤ 40 chars); `-2`, `-3`… when the folder or branch exists.
 - Dependencies: never a symlink. The lockfile decides (`bun install --frozen-lockfile`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`, `npm ci`), in the background, log in `data/code/<id>/install.log`. `dev_server_start` waits for it.
 - The same repo again in the same conversation reuses the worktree (`reopened`).
 - Mid-turn switch: when `workspace_open` succeeds, the server ends the current provider run itself (~300 ms after the tool result) and continues **the same turn** in a fresh provider session with cwd = worktree, a summary of the conversation and the original request. Leaving it to the model failed: it read "end your answer" and called `workspace_close`.
@@ -107,7 +107,7 @@ Tools (only while a workspace is open): `dev_server_start({cmd, port?, cwd?})`, 
 - "+" in the composer: "Trabalhar num repositório…" (searchable list from `/code/repos`), "Ver mudanças" when open; `/repo` in the "/" menu; `@repo` in the text.
 - Top of the conversation: one quiet line `repo · branch · N arquivos +a −r` (spinner while installing) that opens the Changes panel.
 - Diff card per `code.edit`: file name strong, folder grey, `+N −M`, mono lines with one number gutter, removed lines on a subtle red, added on a subtle green, context runs collapsed into "⋯ N linhas" (expand on click, also before/after hunks from `after`), light regex highlight for ts/tsx/js, swift, sql, css, json, py, sh. Cards over 40 rows show "Mostrar tudo".
-- Changes panel (modal): file list with `+/−` and status, full diff of the selected file, "Ver tudo", "Desfazer arquivo" (confirm), "Abrir no editor" (Zed CLI `zed ssh://<host><path>`, else VS Code Remote URL, else copies the path; host in `UserDefaults codeEditorHost`, default `anderson@vps.taile89599.ts.net`), "Abrir o app no Safari" (preview link), "Entregar" (commit / commit e PR), "Voltar para antes de um pedido" (rewind), "Fechar o repositório".
+- Changes panel (modal): file list with `+/−` and status, full diff of the selected file, "Ver tudo", "Desfazer arquivo" (confirm), "Abrir no editor" (Zed CLI `zed ssh://<host><path>`, else VS Code Remote URL, else copies the path; host in `UserDefaults codeEditorHost`, empty by default, which only copies the path), "Abrir o app no Safari" (preview link), "Entregar" (commit / commit e PR), "Voltar para antes de um pedido" (rewind), "Fechar o repositório".
 - Right click on a user message: "Desfazer este pedido (arquivos e conversa)".
 - Sidebar: small `</> N` badge on bots whose thread has a workspace open (blue while working).
 - Approval cards gain "Sempre neste repo"; two or more open approvals show "Permitir todos / Agora não para todos" above the composer.

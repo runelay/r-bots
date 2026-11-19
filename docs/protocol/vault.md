@@ -86,7 +86,7 @@ Protege contra:
 - sincronização acidental: o Keychain não vai para o iCloud nem sai deste aparelho.
 
 Não protege contra:
-- quem tem shell no container ou no host como `anderson`: o servidor, a chave e o Bash do modo código rodam com o mesmo usuário, então um processo malicioso consegue ler a memória do servidor e a chave (o portão do modo código bloqueia os caminhos, mas não é uma fronteira de usuário);
+- quem tem shell no container ou no host como o usuário do servidor: o servidor, a chave e o Bash do modo código rodam com o mesmo usuário, então um processo malicioso consegue ler a memória do servidor e a chave (o portão do modo código bloqueia os caminhos, mas não é uma fronteira de usuário);
 - o site de destino devolver o valor na própria página (o snapshot é mascarado, mas um texto da página que repete o valor aparece em prints como pixels);
 - transformações que a máscara não conhece (o Bash com segredo nega as ferramentas comuns de conversão, mas não todas as combinações possíveis);
 - o segredo com "usar com o Mac fechado": com o Mac offline, os bots usam sem Touch ID;

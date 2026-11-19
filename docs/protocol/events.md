@@ -35,7 +35,7 @@ Events the Mac renders, verbatim from the captures (one event per line, as it si
 {"data":{"outcome":"applied","responseId":"response_6fd61b89-b3c2-40a7-bbe5-1dd6d0a8ba8e_0"},"type":"response.settled","scope":{"turnId":"turn_0"}}
 {"data":{"cause":{"responseId":"response_6fd61b89-b3c2-40a7-bbe5-1dd6d0a8ba8e_0"},"interactionId":"4WKDdxz39zyo4E6L","outcome":"accepted","response":{"optionId":"approve"}},"type":"interaction.settled","scope":{"turnId":"turn_0"}}
 {"data":{"callId":"call_probe_1","clearedBy":{"interactionId":"4WKDdxz39zyo4E6L"}},"type":"call.started","scope":{"turnId":"turn_0","runId":"run_0"}}
-{"data":{"callId":"call_probe_1","outcome":"completed","output":{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T12:18:22.831Z","screenshot":"/home/anderson/projects/runelay-bots/server/.data/bots/lia/browser/shots/2026-11-19T12-18-22-323Z.png"}},"type":"call.settled","scope":{"turnId":"turn_0","runId":"run_0"}}
+{"data":{"callId":"call_probe_1","outcome":"completed","output":{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T12:18:22.831Z","screenshot":"/data/bots/lia/browser/shots/2026-11-19T12-18-22-323Z.png"}},"type":"call.settled","scope":{"turnId":"turn_0","runId":"run_0"}}
 {"data":{"kind":"text","partId":"run_1.0","phase":"reply","runId":"run_1","value":"Pronto, cliquei no link."},"type":"content.completed","scope":{"runId":"run_1","turnId":"turn_0"}}
 {"data":{"outcome":"completed","reply":["run_1.0"],"turnId":"turn_0"},"type":"turn.settled","scope":{"turnId":"turn_0"}}
 {"data":{"deliveryId":"6fd61b89-b3c2-40a7-bbe5-1dd6d0a8ba8e","outcome":"handled","turnId":"turn_0"},"type":"delivery.settled"}

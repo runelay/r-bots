@@ -45,7 +45,7 @@ While a turn runs for a bot with `capabilities.browser` (or one of its delegates
 
 ### `GET /bots/:id/browser/live` (WebSocket)
 
-`wss://vps.taile89599.ts.net:10447/bots/lia/browser/live` (through tailscale serve) or `ws://127.0.0.1:2000/...`. Only for bots with `capabilities.browser`, otherwise the upgrade gets 404. If the bot never opened a page, the server opens `about:blank` at 1280×800 first, so there is always a page.
+`wss://<servidor>:10447/bots/lia/browser/live` (through tailscale serve) or `ws://127.0.0.1:2000/...`. Only for bots with `capabilities.browser`, otherwise the upgrade gets 404. If the bot never opened a page, the server opens `about:blank` at 1280×800 first, so there is always a page.
 
 The server attaches to the bot's agent-browser Chrome through CDP (`agent-browser --session runelay-<botId> get cdp-url`, `Target.attachToTarget` on the open tab) and runs `Page.startScreencast {format:"jpeg", quality:70, maxWidth:1280, maxHeight:800, everyNthFrame:1}`, acking each frame. The screencast runs only while at least one client is connected; the last client leaving stops it.
 
@@ -101,7 +101,7 @@ Started on first use, as `runelaybot`:
 
 Input is sent with `xdotool` against `DISPLAY=:N`. A desktop stops after 10 minutes without viewers or tool use, when the bot is archived or deleted, and when the server stops.
 
-Residual risk: Chrome runs with `--no-sandbox`. Xvfb uses `-ac`, so any local user can connect to the display over the unix socket (TCP is off). The desktop user can still read world-readable files on the host. It has no sudo and cannot read `/home/anderson`.
+Residual risk: Chrome runs with `--no-sandbox`. Xvfb uses `-ac`, so any local user can connect to the display over the unix socket (TCP is off). The desktop user can still read world-readable files on the host. It has no sudo and cannot read the server user's home.
 
 ### `GET /bots/:id/desktop/live` (WebSocket)
 

@@ -2,7 +2,7 @@
 
 ## v3 (19/11): AI proxy with connected accounts
 
-Captured on 2026-11-19 from `apps/server/` (gateway 127.0.0.1:2000, tailnet :10447) and the Mac runner (`100.122.172.127:4790`).
+Captured on 2026-11-19 from `apps/server/` (gateway 127.0.0.1:2000, tailnet :10447) and the Mac runner (`<ip-do-mac-no-tailnet>:4790`).
 
 ### Accounts
 
@@ -13,10 +13,10 @@ Captured on 2026-11-19 from `apps/server/` (gateway 127.0.0.1:2000, tailnet :104
  {"id":"vps:codex","runner":"vps","provider":"codex","label":"ChatGPT · Codex (VPS)","status":"ready","models":[{"id":"gpt-6.2-sol","label":"GPT-6.2-Sol"},"…"],"detail":"Logged in using ChatGPT"},
  {"id":"vps:grok","status":"missing","detail":"CLI não instalada nesta máquina.","models":[]},
  {"id":"vps:cursor","status":"missing"},
- {"id":"mac:claude","status":"ready","detail":"anderson@appconty.com · team"},
+ {"id":"mac:claude","status":"ready","detail":"voce@exemplo.com · team"},
  {"id":"mac:codex","status":"ready"},
  {"id":"mac:grok","status":"logged_out","detail":"Grok sem login (rode grok login no Mac).","models":[{"id":"grok-4.6","label":"grok-4.6"},{"id":"grok-4.5","label":"grok-4.5"}]},
- {"id":"mac:cursor","status":"ready","detail":"✓ Logged in as anderson@appconty.com","models":[{"id":"auto","label":"Auto (default)"},"… 284 models"]}]
+ {"id":"mac:cursor","status":"ready","detail":"✓ Logged in as voce@exemplo.com","models":[{"id":"auto","label":"Auto (default)"},"… 284 models"]}]
 ```
 
 `status`: `ready`, `logged_out`, `missing` (CLI not installed), `offline` (runner unreachable; all four `mac:*` entries turn offline with `detail` "Mac fora do ar: …").
@@ -32,7 +32,7 @@ Every bot now has `"engine":{"account":"vps:claude","model":"claude-sonnet-5-5",
 ### Runners
 
 - `vps`: in-process (claude via Agent SDK, codex CLI).
-- `mac`: `~/runelay-bots/runner` (launchd `com.runelay.bots.runner`, KeepAlive), listening on `100.122.172.127:4790` only, `Authorization: Bearer $RUNNER_TOKEN` (shared with `.env.local`). `GET /health` (no auth), `GET /accounts`, `POST /turns` (body = turn request, response = NDJSON provider events), `POST /turns/:turnId/cancel`.
+- `mac`: `~/runelay-bots/runner` (launchd `com.runelay.bots.runner`, KeepAlive), listening on `<ip-do-mac-no-tailnet>:4790` only, `Authorization: Bearer $RUNNER_TOKEN` (shared with `.env.local`). `GET /health` (no auth), `GET /accounts`, `POST /turns` (body = turn request, response = NDJSON provider events), `POST /turns/:turnId/cancel`.
 
 How each CLI runs (per-session empty work dir; no global config edited):
 - claude: Agent SDK, `tools: []`, `allowedTools: ["mcp__bots"]`, `permissionMode: "dontAsk"`, `settingSources: []`, `strictMcpConfig`, claude.ai connectors off, MCP as `type: "http"`.
