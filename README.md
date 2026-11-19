@@ -6,7 +6,9 @@
 <p align="center">
   <img alt="self-hosted" src="https://img.shields.io/badge/self--hosted-docker-2496ED?style=flat-square&logo=docker&logoColor=white" />
   <img alt="Claude Agent SDK" src="https://img.shields.io/badge/engine-Claude%20Agent%20SDK-d97757?style=flat-square" />
-  <img alt="Node 24" src="https://img.shields.io/badge/server-node%2024-5fa04e?style=flat-square&logo=nodedotjs&logoColor=white" />
+  <img alt="Bun" src="https://img.shields.io/badge/server-bun-000000?style=flat-square&logo=bun&logoColor=white" />
+  <img alt="TypeScript strict" src="https://img.shields.io/badge/typescript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" />
+  <img alt="Coverage gate 99%" src="https://img.shields.io/badge/coverage%20gate-99%25%20per%20file-2ea44f?style=flat-square" />
   <img alt="macOS 15" src="https://img.shields.io/badge/app-macOS%2015%20·%20SwiftUI-111111?style=flat-square&logo=apple&logoColor=white" />
   <img alt="Tailscale" src="https://img.shields.io/badge/network-tailnet%20only-242424?style=flat-square&logo=tailscale&logoColor=white" />
 </p>
@@ -19,6 +21,7 @@
 <p align="center">
   <a href="#-quick-start"><b>Quick start</b></a> ·
   <a href="#-install-the-mac-app"><b>Mac app</b></a> ·
+  <a href="#-development"><b>Development</b></a> ·
   <a href="docs/protocol/README.md"><b>Protocol</b></a> ·
   <a href="#-security"><b>Security</b></a>
 </p>
@@ -74,6 +77,8 @@ flowchart LR
 
 ## 🚀 Quick start
 
+### Docker (production)
+
 The server runs in Docker on the VPS, from the repo root:
 
 ```sh
@@ -83,25 +88,41 @@ docker compose up -d
 
 No `.env` and no variable to set: data in `~/.local/share/runelay-bots`, backups in `~/.local/share/runelay-bots-backups`, your Claude Code, Codex, gh and supabase logins mounted from `$HOME`, the vault key created in the data dir. The container adapts to the uid of your HOME. Bots only touch repositories you allow: when you ask for work in a new repo, the bot asks with a card (`workspace_add`) and remembers what the repo is.
 
-That builds `apps/server/Dockerfile`, starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `~/.local/share/runelay-bots`, outside the code. Service keys are not files: ElevenLabs (voice), Jev (automatic approvals) and runelay (connectors, memory, skills) are pasted in the app under **Settings › Integrations**, validated on the spot and stored encrypted on the server. All three are optional; without one, that part turns off and everything else works. The runner token and the session secret are generated on first boot into the data dir. `tailscale serve` exposes the port on the tailnet at `:10447`.
+That builds `apps/server/Dockerfile` (Bun runtime plus the Claude Code, Codex, gh, supabase and agent-browser CLIs), starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `~/.local/share/runelay-bots`, outside the code. Service keys are not files: ElevenLabs (voice), Jev (automatic approvals) and runelay (connectors, memory, skills) are pasted in the app under **Settings › Integrations**, validated on the spot and stored encrypted on the server. All three are optional; without one, that part turns off and everything else works. The runner token and the session secret are generated on first boot into the data dir. `tailscale serve` exposes the port on the tailnet at `:10447`.
 
 ```sh
 docker compose logs -f --tail 200   # logs
+docker compose ps                   # status and health
 docker compose restart              # restarts the server, not a rebuild
 curl -s 127.0.0.1:2000/status       # never restart with a bot working
 ```
 
-### Development
+### Bun (on the host)
 
 ```sh
-npm ci                     # npm workspaces: apps/server + packages/*
-npm run check              # Biome: format and lint
+bun install
 cd apps/server
 env -u CLAUDE_CONFIG_DIR GATEWAY_PORT=2100 BOTS_DATA_DIR=/path/to/data-copy BOTS_SCHEDULES=off \
-  node --import tsx src/index.ts
+  bun src/index.ts
 ```
 
-A second instance on its own port and a copy of `data/` never touches production. Running a test container, env vars and the systemd rollback: [apps/server](apps/server/README.md).
+A second instance on its own port and a copy of `data/` never touches production. The engine needs a logged-in Claude Code on the machine; `ANTHROPIC_API_KEY` is unset at boot on purpose. Env vars, a test container and the systemd rollback: [apps/server](apps/server/README.md).
+
+## 🧪 Development
+
+```sh
+bun install          # workspaces: apps/server + packages/*
+bun run dev          # server with --watch
+bun run test         # bun:test, coverage gate
+bun run check        # Biome: format and lint (writes fixes)
+bun run typecheck    # tsc --noEmit in every workspace
+```
+
+**Tests are part of the change.** The suite is `bun:test`, with a gate of 99% lines and 99% functions per file (`coverageThreshold` in each workspace's `bunfig.toml`). New code ships with its tests in the same PR. Tests live in `src/**/__tests__/*.test.ts`, use a temporary data dir, talk only to `127.0.0.1` and run every CLI and the Agent SDK through fakes. The Swift app is outside the gate.
+
+**The contract moves with the code.** A change to a route, event or bot tool updates [docs/protocol](docs/protocol/README.md) in the same PR.
+
+The full rules for humans and agents (layout, testing, protocol, code style, security, git) are in [AGENTS.md](AGENTS.md).
 
 ## 🍎 Install the Mac app
 
@@ -121,24 +142,22 @@ rsync -az --delete --exclude .build \
 
 Install an app that calls a new route only after the server with that route is up. Shortcuts, settings and pointing the app at another server: [apps/mac](apps/mac/README.md).
 
-## 🗂️ Layout
+## 🗂️ Monorepo
 
-```
-apps/
-  server/      Node 24 gateway: src/{index,app}.ts, config/, shared/, modules/<domain>/{routes,services,...}
-  mac/         SwiftUI app: App/, Features/<domain>/, Common/, Design/, Networking/, Stores/, Models/
-packages/
-  providers/   Claude, Codex, Cursor and Grok adapters, process tree helpers
-  protocol/    provider, event and turn types shared by server and providers
-docs/
-  protocol/    the verified contract, split by topic (v1 to v30)
-  research/    notes behind design decisions
-data/          bots, sessions, conversations, uploads, vault (git-ignored)
-compose.yaml   production container
-```
+| Path | What it is |
+|---|---|
+| [`apps/server`](apps/server/README.md) | Bun gateway: `src/{index,app}.ts`, `config/`, `db/` (SQLite + Drizzle), `shared/`, `modules/<domain>/{routes,services,repositories}` |
+| [`apps/mac`](apps/mac/README.md) | SwiftUI app: `App/`, `Features/<domain>/`, `Common/`, `Design/`, `Networking/`, `Stores/`, `Models/` |
+| `packages/providers` | Claude, Codex, Cursor and Grok adapters, process tree helpers |
+| `packages/protocol` | Provider, event and turn types shared by server and providers |
+| [`docs/protocol`](docs/protocol/README.md) | The verified contract, split by topic (v1 to v30) |
+| `docs/research` | Notes behind design decisions |
+| `data/` | SQLite database and local blobs; default `~/.local/share/runelay-bots`, set by `BOTS_DATA_DIR` (git-ignored) |
+| `compose.yaml` | Production container |
 
 ## 📖 Docs
 
+- [AGENTS.md](AGENTS.md): rules for working in this repo, for people and coding agents
 - [Protocol](docs/protocol/README.md): every route, event and payload, with a version → file index
 - [Contract](docs/protocol/CONTRACT.md): what the app and the server promise each other
 - [Server](apps/server/README.md): run, env, layout, engine and resource limits
@@ -156,7 +175,7 @@ compose.yaml   production container
 ## 🗺️ Roadmap
 
 - Break the remaining import cycle between the engine, conversations and the MCP gateway
-- Tests per server module
+- Bring every server module and package under the 99% coverage gate
 - Measure scrolling in long conversations in fps
 
 <br />
