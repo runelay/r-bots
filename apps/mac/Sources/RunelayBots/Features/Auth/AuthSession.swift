@@ -216,9 +216,6 @@ final class AuthSession: NSObject {
         if server.scheme == "https" {
             properties[.secure] = "TRUE"
         }
-        if let expiresAt = profile.expiresAt {
-            properties[.expires] = expiresAt
-        }
         guard let item = HTTPCookie(properties: properties) else { return }
         HTTPCookieStorage.shared.setCookie(item)
         WKWebsiteDataStore.default().httpCookieStore.setCookie(item)

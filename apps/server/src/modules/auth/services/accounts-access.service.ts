@@ -171,5 +171,5 @@ export type AccessService = ReturnType<typeof createAccessService>;
 export function signSessionCookie(token: string, secret: string) {
   if (token.includes(".")) return token;
   const signature = createHmac("sha256", secret).update(token).digest("base64");
-  return `${token}.${signature}`;
+  return encodeURIComponent(`${token}.${signature}`);
 }
