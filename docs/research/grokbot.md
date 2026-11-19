@@ -85,7 +85,7 @@ Não copiei código. Não guardei nenhum segredo nem conteúdo de conversa: nest
 
 **Evidência:** o schema de `worktrees.db`; `18-sandbox.md`; `16-subagents.md` § Isolation; `17-sessions.md` § Worktree Sessions; as strings `workspace_readwrite` e `insecure_none` e os padrões `.git/worktrees/*/commondir` em `local-exec-daemon/main.cjs`.
 
-**Adotar.** O v19 (`apps/server/src/code.ts`) já faz `git worktree add -b <branch> <path> <commit>` em `CODE_WORKTREES_DIR` e guarda `baseCommit`. Falta:
+**Adotar.** O v19 (`apps/server/src/modules/code/services/workspace.service.ts`) já faz `git worktree add -b <branch> <path> <commit>` em `CODE_WORKTREES_DIR` e guarda `baseCommit`. Falta:
 - **Registro persistente dos worktrees** (sessão, bot, base, status, último acesso) e **GC por idade**, com pin. Hoje um worktree órfão fica para sempre.
 - **Operação explícita de `apply`/entregar** (merge, cherry-pick ou PR) separada de `close`.
 - **Não reinstalar dependências a cada worktree.** Seguir a ideia do Grove: reaproveitar `node_modules` ou o cache. Atenção: a regra da casa proíbe symlink de `node_modules`, então o caminho é cache de pacotes ou `pnpm store`, não link.
@@ -260,7 +260,7 @@ Não copiei código. Não guardei nenhum segredo nem conteúdo de conversa: nest
 
 ---
 
-## 6. Comparação direta com o v19 (modo código, `apps/server/src/code.ts`)
+## 6. Comparação direta com o v19 (modo código, `apps/server/src/modules/code/services/workspace.service.ts`)
 
 O PROTOCOL.md (hoje em docs/protocol/) ainda não tinha a seção v19. O que existe está no código:
 

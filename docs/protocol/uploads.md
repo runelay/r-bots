@@ -2,7 +2,7 @@
 
 ## v22 (19/11): anexos (imagem, vídeo, áudio e arquivos), nos dois sentidos
 
-Código em `apps/server/src/uploads.ts`; app em `Features/Conversation/Models/Attachment.swift` e `Features/Conversation/Views/AttachmentViews.swift`.
+Código em `apps/server/src/modules/uploads/services/uploads.service.ts`; app em `Features/Conversation/Models/Attachment.swift` e `Features/Conversation/Views/AttachmentViews.swift`.
 
 ### Upload
 

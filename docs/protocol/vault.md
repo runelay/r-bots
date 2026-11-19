@@ -2,7 +2,7 @@
 
 ## v23 (19/11): cofre de segredos
 
-O modelo nunca vê o valor. Segredos são chamados por apelido (`segredo:github-token`) e o valor entra só no último instante, dentro da ferramenta. Código: `apps/server/src/vault.ts` (cofre, regras, histórico, rotas), `apps/server/src/modules/vault/services/vault-tools.service.ts` (ferramentas e instruções), `apps/server/src/shared/redact.ts` (máscara), `apps/server/bin/rb-secret-run.mjs` (Bash); app em `Features/Vault/Vault.swift`, `Features/Vault/VaultStore.swift`, `Features/Conversation/Views/SecretFormCard.swift`, `Features/Vault/VaultScreen.swift`, `Features/Computer/Executor/FrontmostPage.swift`.
+O modelo nunca vê o valor. Segredos são chamados por apelido (`segredo:github-token`) e o valor entra só no último instante, dentro da ferramenta. Código: `apps/server/src/modules/vault/services/vault.service.ts` (cofre, regras, histórico, rotas), `apps/server/src/modules/vault/services/vault-tools.service.ts` (ferramentas e instruções), `apps/server/src/shared/redact.ts` (máscara), `apps/server/bin/rb-secret-run.mjs` (Bash); app em `Features/Vault/Vault.swift`, `Features/Vault/VaultStore.swift`, `Features/Conversation/Views/SecretFormCard.swift`, `Features/Vault/VaultScreen.swift`, `Features/Computer/Executor/FrontmostPage.swift`.
 
 ### Onde o valor fica
 
