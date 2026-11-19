@@ -1,5 +1,4 @@
 /data/
-/server-sdk/
 node_modules/
 .build/
 .swiftpm/
