@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { and, count, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
 import { ulid } from "ulid";
 import { invite, user } from "../../../db/schema/auth";
 import { ValidationError } from "../../../shared/errors";
@@ -48,7 +48,11 @@ function readCredentials(body: unknown): Credentials {
   return { name, email, password };
 }
 
-export function createAccessService(auth: Auth, db: AuthDatabase) {
+export interface AccessOptions {
+  onOwnerCreated?: (owner: IssuedSession["user"]) => void | Promise<void>;
+}
+
+export function createAccessService(auth: Auth, db: AuthDatabase, options: AccessOptions = {}) {
   let setupRunning: Promise<unknown> | null = null;
 
   async function userCount() {
@@ -58,6 +62,16 @@ export function createAccessService(auth: Auth, db: AuthDatabase) {
 
   async function needsOwner() {
     return (await userCount()) === 0;
+  }
+
+  async function findOwner() {
+    const [row] = await db
+      .select({ id: user.id, name: user.name, email: user.email })
+      .from(user)
+      .where(eq(user.role, ownerRole))
+      .orderBy(asc(user.createdAt))
+      .limit(1);
+    return row ?? null;
   }
 
   async function signIn(email: string, password: string): Promise<IssuedSession> {
@@ -88,7 +102,9 @@ export function createAccessService(auth: Auth, db: AuthDatabase) {
     const run = (async () => {
       if (!(await needsOwner())) throw new SetupClosedError("O dono já foi criado. Peça um convite.");
       await createAccount(credentials, ownerRole);
-      return signIn(credentials.email, credentials.password);
+      const session = await signIn(credentials.email, credentials.password);
+      await options.onOwnerCreated?.(session.user);
+      return session;
     })();
     setupRunning = run;
     try {
@@ -168,7 +184,7 @@ export function createAccessService(auth: Auth, db: AuthDatabase) {
     return { id: created.id, key: created.key, name: runnerKeyName };
   }
 
-  return { needsOwner, setupOwner, createInvite, listInvites, revokeInvite, acceptInvite, issueRunnerKey };
+  return { needsOwner, findOwner, setupOwner, createInvite, listInvites, revokeInvite, acceptInvite, issueRunnerKey };
 }
 
 export type AccessService = ReturnType<typeof createAccessService>;

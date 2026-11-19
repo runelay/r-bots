@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { type Auth, apiKeyPrefix, authBasePath, devicePagePath, memberRole } from "./auth.service";
 
 export interface Principal {
@@ -5,7 +6,7 @@ export interface Principal {
   email: string;
   name: string;
   role: string;
-  method: "session" | "api-key";
+  method: "session" | "api-key" | "internal";
   sessionId?: string;
   apiKeyId?: string;
   expiresAt?: string;
@@ -52,7 +53,24 @@ function isUpgrade(request: Request) {
   return request.headers.get("upgrade")?.toLowerCase() === "websocket";
 }
 
-export function createAuthenticator(auth: Auth, options: { trustedOrigins: string[] }) {
+export interface InternalCredential {
+  token: () => string;
+  principal: () => Promise<Principal>;
+}
+
+export interface AuthenticatorOptions {
+  trustedOrigins: string[];
+  internal?: InternalCredential;
+}
+
+function matchesInternal(given: string, expected: string) {
+  if (expected.length < 24) return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
   const trusted = new Set(options.trustedOrigins.map((origin) => new URL(origin).origin));
 
   async function fromApiKey(key: string): Promise<Principal | null> {
@@ -89,6 +107,8 @@ export function createAuthenticator(auth: Auth, options: { trustedOrigins: strin
     const url = new URL(request.url);
     if (isPublicRoute(request.method, url.pathname)) return { kind: "public" };
     const token = readToken(request.headers);
+    if (token && options.internal && matchesInternal(token, options.internal.token()))
+      return { kind: "principal", principal: await options.internal.principal() };
     if (token?.startsWith(apiKeyPrefix)) {
       const principal = await fromApiKey(token);
       return principal ? { kind: "principal", principal } : unauthorized();

@@ -54,6 +54,7 @@ export function createAuth(config: AuthConfig) {
       max: 120,
       customRules: {
         "/sign-in/email": { window: 60, max: 5 },
+        "/change-password": { window: 60, max: 5 },
         "/passkey/verify-authentication": { window: 60, max: 10 },
         "/device/code": { window: 60, max: 10 },
         "/device/approve": { window: 60, max: 10 },

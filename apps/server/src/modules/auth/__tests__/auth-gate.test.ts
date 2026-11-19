@@ -6,12 +6,14 @@ import { join } from "node:path";
 import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/api";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import * as schema from "../../../db/schema/auth";
+import { readSetting } from "../../../db/settings";
 import { type AuthModule, createAuthModule, isPublicRoute, type Principal } from "..";
-import { authActive, authEnabled, gate, initAuth, principalOf, useAuthModule } from "../gate";
+import { authActive, authEnabled, authMode, gate, initAuth, principalOf, useAuthModule } from "../gate";
 import { readToken } from "../services/auth.middleware";
 import { apiKeyPrefix, appClientId, memberRole } from "../services/auth.service";
 
 const base = "http://127.0.0.1:2999";
+const internalToken = "internal-token-0123456789abcdef";
 let dir: string;
 let mod: AuthModule;
 let ownerToken = "";
@@ -51,6 +53,7 @@ beforeAll(async () => {
     serverDir: join(dir, "server"),
     host: "127.0.0.1",
     port: 2999,
+    internalToken: () => internalToken,
   });
   const setup = await handle(
     req("/auth/setup", {
@@ -164,6 +167,49 @@ describe("authenticate", () => {
   });
 });
 
+describe("internal token", () => {
+  test("maps the runner token to the owner and ignores near misses", async () => {
+    const outcome = (await mod.authenticate(req("/bots", { token: internalToken }))) as { principal: Principal };
+    expect(outcome.principal).toMatchObject({ email: "dona@example.com", role: "owner", method: "internal" });
+    const near = await mod.authenticate(req("/bots", { token: `${internalToken.slice(0, -1)}x` }));
+    expect((near as Response).status).toBe(401);
+    const short = await mod.authenticate(req("/bots", { token: "short" }));
+    expect((short as Response).status).toBe(401);
+  });
+
+  test("falls back to a neutral owner before anyone signs up and refuses a short configured token", async () => {
+    const empty = createAuthModule({
+      db: await freshDb(),
+      env: { BETTER_AUTH_URL: base },
+      dataDir: join(dir, "data-empty"),
+      repoDir: join(dir, "repo"),
+      serverDir: join(dir, "server"),
+      host: "127.0.0.1",
+      port: 2999,
+      internalToken: () => internalToken,
+    });
+    const outcome = (await empty.authenticate(req("/bots", { token: internalToken }))) as { principal: Principal };
+    expect(outcome.principal).toEqual({
+      userId: "internal",
+      email: "",
+      name: "runelay bots",
+      role: "owner",
+      method: "internal",
+    });
+    const weak = createAuthModule({
+      db: await freshDb(),
+      env: { BETTER_AUTH_URL: base },
+      dataDir: join(dir, "data-weak"),
+      repoDir: join(dir, "repo"),
+      serverDir: join(dir, "server"),
+      host: "127.0.0.1",
+      port: 2999,
+      internalToken: () => "tiny",
+    });
+    expect(((await weak.authenticate(req("/bots", { token: "tiny" }))) as Response).status).toBe(401);
+  });
+});
+
 describe("device authorization", () => {
   test("issues codes only to the app client", async () => {
     const ok = await handle(
@@ -179,13 +225,91 @@ describe("device authorization", () => {
 });
 
 describe("gate", () => {
-  test("is off unless BOTS_AUTH is on", async () => {
-    expect(authEnabled({})).toBe(false);
-    expect(authEnabled({ BOTS_AUTH: "ON" })).toBe(true);
-    expect(authEnabled()).toBe(false);
+  test("reads the mode from BOTS_AUTH and stays off only when forced", async () => {
+    expect(authMode({})).toBe("auto");
+    expect(authMode({ BOTS_AUTH: " ON " })).toBe("on");
+    expect(authMode({ BOTS_AUTH: "true" })).toBe("on");
+    expect(authMode({ BOTS_AUTH: "1" })).toBe("on");
+    expect(authMode({ BOTS_AUTH: "off" })).toBe("off");
+    expect(authMode({ BOTS_AUTH: "false" })).toBe("off");
+    expect(authMode({ BOTS_AUTH: "0" })).toBe("off");
+    expect(authMode({ BOTS_AUTH: "maybe" })).toBe("auto");
+    expect(authEnabled({})).toBe(true);
+    expect(authEnabled({ BOTS_AUTH: "off" })).toBe(false);
+    expect(authEnabled()).toBe(true);
     expect(await initAuth({ BOTS_AUTH: "off" })).toBeNull();
     expect(authActive()).toBe(false);
     expect(await gate(req("/bots"))).toBeNull();
+  });
+
+  test("waits for the owner in auto mode, then locks and records who owns the data", async () => {
+    const logs: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((line: string) => {
+      logs.push(line);
+    });
+    restores.push(() => log.mockRestore());
+    const created = await initAuth({ BETTER_AUTH_URL: base, BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
+    expect(created?.baseURL).toBe(base);
+    expect(logs).toContain(`auth waiting for the owner (${base}, secret from env)`);
+    expect(authActive()).toBe(false);
+    expect(await gate(req("/bots"))).toBeNull();
+    const status = await gate(req("/auth/setup"));
+    expect(await status?.json()).toMatchObject({ ok: true, needsOwner: true, required: false });
+    const device = await gate(req("/device"));
+    expect(device?.status).toBe(200);
+    const setup = await gate(
+      req("/auth/setup", {
+        method: "POST",
+        body: JSON.stringify({ name: "Ana", email: "ana@example.com", password: "correct horse battery" }),
+      }),
+    );
+    expect(setup?.status).toBe(201);
+    const { token, user } = (await (setup as Response).json()) as { token: string; user: { id: string } };
+    expect(authActive()).toBe(true);
+    expect((await readSetting<{ userId?: string }>("auth:owner", {})).userId).toBe(user.id);
+    expect((await gate(req("/bots")))?.status).toBe(401);
+    expect(await gate(req("/bots", { token }))).toBeNull();
+    const after = await gate(req("/auth/setup"));
+    expect(await after?.json()).toMatchObject({ needsOwner: false, required: true });
+    const again = await initAuth({ BETTER_AUTH_URL: base, BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
+    expect(again).not.toBeNull();
+    expect(authActive()).toBe(true);
+    const previous = process.env.RUNNER_TOKEN;
+    process.env.RUNNER_TOKEN = internalToken;
+    restores.push(() => {
+      process.env.RUNNER_TOKEN = previous;
+    });
+    const internal = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${internalToken}` } });
+    expect(await gate(internal)).toBeNull();
+    expect(principalOf(internal)).toMatchObject({ userId: user.id, method: "internal", role: "owner" });
+  });
+
+  test("keeps the owner when recording the claim fails", async () => {
+    const errors: unknown[] = [];
+    const error = spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args[0]);
+    });
+    restores.push(() => error.mockRestore());
+    const log = spyOn(console, "log").mockImplementation(() => undefined);
+    restores.push(() => log.mockRestore());
+    const settings = await import("../../../db/settings");
+    const write = spyOn(settings, "writeSetting").mockImplementation(() => {
+      throw new Error("disk full");
+    });
+    restores.push(() => write.mockRestore());
+    const { getDb } = await import("../../../db");
+    const { user } = await import("../../../db/schema/auth");
+    await getDb().delete(user);
+    await initAuth({ BETTER_AUTH_URL: base, BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
+    const setup = await gate(
+      req("/auth/setup", {
+        method: "POST",
+        body: JSON.stringify({ name: "Bia", email: "bia@example.com", password: "correct horse battery" }),
+      }),
+    );
+    expect(setup?.status).toBe(201);
+    expect(authActive()).toBe(true);
+    expect(errors).toContain("auth: could not record the owner");
   });
 
   test("initializes the real module when turned on", async () => {

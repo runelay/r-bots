@@ -93,7 +93,12 @@ describe("routes", () => {
 describe("first owner", () => {
   test("setup is open while there is no user", async () => {
     const response = await call("/auth/setup");
-    expect(await response.json()).toEqual({ ok: true, needsOwner: true });
+    expect(await response.json()).toEqual({
+      ok: true,
+      needsOwner: true,
+      required: true,
+      methods: { password: true, passkey: true, device: true, invites: true, passwordReset: false },
+    });
   });
 
   test("rejects invalid input", async () => {

@@ -13,8 +13,11 @@ export interface AuthRouteDeps {
   auth: Auth;
   access: AccessService;
   secret: string;
+  required?: () => boolean;
   now?: () => number;
 }
+
+export const authMethods = { password: true, passkey: true, device: true, invites: true, passwordReset: false };
 
 const attemptsWindowMs = 60_000;
 const attemptsMax = 5;
@@ -100,7 +103,12 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
           },
         });
       if (path === "/auth/setup" && method === "GET")
-        return json({ ok: true, needsOwner: await deps.access.needsOwner() });
+        return json({
+          ok: true,
+          needsOwner: await deps.access.needsOwner(),
+          required: deps.required?.() ?? true,
+          methods: authMethods,
+        });
       if (path === "/auth/setup" && method === "POST") {
         const blocked = limited(request, "setup");
         if (blocked) return blocked;
