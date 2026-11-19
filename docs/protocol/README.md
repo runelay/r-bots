@@ -21,6 +21,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 - [schedules-groups-sections.md](schedules-groups-sections.md): rotinas na thread, seções e grupos.
 - [blocks.md](blocks.md): blocos do bot (notas, planilhas, agenda), eventos `block.*`, rotas, ferramentas e exportação.
 - [usage-status-limits.md](usage-status-limits.md): uso e limites do Claude e do Codex, fila global de turnos, processos e limites do container.
+- [auth.md](auth.md): autenticação (better-auth): primeiro dono, convites, login por senha e Touch ID, chaves de API do runner e rotas livres.
 
 ## Versão → arquivo
 
@@ -59,6 +60,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v29 | várias conversas + modo de permissão | [conversations](conversations.md) (conversas, app, verificado), [approvals](approvals.md) (modo de permissão) |
 | v30 | fila de turnos, processos, mudanças em lote | [usage-status-limits](usage-status-limits.md) (fila, processos, container), [code](code.md) (mudanças em lote) |
 | v31 | blocos: notas, planilhas, agenda e exportação (contrato antes do servidor) | [blocks](blocks.md) |
+| v32 | autenticação: contas, sessões, passkey, chaves de API, primeiro dono e convites | [auth](auth.md) |
 
 ## Contrato
 
