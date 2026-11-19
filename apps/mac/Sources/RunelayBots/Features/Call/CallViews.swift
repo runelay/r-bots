@@ -354,8 +354,16 @@ struct CallStartButton: View {
 
     var body: some View {
         let active = call.isActive(for: bot.id)
+        let voiceOn = active || model.meta.integrationOn("elevenlabs")
         Button {
-            call.toggle(bot: bot, store: store, client: model.client)
+            if voiceOn {
+                call.toggle(bot: bot, store: store, client: model.client)
+            } else {
+                model.showNotice(
+                    "Conecte o ElevenLabs para voz natural.",
+                    action: NoticeAction(title: "Conectar") { model.openIntegrations() }
+                )
+            }
         } label: {
             Image(systemName: "waveform")
                 .font(.system(size: 14, weight: .bold))
@@ -366,7 +374,8 @@ struct CallStartButton: View {
                 .contentShape(Circle())
         }
         .buttonStyle(PressableButtonStyle())
-        .help(active ? "Encerrar o chat de voz" : "Começar um chat de voz com \(bot.name)")
+        .opacity(voiceOn ? 1 : 0.55)
+        .help(active ? "Encerrar o chat de voz" : voiceOn ? "Começar um chat de voz com \(bot.name)" : "Conecte o ElevenLabs para voz natural")
         .accessibilityLabel(active ? "Encerrar o chat de voz" : "Chat de voz")
     }
 }

@@ -127,7 +127,7 @@ struct AutoApproveToggle: View {
                 .labelsHidden()
                 .tint(Theme.brandAccent)
                 .clickable()
-                .help("Aprovar ações seguras automaticamente")
+                .help(model.meta.integrationOn("jev") ? "Aprovar ações seguras automaticamente" : "Conecte o Jev em Configurações › Integrações para aprovar sozinho")
                 .disabled(bot.isPending)
         } else {
             HStack(alignment: .top, spacing: Spacing.m) {
@@ -139,6 +139,10 @@ struct AutoApproveToggle: View {
                         .font(TypeScale.caption)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    if !model.meta.integrationOn("jev") {
+                        IntegrationShortcut(message: "Sem o Jev, toda ação de risco pede sua aprovação.", action: "Conectar Jev")
+                            .padding(.top, Spacing.xs)
+                    }
                 }
                 Spacer(minLength: Spacing.m)
                 Toggle("Aprovar ações seguras automaticamente", isOn: isOn)

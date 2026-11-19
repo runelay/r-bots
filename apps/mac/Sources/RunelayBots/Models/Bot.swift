@@ -441,17 +441,23 @@ struct ServerMeta: Sendable, Decodable {
     var engine: String? = nil
     var model: String? = nil
     var version: String? = nil
+    var integrations: [String: Bool]? = nil
 
     private enum CodingKeys: String, CodingKey {
-        case accents, capabilities, engine, model, version
+        case accents, capabilities, engine, model, version, integrations
     }
 
-    init(accents: [String], capabilities: [MetaCapability], engine: String? = nil, model: String? = nil, version: String? = nil) {
+    init(accents: [String], capabilities: [MetaCapability], engine: String? = nil, model: String? = nil, version: String? = nil, integrations: [String: Bool]? = nil) {
         self.accents = accents
         self.capabilities = capabilities
         self.engine = engine
         self.model = model
         self.version = version
+        self.integrations = integrations
+    }
+
+    func integrationOn(_ id: String) -> Bool {
+        integrations?[id] ?? true
     }
 
     init(from decoder: any Decoder) throws {
@@ -462,6 +468,7 @@ struct ServerMeta: Sendable, Decodable {
         engine = try? container.decodeIfPresent(String.self, forKey: .engine)
         model = try? container.decodeIfPresent(String.self, forKey: .model)
         version = try? container.decodeIfPresent(String.self, forKey: .version)
+        integrations = try? container.decodeIfPresent([String: Bool].self, forKey: .integrations)
     }
 
     var engineLabel: String? {

@@ -139,6 +139,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case notifications
     case bots
     case computer
+    case integrations
     case shortcuts
     case about
 
@@ -151,6 +152,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: "Notificações"
         case .bots: "Bots"
         case .computer: "Uso do computador"
+        case .integrations: "Integrações"
         case .shortcuts: "Atalhos"
         case .about: "Sobre"
         }
@@ -163,6 +165,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: "bell"
         case .bots: "person.2"
         case .computer: "desktopcomputer"
+        case .integrations: "key.horizontal"
         case .shortcuts: "command"
         case .about: "info.circle"
         }
@@ -1065,8 +1068,17 @@ final class AppModel {
             capabilities: loaded.capabilities.isEmpty ? ServerMeta.fallback.capabilities : loaded.capabilities,
             engine: loaded.engine,
             model: loaded.model,
-            version: loaded.version
+            version: loaded.version,
+            integrations: loaded.integrations
         )
+    }
+
+    func refreshMeta() async {
+        applyMeta(await client.meta())
+    }
+
+    func openIntegrations() {
+        openSettings(.integrations)
     }
 
     private static func milliseconds(_ duration: Duration) -> Int {

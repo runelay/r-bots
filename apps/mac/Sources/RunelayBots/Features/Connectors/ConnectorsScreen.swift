@@ -17,6 +17,16 @@ struct ConnectorsScreen: View {
                         }
                     }
                     .transition(.opacity)
+                } else if !model.meta.integrationOn("runelay") {
+                    PageHeaderView(
+                        title: "Catálogo",
+                        description: "Conecte suas contas uma vez. Todos os agentes da organização usam.",
+                        signed: true
+                    ) {
+                        EmptyView()
+                    }
+                    RunelayOffState()
+                        .transition(.opacity)
                 } else {
                     PageHeaderView(
                         title: "Catálogo",
@@ -48,7 +58,7 @@ struct ConnectorsScreen: View {
         .scrollEdgesHidden()
         .background(Theme.background)
         .springAnimation(value: store.detail)
-        .task {
+        .task(id: model.meta.integrationOn("runelay")) {
             await store.load(model: model)
             await model.loadConnectors()
         }
@@ -664,6 +674,26 @@ struct IconActionButton: View {
         }
         .help(label)
         .accessibilityLabel(label)
+    }
+}
+
+private struct RunelayOffState: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        VStack(spacing: Spacing.m) {
+            EmptyStateView(
+                systemImage: "powerplug",
+                title: "Conectores e memória estão desligados",
+                description: "Conecte o runelay para os bots usarem Linear, GitHub, Supabase e o resto das suas contas, além da memória e das skills compartilhadas."
+            )
+            Button("Conectar runelay") {
+                model.openIntegrations()
+            }
+            .buttonStyle(.brandPrimary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, Spacing.xxl)
     }
 }
 

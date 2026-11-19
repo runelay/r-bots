@@ -58,6 +58,7 @@ struct SettingsScreen: View {
                             case .notifications: NotificationSettings()
                             case .bots: BotsSettings()
                             case .computer: ComputerSettings()
+                            case .integrations: IntegrationsSettings()
                             case .shortcuts: ShortcutsSettings()
                             case .about: AboutSettings()
                             }
