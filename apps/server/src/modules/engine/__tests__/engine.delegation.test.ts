@@ -84,7 +84,11 @@ describe("delegation", () => {
       "working",
       "completed",
     ]);
-    expect(updates(session).at(-1)).toMatchObject({ botId: worker.id, callId: "call_del", summary: "Números ok (approve)." });
+    expect(updates(session).at(-1)).toMatchObject({
+      botId: worker.id,
+      callId: "call_del",
+      summary: "Números ok (approve).",
+    });
     expect(child.meta.permission).toBe("edit");
     expect(child.meta.conversation?.delegatedBy).toMatchObject({ botId: boss.id, callId: "call_del" });
     const workerRequest = fakeProviders.turns.find((turn) => turn.request.workKey.startsWith(`${worker.id}/`));
@@ -175,7 +179,9 @@ describe("delegation", () => {
       }),
     );
     await run(session);
-    expect(back.error).toBe(`${boss.name} está esperando uma resposta sua agora. Resolva você mesmo, sem delegar de volta.`);
+    expect(back.error).toBe(
+      `${boss.name} está esperando uma resposta sua agora. Resolva você mesmo, sem delegar de volta.`,
+    );
     expect(outcome.reply).toContain("Erro:");
   });
 
@@ -289,7 +295,11 @@ describe("groups", () => {
     session.log.lines.push("{broken");
     const record = track(spyOn(threads, "recordThreadMessage"));
     const route = track(
-      spyOn(decisions, "decideRoute").mockResolvedValue({ kind: "route", outcome: bia.id, answer: { choice: bia.id } } as never),
+      spyOn(decisions, "decideRoute").mockResolvedValue({
+        kind: "route",
+        outcome: bia.id,
+        answer: { choice: bia.id },
+      } as never),
     );
     fakeProviders.next(
       byBot({
@@ -325,7 +335,9 @@ describe("groups", () => {
     expect(anaRequest.resume).toBeNull();
     expect(factsOfType(session, "delivery.consumed")).toHaveLength(1);
     const recorded = record.mock.calls.map((call) => call[2]);
-    expect(recorded).toContainEqual(expect.objectContaining({ role: "bot", text: `${ana.name}: Números fechados.`, botId: ana.id }));
+    expect(recorded).toContainEqual(
+      expect.objectContaining({ role: "bot", text: `${ana.name}: Números fechados.`, botId: ana.id }),
+    );
     expect(recorded).toContainEqual(expect.objectContaining({ role: "user", text: "Como estão as vendas?" }));
     expect(conversationStatus(session.meta.sessionId)).toBe("idle");
   });
@@ -342,7 +354,12 @@ describe("groups", () => {
     await run(session, { text: `${ana.name}, tudo bem?` });
     expect(route).not.toHaveBeenCalled();
     expect(fakeProviders.turns).toHaveLength(4);
-    expect(fakeProviders.turns.map((turn) => turn.request.workKey.split("/")[0])).toEqual([ana.id, bia.id, ana.id, bia.id]);
+    expect(fakeProviders.turns.map((turn) => turn.request.workKey.split("/")[0])).toEqual([
+      ana.id,
+      bia.id,
+      ana.id,
+      bia.id,
+    ]);
   });
 
   test("falls back to the first member when the route has no choice", async () => {
@@ -352,7 +369,11 @@ describe("groups", () => {
     await run(session, { text: "alguém?" });
     expect(fakeProviders.turns).toHaveLength(1);
     track(
-      spyOn(decisions, "decideRoute").mockResolvedValue({ kind: "route", outcome: "x", answer: { choice: "fantasma" } } as never),
+      spyOn(decisions, "decideRoute").mockResolvedValue({
+        kind: "route",
+        outcome: "x",
+        answer: { choice: "fantasma" },
+      } as never),
     );
     await run(session, { text: "alguém?" });
     expect(fakeProviders.turns).toHaveLength(2);

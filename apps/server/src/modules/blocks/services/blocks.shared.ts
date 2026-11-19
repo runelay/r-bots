@@ -1,4 +1,12 @@
-import type { BlockAction, BlockAuthor, BlockChange, BlockEventData, BlockKind, BlockPreview, Page } from "@runelay-bots/protocol";
+import type {
+  BlockAction,
+  BlockAuthor,
+  BlockChange,
+  BlockEventData,
+  BlockKind,
+  BlockPreview,
+  Page,
+} from "@runelay-bots/protocol";
 import { ulid } from "ulid";
 import { readSetting, writeSetting } from "../../../db/settings";
 import { getStoredSession } from "../../conversations/services/sessions.service";
@@ -73,11 +81,7 @@ export function mergeRanges(ranges: Array<[number, number]>) {
   return merged.slice(0, 20);
 }
 
-export function staleCheck(
-  current: { version: number; updatedBy: string },
-  baseVersion: unknown,
-  author: BlockAuthor,
-) {
+export function staleCheck(current: { version: number; updatedBy: string }, baseVersion: unknown, author: BlockAuthor) {
   if (typeof baseVersion !== "number") return;
   if (baseVersion < current.version && current.updatedBy !== author)
     throw new BlockError("Mudou enquanto você editava. Recarregue para ver a versão nova.", 409, "stale", {

@@ -268,7 +268,11 @@ describe("threads", () => {
     const bot = await makeBot();
     const state = await ensureThread(bot.id);
     const session = getStoredSession(state.sessionId)!;
-    await recordThreadMessage(bot.id, state.sessionId, { role: "user", text: "oi, pode montar o relatório?", at: "t1" });
+    await recordThreadMessage(bot.id, state.sessionId, {
+      role: "user",
+      text: "oi, pode montar o relatório?",
+      at: "t1",
+    });
     expect(session.meta.title).toBe("Montar o relatório");
     expect(state.lastMessage?.text).toBe("oi, pode montar o relatório?");
     await recordThreadMessage(bot.id, state.sessionId, { role: "bot", text: "feito", at: "t2" });

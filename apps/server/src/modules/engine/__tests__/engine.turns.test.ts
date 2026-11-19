@@ -409,7 +409,11 @@ describe("usage limits", () => {
     expect(lastRequest().provider).toBe("codex");
     expect(lastRequest().effort).toBeNull();
     const failover = factsOfType(session, "account.failover")[0].data;
-    expect(failover).toMatchObject({ from: "vps:claude", to: "vps:codex", line: "Limite do Claude acabou · continuei com Codex" });
+    expect(failover).toMatchObject({
+      from: "vps:claude",
+      to: "vps:codex",
+      line: "Limite do Claude acabou · continuei com Codex",
+    });
     expect(typeof failover.until).toBe("string");
     expect(session.meta.failover).toMatchObject({ from: "vps:claude", to: "vps:codex" });
     await run(session);
@@ -438,7 +442,12 @@ describe("usage limits", () => {
 
   test("names the runner when the fallback is the same provider elsewhere", async () => {
     const bot = await makeBot();
-    bot.engine = { account: "vps:claude", model: "m", effort: "high", fallback: { account: "mac:claude", model: "m2" } };
+    bot.engine = {
+      account: "vps:claude",
+      model: "m",
+      effort: "high",
+      fallback: { account: "mac:claude", model: "m2" },
+    };
     const session = await newSession(bot.id);
     const real = accounts.findAccount;
     track(

@@ -35,7 +35,13 @@ interface GoogleEvent {
   status?: string;
   start?: { dateTime?: string; date?: string };
   end?: { dateTime?: string; date?: string };
-  attendees?: Array<{ email: string; displayName?: string; responseStatus?: string; self?: boolean; organizer?: boolean }>;
+  attendees?: Array<{
+    email: string;
+    displayName?: string;
+    responseStatus?: string;
+    self?: boolean;
+    organizer?: boolean;
+  }>;
   hangoutLink?: string | null;
   conferenceData?: { entryPoints?: Array<{ uri?: string; entryPointType?: string }> };
   recurringEventId?: string;
@@ -123,7 +129,9 @@ export function encodeEventId(accountId: string, calendarId: string, googleId: s
 
 export function decodeEventId(eventId: string) {
   try {
-    const [accountId, calendarId, googleId] = JSON.parse(Buffer.from(eventId, "base64url").toString("utf8")) as string[];
+    const [accountId, calendarId, googleId] = JSON.parse(
+      Buffer.from(eventId, "base64url").toString("utf8"),
+    ) as string[];
     if (!accountId || !calendarId || !googleId) throw new Error();
     return { accountId, calendarId, googleId };
   } catch {
@@ -178,7 +186,14 @@ function cacheRead(calendarKey: string, key: string) {
 }
 
 function cacheWrite(calendarKey: string, key: string, start: string, end: string, items: GoogleEvent[]) {
-  const row = { calendarId: calendarKey, eventId: key, startsAt: start, endsAt: end, data: { items }, fetchedAt: nowIso() };
+  const row = {
+    calendarId: calendarKey,
+    eventId: key,
+    startsAt: start,
+    endsAt: end,
+    data: { items },
+    fetchedAt: nowIso(),
+  };
   const db = getDb();
   db.insert(calendarCache)
     .values(row)
@@ -199,15 +214,30 @@ function cacheWrite(calendarKey: string, key: string, start: string, end: string
       .run();
   }
   db.delete(calendarCache)
-    .where(and(like(calendarCache.eventId, "range:%"), lt(calendarCache.fetchedAt, new Date(Date.now() - 3_600_000).toISOString())))
+    .where(
+      and(
+        like(calendarCache.eventId, "range:%"),
+        lt(calendarCache.fetchedAt, new Date(Date.now() - 3_600_000).toISOString()),
+      ),
+    )
     .run();
 }
 
 function invalidate(accountId: string) {
-  getDb().delete(calendarCache).where(and(like(calendarCache.calendarId, `${accountId}|%`), like(calendarCache.eventId, "range:%"))).run();
+  getDb()
+    .delete(calendarCache)
+    .where(and(like(calendarCache.calendarId, `${accountId}|%`), like(calendarCache.eventId, "range:%")))
+    .run();
 }
 
-async function fetchEvents(accountId: string, calendarId: string, start: string, end: string, q: string, fresh: boolean) {
+async function fetchEvents(
+  accountId: string,
+  calendarId: string,
+  start: string,
+  end: string,
+  q: string,
+  fresh: boolean,
+) {
   const calendarKey = `${accountId}|${calendarId}`;
   const key = rangeKey(start, end, q);
   if (!fresh) {
@@ -264,7 +294,9 @@ export async function listEvents(query: Record<string, unknown>, fresh = false):
       account.calendars
         .filter((calendar) => calendar.selected)
         .map(async (calendar) =>
-          (await fetchEvents(account.id, calendar.id, start, end, q, fresh)).map((raw) => toEvent(account.id, calendar.id, raw)),
+          (await fetchEvents(account.id, calendar.id, start, end, q, fresh)).map((raw) =>
+            toEvent(account.id, calendar.id, raw),
+          ),
         ),
     ),
   );
@@ -312,7 +344,9 @@ export async function needsApproval(input: Record<string, unknown>) {
 }
 
 function dayBounds(value: string, allDay: boolean) {
-  const day = allDay ? value.slice(0, 10) : new Date(new Date(value).getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
+  const day = allDay
+    ? value.slice(0, 10)
+    : new Date(new Date(value).getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
   const start = new Date(`${day}T00:00:00-03:00`);
   return { start: start.toISOString(), end: new Date(start.getTime() + 86_400_000).toISOString(), day };
 }
@@ -403,7 +437,9 @@ export async function createEvent(botId: string, body: Record<string, unknown>, 
   const preview = await agendaPreview(event.start, event.allDay, [event.id]);
   return {
     event,
-    blockEvent: blockEvent("agenda", agendaBlockId, "Agenda", version, author, "edited", preview, { eventIds: [event.id] }),
+    blockEvent: blockEvent("agenda", agendaBlockId, "Agenda", version, author, "edited", preview, {
+      eventIds: [event.id],
+    }),
   };
 }
 
@@ -411,7 +447,10 @@ export async function deleteEvent(botId: string, eventId: string, author: BlockA
   const { accountId, calendarId, googleId } = decodeEventId(eventId);
   await requireAccount(accountId);
   const before = cachedEvent(accountId, calendarId, googleId);
-  await runelayCall("call_tool", { name: `${accountId}.calendar_delete_event`, args: { calendarId, eventId: googleId } });
+  await runelayCall("call_tool", {
+    name: `${accountId}.calendar_delete_event`,
+    args: { calendarId, eventId: googleId },
+  });
   invalidate(accountId);
   const version = bumpAgendaVersion(botId);
   const start = before?.start?.dateTime ?? before?.start?.date ?? nowIso();
@@ -424,7 +463,9 @@ export async function updateEvent(botId: string, eventId: string, body: Record<s
   const { account } = await requireAccount(accountId);
   const current = cachedEvent(accountId, calendarId, googleId);
   if (!current) throw new BlockError("Evento não encontrado; liste a agenda do período antes de editar.", 404);
-  const others = (current.attendees ?? []).filter((item) => !item.self && item.email.toLowerCase() !== account.email.toLowerCase());
+  const others = (current.attendees ?? []).filter(
+    (item) => !item.self && item.email.toLowerCase() !== account.email.toLowerCase(),
+  );
   if (others.length || current.recurringEventId || /_\d{8}(T\d{6}Z)?$/.test(googleId))
     throw new BlockError(
       "O conector do Google Calendar ainda não edita eventos com convidados ou recorrentes. Peça para a pessoa ajustar no Google Calendar.",
@@ -444,12 +485,17 @@ export async function updateEvent(botId: string, eventId: string, body: Record<s
     meet: body.meet === true ? true : undefined,
   };
   const event = await createRaw(accountId, calendarId, merged);
-  await runelayCall("call_tool", { name: `${accountId}.calendar_delete_event`, args: { calendarId, eventId: googleId } });
+  await runelayCall("call_tool", {
+    name: `${accountId}.calendar_delete_event`,
+    args: { calendarId, eventId: googleId },
+  });
   invalidate(accountId);
   const version = bumpAgendaVersion(botId);
   const preview = await agendaPreview(event.start, event.allDay, [event.id]);
   return {
     event,
-    blockEvent: blockEvent("agenda", agendaBlockId, "Agenda", version, author, "edited", preview, { eventIds: [event.id] }),
+    blockEvent: blockEvent("agenda", agendaBlockId, "Agenda", version, author, "edited", preview, {
+      eventIds: [event.id],
+    }),
   };
 }

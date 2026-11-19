@@ -125,7 +125,11 @@ describe("open, history and capture", () => {
   });
 
   test("raises agent-browser failures with the best message", async () => {
-    let reply = { stdout: '{"success":false,"error":"no page"}\n' } as { stdout?: string; stderr?: string; code?: number };
+    let reply = { stdout: '{"success":false,"error":"no page"}\n' } as {
+      stdout?: string;
+      stderr?: string;
+      code?: number;
+    };
     fakeAgentBrowser((command) => (command[0] === "open" ? reply : undefined));
     const id = botId();
     await expect(browserOpen(id, "x", undefined, true)).rejects.toThrow("no page");

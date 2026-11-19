@@ -85,7 +85,13 @@ function register(account: FakeAgendaAccount) {
 export async function fakeAgenda(specs: FakeAgendaSpec[]) {
   const accounts: FakeAgendaAccount[] = specs.map((spec) => {
     counter++;
-    return { ...spec, name: `google_calendar_${1000 + counter}`, events: { ...(spec.events ?? {}) }, created: [], deleted: [] };
+    return {
+      ...spec,
+      name: `google_calendar_${1000 + counter}`,
+      events: { ...(spec.events ?? {}) },
+      created: [],
+      deleted: [],
+    };
   });
   fakeRunelay.tool("list_connections", () => [
     { name: "github", status: "ok" },

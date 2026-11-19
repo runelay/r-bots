@@ -684,7 +684,9 @@ describe("importBotFile", () => {
       { ok: false, error: "sem permissão" },
       { ok: false },
     ];
-    const runner = connectFakeRunner(["files"], (op) => (op === "file.read" ? (replies.shift() ?? { ok: false }) : { ok: true }));
+    const runner = connectFakeRunner(["files"], (op) =>
+      op === "file.read" ? (replies.shift() ?? { ok: false }) : { ok: true },
+    );
     const reads = () => runner.requests.filter((item) => item.op === "file.read");
     try {
       const first = await importBotFile(botId, "/Users/p/Desktop/foto.txt");
@@ -717,9 +719,9 @@ describe("storage", () => {
     } finally {
       get.mockRestore();
     }
-    expect(warn.mock.calls.some((args) => String(args[0]).includes(`upload ${meta.uploadId} could not be fetched`))).toBe(
-      true,
-    );
+    expect(
+      warn.mock.calls.some((args) => String(args[0]).includes(`upload ${meta.uploadId} could not be fetched`)),
+    ).toBe(true);
   });
 
   test("a stored thumb is brought back with the file", async () => {

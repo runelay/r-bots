@@ -98,7 +98,11 @@ describe("auth routes", () => {
     const blocked = await routes.handle(from("1.1.1.1"), null);
     expect(blocked?.status).toBe(429);
     expect(blocked?.headers.get("retry-after")).toBe("40");
-    expect(await blocked?.json()).toEqual({ ok: false, error: "Muitas tentativas. Espere um minuto.", code: "rate_limited" });
+    expect(await blocked?.json()).toEqual({
+      ok: false,
+      error: "Muitas tentativas. Espere um minuto.",
+      code: "rate_limited",
+    });
     expect((await routes.handle(from("2.2.2.2"), null))?.status).toBe(201);
     clock.at += 40_000;
     expect((await routes.handle(from("1.1.1.1"), null))?.status).toBe(201);

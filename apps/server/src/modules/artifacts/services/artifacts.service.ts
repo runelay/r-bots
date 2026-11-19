@@ -65,7 +65,11 @@ export function isArtifactId(value: string) {
   return idPattern.test(value);
 }
 
-export async function writeArtifactContent(meta: Pick<ArtifactMeta, "botId" | "id" | "kind">, version: number, content: string) {
+export async function writeArtifactContent(
+  meta: Pick<ArtifactMeta, "botId" | "id" | "kind">,
+  version: number,
+  content: string,
+) {
   await putBlob(artifactContentKey(meta.botId, meta.id, version, meta.kind), content, {
     mime: meta.kind === "canvas" ? "application/json" : "text/html; charset=utf-8",
     botId: meta.botId,

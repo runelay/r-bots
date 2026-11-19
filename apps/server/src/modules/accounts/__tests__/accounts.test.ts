@@ -126,9 +126,7 @@ describe("limits", () => {
     expect(parseResetAt("resets in 0 minutes", now)).toBeNull();
     expect(parseResetAt("resets at 3pm", now, "UTC")?.toISOString()).toBe("2026-11-19T15:00:00.000Z");
     expect(parseResetAt("resets at 12am", now, "UTC")?.toISOString()).toBe("2026-11-20T00:00:00.000Z");
-    expect(parseResetAt("resets 9:30 (America/Sao_Paulo)", now, "UTC")?.toISOString()).toBe(
-      "2026-11-19T12:30:00.000Z",
-    );
+    expect(parseResetAt("resets 9:30 (America/Sao_Paulo)", now, "UTC")?.toISOString()).toBe("2026-11-19T12:30:00.000Z");
     expect(parseResetAt("resets 13:00 (Not/AZone)", now, "UTC")?.toISOString()).toBe("2026-11-19T13:00:00.000Z");
     expect(parseResetAt("resets at 25:00", now, "UTC")).toBeNull();
     expect(parseResetAt("resets at 10:75", now, "UTC")).toBeNull();
@@ -219,7 +217,9 @@ describe("accounts", () => {
     const mac = stubMac(() => new Response("no", { status: 500 }));
     restores.push(mac.restore);
     const accounts = await refreshAccounts();
-    expect(accounts.find((account) => account.id === "mac:claude")?.detail).toBe("Mac fora do ar: runner respondeu 500");
+    expect(accounts.find((account) => account.id === "mac:claude")?.detail).toBe(
+      "Mac fora do ar: runner respondeu 500",
+    );
   });
 
   test("reads the Mac through the connected app and refreshes when it connects", async () => {

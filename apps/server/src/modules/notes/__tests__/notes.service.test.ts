@@ -47,22 +47,34 @@ describe("parsing helpers", () => {
     expect(cleanFolder(" a / ./ b /../ c ")).toBe("a/b/c");
     expect(cleanFolder(undefined)).toBe("");
     expect(parseLinks("[[Plano]] e [[plano#meta|o plano]] e [[ Outro ]] e [[  ]]")).toEqual(["Plano", "Outro"]);
-    expect(parseTags("#Meta e (#dev/ops) mas não `#code` nem\n```\n#bloco\n```\n#123 x#no #meta")).toEqual(["meta", "dev/ops"]);
+    expect(parseTags("#Meta e (#dev/ops) mas não `#code` nem\n```\n#bloco\n```\n#123 x#no #meta")).toEqual([
+      "meta",
+      "dev/ops",
+    ]);
     const long = Array.from({ length: 20 }, (_, index) => `linha ${index}`).join("\n");
     const preview = previewOf({ folder: "f", markdown: long });
     expect(preview.excerpt.split("\n")).toHaveLength(15);
     expect(preview.excerpt.endsWith("\n…")).toBe(true);
     expect(preview.words).toBe(40);
     expect(previewOf({ folder: "", markdown: "x".repeat(700) }).excerpt).toBe("\n…");
-    expect(previewOf({ folder: "", markdown: "curta" })).toEqual({ kind: "note", folder: "", excerpt: "curta", words: 1 });
+    expect(previewOf({ folder: "", markdown: "curta" })).toEqual({
+      kind: "note",
+      folder: "",
+      excerpt: "curta",
+      words: 1,
+    });
   });
 
   test("patch ops", () => {
     expect(applyOps("a b a", [{ op: "replace", old: "b", new: "c" }])).toBe("a c a");
     expect(applyOps("a b", [{ op: "replace", old: "b" }])).toBe("a ");
     expect(blockError(() => applyOps("a", [{ op: "replace", old: "" }])).message).toBe('op 1: "old" vazio.');
-    expect(blockError(() => applyOps("a", [{ op: "replace", old: "z" }])).message).toBe("op 1: o trecho não foi encontrado.");
-    expect(blockError(() => applyOps("a a", [{ op: "replace", old: "a" }])).message).toBe("op 1: o trecho aparece mais de uma vez.");
+    expect(blockError(() => applyOps("a", [{ op: "replace", old: "z" }])).message).toBe(
+      "op 1: o trecho não foi encontrado.",
+    );
+    expect(blockError(() => applyOps("a a", [{ op: "replace", old: "a" }])).message).toBe(
+      "op 1: o trecho aparece mais de uma vez.",
+    );
     expect(applyOps("a", [{ op: "append", text: "b" }])).toBe("a\nb");
     expect(applyOps("a\n", [{ op: "append", text: "b" }])).toBe("a\nb");
     expect(applyOps("", [{ op: "append" }])).toBe("");
@@ -114,7 +126,13 @@ describe("notes", () => {
     ]);
     const later = createNote(bot, { title: "Depois", folder: "z" }, "bot").note;
     expect(later.backlinkCount).toBe(1);
-    expect(getDb().select().from(noteLinks).all().find((link) => link.targetTitle === "Depois")?.targetId).toBe(later.id);
+    expect(
+      getDb()
+        .select()
+        .from(noteLinks)
+        .all()
+        .find((link) => link.targetTitle === "Depois")?.targetId,
+    ).toBe(later.id);
     expect(resolveNote(bot, "ALVO", "x").id).toBe(here.id);
     expect(resolveNote(bot, "Fonte").id).toBe(source.id);
     expect(blockError(() => resolveNote(bot, "Nada")).status).toBe(404);
@@ -185,7 +203,13 @@ describe("notes", () => {
     const renamed = writeNote(bot, target.id, { content: "novo", title: "Alvo 2" }, "bot");
     expect(renamed.note).toMatchObject({ title: "Alvo 2", version: 2 });
     expect(renamed.event.data.changed).toEqual({ lines: [[0, 0]] });
-    expect(getDb().select().from(noteLinks).all().find((link) => link.sourceId === source.id)?.targetId).toBeNull();
+    expect(
+      getDb()
+        .select()
+        .from(noteLinks)
+        .all()
+        .find((link) => link.sourceId === source.id)?.targetId,
+    ).toBeNull();
     const same = writeNote(bot, other.id, { content: "" }, "bot");
     expect(same.event.data.changed).toBeUndefined();
     const patched = patchNote(bot, source.id, { ops: [{ op: "append", text: "fim" }] }, "user");

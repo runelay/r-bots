@@ -125,9 +125,7 @@ describe("capture", () => {
         summary: "combinou formato de tabela",
       })}`,
     );
-    await capture(
-      input([{ slug: "pref-tabela", name: "Prefere números em tabela", description: "" }]),
-    );
+    await capture(input([{ slug: "pref-tabela", name: "Prefere números em tabela", description: "" }]));
     expect(factsOfType(log, "decision.made")[0].data).toMatchObject({ outcome: "capture", confidence: 0.8 });
     const request = fakeProviders.turns[0].request;
     expect(request.model).toBe("claude-haiku-5-5");

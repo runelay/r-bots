@@ -106,7 +106,7 @@ describe("starting the desktop", () => {
     const id = botId();
     const desktop = getDesktop(id);
     expect(desktop.running).toBe(false);
-    await (desktop.ensure());
+    await desktop.ensure();
     expect(desktop.running).toBe(true);
     const xvfb = spawned("Xvfb")[0];
     expect(xvfb.args.slice(0, 4)).toEqual(["-n", "-u", process.env.DESKTOP_USER ?? "runelaybot", "env"]);
@@ -116,7 +116,7 @@ describe("starting the desktop", () => {
     const chrome = spawned(process.env.DESKTOP_CHROME as string)[0];
     expect(chrome.args).toContain(`--user-data-dir=${process.env.DESKTOP_HOME}/chrome-${id}`);
     expect(chrome.args.at(-1)).toBe("about:blank");
-    await (desktop.ensure());
+    await desktop.ensure();
     expect(spawned("Xvfb")).toHaveLength(1);
   });
 
@@ -124,23 +124,23 @@ describe("starting the desktop", () => {
     const desktop = getDesktop(botId());
     const first = desktop.ensure();
     const second = desktop.ensure();
-    await (Promise.all([first, second]));
+    await Promise.all([first, second]);
     expect(spawned("Xvfb")).toHaveLength(1);
   });
 
   test("fails when Xvfb never comes up or no display is free", async () => {
     xvfbStarts = false;
-    await expect((getDesktop(botId()).ensure())).rejects.toThrow("O Xvfb não subiu.");
+    await expect(getDesktop(botId()).ensure()).rejects.toThrow("O Xvfb não subiu.");
     allTaken = true;
-    await expect((getDesktop(botId()).ensure())).rejects.toThrow("Nenhum display livre.");
+    await expect(getDesktop(botId()).ensure()).rejects.toThrow("Nenhum display livre.");
   });
 });
 
 describe("desktop actions", () => {
   test("clicks, types, presses keys and scrolls", async () => {
     const desktop = getDesktop(botId());
-    await (desktop.ensure());
-    expect(await (desktop.click(10.4, 20.6))).toMatchObject({ title: "Janela", width: 1280, height: 800 });
+    await desktop.ensure();
+    expect(await desktop.click(10.4, 20.6)).toMatchObject({ title: "Janela", width: 1280, height: 800 });
     expect(calls.filter((call) => call.command === "xdotool").at(-2)?.args).toEqual([
       "mousemove",
       "10",
@@ -148,7 +148,7 @@ describe("desktop actions", () => {
       "click",
       "1",
     ]);
-    await (desktop.click(1, 2, "right", true));
+    await desktop.click(1, 2, "right", true);
     expect(calls.filter((call) => call.command === "xdotool").at(-2)?.args).toEqual([
       "mousemove",
       "1",
@@ -158,7 +158,7 @@ describe("desktop actions", () => {
       "2",
       "3",
     ]);
-    await (desktop.type("olá"));
+    await desktop.type("olá");
     expect(calls.filter((call) => call.command === "xdotool").at(-2)?.args).toEqual([
       "type",
       "--delay",
@@ -166,9 +166,9 @@ describe("desktop actions", () => {
       "--",
       "olá",
     ]);
-    await (desktop.key("ctrl+l"));
+    await desktop.key("ctrl+l");
     expect(calls.filter((call) => call.command === "xdotool").at(-2)?.args).toEqual(["key", "ctrl+l"]);
-    await (desktop.scroll(5, 6, "down", 50));
+    await desktop.scroll(5, 6, "down", 50);
     expect(calls.filter((call) => call.command === "xdotool").at(-2)?.args).toEqual([
       "mousemove",
       "5",
@@ -178,40 +178,49 @@ describe("desktop actions", () => {
       "20",
       "5",
     ]);
-    await (desktop.scroll(5, 6, "up", 0));
-    expect(calls.filter((call) => call.command === "xdotool").at(-2)?.args.slice(-2)).toEqual(["1", "4"]);
+    await desktop.scroll(5, 6, "up", 0);
+    expect(
+      calls
+        .filter((call) => call.command === "xdotool")
+        .at(-2)
+        ?.args.slice(-2),
+    ).toEqual(["1", "4"]);
     const xcall = calls.find((call) => call.command === "xdotool");
     expect((xcall?.options.env as Record<string, string>).DISPLAY).toBe(`:${desktop.display}`);
   });
 
   test("opens a browser and a terminal", async () => {
     const desktop = getDesktop(botId());
-    await (desktop.openBrowser("https://a.test/"));
-    expect(spawned(process.env.DESKTOP_CHROME as string).at(-1)?.args.at(-1)).toBe("https://a.test/");
-    await (desktop.openTerminal());
+    await desktop.openBrowser("https://a.test/");
+    expect(
+      spawned(process.env.DESKTOP_CHROME as string)
+        .at(-1)
+        ?.args.at(-1),
+    ).toBe("https://a.test/");
+    await desktop.openTerminal();
     expect(spawned("sh").at(-1)?.args.at(-1)).toContain("exec xterm");
   });
 
   test("reads an empty title when xdotool fails", async () => {
     const desktop = getDesktop(botId());
-    await (desktop.ensure());
+    await desktop.ensure();
     xdotool = () => ({ code: 1 });
-    expect(await (desktop.state())).toMatchObject({ title: "" });
+    expect(await desktop.state()).toMatchObject({ title: "" });
   });
 
   test("takes a screenshot or reports ffmpeg failures", async () => {
     const desktop = getDesktop(botId());
-    expect((await (desktop.screenshot())).toString()).toBe("PNGDATA");
+    expect((await desktop.screenshot()).toString()).toBe("PNGDATA");
     ffmpegShot = { code: 1, stderr: "x11grab failed\n" };
-    await expect((desktop.screenshot())).rejects.toThrow("x11grab failed");
+    await expect(desktop.screenshot()).rejects.toThrow("x11grab failed");
     ffmpegShot = { code: 2 };
-    await expect((desktop.screenshot())).rejects.toThrow("ffmpeg saiu com código 2");
+    await expect(desktop.screenshot()).rejects.toThrow("ffmpeg saiu com código 2");
   });
 
   test("stops every process and cleans up stray ones", async () => {
     const id = botId();
     const desktop = getDesktop(id);
-    await (desktop.ensure());
+    await desktop.ensure();
     desktop.startStream();
     stopDesktop(id);
     expect(desktop.running).toBe(false);
@@ -232,9 +241,9 @@ describe("desktop actions", () => {
     const idle = getDesktop(botId());
     const watched = getDesktop(botId());
     const recent = getDesktop(botId());
-    await (idle.ensure());
-    await (watched.ensure());
-    await (recent.ensure());
+    await idle.ensure();
+    await watched.ensure();
+    await recent.ensure();
     watched.clients.add(fakeClient(watched.botId, "desktop").socket);
     setSystemTime(new Date(Date.now() + 11 * 60_000));
     recent.lastUsed = Date.now();
@@ -262,7 +271,7 @@ describe("desktop socket", () => {
     const client = fakeClient(id, "desktop");
     desktopSocket.open(client.socket);
     restores.push(() => desktopSocket.close(client.socket, 1000, ""));
-    const state = await (client.next("state"));
+    const state = await client.next("state");
     return { id, client, state, desktop: getDesktop(id) };
   }
 
@@ -323,14 +332,14 @@ describe("desktop socket", () => {
     desktopSocket.message(client.socket, "x".repeat(1024 * 1024 + 1));
     expect(client.closed).toEqual([[1009, "Message too big"]]);
     setController(id, "user");
-    expect(await (client.next("state"))).toMatchObject({ controller: "user" });
+    expect(await client.next("state")).toMatchObject({ controller: "user" });
     setController(id, "bot");
   });
 
   test("turns user input into xdotool commands", async () => {
     const { id, client } = await connect();
     setController(id, "user");
-    await (client.next("state"));
+    await client.next("state");
     const cases: Array<[Record<string, unknown>, string[]]> = [
       [{ type: "mouse", event: "move", x: 1.2, y: 2.8 }, ["mousemove", "1", "3"]],
       [{ type: "mouse", event: "down", button: "right" }, ["mousemove", "0", "0", "mousedown", "3"]],
@@ -364,10 +373,10 @@ describe("desktop socket", () => {
   test("publishes the state after anything but mouse moves", async () => {
     const { id, client } = await connect();
     setController(id, "user");
-    await (client.next("state"));
+    await client.next("state");
     say(client, { type: "mouse", event: "move" });
     say(client, { type: "mouse", event: "up" });
-    await (client.next("state"));
+    await client.next("state");
     const before = client.sent.filter((message) => message.type === "state").length;
     say(client, { type: "key", event: "char", text: "a" });
     await until(() => client.sent.filter((message) => message.type === "state").length === before + 1);
@@ -377,9 +386,11 @@ describe("desktop socket", () => {
   test("navigates, opens a terminal and reports bad input", async () => {
     const { id, client } = await connect();
     setController(id, "user");
-    await (client.next("state"));
+    await client.next("state");
     say(client, { type: "navigate", url: "https://b.test/" });
-    await until(() => spawned(process.env.DESKTOP_CHROME as string).some((call) => call.args.at(-1) === "https://b.test/"));
+    await until(() =>
+      spawned(process.env.DESKTOP_CHROME as string).some((call) => call.args.at(-1) === "https://b.test/"),
+    );
     say(client, { type: "terminal" });
     await until(() => spawned("sh").length === 1);
     const cases: Array<[unknown, string]> = [
@@ -390,14 +401,14 @@ describe("desktop socket", () => {
     ];
     for (const [input, message] of cases) {
       say(client, input);
-      expect(await (client.next("error"))).toEqual({ type: "error", message });
+      expect(await client.next("error")).toEqual({ type: "error", message });
     }
     xdotool = (args) => (args[0] === "key" ? { code: 1, stderr: "no window\n" } : { stdout: "J" });
     say(client, { type: "back" });
-    expect(await (client.next("error"))).toEqual({ type: "error", message: "no window" });
+    expect(await client.next("error")).toEqual({ type: "error", message: "no window" });
     xdotool = (args) => (args[0] === "key" ? { code: 4 } : { stdout: "J" });
     say(client, { type: "back" });
-    expect(await (client.next("error"))).toEqual({ type: "error", message: "xdotool saiu com código 4" });
+    expect(await client.next("error")).toEqual({ type: "error", message: "xdotool saiu com código 4" });
     setController(id, "bot");
   });
 
@@ -405,12 +416,12 @@ describe("desktop socket", () => {
     allTaken = true;
     const client = fakeClient(botId(), "desktop");
     desktopSocket.open(client.socket);
-    expect(await (client.next("error"))).toEqual({ type: "error", message: "Nenhum display livre." });
+    expect(await client.next("error")).toEqual({ type: "error", message: "Nenhum display livre." });
     desktopSocket.close(client.socket, 1000, "");
     const closed = fakeClient(botId(), "desktop");
     closed.setOpen(false);
     desktopSocket.open(closed.socket);
-    await (new Promise((resolve) => setImmediate(resolve)));
+    await new Promise((resolve) => setImmediate(resolve));
     desktopSocket.close(closed.socket, 1000, "");
     expect(closed.sent).toEqual([]);
   });
@@ -419,7 +430,7 @@ describe("desktop socket", () => {
     const { client, desktop } = await connect();
     const second = fakeClient(desktop.botId, "desktop");
     desktopSocket.open(second.socket);
-    await (second.next("state"));
+    await second.next("state");
     desktopSocket.close(second.socket, 1000, "");
     expect(streamer()?.child.signals).toEqual([]);
     desktopSocket.close(client.socket, 1000, "");

@@ -175,7 +175,13 @@ describe("groups service", () => {
     await loadGroups();
     expect(getGroup(group.id)).toMatchObject({ name: "Persistido", members: [a, b] });
 
-    saveGroupRow({ id: "grp_extra", name: undefined, members: undefined, createdAt: "2026-01-01T00:00:00.000Z", note: "x" });
+    saveGroupRow({
+      id: "grp_extra",
+      name: undefined,
+      members: undefined,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      note: "x",
+    });
     const extra = loadGroupRows().find((item) => item.id === "grp_extra") as unknown as Record<string, unknown>;
     expect(extra).toMatchObject({
       name: "",

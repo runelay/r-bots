@@ -207,20 +207,13 @@ function tagCondition(tag: string) {
 export function listNotes(botId: string, query: Record<string, unknown>): Page<NoteSummary> {
   const { limit, offset } = pageArgs(query.cursor, query.limit);
   const conditions: SQL[] = [liveNotes(botId)];
-  if (query.folder !== undefined && query.folder !== null)
-    conditions.push(eq(notes.folder, cleanFolder(query.folder)));
+  if (query.folder !== undefined && query.folder !== null) conditions.push(eq(notes.folder, cleanFolder(query.folder)));
   const q = typeof query.q === "string" ? ftsQuery(query.q) : null;
   if (q) conditions.push(sql`${notes.id} IN (SELECT note_id FROM notes_fts WHERE notes_fts MATCH ${q})`);
   if (typeof query.tag === "string" && query.tag.trim()) conditions.push(tagCondition(query.tag.trim()));
   const where = and(...conditions);
   const order = query.sort === "title" ? [asc(sql`lower(${notes.title})`)] : [desc(notes.updatedAt)];
-  const total = Number(
-    db()
-      .select({ count: sql<number>`count(*)` })
-      .from(notes)
-      .where(where)
-      .get()?.count ?? 0,
-  );
+  const total = Number(db().select({ count: sql<number>`count(*)` }).from(notes).where(where).get()?.count ?? 0);
   const rows = db()
     .select()
     .from(notes)
@@ -419,7 +412,8 @@ function saveContent(
   const lines = changedLines(current.markdown, next.markdown);
   const merge = shouldMerge(current, author);
   const version = merge ? current.version : current.version + 1;
-  const pending = author === "user" ? mergeRanges([...((current.userChanges as Array<[number, number]>) ?? []), ...lines]) : null;
+  const pending =
+    author === "user" ? mergeRanges([...((current.userChanges as Array<[number, number]>) ?? []), ...lines]) : null;
   const updated: NoteRow = {
     ...current,
     title,
@@ -501,7 +495,9 @@ export function applyOps(markdown: string, ops: NotePatchOp[]) {
     } else if (op.op === "insert_after_heading") {
       const lines = text.split("\n");
       const wanted = normalizeTitle(String(op.heading ?? "").replace(/^#+\s*/, ""));
-      const at = lines.findIndex((line) => /^#{1,6}\s/.test(line) && normalizeTitle(line.replace(/^#+\s*/, "")) === wanted);
+      const at = lines.findIndex(
+        (line) => /^#{1,6}\s/.test(line) && normalizeTitle(line.replace(/^#+\s*/, "")) === wanted,
+      );
       if (at < 0) throw new BlockError(`${where}: o título "${op.heading}" não foi encontrado.`);
       const level = lines[at].match(/^#+/)?.[0].length ?? 1;
       let end = at + 1;

@@ -160,7 +160,11 @@ export function blockTools(botId: string): BotTool[] {
       name: "note_patch",
       description:
         "Edita parte de uma nota: replace (trecho exato que aparece uma vez), append, prepend, insert_after_heading, toggle_task (linha 0-based). Erro em uma op cancela todas.",
-      shape: { id: z.string().min(1).max(60), ops: z.array(patchOp).min(1).max(50), baseVersion: z.number().int().optional() },
+      shape: {
+        id: z.string().min(1).max(60),
+        ops: z.array(patchOp).min(1).max(50),
+        baseVersion: z.number().int().optional(),
+      },
       approval: null,
       label: (input) => `Editou a nota ${quoted(titleOfNote(botId, input.id))}`,
       run: async (input) => {
@@ -178,7 +182,9 @@ export function blockTools(botId: string): BotTool[] {
       },
       approval: null,
       label: (input) =>
-        input.title ? `Renomeou a nota para ${quoted(input.title)}` : `Moveu a nota ${quoted(titleOfNote(botId, input.id))}`,
+        input.title
+          ? `Renomeou a nota para ${quoted(input.title)}`
+          : `Moveu a nota ${quoted(titleOfNote(botId, input.id))}`,
       run: async (input) => {
         const { note, relinked, event } = moveNote(botId, String(input.id), input, "bot");
         return { note, relinked, blockEvent: event };
@@ -222,7 +228,8 @@ export function blockTools(botId: string): BotTool[] {
     },
     {
       name: "sheet_read",
-      description: "Lê um intervalo (ex.: A1:F40) de uma aba com os valores já calculados. Sem tabId lê a primeira aba.",
+      description:
+        "Lê um intervalo (ex.: A1:F40) de uma aba com os valores já calculados. Sem tabId lê a primeira aba.",
       shape: { id: z.string().min(1).max(60), tabId: z.string().max(60).optional(), range: z.string().min(2).max(30) },
       approval: null,
       label: (input) => `Leu a planilha ${quoted(titleOfSheet(botId, input.id))}`,
@@ -236,7 +243,12 @@ export function blockTools(botId: string): BotTool[] {
       name: "sheet_write",
       description:
         "Escreve células em lote numa aba (sem tabId, a primeira). Devolve as células escritas e as dependentes recalculadas. input aceita número pt-BR (1.520,50), R$, %, data dd/mm/aaaa e fórmula com ; ou ,.",
-      shape: { id: z.string().min(1).max(60), tabId: z.string().max(60).optional(), cells: cellsShape, baseVersion: z.number().int().optional() },
+      shape: {
+        id: z.string().min(1).max(60),
+        tabId: z.string().max(60).optional(),
+        cells: cellsShape,
+        baseVersion: z.number().int().optional(),
+      },
       approval: null,
       label: (input) => `Editou a planilha ${quoted(titleOfSheet(botId, input.id))}`,
       run: async (input) => {
@@ -247,7 +259,8 @@ export function blockTools(botId: string): BotTool[] {
     },
     {
       name: "sheet_format",
-      description: "Formata intervalos: type general|number|brl|percent|date|datetime|text, decimals, bold, align. format null limpa.",
+      description:
+        "Formata intervalos: type general|number|brl|percent|date|datetime|text, decimals, bold, align. format null limpa.",
       shape: {
         id: z.string().min(1).max(60),
         tabId: z.string().max(60).optional(),
@@ -407,7 +420,9 @@ export const blocksGuide = [
 export function blocksEditNote(botId: string) {
   const lines = [...noteEditNote(botId), ...sheetEditNote(botId)];
   if (!lines.length) return "";
-  return ["## Notas e planilhas editadas pela pessoa", ...lines, "Respeite essas edições e não desfaça o que a pessoa mudou."].join(
-    "\n",
-  );
+  return [
+    "## Notas e planilhas editadas pela pessoa",
+    ...lines,
+    "Respeite essas edições e não desfaça o que a pessoa mudou.",
+  ].join("\n");
 }

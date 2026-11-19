@@ -717,7 +717,15 @@ describe("bot tools", () => {
             id: "nt_1",
             blockEvent: {
               type: "block.created",
-              data: { kind: "note", id: "nt_1", title: "Ata", version: 1, author: "bot", action: "created", preview: null },
+              data: {
+                kind: "note",
+                id: "nt_1",
+                title: "Ata",
+                version: 1,
+                author: "bot",
+                action: "created",
+                preview: null,
+              },
             },
           }),
         }),

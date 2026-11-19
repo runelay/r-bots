@@ -190,7 +190,9 @@ describe("POST browser/control", () => {
 describe("POST browser history", () => {
   test("needs a browser, navigates and reports failures", async () => {
     let fail = false;
-    fakeAgentBrowser((command) => (fail && command[0] === "forward" ? { code: 1, stderr: "sem histórico" } : undefined));
+    fakeAgentBrowser((command) =>
+      fail && command[0] === "forward" ? { code: 1, stderr: "sem histórico" } : undefined,
+    );
     codingFails();
     const none = await request(path("browser/back"), { method: "POST", body: "ignored" });
     expect(none.status).toBe(409);

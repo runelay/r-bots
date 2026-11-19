@@ -1,5 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { address, type BookTab, colIndex, colLetters, errorMessage, excelFormula, excelSerial, maxCols, maxRows, parseAddress, parseInput, parseRange, quoteSheet, rangeText, renameSheetRefs, shiftFormula, toEngineFormula, Workbook } from "../services/formula";
+import {
+  address,
+  type BookTab,
+  colIndex,
+  colLetters,
+  errorMessage,
+  excelFormula,
+  excelSerial,
+  maxCols,
+  maxRows,
+  parseAddress,
+  parseInput,
+  parseRange,
+  quoteSheet,
+  rangeText,
+  renameSheetRefs,
+  shiftFormula,
+  toEngineFormula,
+  Workbook,
+} from "../services/formula";
 
 function tab(id: string, name: string, cells: Record<string, string>): BookTab {
   const map = new Map();
@@ -39,7 +58,7 @@ describe("formula engine", () => {
         C7: '=SOMASE(B2:B4;">100")',
         C8: "=MÁX(B2:B4)-MÍN(B2:B4)",
         C9: "=SUM(B2:B3)*1,5",
-        D1: "=XLOOKUP(\"jan\",A2:A4,B2:B4)",
+        D1: '=XLOOKUP("jan",A2:A4,B2:B4)',
       },
       { A1: "=Dados!C1*2", A2: "='Dados'!B3+1" },
     );

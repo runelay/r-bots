@@ -131,7 +131,9 @@ export class UsageScanner {
     if (this.index) return this.index;
     const stored = loadUsageIndex() as unknown as ScanIndex;
     this.index =
-      stored.version === indexVersion ? stored : { version: indexVersion, files: {}, buckets: {}, sessions: {}, seen: {} };
+      stored.version === indexVersion
+        ? stored
+        : { version: indexVersion, files: {}, buckets: {}, sessions: {}, seen: {} };
     return this.index;
   }
 

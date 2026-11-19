@@ -123,7 +123,9 @@ describe("skillsBlock", () => {
     expect(block).toContain('[cortado; o resto está em skill_read("b")]');
     expect(block).toContain("f59.md, …");
     expect(block).not.toContain("f60.md");
-    expect(block).toContain("## Siga a skill C\nA pessoa anexou esta skill à mensagem. Siga as instruções dela neste turno.\n\nsem arquivos");
+    expect(block).toContain(
+      "## Siga a skill C\nA pessoa anexou esta skill à mensagem. Siga as instruções dela neste turno.\n\nsem arquivos",
+    );
     expect(skillsBlock([{ slug: "a", name: "A", body: "corpo", files: ["x.md"] }], false)).not.toContain("x.md");
   });
 });

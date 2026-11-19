@@ -241,7 +241,10 @@ describe("capture", () => {
   test("skips when the exchange carries a secret or is not durable", async () => {
     fakeJev(() => ({ answers: {} }));
     await capture(input());
-    expect(factsOfType(log, "decision.made")[0].data).toMatchObject({ outcome: "skip_secret", answer: { durable: 0, secret: 1 } });
+    expect(factsOfType(log, "decision.made")[0].data).toMatchObject({
+      outcome: "skip_secret",
+      answer: { durable: 0, secret: 1 },
+    });
     fakeJev(() => ({ answers: { durable: { type: "noul", noul: 0.2 }, secret: { type: "noul", noul: 0 } } }));
     await capture(input());
     expect(factsOfType(log, "decision.made")[1].data).toMatchObject({ outcome: "skip", model: "jev-test" });

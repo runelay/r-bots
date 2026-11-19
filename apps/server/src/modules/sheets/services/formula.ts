@@ -1,8 +1,14 @@
 import type { CellFormat, CellType, CellValue } from "@runelay-bots/protocol";
 import FormulaParser from "fast-formula-parser";
 
-const Parser = FormulaParser as unknown as new (config: Record<string, unknown>) => {
-  parse: (formula: string, position: { sheet: string; row: number; col: number }, allowReturnArray?: boolean) => unknown;
+const Parser = FormulaParser as unknown as new (
+  config: Record<string, unknown>,
+) => {
+  parse: (
+    formula: string,
+    position: { sheet: string; row: number; col: number },
+    allowReturnArray?: boolean,
+  ) => unknown;
 };
 const FormulaError = (FormulaParser as unknown as { FormulaError: new (code: string, message?: string) => object })
   .FormulaError;
@@ -100,10 +106,7 @@ export function errorMessage(code: string) {
 }
 
 function strip(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toUpperCase();
+  return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
 }
 
 const ptLookup = new Map(Object.entries(ptNames).map(([pt, en]) => [strip(pt), en]));
@@ -245,7 +248,10 @@ function parseNumber(raw: string): number | null {
   const hasComma = text.includes(",");
   const hasDot = text.includes(".");
   if (hasComma && hasDot) {
-    text = text.lastIndexOf(",") > text.lastIndexOf(".") ? text.replace(/\./g, "").replace(",", ".") : text.replace(/,/g, "");
+    text =
+      text.lastIndexOf(",") > text.lastIndexOf(".")
+        ? text.replace(/\./g, "").replace(",", ".")
+        : text.replace(/,/g, "");
   } else if (hasComma) {
     if ((text.match(/,/g) ?? []).length > 1) return null;
     text = text.replace(",", ".");
@@ -267,7 +273,8 @@ export function parseInput(input: string): ParsedInput {
   const money = /^(-?)\s*R\$\s*(.+)$/i.exec(text);
   if (money) {
     const value = parseNumber(money[2]);
-    if (value !== null) return { formula: null, v: money[1] ? -value : value, t: "n", hint: { type: "brl", decimals: 2 } };
+    if (value !== null)
+      return { formula: null, v: money[1] ? -value : value, t: "n", hint: { type: "brl", decimals: 2 } };
   }
   const percent = /^(.+)%$/.exec(text);
   if (percent) {
@@ -344,12 +351,14 @@ function xlookup(lookup: unknown, lookupArray: unknown, returnArray: unknown, no
 function numbersOf(args: unknown[]) {
   const out: number[] = [];
   for (const arg of args) {
-    const direct = !(arg as { isRangeRef?: boolean; isArray?: boolean })?.isRangeRef && !(arg as { isArray?: boolean })?.isArray;
+    const direct =
+      !(arg as { isRangeRef?: boolean; isArray?: boolean })?.isRangeRef && !(arg as { isArray?: boolean })?.isArray;
     for (const item of flatValues(arg)) {
       if (isFormulaError(item)) throw item;
       if (typeof item === "number") out.push(item);
       else if (direct && typeof item === "boolean") out.push(item ? 1 : 0);
-      else if (direct && typeof item === "string" && item.trim() && Number.isFinite(Number(item))) out.push(Number(item));
+      else if (direct && typeof item === "string" && item.trim() && Number.isFinite(Number(item)))
+        out.push(Number(item));
     }
   }
   return out;
@@ -427,7 +436,10 @@ const extraFunctions: Record<string, (...args: unknown[]) => unknown> = {
   COUNTIFS: (...args) => ifsIndexes(args).filter(Boolean).length,
   SUMIFS: (sum, ...pairs) => {
     const values = flatValues(sum);
-    return ifsIndexes(pairs).reduce((total, hit, i) => total + (hit && typeof values[i] === "number" ? (values[i] as number) : 0), 0);
+    return ifsIndexes(pairs).reduce(
+      (total, hit, i) => total + (hit && typeof values[i] === "number" ? (values[i] as number) : 0),
+      0,
+    );
   },
   AVERAGEIFS: (avg, ...pairs) => {
     const values = flatValues(avg);
@@ -523,7 +535,11 @@ export class Workbook {
     this.visiting.add(id);
     let result: Computed;
     try {
-      let value = this.parser.parse(toEngineFormula(parsed.formula), { sheet: tab.name, row: cell.r + 1, col: cell.c + 1 });
+      let value = this.parser.parse(toEngineFormula(parsed.formula), {
+        sheet: tab.name,
+        row: cell.r + 1,
+        col: cell.c + 1,
+      });
       if (Array.isArray(value)) value = value.flat(2)[0] ?? null;
       result = this.toComputed(value);
     } catch (error) {

@@ -290,7 +290,13 @@ export interface AgendaEvent extends AgendaEventPreview {
   location: string | null;
   description: string | null;
   meetUrl: string | null;
-  attendees: Array<{ email: string; name: string | null; response: AttendeeResponse; self: boolean; organizer: boolean }>;
+  attendees: Array<{
+    email: string;
+    name: string | null;
+    response: AttendeeResponse;
+    self: boolean;
+    organizer: boolean;
+  }>;
   status: "confirmed" | "tentative" | "cancelled";
   recurring: boolean;
   updatedAt: string;

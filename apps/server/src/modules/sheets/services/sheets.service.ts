@@ -69,7 +69,10 @@ function cleanTitle(value: unknown, what = "Título") {
 }
 
 function cleanTabName(value: unknown) {
-  const name = cleanTitle(value, "Nome da aba").replace(/[[\]:*?/\\]/g, " ").trim().slice(0, 31);
+  const name = cleanTitle(value, "Nome da aba")
+    .replace(/[[\]:*?/\\]/g, " ")
+    .trim()
+    .slice(0, 31);
   if (!name) throw new BlockError("Nome da aba é obrigatório.");
   return name;
 }
@@ -169,14 +172,15 @@ export function listSheets(botId: string, query: Record<string, unknown>): Page<
     liveSheets(botId),
     q ? sql`lower(${sheets.title}) LIKE ${`%${q.replace(/[%_]/g, "")}%`}` : undefined,
   );
-  const total = Number(
-    db()
-      .select({ count: sql<number>`count(*)` })
-      .from(sheets)
-      .where(where)
-      .get()?.count ?? 0,
-  );
-  const rows = db().select().from(sheets).where(where).orderBy(desc(sheets.updatedAt)).limit(limit).offset(offset).all();
+  const total = Number(db().select({ count: sql<number>`count(*)` }).from(sheets).where(where).get()?.count ?? 0);
+  const rows = db()
+    .select()
+    .from(sheets)
+    .where(where)
+    .orderBy(desc(sheets.updatedAt))
+    .limit(limit)
+    .offset(offset)
+    .all();
   return pageOf(rows.map(summaryOf), total, offset, limit);
 }
 
@@ -223,7 +227,11 @@ function recalc(sheetId: string) {
     const result = computed.get(row.tabId)?.get(`${row.row},${row.col}`);
     if (!result) continue;
     const value = result.v === null ? null : JSON.stringify(result.v);
-    if (value === row.value && (result.t ?? null) === (row.type ?? null) && (result.error ?? null) === (row.error ?? null))
+    if (
+      value === row.value &&
+      (result.t ?? null) === (row.type ?? null) &&
+      (result.error ?? null) === (row.error ?? null)
+    )
       continue;
     db()
       .update(sheetCells)
@@ -237,7 +245,10 @@ function recalc(sheetId: string) {
 
 function refreshBounds(tabId: string) {
   const bounds = db()
-    .select({ rows: sql<number>`coalesce(max(${sheetCells.row}), -1)`, cols: sql<number>`coalesce(max(${sheetCells.col}), -1)` })
+    .select({
+      rows: sql<number>`coalesce(max(${sheetCells.row}), -1)`,
+      cols: sql<number>`coalesce(max(${sheetCells.col}), -1)`,
+    })
     .from(sheetCells)
     .where(eq(sheetCells.tabId, tabId))
     .get();
@@ -261,10 +272,15 @@ function bump(current: SheetRow, author: BlockAuthor, change: PendingChange | nu
   const previous = (current.userChanges as PendingChange[] | null) ?? [];
   const pending =
     author === "user" && change
-      ? [...previous.filter((item) => item.tabId !== change.tabId), {
-          tabId: change.tabId,
-          ranges: [...(previous.find((item) => item.tabId === change.tabId)?.ranges ?? []), ...change.ranges].slice(-12),
-        }]
+      ? [
+          ...previous.filter((item) => item.tabId !== change.tabId),
+          {
+            tabId: change.tabId,
+            ranges: [...(previous.find((item) => item.tabId === change.tabId)?.ranges ?? []), ...change.ranges].slice(
+              -12,
+            ),
+          },
+        ]
       : author === "user"
         ? previous
         : null;
@@ -330,7 +346,12 @@ function writeInto(tab: TabRow, cells: Array<{ a: string; input: string }>) {
     const where = and(eq(sheetCells.tabId, tab.id), eq(sheetCells.row, point.r), eq(sheetCells.col, point.c));
     const existing = db().select().from(sheetCells).where(where).get();
     if (!input) {
-      if (existing?.format) db().update(sheetCells).set({ input: "", value: null, type: null, error: null, formula: null }).where(where).run();
+      if (existing?.format)
+        db()
+          .update(sheetCells)
+          .set({ input: "", value: null, type: null, error: null, formula: null })
+          .where(where)
+          .run();
       else if (existing) db().delete(sheetCells).where(where).run();
       written.push({ row: point.r, col: point.c });
       continue;
@@ -346,7 +367,11 @@ function writeInto(tab: TabRow, cells: Array<{ a: string; input: string }>) {
       format,
     };
     if (existing) db().update(sheetCells).set(values).where(where).run();
-    else db().insert(sheetCells).values({ tabId: tab.id, row: point.r, col: point.c, ...values }).run();
+    else
+      db()
+        .insert(sheetCells)
+        .values({ tabId: tab.id, row: point.r, col: point.c, ...values })
+        .run();
     written.push({ row: point.r, col: point.c });
   }
   return written;
@@ -374,9 +399,7 @@ function changedAfterWrite(sheetId: string, tab: TabRow, written: Array<{ row: n
     return true;
   });
   const writtenKeys = new Set(written.map((item) => `${item.row},${item.col}`));
-  const cleared = written
-    .filter((item) => writtenKeys.has(`${item.row},${item.col}`))
-    .map((item) => ({ ...item }));
+  const cleared = written.filter((item) => writtenKeys.has(`${item.row},${item.col}`)).map((item) => ({ ...item }));
   const present = cellsAt(tab.id, unique);
   const presentKeys = new Set(present.map((cell) => `${cell.r},${cell.c}`));
   const empties: SheetCell[] = cleared
@@ -409,7 +432,10 @@ export function createSheet(botId: string, body: Record<string, unknown>, author
     };
     db().insert(sheets).values(row).run();
     names.forEach((name, position) => {
-      db().insert(sheetTabs).values({ id: newId("tab"), sheetId: row.id, name, position }).run();
+      db()
+        .insert(sheetTabs)
+        .values({ id: newId("tab"), sheetId: row.id, name, position })
+        .run();
     });
     const first = tabsOf(row.id)[0];
     const written = cells.length ? writeInto(first, cells) : [];
@@ -464,7 +490,13 @@ export function readRange(botId: string, sheetId: string, tabId: unknown, rangeI
   return { tabId: tab.id, range: rangeText({ ...range, r2, c2 }), version: sheet.version, cells: rows.map(cellOf) };
 }
 
-export function writeCells(botId: string, sheetId: string, tabId: unknown, body: Record<string, unknown>, author: BlockAuthor) {
+export function writeCells(
+  botId: string,
+  sheetId: string,
+  tabId: unknown,
+  body: Record<string, unknown>,
+  author: BlockAuthor,
+) {
   const cells = body.cells;
   if (!Array.isArray(cells) || !cells.length) throw new BlockError("cells é obrigatório.");
   if (cells.length > maxWriteCells) throw new BlockError(`No máximo ${maxWriteCells} células por escrita.`);
@@ -511,8 +543,18 @@ function cleanFormat(value: unknown): Record<string, unknown> | null {
   return out;
 }
 
-export function formatCells(botId: string, sheetId: string, tabId: unknown, body: Record<string, unknown>, author: BlockAuthor) {
-  const ranges = Array.isArray(body.ranges) ? body.ranges.map(String) : typeof body.ranges === "string" ? [body.ranges] : [];
+export function formatCells(
+  botId: string,
+  sheetId: string,
+  tabId: unknown,
+  body: Record<string, unknown>,
+  author: BlockAuthor,
+) {
+  const ranges = Array.isArray(body.ranges)
+    ? body.ranges.map(String)
+    : typeof body.ranges === "string"
+      ? [body.ranges]
+      : [];
   if (!ranges.length) throw new BlockError("ranges é obrigatório.");
   const format = cleanFormat(body.format);
   return writeTransaction(() => {
@@ -603,7 +645,12 @@ function tabResult(botId: string, sheet: SheetRow, tab: TabRow | null, author: B
   const next = bump(sheet, author, null);
   return {
     sheet: sheetOf(next),
-    tab: tab ? publicTab(requireTabRow(tab.id), tabsOf(sheet.id).findIndex((item) => item.id === tab.id)) : null,
+    tab: tab
+      ? publicTab(
+          requireTabRow(tab.id),
+          tabsOf(sheet.id).findIndex((item) => item.id === tab.id),
+        )
+      : null,
     event: blockEvent("sheet", sheet.id, sheet.title, next.version, author, "edited", previewOf(sheet.id, tab?.id)),
   };
 }
@@ -636,7 +683,13 @@ export function addTab(botId: string, sheetId: string, body: Record<string, unkn
   });
 }
 
-export function patchTab(botId: string, sheetId: string, tabId: string, body: Record<string, unknown>, author: BlockAuthor) {
+export function patchTab(
+  botId: string,
+  sheetId: string,
+  tabId: string,
+  body: Record<string, unknown>,
+  author: BlockAuthor,
+) {
   return writeTransaction(() => {
     const sheet = requireSheet(botId, sheetId);
     const tab = requireTab(sheet.id, tabId);
@@ -650,8 +703,10 @@ export function patchTab(botId: string, sheetId: string, tabId: string, body: Re
         set.name = name;
       }
     }
-    if (body.frozenRows !== undefined) set.frozenRows = Math.max(0, Math.min(50, Math.floor(Number(body.frozenRows) || 0)));
-    if (body.frozenCols !== undefined) set.frozenCols = Math.max(0, Math.min(20, Math.floor(Number(body.frozenCols) || 0)));
+    if (body.frozenRows !== undefined)
+      set.frozenRows = Math.max(0, Math.min(50, Math.floor(Number(body.frozenRows) || 0)));
+    if (body.frozenCols !== undefined)
+      set.frozenCols = Math.max(0, Math.min(20, Math.floor(Number(body.frozenCols) || 0)));
     if (body.colWidths && typeof body.colWidths === "object") {
       const widths = { ...(tab.colWidths ?? {}) };
       for (const [letters, width] of Object.entries(body.colWidths as Record<string, unknown>)) {
@@ -683,7 +738,13 @@ export function deleteTab(botId: string, sheetId: string, tabId: string, author:
   });
 }
 
-export function structure(botId: string, sheetId: string, tabId: string, body: Record<string, unknown>, author: BlockAuthor) {
+export function structure(
+  botId: string,
+  sheetId: string,
+  tabId: string,
+  body: Record<string, unknown>,
+  author: BlockAuthor,
+) {
   const ops: SheetStructureOp[] = ["insert_rows", "delete_rows", "insert_cols", "delete_cols"];
   const op = body.op as SheetStructureOp;
   if (!ops.includes(op)) throw new BlockError("op inválida.");
@@ -701,7 +762,11 @@ export function structure(botId: string, sheetId: string, tabId: string, body: R
       sqlite.run(`DELETE FROM sheet_cells WHERE tab_id = ? AND ${axis} >= ? AND ${axis} < ?`, [tab.id, at, at + count]);
     const shift = op.startsWith("insert") ? count : -count;
     const from = op.startsWith("insert") ? at : at + count;
-    sqlite.run(`UPDATE sheet_cells SET ${axis} = -(${axis} + ?) - 1 WHERE tab_id = ? AND ${axis} >= ?`, [shift, tab.id, from]);
+    sqlite.run(`UPDATE sheet_cells SET ${axis} = -(${axis} + ?) - 1 WHERE tab_id = ? AND ${axis} >= ?`, [
+      shift,
+      tab.id,
+      from,
+    ]);
     sqlite.run(`UPDATE sheet_cells SET ${axis} = -${axis} - 1 WHERE tab_id = ? AND ${axis} < 0`, [tab.id]);
     rewriteAll(sheet.id, (input, ownTab) => shiftFormula(input, ownTab, tab.name, op, at, count));
     refreshBounds(tab.id);

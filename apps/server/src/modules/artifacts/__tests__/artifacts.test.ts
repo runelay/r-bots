@@ -5,7 +5,12 @@ import * as canvas from "../../canvas/services/canvas.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
-import { artifactContentKey, artifactExtension, listArtifactRows, readArtifactRow } from "../repositories/artifacts.repository";
+import {
+  artifactContentKey,
+  artifactExtension,
+  listArtifactRows,
+  readArtifactRow,
+} from "../repositories/artifacts.repository";
 import {
   artifactCsp,
   artifactEventOf,
@@ -172,7 +177,11 @@ describe("artifacts service", () => {
     expect(artifactContentKey("b", "art_x", 2, "page")).toBe("bots/b/artifacts/art_x/v2.html");
     expect(listArtifactRows("no-artifacts-bot")).toEqual([]);
     const meta = await createArtifact(bot.id, "Autor", "page", page("x"));
-    await saveArtifactMeta({ ...meta, versions: [{ ...meta.versions[0], author: "user" }], canvas: { seen: 1, notified: 0 } });
+    await saveArtifactMeta({
+      ...meta,
+      versions: [{ ...meta.versions[0], author: "user" }],
+      canvas: { seen: 1, notified: 0 },
+    });
     expect(readArtifactRow(bot.id, meta.id)).toMatchObject({
       versions: [{ n: 1, author: "user" }],
       canvas: { seen: 1, notified: 0 },
@@ -299,7 +308,16 @@ describe("artifacts routes", () => {
     const path = `/bots/${bot.id}/artifacts/art_anything0/layout`;
     const laid = await request<{ nodes: Array<{ id: string; x: number; y: number }> }>(path, {
       method: "POST",
-      body: { doc: { layout: "flow", nodes: [{ id: "a", text: "a" }, { id: "b", text: "b" }], edges: [{ from: "a", to: "b" }] } },
+      body: {
+        doc: {
+          layout: "flow",
+          nodes: [
+            { id: "a", text: "a" },
+            { id: "b", text: "b" },
+          ],
+          edges: [{ from: "a", to: "b" }],
+        },
+      },
     });
     expect(laid.status).toBe(200);
     expect(laid.body.nodes.map((item) => item.id)).toEqual(["a", "b"]);

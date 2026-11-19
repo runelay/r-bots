@@ -29,8 +29,16 @@ beforeEach(async () => {
 
 describe("notes", () => {
   test("links, backlinks, rename relink, search without accents and trash", () => {
-    const plano = createNote(bot, { title: "Plano Q1", folder: "Projetos", content: "# Plano\n\n- [ ] Fechar metas #meta" }, "bot").note;
-    const diario = createNote(bot, { title: "Diário", content: "Hoje revisei o [[Plano Q1|plano]] e [[Ideias]]." }, "bot").note;
+    const plano = createNote(
+      bot,
+      { title: "Plano Q1", folder: "Projetos", content: "# Plano\n\n- [ ] Fechar metas #meta" },
+      "bot",
+    ).note;
+    const diario = createNote(
+      bot,
+      { title: "Diário", content: "Hoje revisei o [[Plano Q1|plano]] e [[Ideias]]." },
+      "bot",
+    ).note;
     expect(noteOf(bot, requireNote(bot, diario.id)).links).toEqual([
       { target: "Plano Q1", id: plano.id, title: "Plano Q1" },
       { target: "Ideias", id: null, title: "Ideias" },
@@ -55,7 +63,12 @@ describe("notes", () => {
     const patched = patchNote(
       bot,
       note.id,
-      { ops: [{ op: "toggle_task", line: 1, done: true }, { op: "insert_after_heading", heading: "Tarefas", text: "- [ ] b" }] },
+      {
+        ops: [
+          { op: "toggle_task", line: 1, done: true },
+          { op: "insert_after_heading", heading: "Tarefas", text: "- [ ] b" },
+        ],
+      },
       "bot",
     );
     expect(patched.note.content).toBe("# Tarefas\n- [x] a\n- [ ] b\n\n# Fim");
@@ -71,14 +84,25 @@ describe("sheets", () => {
   test("cross-tab formulas recalc dependents, structure and xlsx export keeps formulas", async () => {
     const { sheet } = createSheet(
       bot,
-      { title: "Orçamento", tabs: ["Dados", "Resumo"], cells: [{ a: "A1", input: "10" }, { a: "A2", input: "20" }] },
+      {
+        title: "Orçamento",
+        tabs: ["Dados", "Resumo"],
+        cells: [
+          { a: "A1", input: "10" },
+          { a: "A2", input: "20" },
+        ],
+      },
       "bot",
     );
     const [dados, resumo] = sheet.tabs;
     writeCells(bot, sheet.id, resumo.id, { cells: [{ a: "B2", input: "=SOMA(Dados!A1:A2)" }] }, "bot");
     const result = writeCells(bot, sheet.id, dados.id, { cells: [{ a: "A1", input: "15" }] }, "user").result;
     expect(result.cells.map((cell) => cell.a)).toEqual(["A1"]);
-    expect(readRange(bot, sheet.id, resumo.id, "B2").cells[0]).toMatchObject({ v: 35, t: "n", input: "=SOMA(Dados!A1:A2)" });
+    expect(readRange(bot, sheet.id, resumo.id, "B2").cells[0]).toMatchObject({
+      v: 35,
+      t: "n",
+      input: "=SOMA(Dados!A1:A2)",
+    });
     structure(bot, sheet.id, dados.id, { op: "insert_rows", at: 0, count: 1 }, "bot");
     expect(readRange(bot, sheet.id, resumo.id, "B2").cells[0]).toMatchObject({ v: 35, input: "=SOMA(Dados!A2:A3)" });
     expect(addTab(bot, sheet.id, { name: "Extra" }, "bot").sheet.tabs).toHaveLength(3);

@@ -3,7 +3,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { DecisionRecord } from "../src/modules/approvals/services/decisions.service";
 import { type BotDefinition, createBot, decisionsOf, getBot } from "../src/modules/bots/services/bots.service";
-import { createStoredSession, type Fact, type StoredSession } from "../src/modules/conversations/services/sessions.service";
+import {
+  createStoredSession,
+  type Fact,
+  type StoredSession,
+} from "../src/modules/conversations/services/sessions.service";
 import type { ApprovalDetails } from "../src/modules/engine/services/bot-tools.service";
 import {
   type ApprovalResult,

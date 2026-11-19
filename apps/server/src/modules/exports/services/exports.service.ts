@@ -56,7 +56,10 @@ function jobOf(botId: string, row: ExportRow): ExportJob {
   };
 }
 
-function inlineRuns(tokens: Token[] | undefined, style: { bold?: boolean; italics?: boolean; strike?: boolean } = {}): ParagraphChild[] {
+function inlineRuns(
+  tokens: Token[] | undefined,
+  style: { bold?: boolean; italics?: boolean; strike?: boolean } = {},
+): ParagraphChild[] {
   const runs: ParagraphChild[] = [];
   for (const token of tokens ?? []) {
     if (token.type === "strong") runs.push(...inlineRuns((token as Tokens.Strong).tokens, { ...style, bold: true }));
@@ -73,11 +76,19 @@ function inlineRuns(tokens: Token[] | undefined, style: { bold?: boolean; italic
 }
 
 function unescape(text: string) {
-  return text.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
 }
 
 function wikiText(text: string) {
-  return text.replace(/\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g, (_m, target: string, alias?: string) => alias ?? target);
+  return text.replace(
+    /\[\[([^\]|#\n]+)(?:#[^\]|\n]*)?(?:\|([^\]\n]*))?\]\]/g,
+    (_m, target: string, alias?: string) => alias ?? target,
+  );
 }
 
 const headingLevels = [
@@ -95,17 +106,27 @@ function blockParagraphs(tokens: Token[], depth = 0): Paragraph[] {
     if (token.type === "heading") {
       const heading = token as Tokens.Heading;
       out.push(new Paragraph({ heading: headingLevels[heading.depth - 1], children: inlineRuns(heading.tokens) }));
-    } else if (token.type === "paragraph") out.push(new Paragraph({ children: inlineRuns((token as Tokens.Paragraph).tokens) }));
+    } else if (token.type === "paragraph")
+      out.push(new Paragraph({ children: inlineRuns((token as Tokens.Paragraph).tokens) }));
     else if (token.type === "list") {
       const list = token as Tokens.List;
       list.items.forEach((item, index) => {
         const inline = item.tokens.filter((child) => child.type === "text" || child.type === "paragraph");
         const nested = item.tokens.filter((child) => child.type === "list");
-        const marker = item.task ? (item.checked ? "☑ " : "☐ ") : list.ordered ? `${Number(list.start || 1) + index}. ` : "";
+        const marker = item.task
+          ? item.checked
+            ? "☑ "
+            : "☐ "
+          : list.ordered
+            ? `${Number(list.start || 1) + index}. `
+            : "";
         out.push(
           new Paragraph({
             ...(list.ordered || item.task ? { indent: { left: 360 * (depth + 1) } } : { bullet: { level: depth } }),
-            children: [new TextRun(marker), ...inline.flatMap((child) => inlineRuns((child as Tokens.Text).tokens ?? [child]))],
+            children: [
+              new TextRun(marker),
+              ...inline.flatMap((child) => inlineRuns((child as Tokens.Text).tokens ?? [child])),
+            ],
           }),
         );
         out.push(...blockParagraphs(nested, depth + 1));
@@ -119,13 +140,17 @@ function blockParagraphs(tokens: Token[], depth = 0): Paragraph[] {
           }),
         );
     } else if (token.type === "blockquote") {
-      for (const paragraph of blockParagraphs((token as Tokens.Blockquote).tokens, depth))
-        out.push(paragraph);
+      for (const paragraph of blockParagraphs((token as Tokens.Blockquote).tokens, depth)) out.push(paragraph);
     } else if (token.type === "hr") out.push(new Paragraph({ thematicBreak: true }));
     else if (token.type === "table") {
       const table = token as Tokens.Table;
-      out.push(new Paragraph({ children: [new TextRun({ text: table.header.map((cell) => cell.text).join(" | "), bold: true })] }));
-      for (const row of table.rows) out.push(new Paragraph({ children: [new TextRun(row.map((cell) => cell.text).join(" | "))] }));
+      out.push(
+        new Paragraph({
+          children: [new TextRun({ text: table.header.map((cell) => cell.text).join(" | "), bold: true })],
+        }),
+      );
+      for (const row of table.rows)
+        out.push(new Paragraph({ children: [new TextRun(row.map((cell) => cell.text).join(" | "))] }));
     } else if (token.type === "space") continue;
     else if ("text" in token) out.push(new Paragraph({ children: [new TextRun(wikiText(String(token.text)))] }));
   }
@@ -141,7 +166,15 @@ export async function noteDocx(title: string, markdown: string) {
     sections: [
       {
         children: [
-          ...(startsWithTitle ? [] : [new Paragraph({ heading: HeadingLevel.TITLE, alignment: AlignmentType.LEFT, children: [new TextRun(title)] })]),
+          ...(startsWithTitle
+            ? []
+            : [
+                new Paragraph({
+                  heading: HeadingLevel.TITLE,
+                  alignment: AlignmentType.LEFT,
+                  children: [new TextRun(title)],
+                }),
+              ]),
           ...blockParagraphs(tokens),
         ],
       },
@@ -223,7 +256,8 @@ export async function sheetXlsx(botId: string, sheetId: string) {
   workbook.calcProperties.fullCalcOnLoad = true;
   for (const tab of tabs) {
     const worksheet = workbook.addWorksheet(tab.name, {
-      views: tab.frozenRows || tab.frozenCols ? [{ state: "frozen", xSplit: tab.frozenCols, ySplit: tab.frozenRows }] : [],
+      views:
+        tab.frozenRows || tab.frozenCols ? [{ state: "frozen", xSplit: tab.frozenCols, ySplit: tab.frozenRows }] : [],
     });
     for (const [letters, width] of Object.entries(tab.colWidths ?? {}))
       worksheet.getColumn(letters).width = Math.max(4, Math.round(width / 7));
@@ -231,7 +265,12 @@ export async function sheetXlsx(botId: string, sheetId: string) {
       const cell = cellOf(row);
       const target = worksheet.getCell(row.row + 1, row.col + 1);
       if (cell.input.trim().startsWith("=")) {
-        const result = cell.t === "d" && typeof cell.v === "string" ? excelSerial(cell.v) : cell.t === "e" ? { error: cell.v } : cell.v;
+        const result =
+          cell.t === "d" && typeof cell.v === "string"
+            ? excelSerial(cell.v)
+            : cell.t === "e"
+              ? { error: cell.v }
+              : cell.v;
         target.value = { formula: toEngineFormula(cell.input.trim()), result } as ExcelJS.CellFormulaValue;
       } else if (cell.input) target.value = plainValue(cell) as ExcelJS.CellValue;
       const format = cell.format;
@@ -249,10 +288,18 @@ function displayValue(cell: SheetCell) {
   if (cell.t === "b") return cell.v ? "VERDADEIRO" : "FALSO";
   if (cell.t === "n" && typeof cell.v === "number") {
     const format = cell.format;
-    if (format?.type === "percent") return `${(cell.v * 100).toLocaleString("pt-BR", { maximumFractionDigits: format.decimals ?? 2 })}%`;
+    if (format?.type === "percent")
+      return `${(cell.v * 100).toLocaleString("pt-BR", { maximumFractionDigits: format.decimals ?? 2 })}%`;
     if (format?.type === "brl")
-      return cell.v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: format.decimals ?? 2 });
-    return cell.v.toLocaleString("pt-BR", { maximumFractionDigits: format?.decimals ?? 10, useGrouping: format?.type === "number" });
+      return cell.v.toLocaleString("pt-BR", {
+        style: "currency",
+        currency: "BRL",
+        minimumFractionDigits: format.decimals ?? 2,
+      });
+    return cell.v.toLocaleString("pt-BR", {
+      maximumFractionDigits: format?.decimals ?? 10,
+      useGrouping: format?.type === "number",
+    });
   }
   if (cell.t === "d" && typeof cell.v === "string") {
     const [y, m, d] = cell.v.slice(0, 10).split("-");
@@ -301,7 +348,13 @@ export async function sheetPdf(botId: string, sheetId: string, tabId?: string | 
   );
 }
 
-async function render(botId: string, kind: "note" | "sheet", sourceId: string, format: ExportFormat, tabId?: string | null) {
+async function render(
+  botId: string,
+  kind: "note" | "sheet",
+  sourceId: string,
+  format: ExportFormat,
+  tabId?: string | null,
+) {
   if (kind === "note") {
     const note = requireNote(botId, sourceId);
     const base = note.title;
@@ -311,7 +364,8 @@ async function render(botId: string, kind: "note" | "sheet", sourceId: string, f
   }
   const { sheet } = bookFor(botId, sourceId);
   if (format === "xlsx") return { name: `${sheet.title}.xlsx`, data: await sheetXlsx(botId, sourceId) };
-  if (format === "csv") return { name: `${sheet.title}.csv`, data: new TextEncoder().encode(sheetCsv(botId, sourceId, tabId)) };
+  if (format === "csv")
+    return { name: `${sheet.title}.csv`, data: new TextEncoder().encode(sheetCsv(botId, sourceId, tabId)) };
   return { name: `${sheet.title}.pdf`, data: await sheetPdf(botId, sourceId, tabId) };
 }
 
@@ -320,7 +374,9 @@ export async function createExport(botId: string, body: Record<string, unknown>)
   if (!kind) throw new BlockError("kind precisa ser note ou sheet.");
   const format = String(body.format ?? "") as ExportFormat;
   if (!exportFormatsFor(kind).includes(format))
-    throw new BlockError(`Formato inválido para ${kind === "note" ? "nota" : "planilha"}: use ${exportFormatsFor(kind).join(", ")}.`);
+    throw new BlockError(
+      `Formato inválido para ${kind === "note" ? "nota" : "planilha"}: use ${exportFormatsFor(kind).join(", ")}.`,
+    );
   const sourceId = String(body.id ?? "");
   const tabId = typeof body.tabId === "string" && body.tabId ? body.tabId : null;
   if (kind === "note") requireNote(botId, sourceId);
@@ -342,7 +398,11 @@ export async function createExport(botId: string, body: Record<string, unknown>)
       .run();
   } catch (error) {
     db.update(exports)
-      .set({ status: "failed", error: (error instanceof Error ? error.message : String(error)).slice(0, 300), finishedAt: nowIso() })
+      .set({
+        status: "failed",
+        error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+        finishedAt: nowIso(),
+      })
       .where(eq(exports.id, id))
       .run();
   }

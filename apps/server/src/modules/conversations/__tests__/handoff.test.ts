@@ -60,8 +60,14 @@ function richHistory() {
     { type: "content.completed", data: { kind: "text", partId: "run_0.0", phase: "narration", value: "Vou olhar." } },
     { type: "content.completed", data: { kind: "image", partId: "run_0.1", value: "x" } },
     { type: "content.completed", data: { kind: "text", partId: "run_0.2", value: "   " } },
-    { type: "call.requested", data: { callId: "c1", capability: { name: "Bash", label: "Rodar ls" }, input: { command: "ls" } } },
-    { type: "call.settled", data: { callId: "c1", outcome: "completed", output: { stdout: "a\nb", stderr: "warn", exitCode: 0 } } },
+    {
+      type: "call.requested",
+      data: { callId: "c1", capability: { name: "Bash", label: "Rodar ls" }, input: { command: "ls" } },
+    },
+    {
+      type: "call.settled",
+      data: { callId: "c1", outcome: "completed", output: { stdout: "a\nb", stderr: "warn", exitCode: 0 } },
+    },
     { type: "call.requested", data: { callId: "c2" } },
     { type: "call.settled", data: { callId: "c2", output: [{ text: "parte 1" }, { text: null }] } },
     { type: "call.requested", data: { callId: "c3", capability: { name: "prod_query" }, input: { sql: "select 1" } } },
@@ -131,7 +137,11 @@ function richHistory() {
     { type: "delivery.consumed", data: { source: "chat" } },
   );
   session.log.lines.push("not json");
-  session.log.lines.push(JSON.stringify({ facts: [{ type: "content.completed", data: { kind: "text", partId: "p", phase: "reply", value: "sem hora" } }] }));
+  session.log.lines.push(
+    JSON.stringify({
+      facts: [{ type: "content.completed", data: { kind: "text", partId: "p", phase: "reply", value: "sem hora" } }],
+    }),
+  );
   session.log.lines.push(JSON.stringify({ at: "x" }));
 }
 
@@ -166,7 +176,9 @@ describe("threadItems", () => {
     expect(byId.get("e_turn_1:src/b.ts")?.brief).toBe("src/b.ts +0 −0 (apagado)");
     expect(byId.get("e_turn_1:")?.brief).toBe(" +0 −0");
     expect(byId.get("p_i1")).toMatchObject({ pending: false, brief: "Aprovação pedida: Posso apagar? (negada)" });
-    expect(byId.get("p_i2")?.text).toBe("Aprovação pedida: Pedido de segredo pelo formulário seguro.\nResposta: strange.");
+    expect(byId.get("p_i2")?.text).toBe(
+      "Aprovação pedida: Pedido de segredo pelo formulário seguro.\nResposta: strange.",
+    );
     expect(byId.get("p_i3")?.pending).toBe(true);
     expect(byId.get("r_art1_v2")?.meta).toMatchObject({ version: 2 });
     expect(byId.get("f_U2")?.text).toBe("Arquivo enviado à pessoa: r.csv (text/csv, U2).");
@@ -195,7 +207,11 @@ describe("threadItems", () => {
       JSON.stringify({
         at: "t",
         facts: [
-          { type: "call.requested", data: { callId: "k", capability: { name: "n" }, input: {} }, scope: { turnId: "turn_0" } },
+          {
+            type: "call.requested",
+            data: { callId: "k", capability: { name: "n" }, input: {} },
+            scope: { turnId: "turn_0" },
+          },
         ],
       }),
     );
@@ -205,7 +221,9 @@ describe("threadItems", () => {
     const items = threadItems(session);
     expect(items.map((item) => item.id)).toEqual(["u_turn_0"]);
     const lines = session.log.lines;
-    lines.push(`{"at":"t","facts":[{"type":"call.settled","data":{"callId":"k","outcome":"completed"},"scope":{"turnId":"turn_0"}}]}`);
+    lines.push(
+      `{"at":"t","facts":[{"type":"call.settled","data":{"callId":"k","outcome":"completed"},"scope":{"turnId":"turn_0"}}]}`,
+    );
     const settled = threadItems(session).find((item) => item.id === "t_k");
     expect(settled?.text).toContain("(vazio)");
   });
@@ -301,7 +319,9 @@ describe("handoffBlock", () => {
     session.meta.providerSynced = { k: "turn_3" };
     session.meta.handoff = { summary: "resumo", lastItemId: "u_turn_1", updatedAt: "t" };
     const block = await handoffBlock(session, { key: "k", currentTurnId: "turn_5", reason: "limite" });
-    expect(block).toContain("Handoff de contexto (o que você não viu). Enquanto outra conta ou modelo respondia, a conversa");
+    expect(block).toContain(
+      "Handoff de contexto (o que você não viu). Enquanto outra conta ou modelo respondia, a conversa",
+    );
     expect(block).toContain("andou nos turnos 4–4. Motivo: limite.");
     expect(block).toContain("novo pedido");
     expect(block).not.toContain("antigo");
@@ -322,10 +342,13 @@ describe("handoffBlock", () => {
     expect(block).toContain("Linha do tempo depois do resumo");
     expect(block).not.toContain("- u_turn_1 (pessoa)");
     expect(block).toMatch(/Ids omitidos, mais novos por último \(mostrando 60; os \d+ mais antigos estão no resumo\)/);
-    const noSummary = await handoffBlock({ ...session, meta: { ...session.meta, handoff: undefined } } as StoredSession, {
-      key: "k",
-      currentTurnId: "turn_89",
-    });
+    const noSummary = await handoffBlock(
+      { ...session, meta: { ...session.meta, handoff: undefined } } as StoredSession,
+      {
+        key: "k",
+        currentTurnId: "turn_89",
+      },
+    );
     expect(noSummary).toContain("não aparecem aqui");
   });
 
@@ -388,10 +411,14 @@ describe("refreshSummary", () => {
 
   test("forces a summary near the end, caps the input and ignores empty answers", async () => {
     for (let index = 0; index < 20; index++)
-      add(`turn_${index}`, {
-        type: "call.requested",
-        data: { callId: `c${index}`, capability: { name: "t" }, input: {} },
-      }, { type: "call.settled", data: { callId: `c${index}`, output: "z".repeat(5000) } });
+      add(
+        `turn_${index}`,
+        {
+          type: "call.requested",
+          data: { callId: `c${index}`, capability: { name: "t" }, input: {} },
+        },
+        { type: "call.settled", data: { callId: `c${index}`, output: "z".repeat(5000) } },
+      );
     for (let index = 0; index < 60; index++)
       add(`turn_${index + 20}`, { type: "delivery.consumed", data: { parts: [{ text: "w".repeat(700) }] } });
     fakeProviders.next(({ emit }) => emit({ type: "text", part: "0", text: "" }));

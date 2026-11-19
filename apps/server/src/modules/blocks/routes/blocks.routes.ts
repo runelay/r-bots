@@ -182,7 +182,14 @@ async function exportsRoute(req: Req, res: Res, method: string, bot: BotDefiniti
   return notFound(res);
 }
 
-export async function handleBotBlocks(req: Req, res: Res, url: URL, method: string, bot: BotDefinition, rest: string[]) {
+export async function handleBotBlocks(
+  req: Req,
+  res: Res,
+  url: URL,
+  method: string,
+  bot: BotDefinition,
+  rest: string[],
+) {
   const [root, ...path] = rest;
   try {
     if (root === "notes") return await notesRoute(req, res, url, method, bot, path);
@@ -200,7 +207,10 @@ export async function handleBotBlocks(req: Req, res: Res, url: URL, method: stri
       });
     if (error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: "JSON inválido." });
     if (/runelay|call_tool|fetch failed|timed out/i.test((error as Error)?.message ?? ""))
-      return sendJson(res, 502, { ok: false, error: `A agenda não respondeu: ${(error as Error).message}`.slice(0, 300) });
+      return sendJson(res, 502, {
+        ok: false,
+        error: `A agenda não respondeu: ${(error as Error).message}`.slice(0, 300),
+      });
     throw error;
   }
 }

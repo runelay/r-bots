@@ -1,5 +1,10 @@
 import { ValidationError } from "../../../shared/errors";
-import { type AccessService, InviteInvalidError, SetupClosedError, signSessionCookie } from "../services/accounts-access.service";
+import {
+  type AccessService,
+  InviteInvalidError,
+  SetupClosedError,
+  signSessionCookie,
+} from "../services/accounts-access.service";
 import type { Principal } from "../services/auth.middleware";
 import { type Auth, authBasePath, devicePagePath, ownerRole } from "../services/auth.service";
 import { devicePage } from "./device-page";
@@ -19,9 +24,7 @@ function json(body: unknown, status = 200) {
 }
 
 function clientKey(request: Request) {
-  return (
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "local"
-  );
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "local";
 }
 
 async function readJson(request: Request) {
@@ -37,7 +40,8 @@ async function readJson(request: Request) {
 function failure(error: unknown) {
   if (error instanceof ValidationError) return json({ ok: false, error: error.message, field: error.field }, 400);
   if (error instanceof SetupClosedError) return json({ ok: false, error: error.message, code: "setup_closed" }, 409);
-  if (error instanceof InviteInvalidError) return json({ ok: false, error: error.message, code: "invite_invalid" }, 400);
+  if (error instanceof InviteInvalidError)
+    return json({ ok: false, error: error.message, code: "invite_invalid" }, 400);
   const status = (error as { statusCode?: number }).statusCode;
   if (typeof status === "number" && status >= 400 && status < 500)
     return json({ ok: false, error: (error as Error).message || "Pedido inválido." }, status);
@@ -121,7 +125,10 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
         if (path === "/auth/invites" && method === "GET")
           return json({ ok: true, invites: await deps.access.listInvites() });
         if (path === "/auth/invites" && method === "POST")
-          return json({ ok: true, ...(await deps.access.createInvite(principal.userId, await readJson(request))) }, 201);
+          return json(
+            { ok: true, ...(await deps.access.createInvite(principal.userId, await readJson(request))) },
+            201,
+          );
         const id = decodeURIComponent(path.slice("/auth/invites/".length));
         if (id && method === "DELETE") {
           await deps.access.revokeInvite(id);

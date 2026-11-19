@@ -78,7 +78,9 @@ describe("conversation rows", () => {
       last_message: JSON.stringify({ role: "user", text: "oi" }),
     });
     expect(
-      db.$client.query<{ updated_at: string }, []>("SELECT updated_at FROM conversations WHERE session_id = 's2'").get(),
+      db.$client
+        .query<{ updated_at: string }, []>("SELECT updated_at FROM conversations WHERE session_id = 's2'")
+        .get(),
     ).toEqual({ updated_at: "2031-01-01" });
     expect(loadConversationRows(db).map((item) => [item.meta.sessionId, item.lastSeq])).toEqual([
       ["s2", 0],

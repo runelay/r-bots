@@ -106,7 +106,10 @@ describe("global code routes", () => {
     const grants = await request<Array<{ repo: string; key: string }>>("/code/grants");
     expect(grants.status).toBe(200);
     expect(grants.body).toContainEqual(expect.objectContaining({ repo: name, key: "push" }));
-    const removed = await request<{ ok: boolean }>("/code/grants", { method: "DELETE", body: { repo: name, key: "push" } });
+    const removed = await request<{ ok: boolean }>("/code/grants", {
+      method: "DELETE",
+      body: { repo: name, key: "push" },
+    });
     expect(removed.status).toBe(200);
     expect(removed.body.ok).toBe(true);
     const again = await request<{ error: string }>("/code/grants", { method: "DELETE", body: {} });
@@ -421,7 +424,13 @@ describe("checkpoints and rewind", () => {
       removed: number;
     }>(`/bots/${bot.id}/code/rewind`, { method: "POST", body: { turnId: "turn_1" } });
     expect(rewound.status).toBe(200);
-    expect(rewound.body).toEqual({ turnId: "turn_1", turnIds: ["turn_1", "turn_2"], filesRestored: true, restored: 2, removed: 1 });
+    expect(rewound.body).toEqual({
+      turnId: "turn_1",
+      turnIds: ["turn_1", "turn_2"],
+      filesRestored: true,
+      restored: 2,
+      removed: 1,
+    });
     expect(existsSync(join(workspace.path, "extra.txt"))).toBe(false);
     expect(session.meta.revertedTurns).toEqual(["turn_1", "turn_2"]);
     expect(session.meta.providerSessions).toEqual({});
@@ -458,7 +467,12 @@ describe("preview proxy", () => {
     const seen: Array<{ method: string; path: string; body: string; host: string | null }> = [];
     const port = upstream(async (incoming) => {
       const url = new URL(incoming.url);
-      seen.push({ method: incoming.method, path: url.pathname, body: await incoming.text(), host: incoming.headers.get("host") });
+      seen.push({
+        method: incoming.method,
+        path: url.pathname,
+        body: await incoming.text(),
+        host: incoming.headers.get("host"),
+      });
       return new Response(`page ${url.pathname}`, { headers: { "x-upstream": "yes" } });
     });
     const token = "tok-preview-1";

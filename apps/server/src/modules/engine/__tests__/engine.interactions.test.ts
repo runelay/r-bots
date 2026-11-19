@@ -165,7 +165,10 @@ describe("steering a paused turn", () => {
     await idle(session);
     const steer = factsOfType(session, "delivery.consumed").find((fact) => fact.data.steer);
     expect(steer?.data).toMatchObject({ deliveryId: "dlv_steer", turnId: "turn_0" });
-    expect(factsOfType(session, "interaction.settled")[0].data).toMatchObject({ outcome: "withdrawn", reason: "message" });
+    expect(factsOfType(session, "interaction.settled")[0].data).toMatchObject({
+      outcome: "withdrawn",
+      reason: "message",
+    });
     expect(ask.results[0].choice).toBe("deny");
     expect(fakeProviders.turns).toHaveLength(2);
     expect(lastRequest().prompt).toContain("não apaga, só lista");
@@ -286,7 +289,10 @@ describe("progress guard", () => {
     });
     await run(session, { text: "arruma o build" });
     expect(progress).toHaveBeenCalledTimes(1);
-    expect(progress.mock.calls[0]).toEqual(["arruma o build", ["tentativa 1", "tentativa 2", "tentativa 3", "tentativa 4"]]);
+    expect(progress.mock.calls[0]).toEqual([
+      "arruma o build",
+      ["tentativa 1", "tentativa 2", "tentativa 3", "tentativa 4"],
+    ]);
     expect(settledOf(session)).toMatchObject({ outcome: "completed", stoppedBy: "progress_guard" });
     const reply = repliesOf(session).join("\n");
     expect(reply).toContain("Parei aqui porque não estava avançando");
@@ -298,7 +304,11 @@ describe("progress guard", () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);
     track(
-      spyOn(decisions, "decideProgress").mockResolvedValue({ kind: "progress", outcome: "continue", answer: null } as never),
+      spyOn(decisions, "decideProgress").mockResolvedValue({
+        kind: "progress",
+        outcome: "continue",
+        answer: null,
+      } as never),
     );
     fakeProviders.next(async (turn) => {
       const context = contextOf(turn);

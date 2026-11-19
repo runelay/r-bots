@@ -50,7 +50,10 @@ export function saveUsageChanges(index: UsageIndexRows, changes: UsageChanges, d
       for (const path of changes.files) {
         const state = index.files[path];
         if (!state) continue;
-        db.insert(usageCursors).values({ path, state }).onConflictDoUpdate({ target: usageCursors.path, set: { state } }).run();
+        db.insert(usageCursors)
+          .values({ path, state })
+          .onConflictDoUpdate({ target: usageCursors.path, set: { state } })
+          .run();
       }
       const goneBuckets: string[] = [];
       for (const key of changes.buckets) {
@@ -61,7 +64,13 @@ export function saveUsageChanges(index: UsageIndexRows, changes: UsageChanges, d
           continue;
         }
         db.insert(usageBuckets)
-          .values({ hour: Number(hour), provider: String(provider), model: String(model), tier: String(tier ?? ""), counters })
+          .values({
+            hour: Number(hour),
+            provider: String(provider),
+            model: String(model),
+            tier: String(tier ?? ""),
+            counters,
+          })
           .onConflictDoUpdate({
             target: [usageBuckets.hour, usageBuckets.provider, usageBuckets.model, usageBuckets.tier],
             set: { counters },

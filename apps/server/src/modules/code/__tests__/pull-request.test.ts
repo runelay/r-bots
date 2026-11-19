@@ -3,15 +3,7 @@ import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProcessCall, ProcessReply } from "../../../../test/helpers";
 import { resetData } from "../../../../test/helpers";
-import {
-  codeProcesses,
-  factsOf,
-  ghArgs,
-  gitArgs,
-  gitSync,
-  makeRepo,
-  newSession,
-} from "../../../../test/code-helpers";
+import { codeProcesses, factsOf, ghArgs, gitArgs, gitSync, makeRepo, newSession } from "../../../../test/code-helpers";
 import * as engine from "../../engine/services/engine.service";
 import { watchApp } from "../../status/services/viewers.service";
 import { listWorktrees, recordWorktree } from "../repositories/code.repository";
@@ -30,7 +22,13 @@ import {
   startPrWatcher,
   summarizeLog,
 } from "../services/pull-request.service";
-import { activeWorkspace, listRepos, openWorkspace, waitForInstall, type WorkspaceState } from "../services/workspace.service";
+import {
+  activeWorkspace,
+  listRepos,
+  openWorkspace,
+  waitForInstall,
+  type WorkspaceState,
+} from "../services/workspace.service";
 
 beforeEach(async () => {
   await resetData();
@@ -140,9 +138,7 @@ describe("classification and snapshots", () => {
       status: "open",
       review: null,
     });
-    expect(
-      snapshotFromView({ number: 1, statusCheckRollup: [{ name: "a", status: "QUEUED" }] }).ci,
-    ).toBe("pending");
+    expect(snapshotFromView({ number: 1, statusCheckRollup: [{ name: "a", status: "QUEUED" }] }).ci).toBe("pending");
     expect(
       snapshotFromView({ number: 1, statusCheckRollup: [{ name: "a", status: "COMPLETED", conclusion: "SUCCESS" }] })
         .ci,
@@ -193,14 +189,26 @@ describe("gh lookups", () => {
       "pr view 5 --json number": { stdout: JSON.stringify({ number: 5, state: "OPEN" }) },
       "pr view 6 --json number": { stdout: "not json" },
       "pr view 7 --json number": { code: 1 },
-      "pr list": { stdout: JSON.stringify([{ number: 1, updatedAt: "2026-01-01" }, { number: 2, updatedAt: "2026-02-01" }, { number: 3 }]) },
+      "pr list": {
+        stdout: JSON.stringify([
+          { number: 1, updatedAt: "2026-01-01" },
+          { number: 2, updatedAt: "2026-02-01" },
+          { number: 3 },
+        ]),
+      },
       "run view --job 22": { stdout: "error: broke\n" },
       "run view 11": { stdout: "  \n" },
       "pr view 9 --json reviews": {
         stdout: JSON.stringify({
           reviews: [
             { id: "r1", state: "CHANGES_REQUESTED", body: "old", author: { login: "a" }, submittedAt: "2026-01-01" },
-            { id: "r2", state: "CHANGES_REQUESTED", body: "  please\n fix  ", author: { login: "b" }, submittedAt: "2026-02-01" },
+            {
+              id: "r2",
+              state: "CHANGES_REQUESTED",
+              body: "  please\n fix  ",
+              author: { login: "b" },
+              submittedAt: "2026-02-01",
+            },
             { id: "r3", state: "APPROVED", submittedAt: "2026-03-01" },
             { id: "r4", state: "CHANGES_REQUESTED" },
           ],
@@ -230,9 +238,7 @@ describe("gh lookups", () => {
     const check = (url: string | null) => ({ name: "c", url }) as PrCheck;
     expect(await failedLog(workspaceStub, check(null))).toBeNull();
     expect(await failedLog(workspaceStub, check("https://ci.example/1"))).toBeNull();
-    expect(await failedLog(workspaceStub, check("https://github.com/o/r/actions/runs/11/job/22"))).toBe(
-      "error: broke",
-    );
+    expect(await failedLog(workspaceStub, check("https://github.com/o/r/actions/runs/11/job/22"))).toBe("error: broke");
     expect(await failedLog(workspaceStub, check("https://github.com/o/r/actions/runs/11"))).toBeNull();
     expect(await failedLog(workspaceStub, check("https://github.com/o/r/actions/runs/12"))).toBeNull();
 
@@ -329,7 +335,11 @@ describe("refreshing a workspace PR", () => {
     expect(workspace.pr?.ci).toBe("failure");
     expect(factsOf(session, "code.pr")).toHaveLength(1);
     expect(factsOf(session, "code.ci")[0].data).toMatchObject({ outcome: "failure", log: "FAIL a.test.ts", number: 7 });
-    expect(factsOf(session, "code.review")[0].data).toMatchObject({ state: "changes_requested", author: "rev", body: "fix" });
+    expect(factsOf(session, "code.review")[0].data).toMatchObject({
+      state: "changes_requested",
+      author: "rev",
+      body: "fix",
+    });
 
     await refreshPr(session);
     expect(factsOf(session, "code.pr")).toHaveLength(1);
@@ -339,7 +349,12 @@ describe("refreshing a workspace PR", () => {
     expect(factsOf(session, "code.ci").at(-1)?.data).toMatchObject({ outcome: "success", checks: 1 });
     expect(factsOf(session, "code.review").at(-1)?.data).toMatchObject({ state: "approved" });
 
-    current = view(7, { statusCheckRollup: [passing], reviewDecision: "APPROVED", state: "MERGED", mergedAt: "2026-01-01T00:00:00Z" });
+    current = view(7, {
+      statusCheckRollup: [passing],
+      reviewDecision: "APPROVED",
+      state: "MERGED",
+      mergedAt: "2026-01-01T00:00:00Z",
+    });
     await refreshPr(session);
     const record = (await listWorktrees()).find((item) => item.id === workspace.id);
     expect(record?.prUrl).toBe("https://github.com/o/r/pull/7");
@@ -357,7 +372,9 @@ describe("refreshing a workspace PR", () => {
     push(workspace);
     gh({
       "pr list": { stdout: JSON.stringify([{ number: 3 }]) },
-      "pr view 3 --json number": { stdout: JSON.stringify(view(3, { statusCheckRollup: [failing], reviewDecision: "CHANGES_REQUESTED" })) },
+      "pr view 3 --json number": {
+        stdout: JSON.stringify(view(3, { statusCheckRollup: [failing], reviewDecision: "CHANGES_REQUESTED" })),
+      },
       "run view": { code: 1 },
       "pr view 3 --json reviews": { code: 1 },
       "api repos": { code: 1 },
@@ -529,9 +546,7 @@ describe("watcher", () => {
     broken.workspace.pr = snapshotFromView(view(43, { state: "MERGED", mergedAt: "2020-01-01T00:00:00Z" }));
     push(broken.workspace);
     codeProcesses((call) => (gitArgs(call, "worktree", "remove") ? { code: 1, stderr: "nope" } : undefined));
-    const isBusy = spyOn(engine, "isBusy").mockImplementation(
-      (sessionId) => sessionId === busy.session.meta.sessionId,
-    );
+    const isBusy = spyOn(engine, "isBusy").mockImplementation((sessionId) => sessionId === busy.session.meta.sessionId);
     const warn = spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       kickPr(busy.session);
@@ -539,7 +554,11 @@ describe("watcher", () => {
       kickPr(broken.session);
       await tickOnce(10_000);
       await until(() => warn.mock.calls.some((args) => args[0] === "pr watch failed"));
-      expect(warn).toHaveBeenCalledWith("pr watch failed", broken.session.meta.sessionId, expect.stringContaining("nope"));
+      expect(warn).toHaveBeenCalledWith(
+        "pr watch failed",
+        broken.session.meta.sessionId,
+        expect.stringContaining("nope"),
+      );
       expect(activeWorkspace(busy.session)).not.toBeNull();
       expect(activeWorkspace(dirty.session)).not.toBeNull();
     } finally {

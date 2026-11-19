@@ -65,7 +65,13 @@ function docText(data: Uint8Array) {
   return xml
     .split("</w:p>")
     .map((paragraph) => [...paragraph.matchAll(/<w:t(?: [^>]*)?>([^<]*)<\/w:t>/g)].map((match) => match[1]).join(""))
-    .map((text) => text.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&amp;/g, "&"))
+    .map((text) =>
+      text
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, "&"),
+    )
     .filter(Boolean);
 }
 
@@ -155,7 +161,14 @@ describe("note exports", () => {
   test("md, docx and pdf exports are stored and downloadable", async () => {
     const { note } = createNote(bot, { title: "Relatório", content: "corpo [[Alvo|alias]]" }, "bot");
     const md = await createExport(bot, { kind: "note", id: note.id, format: "md" });
-    expect(md).toMatchObject({ kind: "note", sourceId: note.id, format: "md", status: "ready", fileName: "Relatório.md", error: null });
+    expect(md).toMatchObject({
+      kind: "note",
+      sourceId: note.id,
+      format: "md",
+      status: "ready",
+      fileName: "Relatório.md",
+      error: null,
+    });
     expect(md.url).toBe(`/bots/${bot}/exports/${md.id}/file`);
     const file = await exportBytes(bot, md.id);
     expect(new TextDecoder().decode(file.data)).toBe("corpo [[Alvo|alias]]");
@@ -214,8 +227,8 @@ describe("sheet exports", () => {
           { a: "D1", input: "20/11/2026" },
           { a: "E1", input: "VERDADEIRO" },
           { a: "F1", input: "=1/0" },
-          { a: "G1", input: '=B1*2' },
-          { a: "H1", input: '=D1+1' },
+          { a: "G1", input: "=B1*2" },
+          { a: "H1", input: "=D1+1" },
           { a: "A2", input: 'diz "oi", tchau' },
           { a: "B2", input: "1234567,891" },
           { a: "C2", input: "-5" },
@@ -226,7 +239,13 @@ describe("sheet exports", () => {
       "bot",
     );
     const tab = sheet.tabs[0].id;
-    formatCells(bot, sheet.id, tab, { ranges: "C2", format: { type: "number", decimals: 1, bold: true, align: "center" } }, "bot");
+    formatCells(
+      bot,
+      sheet.id,
+      tab,
+      { ranges: "C2", format: { type: "number", decimals: 1, bold: true, align: "center" } },
+      "bot",
+    );
     formatCells(bot, sheet.id, tab, { ranges: ["A3"], format: { type: "datetime" } }, "bot");
     formatCells(bot, sheet.id, tab, { ranges: ["B3"], format: { type: "text" } }, "bot");
     formatCells(bot, sheet.id, tab, { ranges: ["C3"], format: { type: "general" } }, "bot");
@@ -268,7 +287,11 @@ describe("sheet exports", () => {
 
   test("xlsx writes error cells and date results stored on formulas", async () => {
     const { sheet, tab } = sample();
-    getDb().update(sheetCells).set({ type: "e", value: JSON.stringify("#N/A") }).where(eq(sheetCells.input, "Produto")).run();
+    getDb()
+      .update(sheetCells)
+      .set({ type: "e", value: JSON.stringify("#N/A") })
+      .where(eq(sheetCells.input, "Produto"))
+      .run();
     getDb()
       .update(sheetCells)
       .set({ type: "d", value: JSON.stringify("2026-01-02") })
@@ -331,7 +354,9 @@ describe("sheet exports", () => {
 describe("export jobs", () => {
   test("validates kind, format and source", async () => {
     const { note } = createNote(bot, { title: "N" }, "bot");
-    expect((await errorOf(() => createExport(bot, { kind: "video", id: note.id }))).message).toBe("kind precisa ser note ou sheet.");
+    expect((await errorOf(() => createExport(bot, { kind: "video", id: note.id }))).message).toBe(
+      "kind precisa ser note ou sheet.",
+    );
     expect((await errorOf(() => createExport(bot, { kind: "note", id: note.id, format: "xlsx" }))).message).toBe(
       "Formato inválido para nota: use docx, pdf, md.",
     );

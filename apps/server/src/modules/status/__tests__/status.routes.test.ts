@@ -39,9 +39,13 @@ function lineReader(body: ReadableStream<Uint8Array>) {
 describe("GET /health and /meta", () => {
   test("answers health and the static metadata", async () => {
     expect((await request("/health")).body).toEqual({ ok: true });
-    const meta = await request<{ accents: unknown[]; capabilities: unknown[]; engine: string; model: string; efforts: string[] }>(
-      "/meta",
-    );
+    const meta = await request<{
+      accents: unknown[];
+      capabilities: unknown[];
+      engine: string;
+      model: string;
+      efforts: string[];
+    }>("/meta");
     expect(meta.body.engine).toBe("multi-provider");
     expect(meta.body.model).toBe(process.env.BOTS_MODEL ?? "claude-sonnet-5-5");
     expect(meta.body.efforts).toEqual(["low", "medium", "high"]);
@@ -79,10 +83,8 @@ describe("GET /status/stream", () => {
       };
     });
     const realInterval = globalThis.setInterval;
-    const intervals = spyOn(globalThis, "setInterval").mockImplementation(((
-      callback: () => void,
-      ms?: number,
-    ) => realInterval(callback, ms === 15_000 ? 1 : ms)) as typeof setInterval);
+    const intervals = spyOn(globalThis, "setInterval").mockImplementation(((callback: () => void, ms?: number) =>
+      realInterval(callback, ms === 15_000 ? 1 : ms)) as typeof setInterval);
     restores.push(
       () => onStatus.mockRestore(),
       () => onConversation.mockRestore(),

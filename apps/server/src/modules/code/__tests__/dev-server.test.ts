@@ -3,7 +3,13 @@ import { EventEmitter } from "node:events";
 import { readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { join } from "node:path";
-import { type FakeChild, fakeProcesses, type ProcessCall, type ProcessReply, resetData } from "../../../../test/helpers";
+import {
+  type FakeChild,
+  fakeProcesses,
+  type ProcessCall,
+  type ProcessReply,
+  resetData,
+} from "../../../../test/helpers";
 import {
   devServerLogs,
   devServersOf,

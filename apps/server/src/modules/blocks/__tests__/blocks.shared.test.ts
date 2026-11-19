@@ -189,7 +189,9 @@ describe("block events", () => {
     spies.push(spyOn(threads, "ensureThread").mockRejectedValueOnce(new Error("disco cheio")));
     expect(await mainThreadLog("bot-sem-thread")).toBeNull();
     spies.push(spyOn(threads, "ensureThread").mockRejectedValueOnce(new Error("disco cheio")));
-    await expect(emitUserBlockEvent("bot-sem-thread", blockEvent("note", "x", "X", 1, "user", "created", null))).resolves.toBeUndefined();
+    await expect(
+      emitUserBlockEvent("bot-sem-thread", blockEvent("note", "x", "X", 1, "user", "created", null)),
+    ).resolves.toBeUndefined();
   });
 });
 

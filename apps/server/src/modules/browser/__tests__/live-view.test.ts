@@ -330,7 +330,11 @@ describe("user input", () => {
 
   test("reports CDP errors back to the client", async () => {
     const { id } = await setup((call) =>
-      call.method === "Page.reload" ? { error: { message: "page crashed" } } : call.method === "Page.navigate" ? { error: {} } : undefined,
+      call.method === "Page.reload"
+        ? { error: { message: "page crashed" } }
+        : call.method === "Page.navigate"
+          ? { error: {} }
+          : undefined,
     );
     const client = openClient(id);
     await ready(client);

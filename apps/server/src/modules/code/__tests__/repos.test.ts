@@ -34,7 +34,14 @@ describe("repos", () => {
     const now = new Date().toISOString();
     const live = join(worktreesRoot, `live-${Date.now()}`);
     const gone = join(worktreesRoot, `gone-${Date.now()}`);
-    const base = { botId: "bot-roots", repo: repo.path, repoName: repo.name, branch: "b", base: "main", createdAt: now };
+    const base = {
+      botId: "bot-roots",
+      repo: repo.path,
+      repoName: repo.name,
+      branch: "b",
+      base: "main",
+      createdAt: now,
+    };
     getDb()
       .insert(codeWorkspaces)
       .values([

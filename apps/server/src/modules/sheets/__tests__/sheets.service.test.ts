@@ -60,7 +60,16 @@ describe("create and list", () => {
     const { sheet, event } = make({ cells: cells(["A1", "10"], ["B3", "=A1*2"]) });
     expect(sheet).toMatchObject({ title: "Vendas", version: 1, updatedBy: "bot" });
     expect(sheet.tabs).toEqual([
-      { id: sheet.tabs[0].id, name: "Planilha1", index: 0, rowCount: 3, colCount: 2, frozenRows: 0, frozenCols: 0, colWidths: {} },
+      {
+        id: sheet.tabs[0].id,
+        name: "Planilha1",
+        index: 0,
+        rowCount: 3,
+        colCount: 2,
+        frozenRows: 0,
+        frozenCols: 0,
+        colWidths: {},
+      },
     ]);
     expect(event.type).toBe("block.created");
     expect(event.data.changed).toEqual({ tabId: sheet.tabs[0].id, ranges: ["A1:B3"] });
@@ -129,7 +138,13 @@ describe("read and write", () => {
     const { sheet } = make({ cells: cells(["A1", "1"], ["A2", "2"], ["B1", "=A1+A2"], ["C1", "x"]) });
     const tab = sheet.tabs[0].id;
     formatCells(bot, sheet.id, tab, { ranges: "A2", format: { bold: true } }, "bot");
-    const { result, event } = writeCells(bot, sheet.id, tab, { cells: cells(["A1", "5"], ["A2", ""], ["C1", ""], ["D9", ""]) }, "bot");
+    const { result, event } = writeCells(
+      bot,
+      sheet.id,
+      tab,
+      { cells: cells(["A1", "5"], ["A2", ""], ["C1", ""], ["D9", ""]) },
+      "bot",
+    );
     expect(result.cells).toEqual([
       { a: "A1", r: 0, c: 0, input: "5", v: 5, t: "n" },
       { a: "B1", r: 0, c: 1, input: "=A1+A2", v: 5, t: "n" },
@@ -153,14 +168,16 @@ describe("read and write", () => {
     expect(blockError(() => writeCells(bot, sheet.id, tab, {}, "bot")).message).toBe("cells é obrigatório.");
     const many = Array.from({ length: maxWriteCells + 1 }, () => ({ a: "A1", input: "1" }));
     expect(blockError(() => writeCells(bot, sheet.id, tab, { cells: many }, "bot")).message).toContain("No máximo");
-    expect(blockError(() => writeCells(bot, sheet.id, tab, { cells: [{ a: "ZZZZ1", input: "1" }] }, "bot")).message).toBe(
-      "Endereço inválido: ZZZZ1",
-    );
+    expect(
+      blockError(() => writeCells(bot, sheet.id, tab, { cells: [{ a: "ZZZZ1", input: "1" }] }, "bot")).message,
+    ).toBe("Endereço inválido: ZZZZ1");
     expect(blockError(() => writeCells(bot, sheet.id, tab, { cells: [{ input: "1" }] }, "bot")).message).toBe(
       "Endereço inválido: ",
     );
     writeCells(bot, sheet.id, tab, { cells: cells(["A1", "1"]) }, "user");
-    const stale = blockError(() => writeCells(bot, sheet.id, tab, { cells: cells(["A1", "2"]), baseVersion: 1 }, "bot"));
+    const stale = blockError(() =>
+      writeCells(bot, sheet.id, tab, { cells: cells(["A1", "2"]), baseVersion: 1 }, "bot"),
+    );
     expect(stale.status).toBe(409);
   });
 
@@ -214,7 +231,14 @@ describe("read and write", () => {
     expect(cellOf(row)).toMatchObject({ a: "B2", v: "cru", format: { bold: true } });
     patchTab(bot, sheet.id, tab, { colWidths: { A: 200 } }, "bot");
     const preview = previewOf(sheet.id);
-    expect(preview).toMatchObject({ kind: "sheet", tab: "Planilha1", tabs: 1, rowCount: 9, colCount: 7, frozenRows: 0 });
+    expect(preview).toMatchObject({
+      kind: "sheet",
+      tab: "Planilha1",
+      tabs: 1,
+      rowCount: 9,
+      colCount: 7,
+      frozenRows: 0,
+    });
     expect(preview.rows).toHaveLength(8);
     expect(preview.rows[0]).toHaveLength(6);
     expect(preview.rows[0][0]).toEqual({ v: 1, t: "n" });
@@ -237,10 +261,18 @@ describe("format", () => {
       "bot",
     );
     expect(applied.result.cells.map((cell) => cell.a)).toEqual(["A1", "B1", "A2", "B2"]);
-    expect(applied.result.cells[1]).toMatchObject({ input: "", format: { type: "brl", decimals: 10, bold: true, align: "right" } });
+    expect(applied.result.cells[1]).toMatchObject({
+      input: "",
+      format: { type: "brl", decimals: 10, bold: true, align: "right" },
+    });
     expect(applied.event.data.changed).toEqual({ tabId: tab, ranges: ["A1:B2"] });
     formatCells(bot, sheet.id, tab, { ranges: "A1", format: { decimals: "x" } }, "bot");
-    expect(readRange(bot, sheet.id, tab, "A1").cells[0].format).toEqual({ type: "brl", decimals: 0, bold: true, align: "right" });
+    expect(readRange(bot, sheet.id, tab, "A1").cells[0].format).toEqual({
+      type: "brl",
+      decimals: 0,
+      bold: true,
+      align: "right",
+    });
     const cleared = formatCells(bot, sheet.id, tab, { ranges: ["A1:B2", "C1"], format: null }, "bot");
     expect(cleared.result.cells.map((cell) => [cell.a, cell.format ?? null])).toEqual([
       ["A1", null],
@@ -252,7 +284,8 @@ describe("format", () => {
   test("rejects bad formats, ranges and oversized formatting", () => {
     const { sheet } = make({ cells: cells(["A1", "1"], ["A30000", "1"]) });
     const tab = sheet.tabs[0].id;
-    const run = (body: Record<string, unknown>) => blockError(() => formatCells(bot, sheet.id, tab, body, "bot")).message;
+    const run = (body: Record<string, unknown>) =>
+      blockError(() => formatCells(bot, sheet.id, tab, body, "bot")).message;
     expect(run({ format: {} })).toBe("ranges é obrigatório.");
     expect(run({ ranges: [], format: {} })).toBe("ranges é obrigatório.");
     expect(run({ ranges: "A1", format: "bold" })).toBe("format inválido.");
@@ -328,7 +361,11 @@ describe("tabs", () => {
 
   test("a sheet whose tabs were all removed loads as an empty book", () => {
     const { sheet } = make();
-    getDb().update(sheetTabs).set({ deletedAt: "2026-01-01T00:00:00.000Z" }).where(eq(sheetTabs.sheetId, sheet.id)).run();
+    getDb()
+      .update(sheetTabs)
+      .set({ deletedAt: "2026-01-01T00:00:00.000Z" })
+      .where(eq(sheetTabs.sheetId, sheet.id))
+      .run();
     const book = bookFor(bot, sheet.id);
     expect(book.tabs).toEqual([]);
     expect(book.rows).toEqual([]);
@@ -338,7 +375,9 @@ describe("tabs", () => {
 
 describe("structure", () => {
   test("inserts and deletes rows and columns, moving cells and formulas", () => {
-    const { sheet } = make({ cells: cells(["A1", "1"], ["A2", "2"], ["A3", "3"], ["B1", "=SOMA(A1:A3)"], ["C1", "=A3"]) });
+    const { sheet } = make({
+      cells: cells(["A1", "1"], ["A2", "2"], ["A3", "3"], ["B1", "=SOMA(A1:A3)"], ["C1", "=A3"]),
+    });
     const tab = sheet.tabs[0].id;
     structure(bot, sheet.id, tab, { op: "delete_rows", at: 1, count: 1 }, "bot");
     expect(readRange(bot, sheet.id, tab, "A1:C3").cells.map((cell) => [cell.a, cell.input, cell.v])).toEqual([
@@ -380,7 +419,14 @@ describe("sheet tab tool", () => {
     expect(renamed.sheet.tabs.map((tab) => tab.name)).toEqual(["Dados", "Resumo"]);
     const frozen = sheetTabTool(bot, { id: sheet.id, op: "freeze", tabId: "Dados", frozenRows: 1, frozenCols: 1 });
     expect(frozen.sheet.tabs[0]).toMatchObject({ frozenRows: 1, frozenCols: 1 });
-    const shifted = sheetTabTool(bot, { id: sheet.id, op: "structure", tabId: "Dados", structure: "insert_rows", at: 0, count: 2 });
+    const shifted = sheetTabTool(bot, {
+      id: sheet.id,
+      op: "structure",
+      tabId: "Dados",
+      structure: "insert_rows",
+      at: 0,
+      count: 2,
+    });
     expect(shifted.event.type).toBe("block.updated");
     expect(readRange(bot, sheet.id, "Dados", "A3").cells[0]).toMatchObject({ v: 1 });
     const removed = sheetTabTool(bot, { id: sheet.id, op: "delete", tabId: "Resumo" });

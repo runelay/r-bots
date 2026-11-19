@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { type Db, openDatabase } from "../../../db";
-import { addTeamEntry, recentTeamEntries, type TeamEntry, teamEntryExists } from "../repositories/team-memory.repository";
+import {
+  addTeamEntry,
+  recentTeamEntries,
+  type TeamEntry,
+  teamEntryExists,
+} from "../repositories/team-memory.repository";
 
 let db: Db;
 

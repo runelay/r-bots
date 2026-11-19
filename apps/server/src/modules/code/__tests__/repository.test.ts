@@ -60,7 +60,9 @@ describe("grants", () => {
   test("loads stored grants and logs write failures", async () => {
     writeSetting("code.grants", { "/repo/stored": [{ key: "k", createdAt: "", uses: 2, lastUsedAt: null }] });
     const fresh = await import("../repositories/code.repository.ts?grants");
-    expect(await fresh.listGrants()).toEqual([{ repo: "/repo/stored", key: "k", createdAt: "", uses: 2, lastUsedAt: null }]);
+    expect(await fresh.listGrants()).toEqual([
+      { repo: "/repo/stored", key: "k", createdAt: "", uses: 2, lastUsedAt: null },
+    ]);
     const write = spyOn(settings, "writeSetting").mockImplementation(() => {
       throw new Error("disk full");
     });
@@ -106,7 +108,13 @@ describe("worktree registry", () => {
     await recordWorktree(workspaceOf("reg-a"), "bot", "s1");
     await recordWorktree(workspaceOf("reg-b"), "bot", "s2", "closed");
     const first = (await listWorktrees()).find((item) => item.id === "reg-a") as WorktreeRecord;
-    expect(first).toMatchObject({ status: "alive", pinned: false, botId: "bot", sessionId: "s1", branch: "feat/reg-a" });
+    expect(first).toMatchObject({
+      status: "alive",
+      pinned: false,
+      botId: "bot",
+      sessionId: "s1",
+      branch: "feat/reg-a",
+    });
     first.lastAccessedAt = "2000-01-01T00:00:00.000Z";
     await recordWorktree(workspaceOf("reg-a"), "bot", "s1", "delivered");
     expect(first.status).toBe("delivered");
@@ -119,7 +127,12 @@ describe("worktree registry", () => {
     expect(ids.indexOf("reg-b")).toBeLessThan(ids.indexOf("reg-a"));
     await settle();
     const stored = worktreeRows.loadWorktreeRows().find((item) => item.id === "reg-b");
-    expect(stored).toMatchObject({ status: "closed", prUrl: "https://example.test/pull/1", sessionId: "s2", base: "main" });
+    expect(stored).toMatchObject({
+      status: "closed",
+      prUrl: "https://example.test/pull/1",
+      sessionId: "s2",
+      base: "main",
+    });
   });
 });
 

@@ -130,7 +130,9 @@ describe("an open workspace", () => {
     const request = lastRequest();
     expect(request.code).toBeNull();
     expect(fakeProviders.turns[0].hooks).toBeUndefined();
-    expect(request.systemPrompt).toContain(`o repositório ${open.repoName} aberto (branch ${open.branch}), mas o modelo atual não edita código`);
+    expect(request.systemPrompt).toContain(
+      `o repositório ${open.repoName} aberto (branch ${open.branch}), mas o modelo atual não edita código`,
+    );
     expect(request.systemPrompt).toContain("Você não tem acesso a arquivos");
     expect(Object.keys(session.meta.providerSessions ?? {})).toEqual(["vps:grok"]);
   });
@@ -194,18 +196,19 @@ describe("switching workspaces mid-turn", () => {
     const second = workspace();
     session.meta.workspace = first;
     const scan = track(spyOn(CodeLive.prototype, "scan").mockResolvedValue(undefined));
-    track(spyOn(handoff, "handoffBlock").mockImplementation(async (_, options) => (options.full ? "Até aqui: li o código." : "")));
-    fakeProviders.next(
-      sequence(
-        async (turn) => {
-          turn.emit({ type: "text", part: "n", text: "Vou abrir o outro repositório." });
-          session.meta.workspace = second;
-          contextOf(turn).endRun?.();
-          await aborted(turn.signal);
-          turn.emit({ type: "done", ok: false, message: "aborted" });
-        },
-        replyWith("Feito no segundo repositório."),
+    track(
+      spyOn(handoff, "handoffBlock").mockImplementation(async (_, options) =>
+        options.full ? "Até aqui: li o código." : "",
       ),
+    );
+    fakeProviders.next(
+      sequence(async (turn) => {
+        turn.emit({ type: "text", part: "n", text: "Vou abrir o outro repositório." });
+        session.meta.workspace = second;
+        contextOf(turn).endRun?.();
+        await aborted(turn.signal);
+        turn.emit({ type: "done", ok: false, message: "aborted" });
+      }, replyWith("Feito no segundo repositório.")),
     );
     await run(session, { text: "corrige nos dois" });
     expect(fakeProviders.turns).toHaveLength(2);
@@ -270,7 +273,9 @@ describe("limits during a schedule", () => {
   test("retries a scheduled run on the fallback without a handoff", async () => {
     const bot = await makeBot();
     const session = await newSession(bot.id, "thread");
-    track(spyOn(decisions, "decideTriage").mockResolvedValue({ kind: "triage", outcome: "notify", answer: null } as never));
+    track(
+      spyOn(decisions, "decideTriage").mockResolvedValue({ kind: "triage", outcome: "notify", answer: null } as never),
+    );
     const carry = track(spyOn(handoff, "handoffBlock"));
     fakeProviders.next(
       sequence(({ emit }) => emit({ type: "done", ok: false, message: "rate limit" }), replyWith("Rotina feita.")),
@@ -287,10 +292,17 @@ describe("limits during a schedule", () => {
 
   test("keeps attachment images for the VPS Claude fallback on retry", async () => {
     const bot = await makeBot();
-    bot.engine = { account: "vps:codex", model: "gpt", effort: null, fallback: { account: "vps:claude", model: "sonnet" } };
+    bot.engine = {
+      account: "vps:codex",
+      model: "gpt",
+      effort: null,
+      fallback: { account: "vps:claude", model: "sonnet" },
+    };
     const session = await newSession(bot.id);
     const image = { path: "/tmp/print.png", mime: "image/png", label: "print.png" };
-    const prepare = track(spyOn(uploads, "prepareAttachments").mockResolvedValue({ text: "Imagem: print.png", images: [image] }));
+    const prepare = track(
+      spyOn(uploads, "prepareAttachments").mockResolvedValue({ text: "Imagem: print.png", images: [image] }),
+    );
     fakeProviders.next(
       sequence(({ emit }) => emit({ type: "done", ok: false, message: "quota exceeded" }), replyWith("Vi a imagem.")),
     );

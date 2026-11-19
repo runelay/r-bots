@@ -170,7 +170,10 @@ describe("decideTriage", () => {
     const notify = await decideTriage("r", "s", "p", "ok");
     expect(notify).toMatchObject({ outcome: "notify", confidence: 1 });
     fakeJev(() => new Response("no", { status: 500 }));
-    expect(await decideTriage("r", "s", "p", "ok")).toMatchObject({ outcome: "fallback", reason: "Jev respondeu 500." });
+    expect(await decideTriage("r", "s", "p", "ok")).toMatchObject({
+      outcome: "fallback",
+      reason: "Jev respondeu 500.",
+    });
   });
 });
 
@@ -235,7 +238,11 @@ describe("delivery intent", () => {
     expect(askedDelivery("dá um push")).toEqual({ commit: true, push: true, pr: false });
     expect(askedDelivery("abre o PR")).toEqual({ commit: true, push: true, pr: true });
     expect(askedDelivery("não precisa commitar")).toEqual(noDeliveryAsk);
-    expect(askedDelivery("não precisa testar nada agora, pode commitar")).toEqual({ commit: true, push: false, pr: false });
+    expect(askedDelivery("não precisa testar nada agora, pode commitar")).toEqual({
+      commit: true,
+      push: false,
+      pr: false,
+    });
   });
 
   test("reads delivery from invoked skills", () => {

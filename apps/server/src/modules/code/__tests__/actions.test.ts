@@ -72,7 +72,9 @@ describe("delivery rules", () => {
     expect(deliverProblem({ action: "pr", message: "feat: x", body: "Generated with bots" })).toContain(
       "Sem assinatura de IA",
     );
-    expect(deliverProblem({ action: "pr", message: "feat: x", title: "Co-Authored-By: a" })).toContain("Sem assinatura");
+    expect(deliverProblem({ action: "pr", message: "feat: x", title: "Co-Authored-By: a" })).toContain(
+      "Sem assinatura",
+    );
     expect(deliverProblem({ action: "commit", message: "feat: a\nb\nc" })).toContain("Mensagem do commit curta");
     expect(deliverProblem({ action: "commit", message: `feat: ${"x".repeat(100)}` })).toContain("curta");
     expect(deliverProblem({ action: "commit", message: "fix(flags)!: ajuste de módulo" })).toContain("em inglês");
@@ -153,8 +155,15 @@ describe("delivering", () => {
       title: " Title ",
       body: " Body ",
     });
-    expect(result).toMatchObject({ action: "pr", prUrl: "https://github.com/o/r/pull/9", prExisted: false, base: "main" });
-    expect(gitSync(workspace.path, ["rev-parse", "--abbrev-ref", "@{u}"]).stdout.trim()).toBe(`origin/${workspace.branch}`);
+    expect(result).toMatchObject({
+      action: "pr",
+      prUrl: "https://github.com/o/r/pull/9",
+      prExisted: false,
+      base: "main",
+    });
+    expect(gitSync(workspace.path, ["rev-parse", "--abbrev-ref", "@{u}"]).stdout.trim()).toBe(
+      `origin/${workspace.branch}`,
+    );
     const create = created.calls.find((call) => call.args[1] === "create");
     expect(create?.args).toEqual([
       "pr",

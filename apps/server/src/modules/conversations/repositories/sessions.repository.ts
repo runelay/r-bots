@@ -34,7 +34,11 @@ export function messageOf(facts: unknown[]) {
       const parts = (fact.data?.parts ?? []) as { kind?: string; text?: string }[];
       for (const part of parts) if (part.kind === "text" && part.text) texts.push(part.text);
       role ??= "user";
-    } else if (fact?.type === "content.completed" && fact.data?.kind === "text" && typeof fact.data.value === "string") {
+    } else if (
+      fact?.type === "content.completed" &&
+      fact.data?.kind === "text" &&
+      typeof fact.data.value === "string"
+    ) {
       texts.push(fact.data.value);
       role ??= "bot";
     }

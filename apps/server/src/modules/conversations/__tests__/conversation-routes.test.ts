@@ -111,7 +111,13 @@ describe("conversation list and creation", () => {
     const attachment = await upload();
     const created = await request<Conversation>(base(), {
       method: "POST",
-      body: { title: "Plano", permission: "edit", message: "Monta o plano", skills: [skillId], attachments: [attachment] },
+      body: {
+        title: "Plano",
+        permission: "edit",
+        message: "Monta o plano",
+        skills: [skillId],
+        attachments: [attachment],
+      },
     });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ title: "Plano", main: false, sessionBasePath: `/bots/${bot.id}/eve/v1` });
@@ -142,7 +148,11 @@ describe("conversation list and creation", () => {
       [{ permission: "root" }, 400, { field: "permission" }],
       [{ message: 3 }, 400, { error: "Field 'message' must be a string." }],
       [{ skills: ["Bad Slug"] }, 400, { error: "Field 'skills' has an invalid slug." }],
-      [{ skills: ["a", "b", "c", "d", "e", "f"] }, 400, { error: "Field 'skills' must be an array with up to 5 slugs." }],
+      [
+        { skills: ["a", "b", "c", "d", "e", "f"] },
+        400,
+        { error: "Field 'skills' must be an array with up to 5 slugs." },
+      ],
       [{ attachments: "x" }, 400, { error: "Field 'attachments' must be an array with up to 10 upload ids." }],
       [{ attachments: ["nope"] }, 400, { error: "Field 'attachments' has an invalid upload id." }],
       [{ attachments: ["01ARZ3NDEKTSV4RRFFQ69G5FAV"] }, 400, { field: "attachments" }],
@@ -366,7 +376,10 @@ describe("eve sessions", () => {
     const nothing = await request(path, { method: "POST" });
     expect(nothing.status).toBe(202);
 
-    const badAnswer = await request<{ error: string }>(path, { method: "POST", body: { answers: [{ optionId: "x" }] } });
+    const badAnswer = await request<{ error: string }>(path, {
+      method: "POST",
+      body: { answers: [{ optionId: "x" }] },
+    });
     expect(badAnswer.status).toBe(400);
     expect(badAnswer.body.error).toContain("interactionId and optionId");
     for (const optionId of ["approve", "deny", "approve_always"]) {

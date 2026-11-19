@@ -55,7 +55,12 @@ describe("notes routes", () => {
     expect(created.status).toBe(201);
     expect(created.body.title).toBe("Agenda da semana");
     const createdFacts = await threadFacts("block.created");
-    expect(createdFacts.at(-1)?.data).toMatchObject({ botId: bot.id, id: created.body.id, author: "user", kind: "note" });
+    expect(createdFacts.at(-1)?.data).toMatchObject({
+      botId: bot.id,
+      id: created.body.id,
+      author: "user",
+      kind: "note",
+    });
 
     const other = await request<{ id: string }>(`${base}/notes`, {
       method: "POST",
@@ -65,7 +70,9 @@ describe("notes routes", () => {
 
     const list = await request<{ total: number }>(`${base}/notes?folder=${encodeURIComponent(folder)}`);
     expect([list.status, list.body.total]).toEqual([200, 2]);
-    const tree = await request<{ notes: { items: Array<{ id: string }> } }>(`${base}/notes/tree?folder=${encodeURIComponent(folder)}`);
+    const tree = await request<{ notes: { items: Array<{ id: string }> } }>(
+      `${base}/notes/tree?folder=${encodeURIComponent(folder)}`,
+    );
     expect(tree.status).toBe(200);
     expect(tree.body.notes.items.map((item) => item.id).sort()).toEqual([created.body.id, other.body.id].sort());
     const search = await request<{ items: Array<{ id: string }> }>(`${base}/notes/search?q=ligar`);
@@ -94,10 +101,13 @@ describe("notes routes", () => {
     const backlinks = await request<{ items: Array<{ id: string }> }>(`${base}/notes/${created.body.id}/backlinks`);
     expect(backlinks.status).toBe(200);
     expect(backlinks.body.items.map((item) => item.id)).toEqual([other.body.id]);
-    const moved = await request<{ note: { title: string }; relinked: number }>(`${base}/notes/${created.body.id}/move`, {
-      method: "POST",
-      body: { title: "Agenda nova" },
-    });
+    const moved = await request<{ note: { title: string }; relinked: number }>(
+      `${base}/notes/${created.body.id}/move`,
+      {
+        method: "POST",
+        body: { title: "Agenda nova" },
+      },
+    );
     expect(moved.status).toBe(200);
     expect(moved.body).toMatchObject({ note: { title: "Agenda nova" }, relinked: 1 });
     const removed = await request<{ ok: boolean }>(`${base}/notes/${created.body.id}`, { method: "DELETE" });
@@ -128,7 +138,10 @@ describe("notes routes", () => {
   test("a stale bot write returns the conflict code and version", async () => {
     const { note } = createNote(bot.id, { title: `Conflito ${Date.now()}`, content: "a" }, "bot");
     writeNote(bot.id, note.id, { content: "b" }, "bot");
-    const stale = await request<Failure>(`${base}/notes/${note.id}`, { method: "PUT", body: { content: "c", baseVersion: 1 } });
+    const stale = await request<Failure>(`${base}/notes/${note.id}`, {
+      method: "PUT",
+      body: { content: "c", baseVersion: 1 },
+    });
     expect(stale.status).toBe(409);
     expect(stale.body).toEqual({
       ok: false,
@@ -148,27 +161,39 @@ describe("sheets routes", () => {
     expect(created.status).toBe(201);
     const sheetId = created.body.id;
     const firstTab = created.body.tabs[0].id;
-    expect((await request<{ items: Array<{ id: string }> }>(`${base}/sheets?q=Vendas`)).body.items.map((item) => item.id)).toContain(
-      sheetId,
-    );
+    expect(
+      (await request<{ items: Array<{ id: string }> }>(`${base}/sheets?q=Vendas`)).body.items.map((item) => item.id),
+    ).toContain(sheetId);
     const one = await request<{ id: string; title: string }>(`${base}/sheets/${sheetId}`);
     expect([one.status, one.body.title]).toEqual([200, "Vendas"]);
-    const renamed = await request<{ title: string }>(`${base}/sheets/${sheetId}`, { method: "PATCH", body: { title: "Vendas 2026" } });
+    const renamed = await request<{ title: string }>(`${base}/sheets/${sheetId}`, {
+      method: "PATCH",
+      body: { title: "Vendas 2026" },
+    });
     expect([renamed.status, renamed.body.title]).toEqual([200, "Vendas 2026"]);
 
-    const tab = await request<{ id: string; name: string }>(`${base}/sheets/${sheetId}/tabs`, { method: "POST", body: { name: "Resumo" } });
-    expect([tab.status, tab.body.name]).toEqual([201, "Resumo"]);
-    const patched = await request<{ name: string; frozenRows: number }>(`${base}/sheets/${sheetId}/tabs/${tab.body.id}`, {
-      method: "PATCH",
-      body: { name: "Total", frozenRows: 1 },
+    const tab = await request<{ id: string; name: string }>(`${base}/sheets/${sheetId}/tabs`, {
+      method: "POST",
+      body: { name: "Resumo" },
     });
+    expect([tab.status, tab.body.name]).toEqual([201, "Resumo"]);
+    const patched = await request<{ name: string; frozenRows: number }>(
+      `${base}/sheets/${sheetId}/tabs/${tab.body.id}`,
+      {
+        method: "PATCH",
+        body: { name: "Total", frozenRows: 1 },
+      },
+    );
     expect(patched.status).toBe(200);
     expect(patched.body).toMatchObject({ name: "Total", frozenRows: 1 });
 
-    const cells = await request<{ cells: Array<{ a: string; v: unknown }> }>(`${base}/sheets/${sheetId}/tabs/${firstTab}/cells`, {
-      method: "POST",
-      body: { cells: [{ a: "A2", input: "=A1*3" }] },
-    });
+    const cells = await request<{ cells: Array<{ a: string; v: unknown }> }>(
+      `${base}/sheets/${sheetId}/tabs/${firstTab}/cells`,
+      {
+        method: "POST",
+        body: { cells: [{ a: "A2", input: "=A1*3" }] },
+      },
+    );
     expect(cells.status).toBe(200);
     expect(cells.body.cells.find((cell) => cell.a === "A2")?.v).toBe(6);
     const format = await request(`${base}/sheets/${sheetId}/tabs/${firstTab}/format`, {
@@ -176,10 +201,13 @@ describe("sheets routes", () => {
       body: { ranges: ["A1:A2"], format: { bold: true } },
     });
     expect(format.status).toBe(200);
-    const structure = await request<{ version: number; tab: { id: string } }>(`${base}/sheets/${sheetId}/tabs/${firstTab}/structure`, {
-      method: "POST",
-      body: { op: "insert_rows", at: 0, count: 1 },
-    });
+    const structure = await request<{ version: number; tab: { id: string } }>(
+      `${base}/sheets/${sheetId}/tabs/${firstTab}/structure`,
+      {
+        method: "POST",
+        body: { op: "insert_rows", at: 0, count: 1 },
+      },
+    );
     expect(structure.status).toBe(200);
     expect(structure.body.tab.id).toBe(firstTab);
     expect(typeof structure.body.version).toBe("number");
@@ -192,7 +220,9 @@ describe("sheets routes", () => {
       ["A3", "=A2*3"],
     ]);
 
-    const dropTab = await request<{ tabs: Array<{ id: string }> }>(`${base}/sheets/${sheetId}/tabs/${tab.body.id}`, { method: "DELETE" });
+    const dropTab = await request<{ tabs: Array<{ id: string }> }>(`${base}/sheets/${sheetId}/tabs/${tab.body.id}`, {
+      method: "DELETE",
+    });
     expect(dropTab.status).toBe(200);
     expect(dropTab.body.tabs.map((item) => item.id)).toEqual([firstTab]);
     const removed = await request(`${base}/sheets/${sheetId}`, { method: "DELETE" });
@@ -257,15 +287,21 @@ describe("agenda routes", () => {
     expect([created.status, created.body.title]).toEqual([201, "Dentista"]);
     expect((await threadFacts("block.updated")).at(-1)?.data).toMatchObject({ kind: "agenda", author: "user" });
 
-    const updated = await request<{ title: string }>(`${base}/agenda/events/${encodeEventId(account.name, "primary", "solo")}`, {
-      method: "PATCH",
-      body: { title: "Foco total" },
-    });
+    const updated = await request<{ title: string }>(
+      `${base}/agenda/events/${encodeEventId(account.name, "primary", "solo")}`,
+      {
+        method: "PATCH",
+        body: { title: "Foco total" },
+      },
+    );
     expect([updated.status, updated.body.title]).toEqual([200, "Foco total"]);
 
     const removed = await request(`${base}/agenda/events/${created.body.id}`, { method: "DELETE" });
     expect([removed.status, removed.body]).toEqual([200, { ok: true }]);
-    expect(account.deleted.map((item) => String(item.eventId))).toEqual(["solo", expect.stringMatching(/^created\d+$/)]);
+    expect(account.deleted.map((item) => String(item.eventId))).toEqual([
+      "solo",
+      expect.stringMatching(/^created\d+$/),
+    ]);
   });
 
   test("agenda errors keep their status, code and extra fields", async () => {
@@ -328,7 +364,9 @@ describe("exports routes", () => {
     const file = await request<string>(`${base}/exports/${created.body.id}/file`);
     expect(file.status).toBe(200);
     expect(file.text).toContain("Decidimos tudo.");
-    expect(file.headers.get("content-disposition")).toBe(`attachment; filename*=UTF-8''${encodeURIComponent(created.body.fileName)}`);
+    expect(file.headers.get("content-disposition")).toBe(
+      `attachment; filename*=UTF-8''${encodeURIComponent(created.body.fileName)}`,
+    );
     expect(file.headers.get("cache-control")).toBe("private, no-store");
     expect(file.headers.get("content-length")).toBe(String(new TextEncoder().encode(file.text).length));
     const missing = await request<Failure>(`${base}/exports/exp_nope`);
