@@ -10,6 +10,7 @@ enum FrameMetrics {
 struct IconRail: View {
     @Environment(AppModel.self) private var model
     @Environment(\.appReduceMotion) private var reduceMotion
+    @AppStorage(PreferenceKeys.sidebarCollapsed) private var sidebarCollapsed = false
 
     var body: some View {
         VStack(spacing: 6) {
@@ -21,6 +22,10 @@ struct IconRail: View {
                     help: section.title,
                     isSelected: model.section == section && !model.settingsPresented
                 ) {
+                    if section == .conversations, model.section == .conversations, !model.settingsPresented {
+                        sidebarCollapsed.toggle()
+                        return
+                    }
                     withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
                         model.closeSettings()
                         model.section = section

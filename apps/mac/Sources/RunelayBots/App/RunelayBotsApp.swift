@@ -81,6 +81,7 @@ struct BotWindowView: View {
 
 struct AppCommands: Commands {
     let model: AppModel
+    @AppStorage(PreferenceKeys.sidebarCollapsed) private var sidebarCollapsed = false
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -109,6 +110,10 @@ struct AppCommands: Commands {
             .keyboardShortcut(",", modifiers: .command)
         }
         CommandGroup(after: .sidebar) {
+            Button(sidebarCollapsed ? "Mostrar conversas" : "Ocultar conversas") {
+                sidebarCollapsed.toggle()
+            }
+            .keyboardShortcut("s", modifiers: [.control, .command])
             Button(model.inspectorPresented ? "Ocultar inspetor" : "Mostrar inspetor") {
                 model.toggleInspector()
             }

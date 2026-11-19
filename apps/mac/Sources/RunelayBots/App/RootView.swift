@@ -6,6 +6,7 @@ struct RootView: View {
     @AppStorage(PreferenceKeys.appearance) private var appearance = AppearancePreference.system.rawValue
     @AppStorage(PreferenceKeys.motion) private var motion = MotionPreference.system.rawValue
     @AppStorage(PreferenceKeys.textSize) private var textSize = ConversationTextSize.regular.rawValue
+    @AppStorage(PreferenceKeys.sidebarCollapsed) private var sidebarCollapsed = false
 
     private var reduceMotion: Bool {
         systemReduceMotion || motion == MotionPreference.reduced.rawValue
@@ -77,6 +78,7 @@ struct RootView: View {
         .animation(Motion.animation(reduceMotion: reduceMotion), value: model.settingsPresented)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: model.section)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: model.computerMode)
+        .animation(Motion.animation(reduceMotion: reduceMotion), value: sidebarCollapsed)
         .animation(.easeOut(duration: 0.18), value: model.selectedBotID)
         .task {
             Notifier.shared.setUp(model: model)
@@ -98,9 +100,13 @@ struct RootView: View {
                         .frame(width: FrameMetrics.sidebarWidth)
                         .frame(maxHeight: .infinity)
                         .background(Theme.sidebarBackground)
+                        .frame(width: sidebarCollapsed ? 0 : FrameMetrics.sidebarWidth, alignment: .trailing)
+                        .clipped()
+                        .allowsHitTesting(!sidebarCollapsed)
+                        .accessibilityHidden(sidebarCollapsed)
                     Rectangle()
                         .fill(Theme.paneDivider)
-                        .frame(width: 1)
+                        .frame(width: sidebarCollapsed ? 0 : 1)
                     GeometryReader { geometry in
                         let showsInspector = model.inspectorPresented
                             && geometry.size.width >= Metrics.conversationMinWidth + Metrics.inspectorWidth
@@ -156,21 +162,22 @@ struct RootView: View {
 
 struct TopStrip: View {
     @Environment(AppModel.self) private var model
+    @AppStorage(PreferenceKeys.sidebarCollapsed) private var sidebarCollapsed = false
 
     var body: some View {
         HStack(spacing: Spacing.s) {
             if model.section == .conversations && !model.settingsPresented, let bot = model.selectedBot {
                 Spacer(minLength: 0)
-                    .frame(width: FrameMetrics.railWidth + FrameMetrics.sidebarWidth + 1 - Spacing.s)
+                    .frame(width: (sidebarCollapsed ? FrameMetrics.railWidth + Spacing.l : FrameMetrics.railWidth + FrameMetrics.sidebarWidth + 1) - Spacing.s)
                 BotTagButton(bot: bot, mood: model.mood(for: bot.id)) {
                     model.openProfile(bot)
                 }
-                .padding(.leading, Spacing.s)
+                .padding(.leading, Spacing.s + (sidebarCollapsed ? ChromeTabShape.flare : 0))
                 .padding(.trailing, Spacing.xs)
                 .padding(.top, Spacing.xs)
                 .padding(.bottom, Spacing.xs + 1)
                 .padding(.trailing, ChromeTabShape.flare)
-                .background(ChromeTabShape(leftFlush: true).fill(Theme.background))
+                .background(ChromeTabShape(leftFlush: !sidebarCollapsed).fill(Theme.background))
                 .offset(y: 1)
                 .frame(maxHeight: .infinity, alignment: .bottom)
                 Spacer(minLength: Spacing.m)
@@ -186,6 +193,13 @@ struct TopStrip: View {
                     ) {
                         model.toggleComputer()
                     }
+                }
+                HeaderIconButton(
+                    systemImage: "sidebar.left",
+                    help: "Mostrar ou ocultar as conversas (⌃⌘S)",
+                    isActive: !sidebarCollapsed
+                ) {
+                    sidebarCollapsed.toggle()
                 }
                 HeaderIconButton(
                     systemImage: "sidebar.right",

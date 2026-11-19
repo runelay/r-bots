@@ -66,6 +66,7 @@ enum PreferenceKeys {
     static let appearance = "appearance"
     static let motion = "motionPreference"
     static let textSize = "conversationTextSize"
+    static let sidebarCollapsed = "sidebarCollapsed"
 }
 
 enum AppInfo {
