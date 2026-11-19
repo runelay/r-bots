@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { ProviderEvent } from "@runelay-bots/protocol";
-import { providerLabels, type Provider } from "@runelay-bots/protocol";
+import { type Provider, providerLabels } from "@runelay-bots/protocol";
 
 const limitPattern =
   /spend(?:ing)? limit|usage limit|rate[ _-]?limit|limit reached|limit exceeded|hit your (?:[\w']+ ){0,3}limit|quota|too many requests|\b429\b|credit balance is too low|out of credits|resets? (?:at |in )?\d/i;
@@ -16,7 +16,8 @@ export interface LimitState {
 
 const limited = new Map<string, LimitState>();
 
-const limitReplyPattern = /you'?ve hit your|usage limit reached|spend(?:ing)? limit|limit reached\||limit · resets|out of (?:extra )?usage/i;
+const limitReplyPattern =
+  /you'?ve hit your|usage limit reached|spend(?:ing)? limit|limit reached\||limit · resets|out of (?:extra )?usage/i;
 
 export function isLimitReply(text: string) {
   return text.length < 400 && limitReplyPattern.test(text);
@@ -27,7 +28,16 @@ export function isLimitError(text: string | null | undefined) {
 }
 
 function zoneOffset(at: number, zone: string) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date(at));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: zone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(at));
   const get = (type: string) => Number(parts.find((part) => part.type === type)?.value ?? 0);
   return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second")) - at;
 }
@@ -59,7 +69,9 @@ export function parseResetAt(text: string, now = new Date(), zone = Intl.DateTim
     const at = Date.parse(iso[1]);
     if (Number.isFinite(at)) return new Date(at);
   }
-  const relative = text.match(/(?:try again|retry|resets?|available again)\s+in\s+((?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m)\b[\s,and]*)+)/i);
+  const relative = text.match(
+    /(?:try again|retry|resets?|available again)\s+in\s+((?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m)\b[\s,and]*)+)/i,
+  );
   if (relative) {
     let ms = 0;
     for (const [, amount, unit] of relative[1].matchAll(/(\d+)\s*(days?|d|hours?|hrs?|h|minutes?|mins?|m)\b/gi)) {
@@ -69,7 +81,9 @@ export function parseResetAt(text: string, now = new Date(), zone = Intl.DateTim
     }
     if (ms > 0) return new Date(now.getTime() + ms);
   }
-  const clock = text.match(/(?:resets?|try again|available again)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*\(([^)]+)\))?/i);
+  const clock = text.match(
+    /(?:resets?|try again|available again)\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?(?:\s*\(([^)]+)\))?/i,
+  );
   if (clock) {
     let hour = Number(clock[1]);
     const minute = Number(clock[2] ?? 0);
@@ -85,7 +99,9 @@ export function parseResetAt(text: string, now = new Date(), zone = Intl.DateTim
 
 export function markLimited(accountId: string, message: string, zone?: string) {
   const resetAt = parseResetAt(message, new Date(), zone);
-  const state: LimitState = resetAt ? { until: resetAt, known: true, message } : { until: new Date(Date.now() + unknownResetMs), known: false, message };
+  const state: LimitState = resetAt
+    ? { until: resetAt, known: true, message }
+    : { until: new Date(Date.now() + unknownResetMs), known: false, message };
   limited.set(accountId, state);
   return state;
 }
@@ -105,8 +121,11 @@ export function clearLimit(accountId: string) {
 }
 
 export function formatReset(at: Date, now = new Date()) {
-  const time = new Intl.DateTimeFormat("pt-BR", { timeZone: displayZone, hour: "2-digit", minute: "2-digit" }).format(at);
-  const day = (value: Date) => new Intl.DateTimeFormat("pt-BR", { timeZone: displayZone, day: "2-digit", month: "2-digit" }).format(value);
+  const time = new Intl.DateTimeFormat("pt-BR", { timeZone: displayZone, hour: "2-digit", minute: "2-digit" }).format(
+    at,
+  );
+  const day = (value: Date) =>
+    new Intl.DateTimeFormat("pt-BR", { timeZone: displayZone, day: "2-digit", month: "2-digit" }).format(value);
   if (day(at) === day(now)) return `às ${time}`;
   if (day(at) === day(new Date(now.getTime() + 86_400_000))) return `amanhã às ${time}`;
   return `dia ${day(at)} às ${time}`;

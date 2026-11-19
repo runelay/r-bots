@@ -49,7 +49,12 @@ export const artifactCsp = [
   "base-uri 'none'",
 ].join("; ");
 
-const kindLabel: Record<ArtifactKind, string> = { slides: "apresentação", dashboard: "dashboard", page: "página", canvas: "canvas" };
+const kindLabel: Record<ArtifactKind, string> = {
+  slides: "apresentação",
+  dashboard: "dashboard",
+  page: "página",
+  canvas: "canvas",
+};
 
 function artifactsDir(botId: string) {
   return join(botDir(botId), "artifacts");
@@ -86,7 +91,9 @@ export async function listArtifacts(botId: string): Promise<ArtifactMeta[]> {
     return [];
   }
   const items = await Promise.all(names.filter(isArtifactId).map((name) => readArtifact(botId, name)));
-  return items.filter((item): item is ArtifactMeta => item !== null).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return items
+    .filter((item): item is ArtifactMeta => item !== null)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export async function readArtifactHtml(botId: string, artifactId: string, version: number) {
@@ -110,13 +117,18 @@ export function publicArtifact(meta: ArtifactMeta) {
     updatedAt: meta.updatedAt,
     version: latest,
     url: `${base}/v/${latest}.${ext}`,
-    versions: meta.versions.map((item) => ({ ...item, author: item.author ?? "bot", url: `${base}/v/${item.n}.${ext}` })),
+    versions: meta.versions.map((item) => ({
+      ...item,
+      author: item.author ?? "bot",
+      url: `${base}/v/${item.n}.${ext}`,
+    })),
   };
 }
 
 function checkHtml(html: string) {
   if (html.length > maxHtml) throw new Error(`HTML grande demais (${html.length} caracteres, máximo ${maxHtml}).`);
-  if (!/<html[\s>]|<body[\s>]|<!doctype html>/i.test(html)) throw new Error("Mande um documento HTML completo, com <!doctype html>, <head> e <body>.");
+  if (!/<html[\s>]|<body[\s>]|<!doctype html>/i.test(html))
+    throw new Error("Mande um documento HTML completo, com <!doctype html>, <head> e <body>.");
 }
 
 export async function createArtifact(botId: string, title: string, kind: ArtifactKind, html: string) {
@@ -126,12 +138,24 @@ export async function createArtifact(botId: string, title: string, kind: Artifac
   const dir = artifactDir(botId, id);
   await mkdir(dir, { recursive: true });
   await writeAtomic(join(dir, "v1.html"), html);
-  const meta: ArtifactMeta = { id, botId, title, kind, createdAt: now, updatedAt: now, versions: [{ n: 1, createdAt: now, size: Buffer.byteLength(html) }] };
+  const meta: ArtifactMeta = {
+    id,
+    botId,
+    title,
+    kind,
+    createdAt: now,
+    updatedAt: now,
+    versions: [{ n: 1, createdAt: now, size: Buffer.byteLength(html) }],
+  };
   await writeAtomic(join(dir, "meta.json"), JSON.stringify(meta, null, 2));
   return meta;
 }
 
-export async function updateArtifact(botId: string, artifactId: string, change: { html?: string; edits?: { old: string; new: string }[]; title?: string }) {
+export async function updateArtifact(
+  botId: string,
+  artifactId: string,
+  change: { html?: string; edits?: { old: string; new: string }[]; title?: string },
+) {
   const meta = await readArtifact(botId, artifactId);
   if (!meta) throw new Error(`Não existe artefato ${artifactId}. Use artifact_create.`);
   if (meta.kind === "canvas") throw new Error("Esse artefato é um canvas. Use canvas_read e canvas_update.");
@@ -143,7 +167,8 @@ export async function updateArtifact(botId: string, artifactId: string, change: 
     for (const [index, edit] of change.edits.entries()) {
       const at = html.indexOf(edit.old);
       if (at < 0) throw new Error(`Edição ${index + 1}: o trecho "old" não foi encontrado na versão ${latest}.`);
-      if (html.indexOf(edit.old, at + edit.old.length) >= 0) throw new Error(`Edição ${index + 1}: o trecho "old" aparece mais de uma vez; mande um trecho maior.`);
+      if (html.indexOf(edit.old, at + edit.old.length) >= 0)
+        throw new Error(`Edição ${index + 1}: o trecho "old" aparece mais de uma vez; mande um trecho maior.`);
       html = html.slice(0, at) + edit.new + html.slice(at + edit.old.length);
     }
   }
@@ -151,14 +176,22 @@ export async function updateArtifact(botId: string, artifactId: string, change: 
   const n = latest + 1;
   const now = new Date().toISOString();
   await writeAtomic(join(artifactDir(botId, artifactId), `v${n}.html`), html);
-  const next: ArtifactMeta = { ...meta, title: change.title?.trim() || meta.title, updatedAt: now, versions: [...meta.versions, { n, createdAt: now, size: Buffer.byteLength(html) }] };
+  const next: ArtifactMeta = {
+    ...meta,
+    title: change.title?.trim() || meta.title,
+    updatedAt: now,
+    versions: [...meta.versions, { n, createdAt: now, size: Buffer.byteLength(html) }],
+  };
   await writeAtomic(join(artifactDir(botId, artifactId), "meta.json"), JSON.stringify(next, null, 2));
   return next;
 }
 
 export function eventOf(type: ArtifactEvent["type"], meta: ArtifactMeta): ArtifactEvent {
   const last = meta.versions[meta.versions.length - 1];
-  return { type, data: { artifactId: meta.id, title: meta.title, kind: meta.kind, version: last.n, author: last.author ?? "bot" } };
+  return {
+    type,
+    data: { artifactId: meta.id, title: meta.title, kind: meta.kind, version: last.n, author: last.author ?? "bot" },
+  };
 }
 
 export function artifactEventOf(output: unknown): ArtifactEvent | null {
@@ -178,10 +211,22 @@ export function artifactTools(botId: string): BotTool[] {
         html: z.string().min(20).max(maxHtml),
       },
       approval: null,
-      label: (input) => `Criar ${kindLabel[(input.kind as ArtifactKind) ?? "page"] ?? "página"}: ${String(input.title ?? "")}`,
+      label: (input) =>
+        `Criar ${kindLabel[(input.kind as ArtifactKind) ?? "page"] ?? "página"}: ${String(input.title ?? "")}`,
       run: async (input) => {
-        const meta = await createArtifact(botId, String(input.title).trim(), input.kind as ArtifactKind, String(input.html));
-        return { artifactId: meta.id, title: meta.title, kind: meta.kind, version: 1, artifactEvent: eventOf("artifact.created", meta) };
+        const meta = await createArtifact(
+          botId,
+          String(input.title).trim(),
+          input.kind as ArtifactKind,
+          String(input.html),
+        );
+        return {
+          artifactId: meta.id,
+          title: meta.title,
+          kind: meta.kind,
+          version: 1,
+          artifactEvent: eventOf("artifact.created", meta),
+        };
       },
     },
     {
@@ -191,7 +236,11 @@ export function artifactTools(botId: string): BotTool[] {
       shape: {
         id: z.string().min(1),
         html: z.string().min(20).max(maxHtml).optional(),
-        edits: z.array(z.object({ old: z.string().min(1), new: z.string() })).min(1).max(40).optional(),
+        edits: z
+          .array(z.object({ old: z.string().min(1), new: z.string() }))
+          .min(1)
+          .max(40)
+          .optional(),
         title: z.string().min(1).max(120).optional(),
       },
       approval: null,
@@ -203,7 +252,13 @@ export function artifactTools(botId: string): BotTool[] {
           ...(typeof input.title === "string" ? { title: input.title } : {}),
         });
         const version = meta.versions[meta.versions.length - 1].n;
-        return { artifactId: meta.id, title: meta.title, kind: meta.kind, version, artifactEvent: eventOf("artifact.updated", meta) };
+        return {
+          artifactId: meta.id,
+          title: meta.title,
+          kind: meta.kind,
+          version,
+          artifactEvent: eventOf("artifact.updated", meta),
+        };
       },
     },
   ];
@@ -214,7 +269,7 @@ export const artifactGuide = [
   "Quando a resposta fica melhor vista do que lida (apresentação, dashboard, relatório visual), monte um artefato com `artifact_create` e ajuste com `artifact_update`. A pessoa vê o resultado renderizado no app; na conversa, diga em uma frase o que montou, sem colar o HTML.",
   "- HTML único e autocontido: CSS e JS inline. Scripts só de cdnjs.cloudflare.com ou cdn.jsdelivr.net, com versão exata (ex.: https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js). Fontes só do Google Fonts. Nada de fetch, imagens externas ou iframes: a página roda bloqueada para fora. Imagem só como SVG inline ou data: URI.",
   "- Tema escuro elegante: fundo quase preto (#0b0d10), texto #e8eaed, texto secundário #9aa0a6, uma cor de destaque só. Fonte Inter (Google Fonts) ou system-ui. Responsivo do celular a 1920px.",
-  "- slides: cada slide é um `<section class=\"slide\">` de 16:9 que ocupa a tela inteira, um slide por seção do conteúdo, só um visível por vez. Navegação por setas ←/→ (e espaço, PageUp/PageDown), contador discreto \"2 / 6\" num canto. Exponha `window.slideCount` (número de slides) e `window.goToSlide(i)` (índice a partir de 0): o app usa isso para exportar um PDF com uma página por slide. Nada de animação longa.",
+  '- slides: cada slide é um `<section class="slide">` de 16:9 que ocupa a tela inteira, um slide por seção do conteúdo, só um visível por vez. Navegação por setas ←/→ (e espaço, PageUp/PageDown), contador discreto "2 / 6" num canto. Exponha `window.slideCount` (número de slides) e `window.goToSlide(i)` (índice a partir de 0): o app usa isso para exportar um PDF com uma página por slide. Nada de animação longa.',
   "- dashboard: números-chave grandes no topo (KPI com rótulo curto), gráficos com Chart.js abaixo, legenda só quando houver mais de uma série. Grade que vira uma coluna no estreito.",
   "- page: relatório em uma coluna de leitura (até ~720px), títulos claros, tabelas limpas.",
   "- Nada inventado: só dado que veio das suas ferramentas ou da conversa. Se faltar dado, diga no próprio artefato o que faltou, sem preencher com exemplo.",
@@ -225,5 +280,5 @@ export const artifactGuide = [
   "- Poucas cores: neutros + um destaque; vermelho/verde só para sinal (piorou/melhorou).",
   "- Números grandes e tabulares (font-variant-numeric: tabular-nums), com unidade e período ao lado.",
   "- Espaço generoso, alinhamento a uma grade, cantos e espaçamentos consistentes.",
-  "- Sem slop: nada de emoji decorativo, gradiente arco-íris, ícone genérico, card dentro de card, frase de efeito, \"insights\" vagos ou texto de enchimento. Cada elemento precisa dizer algo.",
+  '- Sem slop: nada de emoji decorativo, gradiente arco-íris, ícone genérico, card dentro de card, frase de efeito, "insights" vagos ou texto de enchimento. Cada elemento precisa dizer algo.',
 ].join("\n");

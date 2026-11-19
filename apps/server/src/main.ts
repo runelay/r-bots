@@ -3,68 +3,143 @@ import { createReadStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import http from "node:http";
 import { basename, join } from "node:path";
+import { activeMarkers, sweepOrphans } from "@runelay-bots/providers/proc-tree";
+import { listAccounts, refreshAccounts } from "./accounts";
+import { artifactCsp, listArtifacts, publicArtifact, readArtifact, readArtifactHtml } from "./artifacts";
 import {
   accents,
   type BotDefinition,
   capabilityCatalog,
-  decisionsOf,
   clearSection,
   connectorsOf,
-  memoryOf,
+  createBot,
+  decisionsOf,
   efforts,
   engineOf,
-  setDeleted,
-  sidebarOf,
-  updateSidebar,
-  createBot,
   getBot,
   listBots,
   loadBots,
-  setArchived,
+  memoryOf,
   permissionOfBot,
+  setArchived,
+  setDeleted,
+  sidebarOf,
   updateBot,
+  updateSidebar,
   ValidationError,
   voiceOf,
 } from "./bots";
-import { browserAlive, browserDir, browserHistory, browserOpen, closeIdleBrowsers, fullScreenshot, markBrowserViewed, readBrowserState } from "./browser";
-import { controllerOf, setController } from "./control";
-import { handleLiveUpgrade, hasLiveClients, isLiveUpgrade, publishLiveState } from "./live";
-import { handleDesktopUpgrade, isDesktopUpgrade, stopAllDesktops, stopDesktop } from "./desktop";
-import { dataDir, host, model, port } from "./config";
-import { listAccounts, refreshAccounts } from "./accounts";
-import { getCatalog, installCatalogItem, listConnections, reconnectSource, removeSource, RunelayApiError, runelayEnabled } from "./runelay";
-import { listSkills, type LoadedSkill, loadSkill, skillSlugPattern } from "./skills";
-import { computerHealth } from "./computer";
-import { handleRunnerUpgrade, isRunnerUpgrade } from "./mac-runner";
-import { createGroup, getGroup, type Group, listGroups, loadGroups, setGroupArchived, updateGroup } from "./groups";
-import { answer, botStatus, botStatuses, cancel, deliver, isBusy, isRunning, onStatus, sessionStatuses } from "./engine";
-import { archiveConversation, ConversationError, conversationOf, createConversation, listConversations, markConversation, moveConversation, onConversation, publicConversation, updateConversation } from "./conversations";
-import { isPermissionMode } from "./permissions";
-import { handleMcp } from "./mcp";
-import { installConsoleRedaction } from "./redact";
-import { handleVaultRoute, loadVault } from "./vault";
-import { handleUsageRoute, warmUsage } from "./usage";
-import { botCodeSummary, botIsCoding, handleBotCode, handleCodeRoute, handlePreview, handlePreviewUpgrade, startCodeHousekeeping } from "./code-routes";
-import { stopAllDevServers } from "./devserver";
-import { artifactCsp, listArtifacts, publicArtifact, readArtifact, readArtifactHtml } from "./artifacts";
+import {
+  browserAlive,
+  browserDir,
+  browserHistory,
+  browserOpen,
+  closeIdleBrowsers,
+  fullScreenshot,
+  markBrowserViewed,
+  readBrowserState,
+} from "./browser";
 import { CanvasError, layoutPreview, readCanvasDoc, saveUserCanvas } from "./canvas";
+import {
+  botCodeSummary,
+  botIsCoding,
+  handleBotCode,
+  handleCodeRoute,
+  handlePreview,
+  handlePreviewUpgrade,
+  startCodeHousekeeping,
+} from "./code-routes";
+import { computerHealth } from "./computer";
+import { dataDir, host, model, port } from "./config";
+import { controllerOf, setController } from "./control";
+import {
+  archiveConversation,
+  ConversationError,
+  conversationOf,
+  createConversation,
+  listConversations,
+  markConversation,
+  moveConversation,
+  onConversation,
+  publicConversation,
+  updateConversation,
+} from "./conversations";
+import { handleDesktopUpgrade, isDesktopUpgrade, stopAllDesktops, stopDesktop } from "./desktop";
+import { stopAllDevServers } from "./devserver";
+import {
+  answer,
+  botStatus,
+  botStatuses,
+  cancel,
+  deliver,
+  isBusy,
+  isRunning,
+  onStatus,
+  sessionStatuses,
+} from "./engine";
+import { createGroup, type Group, getGroup, listGroups, loadGroups, setGroupArchived, updateGroup } from "./groups";
+import { handleLiveUpgrade, hasLiveClients, isLiveUpgrade, publishLiveState } from "./live";
+import { handleRunnerUpgrade, isRunnerUpgrade } from "./mac-runner";
+import { handleMcp } from "./mcp";
+import { isPermissionMode } from "./permissions";
+import { installConsoleRedaction } from "./redact";
+import {
+  getCatalog,
+  installCatalogItem,
+  listConnections,
+  RunelayApiError,
+  reconnectSource,
+  removeSource,
+  runelayEnabled,
+} from "./runelay";
 import { fire, startScheduler } from "./scheduler";
-import { createStoredSession, getStoredSession, loadSessions, sessionsOf, type StoredSession } from "./sessions";
-import { archiveSection, createSection, listSections, loadSections, publicSection, sectionExists, updateSection } from "./sections";
-import { endAllCalls, handleVoice, handleVoices, warmVoiceLayers } from "./voice";
-import { activeMarkers, sweepOrphans } from "@runelay-bots/providers/proc-tree";
-import { slotStats } from "./turn-slots";
+import {
+  archiveSection,
+  createSection,
+  listSections,
+  loadSections,
+  publicSection,
+  sectionExists,
+  updateSection,
+} from "./sections";
+import { createStoredSession, getStoredSession, loadSessions, type StoredSession, sessionsOf } from "./sessions";
+import { type LoadedSkill, listSkills, loadSkill, skillSlugPattern } from "./skills";
+import {
+  ensureThread,
+  markThreadRead,
+  markThreadUnread,
+  peekThread,
+  publicThread,
+  recordThreadMessage,
+  resetThread,
+  restoreThread,
+} from "./threads";
 import { settleOrphanTurns } from "./turn-repair";
-import { appWatching, watchApp } from "./viewers";
+import { slotStats } from "./turn-slots";
 import { publicUpload, receiveUpload, resolveUploads, serveUpload, UploadError, type UploadMeta } from "./uploads";
-import { ensureThread, markThreadRead, markThreadUnread, peekThread, publicThread, recordThreadMessage, resetThread, restoreThread } from "./threads";
+import { handleUsageRoute, warmUsage } from "./usage";
+import { handleVaultRoute, loadVault } from "./vault";
+import { appWatching, watchApp } from "./viewers";
+import { endAllCalls, handleVoice, handleVoices, warmVoiceLayers } from "./voice";
 
 delete process.env.ANTHROPIC_API_KEY;
 delete process.env.ANTHROPIC_AUTH_TOKEN;
 
 type Res = http.ServerResponse;
 
-const acceptedFields = ["inbox", "message", "answers", "clientContext", "outputSchema", "turnPolicy", "callback", "forwardedPrincipal", "idempotencyKey", "skills", "attachments"];
+const acceptedFields = [
+  "inbox",
+  "message",
+  "answers",
+  "clientContext",
+  "outputSchema",
+  "turnPolicy",
+  "callback",
+  "forwardedPrincipal",
+  "idempotencyKey",
+  "skills",
+  "attachments",
+];
 
 function sendJson(res: Res, status: number, body: unknown, headers: Record<string, string> = {}) {
   const payload = JSON.stringify(body);
@@ -109,7 +184,11 @@ async function publicBot(bot: BotDefinition) {
     sidebar: sidebarOf(bot),
     permission: permissionOfBot(bot),
     conversations: await listConversations(bot.id),
-    thread: { ...publicThread(await peekThread(bot.id)), running: botStatus(bot.id) !== "idle", status: botStatus(bot.id) },
+    thread: {
+      ...publicThread(await peekThread(bot.id)),
+      running: botStatus(bot.id) !== "idle",
+      status: botStatus(bot.id),
+    },
     code: await botCodeSummary(bot).catch(() => null),
   };
 }
@@ -144,19 +223,26 @@ async function publicGroup(group: Group) {
 async function handleGroups(req: http.IncomingMessage, res: Res, url: URL, method: string, parts: string[]) {
   try {
     if (parts.length === 1 && method === "GET") {
-      return sendJson(res, 200, await Promise.all(listGroups(url.searchParams.get("archived") === "1").map(publicGroup)));
+      return sendJson(
+        res,
+        200,
+        await Promise.all(listGroups(url.searchParams.get("archived") === "1").map(publicGroup)),
+      );
     }
-    if (parts.length === 1 && method === "POST") return sendJson(res, 201, await publicGroup(await createGroup(await readBody(req))));
+    if (parts.length === 1 && method === "POST")
+      return sendJson(res, 201, await publicGroup(await createGroup(await readBody(req))));
     const group = getGroup(parts[1] ?? "");
     if (!group) return sendJson(res, 404, { ok: false, error: "Grupo não encontrado." });
     const tail = parts.slice(2).join("/");
     if (parts[2] === "eve") {
-      if (parts[4] === "session" && !parts[5]) return sendJson(res, 405, { ok: false, error: "Grupos usam só a conversa do grupo (GET /groups/:id/thread)." });
+      if (parts[4] === "session" && !parts[5])
+        return sendJson(res, 405, { ok: false, error: "Grupos usam só a conversa do grupo (GET /groups/:id/thread)." });
       const owner = { id: group.id, archivedAt: group.archivedAt, deletedAt: null } as unknown as BotDefinition;
       return handleEve(req, res, url, owner, parts.slice(3));
     }
     if (tail === "" && method === "GET") return sendJson(res, 200, await publicGroup(group));
-    if (tail === "" && method === "PATCH") return sendJson(res, 200, await publicGroup((await updateGroup(group.id, await readBody(req)))!));
+    if (tail === "" && method === "PATCH")
+      return sendJson(res, 200, await publicGroup((await updateGroup(group.id, await readBody(req)))!));
     if ((tail === "archive" || tail === "unarchive") && method === "POST") {
       await readBody(req).catch(() => undefined);
       return sendJson(res, 200, await publicGroup((await setGroupArchived(group.id, tail === "archive"))!));
@@ -182,7 +268,8 @@ async function handleConnectorActions(req: http.IncomingMessage, res: Res, url: 
       return sendJson(res, 200, await getCatalog((url.searchParams.get("query") ?? "").trim().slice(0, 100)));
     }
     const name = parts[1] ?? "";
-    if (!/^[a-z0-9_-]{1,60}$/.test(name)) return sendJson(res, 400, { ok: false, error: "Nome de conector inválido.", field: "name" });
+    if (!/^[a-z0-9_-]{1,60}$/.test(name))
+      return sendJson(res, 400, { ok: false, error: "Nome de conector inválido.", field: "name" });
     if (parts.length === 3 && parts[2] === "install" && method === "POST") {
       const body = ((await readBody(req).catch(() => undefined)) ?? {}) as { token?: unknown };
       const connectorToken = typeof body.token === "string" && body.token.trim() ? body.token.trim() : undefined;
@@ -196,18 +283,24 @@ async function handleConnectorActions(req: http.IncomingMessage, res: Res, url: 
     return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
   } catch (error) {
     if (error instanceof RunelayApiError) return sendJson(res, error.status, { ok: false, error: error.message });
-    return sendJson(res, 502, { ok: false, error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) });
+    return sendJson(res, 502, {
+      ok: false,
+      error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+    });
   }
 }
 
 async function handleSections(req: http.IncomingMessage, res: Res, method: string, parts: string[]) {
   try {
     if (parts.length === 1 && method === "GET") return sendJson(res, 200, listSections().map(publicSection));
-    if (parts.length === 1 && method === "POST") return sendJson(res, 201, publicSection(await createSection(await readBody(req))));
+    if (parts.length === 1 && method === "POST")
+      return sendJson(res, 201, publicSection(await createSection(await readBody(req))));
     const id = parts[1] ?? "";
     if (parts.length === 2 && method === "PATCH") {
       const section = await updateSection(id, await readBody(req));
-      return section ? sendJson(res, 200, publicSection(section)) : sendJson(res, 404, { ok: false, error: "Seção não encontrada." });
+      return section
+        ? sendJson(res, 200, publicSection(section))
+        : sendJson(res, 404, { ok: false, error: "Seção não encontrada." });
     }
     if (parts.length === 3 && parts[2] === "archive" && method === "POST") {
       await readBody(req).catch(() => undefined);
@@ -223,11 +316,16 @@ async function handleSections(req: http.IncomingMessage, res: Res, method: strin
 }
 
 function normalize(value: string) {
-  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
 }
 
 function validationResponse(res: Res, error: unknown) {
-  if (error instanceof ValidationError) return sendJson(res, 400, { ok: false, error: error.message, field: error.field });
+  if (error instanceof ValidationError)
+    return sendJson(res, 400, { ok: false, error: error.message, field: error.field });
   if (error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: "JSON inválido.", field: "body" });
   throw error;
 }
@@ -236,7 +334,12 @@ async function handleBrowser(res: Res, bot: BotDefinition) {
   markBrowserViewed(bot.id);
   const state = await readBrowserState(bot.id);
   if (!state) return sendJson(res, 404, { ok: false, error: "Esse bot ainda não abriu nenhuma página." });
-  sendJson(res, 200, { ...state, screenshotPath: `/bots/${bot.id}/browser/latest.png`, controller: controllerOf(bot.id), alive: await browserAlive(bot.id) });
+  sendJson(res, 200, {
+    ...state,
+    screenshotPath: `/bots/${bot.id}/browser/latest.png`,
+    controller: controllerOf(bot.id),
+    alive: await browserAlive(bot.id),
+  });
 }
 
 async function handleFullScreenshot(res: Res, bot: BotDefinition) {
@@ -244,7 +347,10 @@ async function handleFullScreenshot(res: Res, bot: BotDefinition) {
   try {
     await fullScreenshot(bot.id);
   } catch (error) {
-    return sendJson(res, 502, { ok: false, error: `Não consegui tirar o print: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) });
+    return sendJson(res, 502, {
+      ok: false,
+      error: `Não consegui tirar o print: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+    });
   }
   return handleScreenshot(res, bot, "full.png");
 }
@@ -273,7 +379,12 @@ async function handleArtifacts(res: Res, bot: BotDefinition, path: string[]) {
   if (path.length === 1) return sendJson(res, 200, publicArtifact(meta));
   if (meta.kind === "canvas") {
     const latest = meta.versions[meta.versions.length - 1].n;
-    const jsonMatch = path.length === 2 && path[1] === "doc" ? ["", String(latest)] : path.length === 3 && path[1] === "v" ? /^(\d{1,4})\.json$/.exec(path[2]) : null;
+    const jsonMatch =
+      path.length === 2 && path[1] === "doc"
+        ? ["", String(latest)]
+        : path.length === 3 && path[1] === "v"
+          ? /^(\d{1,4})\.json$/.exec(path[2])
+          : null;
     if (!jsonMatch) return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
     const doc = await readCanvasDoc(bot.id, meta.id, Number(jsonMatch[1]));
     if (!doc) return sendJson(res, 404, { ok: false, error: "Versão não encontrada." });
@@ -309,7 +420,12 @@ async function handleCanvasPut(req: http.IncomingMessage, res: Res, bot: BotDefi
   } catch (error) {
     if (error instanceof CanvasError) {
       const meta = error.code === "stale" ? await readArtifact(bot.id, artifactId) : null;
-      return sendJson(res, error.status, { ok: false, code: error.code, error: error.message, ...(meta ? { version: meta.versions[meta.versions.length - 1].n } : {}) });
+      return sendJson(res, error.status, {
+        ok: false,
+        code: error.code,
+        error: error.message,
+        ...(meta ? { version: meta.versions[meta.versions.length - 1].n } : {}),
+      });
     }
     throw error;
   }
@@ -318,7 +434,10 @@ async function handleCanvasPut(req: http.IncomingMessage, res: Res, bot: BotDefi
 async function handleSessions(res: Res, bot: BotDefinition) {
   const thread = await peekThread(bot.id);
   const entries = sessionsOf(bot.id)
-    .filter((session) => session.meta.sessionId === thread?.sessionId || (session.meta.kind !== "thread" && session.meta.turnCount > 0))
+    .filter(
+      (session) =>
+        session.meta.sessionId === thread?.sessionId || (session.meta.kind !== "thread" && session.meta.turnCount > 0),
+    )
     .map((session) => ({
       sessionId: session.meta.sessionId,
       title: session.meta.kind === "thread" ? "Conversa principal" : session.meta.title,
@@ -345,12 +464,16 @@ function checkFields(body: unknown) {
   if (raw.message !== undefined && typeof raw.message !== "string") return "Field 'message' must be a string.";
   if (raw.answers !== undefined && !Array.isArray(raw.answers)) return "Field 'answers' must be an array.";
   if (raw.skills !== undefined) {
-    if (!Array.isArray(raw.skills) || raw.skills.length > 5) return "Field 'skills' must be an array with up to 5 slugs.";
-    if (raw.skills.some((slug) => typeof slug !== "string" || !skillSlugPattern.test(slug))) return "Field 'skills' has an invalid slug.";
+    if (!Array.isArray(raw.skills) || raw.skills.length > 5)
+      return "Field 'skills' must be an array with up to 5 slugs.";
+    if (raw.skills.some((slug) => typeof slug !== "string" || !skillSlugPattern.test(slug)))
+      return "Field 'skills' has an invalid slug.";
   }
   if (raw.attachments !== undefined) {
-    if (!Array.isArray(raw.attachments) || raw.attachments.length > 10) return "Field 'attachments' must be an array with up to 10 upload ids.";
-    if (raw.attachments.some((id) => typeof id !== "string" || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(id))) return "Field 'attachments' has an invalid upload id.";
+    if (!Array.isArray(raw.attachments) || raw.attachments.length > 10)
+      return "Field 'attachments' must be an array with up to 10 upload ids.";
+    if (raw.attachments.some((id) => typeof id !== "string" || !/^[0-9A-HJKMNP-TV-Z]{26}$/.test(id)))
+      return "Field 'attachments' has an invalid upload id.";
   }
   return null;
 }
@@ -365,8 +488,13 @@ async function resolveSkills(res: Res, body: unknown): Promise<LoadedSkill[] | n
   try {
     return await Promise.all(slugs.map(loadSkill));
   } catch (error) {
-    if (error instanceof RunelayApiError && error.status === 404) sendJson(res, 400, { ok: false, error: "Essa skill não existe mais na runelay.", field: "skills" });
-    else sendJson(res, 502, { ok: false, error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) });
+    if (error instanceof RunelayApiError && error.status === 404)
+      sendJson(res, 400, { ok: false, error: "Essa skill não existe mais na runelay.", field: "skills" });
+    else
+      sendJson(res, 502, {
+        ok: false,
+        error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+      });
     return null;
   }
 }
@@ -379,10 +507,17 @@ function deliveryText(message: string | undefined, skills: LoadedSkill[]) {
 async function handleSkills(res: Res, url: URL) {
   if (!runelayEnabled()) return sendJson(res, 503, { ok: false, error: "runelay não está configurado no servidor." });
   try {
-    return sendJson(res, 200, await listSkills(url.searchParams.get("query") ?? "", url.searchParams.get("refresh") === "1"));
+    return sendJson(
+      res,
+      200,
+      await listSkills(url.searchParams.get("query") ?? "", url.searchParams.get("refresh") === "1"),
+    );
   } catch (error) {
     if (error instanceof RunelayApiError) return sendJson(res, error.status, { ok: false, error: error.message });
-    return sendJson(res, 502, { ok: false, error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) });
+    return sendJson(res, 502, {
+      ok: false,
+      error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+    });
   }
 }
 
@@ -412,12 +547,18 @@ async function handleUploads(req: http.IncomingMessage, res: Res, method: string
       throw error;
     }
   }
-  if ((rest.length === 1 || rest.length === 2) && (method === "GET" || method === "HEAD")) return serveUpload(req, res, bot.id, rest[0], rest[1]);
+  if ((rest.length === 1 || rest.length === 2) && (method === "GET" || method === "HEAD"))
+    return serveUpload(req, res, bot.id, rest[0], rest[1]);
   sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
 }
 
 function accepted(res: Res, session: StoredSession, deliveryId: string) {
-  sendJson(res, 202, { ok: true, sessionId: session.meta.sessionId, deliveryId }, { "x-eve-session-id": session.meta.sessionId });
+  sendJson(
+    res,
+    202,
+    { ok: true, sessionId: session.meta.sessionId, deliveryId },
+    { "x-eve-session-id": session.meta.sessionId },
+  );
 }
 
 async function handleSessionPost(req: http.IncomingMessage, res: Res, bot: BotDefinition, session: StoredSession) {
@@ -434,14 +575,24 @@ async function handleSessionPost(req: http.IncomingMessage, res: Res, bot: BotDe
   if (raw.answers && raw.answers.length > 0) {
     let applied = 0;
     for (const item of raw.answers) {
-      const optionId = item.optionId === "approve" || item.optionId === "deny" || item.optionId === "approve_always" ? item.optionId : null;
+      const optionId =
+        item.optionId === "approve" || item.optionId === "deny" || item.optionId === "approve_always"
+          ? item.optionId
+          : null;
       if (!item.interactionId || !optionId) {
-        return sendJson(res, 400, { ok: false, error: "Each answer needs interactionId and optionId 'approve', 'approve_always' or 'deny'." });
+        return sendJson(res, 400, {
+          ok: false,
+          error: "Each answer needs interactionId and optionId 'approve', 'approve_always' or 'deny'.",
+        });
       }
       if (answer(session, deliveryId, item.interactionId, optionId)) applied++;
     }
     if (applied === 0) {
-      return sendJson(res, 409, { ok: false, code: "interaction_not_pending", error: "Essa aprovação não está mais pendente." });
+      return sendJson(res, 409, {
+        ok: false,
+        code: "interaction_not_pending",
+        error: "Essa aprovação não está mais pendente.",
+      });
     }
   }
   const skills = await resolveSkills(res, body);
@@ -450,8 +601,15 @@ async function handleSessionPost(req: http.IncomingMessage, res: Res, bot: BotDe
   if (!attachments) return;
   if ((raw.message && raw.message.trim()) || skills.length > 0 || attachments.length > 0) {
     if (bot.deletedAt) return sendJson(res, 409, { ok: false, code: "bot_deleted", error: "Esse bot foi excluído." });
-    if (bot.archivedAt) return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
-    deliver(session, { deliveryId, text: deliveryText(raw.message, skills), source: "chat", ...(skills.length ? { skills } : {}), ...(attachments.length ? { attachments } : {}) });
+    if (bot.archivedAt)
+      return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
+    deliver(session, {
+      deliveryId,
+      text: deliveryText(raw.message, skills),
+      source: "chat",
+      ...(skills.length ? { skills } : {}),
+      ...(attachments.length ? { attachments } : {}),
+    });
   }
   accepted(res, session, deliveryId);
 }
@@ -489,8 +647,12 @@ function handleStream(req: http.IncomingMessage, res: Res, url: URL, session: St
 function handleStatusStream(req: http.IncomingMessage, res: Res) {
   res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" });
   res.write(`${JSON.stringify({ type: "snapshot", bots: botStatuses(), sessions: sessionStatuses() })}\n`);
-  const unsubscribe = onStatus((event) => res.write(`${JSON.stringify({ type: event.sessionId ? "session" : "status", ...event })}\n`));
-  const unsubscribeConversations = onConversation((event) => res.write(`${JSON.stringify({ type: "conversation", ...event })}\n`));
+  const unsubscribe = onStatus((event) =>
+    res.write(`${JSON.stringify({ type: event.sessionId ? "session" : "status", ...event })}\n`),
+  );
+  const unsubscribeConversations = onConversation((event) =>
+    res.write(`${JSON.stringify({ type: "conversation", ...event })}\n`),
+  );
   const heartbeat = setInterval(() => res.write(`${JSON.stringify({ type: "heartbeat" })}\n`), 15_000);
   const unwatch = watchApp();
   const close = () => {
@@ -510,7 +672,8 @@ function handleEvents(res: Res, url: URL, session: StoredSession) {
   const limit = Math.min(200, Math.max(1, Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 60));
   const beforeParam = url.searchParams.get("before");
   const beforeRaw = beforeParam === null || beforeParam === "" ? total : Number(beforeParam);
-  if (!Number.isFinite(beforeRaw) || beforeRaw < 0) return sendJson(res, 400, { ok: false, error: "before inválido.", field: "before" });
+  if (!Number.isFinite(beforeRaw) || beforeRaw < 0)
+    return sendJson(res, 400, { ok: false, error: "before inválido.", field: "before" });
   const end = Math.min(total, Math.floor(beforeRaw));
   const start = Math.max(0, end - limit);
   const events = [];
@@ -523,7 +686,8 @@ function handleEvents(res: Res, url: URL, session: StoredSession) {
 }
 
 async function handleEve(req: http.IncomingMessage, res: Res, url: URL, bot: BotDefinition, rest: string[]) {
-  if (rest[0] !== "v1" || rest[1] !== "session") return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
+  if (rest[0] !== "v1" || rest[1] !== "session")
+    return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
   const sessionId = rest[2];
   if (!sessionId) {
     if (req.method !== "POST") return sendJson(res, 405, { ok: false, error: "Method not allowed." });
@@ -536,16 +700,27 @@ async function handleEve(req: http.IncomingMessage, res: Res, url: URL, bot: Bot
     const problem = checkFields(body);
     if (problem) return sendJson(res, 400, { ok: false, error: problem });
     if (bot.deletedAt) return sendJson(res, 409, { ok: false, code: "bot_deleted", error: "Esse bot foi excluído." });
-    if (bot.archivedAt) return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
+    if (bot.archivedAt)
+      return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
     const message = (body as { message?: string } | undefined)?.message;
     const skills = await resolveSkills(res, body);
     if (!skills) return;
     const attachments = await resolveAttachments(res, bot, body);
     if (!attachments) return;
     const session = await createStoredSession({ botId: bot.id, kind: "session", source: "chat", title: "" });
-    session.log.emit({ type: "session.started", data: { runtime: { agentId: bot.id, agentName: bot.id, engine: "claude-agent-sdk", model } } });
+    session.log.emit({
+      type: "session.started",
+      data: { runtime: { agentId: bot.id, agentName: bot.id, engine: "claude-agent-sdk", model } },
+    });
     const deliveryId = randomUUID();
-    if ((message && message.trim()) || skills.length > 0 || attachments.length > 0) deliver(session, { deliveryId, text: deliveryText(message, skills), source: "chat", ...(skills.length ? { skills } : {}), ...(attachments.length ? { attachments } : {}) });
+    if ((message && message.trim()) || skills.length > 0 || attachments.length > 0)
+      deliver(session, {
+        deliveryId,
+        text: deliveryText(message, skills),
+        source: "chat",
+        ...(skills.length ? { skills } : {}),
+        ...(attachments.length ? { attachments } : {}),
+      });
     return accepted(res, session, deliveryId);
   }
   const session = getStoredSession(sessionId);
@@ -562,7 +737,14 @@ async function handleEve(req: http.IncomingMessage, res: Res, url: URL, bot: Bot
   sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
 }
 
-async function handleConversations(req: http.IncomingMessage, res: Res, url: URL, method: string, bot: BotDefinition, rest: string[]) {
+async function handleConversations(
+  req: http.IncomingMessage,
+  res: Res,
+  url: URL,
+  method: string,
+  bot: BotDefinition,
+  rest: string[],
+) {
   try {
     if (rest.length === 0 && method === "GET") {
       const archived = url.searchParams.get("archived") === "1";
@@ -571,35 +753,61 @@ async function handleConversations(req: http.IncomingMessage, res: Res, url: URL
     }
     if (rest.length === 0 && method === "POST") {
       if (bot.deletedAt) return sendJson(res, 409, { ok: false, code: "bot_deleted", error: "Esse bot foi excluído." });
-      if (bot.archivedAt) return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
+      if (bot.archivedAt)
+        return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
       const body = ((await readBody(req)) ?? {}) as Record<string, unknown>;
-      if (!body || typeof body !== "object" || Array.isArray(body)) return sendJson(res, 400, { ok: false, error: "Corpo inválido.", field: "body" });
-      for (const key of Object.keys(body)) if (!["title", "permission", "message", "skills", "attachments"].includes(key)) return sendJson(res, 400, { ok: false, error: `Campo desconhecido: ${key}.`, field: key });
-      if (body.title !== undefined && (typeof body.title !== "string" || body.title.trim().length > 80)) return sendJson(res, 400, { ok: false, error: "O título precisa ter até 80 caracteres.", field: "title" });
-      if (body.permission !== undefined && !isPermissionMode(body.permission)) return sendJson(res, 400, { ok: false, error: "Use readonly, edit, default ou full.", field: "permission" });
-      const problem = checkFields({ ...(body.message !== undefined ? { message: body.message } : {}), ...(body.skills !== undefined ? { skills: body.skills } : {}), ...(body.attachments !== undefined ? { attachments: body.attachments } : {}) });
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        return sendJson(res, 400, { ok: false, error: "Corpo inválido.", field: "body" });
+      for (const key of Object.keys(body))
+        if (!["title", "permission", "message", "skills", "attachments"].includes(key))
+          return sendJson(res, 400, { ok: false, error: `Campo desconhecido: ${key}.`, field: key });
+      if (body.title !== undefined && (typeof body.title !== "string" || body.title.trim().length > 80))
+        return sendJson(res, 400, { ok: false, error: "O título precisa ter até 80 caracteres.", field: "title" });
+      if (body.permission !== undefined && !isPermissionMode(body.permission))
+        return sendJson(res, 400, { ok: false, error: "Use readonly, edit, default ou full.", field: "permission" });
+      const problem = checkFields({
+        ...(body.message !== undefined ? { message: body.message } : {}),
+        ...(body.skills !== undefined ? { skills: body.skills } : {}),
+        ...(body.attachments !== undefined ? { attachments: body.attachments } : {}),
+      });
       if (problem) return sendJson(res, 400, { ok: false, error: problem });
       const skills = await resolveSkills(res, body);
       if (!skills) return;
       const attachments = await resolveAttachments(res, bot, body);
       if (!attachments) return;
       const message = typeof body.message === "string" ? body.message : undefined;
-      const session = await createConversation(bot.id, { ...(typeof body.title === "string" ? { title: body.title } : {}), ...(isPermissionMode(body.permission) ? { permission: body.permission } : {}), ...(message?.trim() ? { firstMessage: message } : {}) });
+      const session = await createConversation(bot.id, {
+        ...(typeof body.title === "string" ? { title: body.title } : {}),
+        ...(isPermissionMode(body.permission) ? { permission: body.permission } : {}),
+        ...(message?.trim() ? { firstMessage: message } : {}),
+      });
       let deliveryId: string | null = null;
       if ((message && message.trim()) || skills.length > 0 || attachments.length > 0) {
         deliveryId = randomUUID();
-        deliver(session, { deliveryId, text: deliveryText(message, skills), source: "chat", ...(skills.length ? { skills } : {}), ...(attachments.length ? { attachments } : {}) });
+        deliver(session, {
+          deliveryId,
+          text: deliveryText(message, skills),
+          source: "chat",
+          ...(skills.length ? { skills } : {}),
+          ...(attachments.length ? { attachments } : {}),
+        });
       }
-      return sendJson(res, 201, { ...(await publicConversation(session)), sessionBasePath: `/bots/${bot.id}/eve/v1`, ...(deliveryId ? { deliveryId } : {}) });
+      return sendJson(res, 201, {
+        ...(await publicConversation(session)),
+        sessionBasePath: `/bots/${bot.id}/eve/v1`,
+        ...(deliveryId ? { deliveryId } : {}),
+      });
     }
     const session = conversationOf(bot.id, rest[0] ?? "");
     if (!session) return sendJson(res, 404, { ok: false, error: "Conversa não encontrada." });
     const action = rest.slice(1).join("/");
     if (action === "" && method === "GET") return sendJson(res, 200, await publicConversation(session));
-    if (action === "" && method === "PATCH") return sendJson(res, 200, await publicConversation(await updateConversation(session, await readBody(req))));
+    if (action === "" && method === "PATCH")
+      return sendJson(res, 200, await publicConversation(await updateConversation(session, await readBody(req))));
     if (method !== "POST") return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
     const body = ((await readBody(req).catch(() => undefined)) ?? {}) as Record<string, unknown>;
-    if (action === "archive" || action === "unarchive") return sendJson(res, 200, await publicConversation(await archiveConversation(session, action === "archive")));
+    if (action === "archive" || action === "unarchive")
+      return sendJson(res, 200, await publicConversation(await archiveConversation(session, action === "archive")));
     if (action === "read" || action === "unread") {
       if (session.meta.kind === "thread") {
         if (action === "read") await markThreadRead(bot.id);
@@ -610,11 +818,15 @@ async function handleConversations(req: http.IncomingMessage, res: Res, url: URL
     }
     if (action === "move") {
       const moved = await moveConversation(session, body.botId);
-      return sendJson(res, 200, { ...(await publicConversation(moved)), sessionBasePath: `/bots/${moved.meta.botId}/eve/v1` });
+      return sendJson(res, 200, {
+        ...(await publicConversation(moved)),
+        sessionBasePath: `/bots/${moved.meta.botId}/eve/v1`,
+      });
     }
     return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
   } catch (error) {
-    if (error instanceof ConversationError) return sendJson(res, error.status, { ok: false, code: error.code, error: error.message });
+    if (error instanceof ConversationError)
+      return sendJson(res, error.status, { ok: false, code: error.code, error: error.message });
     return validationResponse(res, error);
   }
 }
@@ -650,17 +862,30 @@ async function route(req: http.IncomingMessage, res: Res) {
   if (method === "GET" && url.pathname === "/skills") return handleSkills(res, url);
   if (parts[0] === "sections") return handleSections(req, res, method, parts);
   if (parts[0] === "groups") return handleGroups(req, res, url, method, parts);
-  if (method === "GET" && url.pathname === "/status") return sendJson(res, 200, { bots: botStatuses(), turns: slotStats(), warmVoice: warmVoiceLayers(), appWatching: appWatching() });
+  if (method === "GET" && url.pathname === "/status")
+    return sendJson(res, 200, {
+      bots: botStatuses(),
+      turns: slotStats(),
+      warmVoice: warmVoiceLayers(),
+      appWatching: appWatching(),
+    });
   if (method === "GET" && url.pathname === "/status/stream") return handleStatusStream(req, res);
   if (method === "GET" && url.pathname === "/computer/health") return sendJson(res, 200, await computerHealth());
-  if (parts[0] === "connectors" && parts.length >= 2 && parts[1] !== "refresh") return handleConnectorActions(req, res, url, method, parts);
-  if (parts[0] === "connectors" && ((parts.length === 1 && method === "GET") || (parts[1] === "refresh" && method === "POST"))) {
+  if (parts[0] === "connectors" && parts.length >= 2 && parts[1] !== "refresh")
+    return handleConnectorActions(req, res, url, method, parts);
+  if (
+    parts[0] === "connectors" &&
+    ((parts.length === 1 && method === "GET") || (parts[1] === "refresh" && method === "POST"))
+  ) {
     if (method === "POST") await readBody(req).catch(() => undefined);
     if (!runelayEnabled()) return sendJson(res, 503, { ok: false, error: "runelay não está configurado no servidor." });
     try {
       return sendJson(res, 200, await listConnections(method === "POST" || url.searchParams.get("refresh") === "1"));
     } catch (error) {
-      return sendJson(res, 502, { ok: false, error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) });
+      return sendJson(res, 502, {
+        ok: false,
+        error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+      });
     }
   }
   if (parts[0] !== "bots") return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
@@ -668,14 +893,19 @@ async function route(req: http.IncomingMessage, res: Res) {
   if (parts.length === 1) {
     if (method === "GET") {
       const includeArchived = url.searchParams.get("archived") === "1";
-      const listed = listBots(includeArchived, { deleted: url.searchParams.get("deleted") === "1", hidden: url.searchParams.get("hidden") === "1" });
+      const listed = listBots(includeArchived, {
+        deleted: url.searchParams.get("deleted") === "1",
+        hidden: url.searchParams.get("hidden") === "1",
+      });
       const all = await Promise.all(listed.map(publicBot));
       const term = normalize(url.searchParams.get("q") ?? "");
       if (!term) return sendJson(res, 200, all);
       return sendJson(
         res,
         200,
-        all.filter((bot) => [bot.name, bot.role, bot.thread.lastMessage?.text ?? ""].some((value) => normalize(value).includes(term))),
+        all.filter((bot) =>
+          [bot.name, bot.role, bot.thread.lastMessage?.text ?? ""].some((value) => normalize(value).includes(term)),
+        ),
       );
     }
     if (method === "POST") {
@@ -735,7 +965,11 @@ async function route(req: http.IncomingMessage, res: Res) {
     const body = (await readBody(req).catch(() => undefined)) as { archiveId?: unknown } | undefined;
     const current = await peekThread(bot.id);
     if (current && isBusy(current.sessionId)) {
-      return sendJson(res, 409, { ok: false, code: "turn_running", error: "O bot ainda está respondendo. Pare a resposta antes de limpar a conversa." });
+      return sendJson(res, 409, {
+        ok: false,
+        code: "turn_running",
+        error: "O bot ainda está respondendo. Pare a resposta antes de limpar a conversa.",
+      });
     }
     if (tail === "thread/reset") {
       const { archiveId } = await resetThread(bot.id);
@@ -756,7 +990,8 @@ async function route(req: http.IncomingMessage, res: Res) {
   if (rest[0] === "schedules" && rest[2] === "run" && rest.length === 3 && method === "POST") {
     await readBody(req).catch(() => undefined);
     if (bot.deletedAt) return sendJson(res, 409, { ok: false, code: "bot_deleted", error: "Esse bot foi excluído." });
-    if (bot.archivedAt) return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
+    if (bot.archivedAt)
+      return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
     const schedule = bot.schedules.find((item) => item.name === rest[1]);
     if (!schedule) return sendJson(res, 404, { ok: false, error: "Rotina não encontrada." });
     const started = await fire(bot.id, schedule.name, schedule.prompt);
@@ -771,7 +1006,8 @@ async function route(req: http.IncomingMessage, res: Res) {
     } catch {
       return sendJson(res, 400, { ok: false, error: "JSON inválido.", field: "body" });
     }
-    if (!bot.capabilities.browser && !(await botIsCoding(bot.id).catch(() => false))) return sendJson(res, 409, { ok: false, code: "no_browser", error: "Esse bot não tem navegador." });
+    if (!bot.capabilities.browser && !(await botIsCoding(bot.id).catch(() => false)))
+      return sendJson(res, 409, { ok: false, code: "no_browser", error: "Esse bot não tem navegador." });
     const raw = (body as { url?: unknown } | undefined)?.url;
     let target: URL | null = null;
     try {
@@ -785,9 +1021,17 @@ async function route(req: http.IncomingMessage, res: Res) {
     try {
       const state = await browserOpen(bot.id, target.toString(), undefined, true);
       publishLiveState(bot.id);
-      return sendJson(res, 200, { url: state.url, title: state.title, updatedAt: state.updatedAt, screenshotPath: `/bots/${bot.id}/browser/latest.png` });
+      return sendJson(res, 200, {
+        url: state.url,
+        title: state.title,
+        updatedAt: state.updatedAt,
+        screenshotPath: `/bots/${bot.id}/browser/latest.png`,
+      });
     } catch (error) {
-      return sendJson(res, 502, { ok: false, error: `Não consegui abrir a página: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500) });
+      return sendJson(res, 502, {
+        ok: false,
+        error: `Não consegui abrir a página: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500),
+      });
     }
   }
   if (tail === "browser/control" && method === "POST") {
@@ -798,27 +1042,44 @@ async function route(req: http.IncomingMessage, res: Res) {
       return sendJson(res, 400, { ok: false, error: "JSON inválido.", field: "body" });
     }
     const mode = (body as { mode?: unknown } | undefined)?.mode;
-    if (mode !== "user" && mode !== "bot") return sendJson(res, 400, { ok: false, error: "Use mode user ou bot.", field: "mode" });
-    if (!bot.capabilities.browser && !bot.capabilities.desktop && !(await botIsCoding(bot.id).catch(() => false))) return sendJson(res, 409, { ok: false, code: "no_browser", error: "Esse bot não tem navegador nem computador." });
+    if (mode !== "user" && mode !== "bot")
+      return sendJson(res, 400, { ok: false, error: "Use mode user ou bot.", field: "mode" });
+    if (!bot.capabilities.browser && !bot.capabilities.desktop && !(await botIsCoding(bot.id).catch(() => false)))
+      return sendJson(res, 409, { ok: false, code: "no_browser", error: "Esse bot não tem navegador nem computador." });
     setController(bot.id, mode);
     return sendJson(res, 200, { ok: true, controller: controllerOf(bot.id) });
   }
   if (["browser/back", "browser/forward", "browser/reload"].includes(tail) && method === "POST") {
     await readBody(req).catch(() => undefined);
-    if (!bot.capabilities.browser && !(await botIsCoding(bot.id).catch(() => false))) return sendJson(res, 409, { ok: false, code: "no_browser", error: "Esse bot não tem navegador." });
+    if (!bot.capabilities.browser && !(await botIsCoding(bot.id).catch(() => false)))
+      return sendJson(res, 409, { ok: false, code: "no_browser", error: "Esse bot não tem navegador." });
     try {
       const state = await browserHistory(bot.id, tail.split("/")[1] as "back" | "forward" | "reload");
       publishLiveState(bot.id);
-      return sendJson(res, 200, { url: state.url, title: state.title, updatedAt: state.updatedAt, screenshotPath: `/bots/${bot.id}/browser/latest.png`, controller: controllerOf(bot.id) });
+      return sendJson(res, 200, {
+        url: state.url,
+        title: state.title,
+        updatedAt: state.updatedAt,
+        screenshotPath: `/bots/${bot.id}/browser/latest.png`,
+        controller: controllerOf(bot.id),
+      });
     } catch (error) {
-      return sendJson(res, 502, { ok: false, error: `Falha no navegador: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) });
+      return sendJson(res, 502, {
+        ok: false,
+        error: `Falha no navegador: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+      });
     }
   }
   if (tail === "desktop/latest.png" && method === "GET") {
     const file = join(dataDir, "bots", bot.id, "desktop", "latest.png");
     try {
       const info = await stat(file);
-      res.writeHead(200, { "content-type": "image/png", "content-length": String(info.size), "cache-control": "no-store", "last-modified": info.mtime.toUTCString() });
+      res.writeHead(200, {
+        "content-type": "image/png",
+        "content-length": String(info.size),
+        "cache-control": "no-store",
+        "last-modified": info.mtime.toUTCString(),
+      });
       createReadStream(file).pipe(res);
     } catch {
       sendJson(res, 404, { ok: false, error: "Nenhum print do computador ainda." });
@@ -830,12 +1091,14 @@ async function route(req: http.IncomingMessage, res: Res) {
   const shot = /^browser\/(?:shots|screenshots)\/([\w-][\w.-]*\.png)$/.exec(tail);
   if (shot && method === "GET") return handleScreenshot(res, bot, join("shots", basename(shot[1])));
   if (rest[0] === "artifacts" && method === "GET") return handleArtifacts(res, bot, rest.slice(1));
-  if (rest[0] === "artifacts" && rest.length === 3 && rest[2] === "doc" && method === "PUT") return handleCanvasPut(req, res, bot, rest[1]);
+  if (rest[0] === "artifacts" && rest.length === 3 && rest[2] === "doc" && method === "PUT")
+    return handleCanvasPut(req, res, bot, rest[1]);
   if (rest[0] === "artifacts" && rest.length === 3 && rest[2] === "layout" && method === "POST") {
     try {
       return sendJson(res, 200, layoutPreview(await readBody(req)));
     } catch (error) {
-      if (error instanceof CanvasError || error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: error.message });
+      if (error instanceof CanvasError || error instanceof SyntaxError)
+        return sendJson(res, 400, { ok: false, error: error.message });
       throw error;
     }
   }
@@ -863,10 +1126,13 @@ async function main() {
   if (startupOrphans.length > 0) console.log(`killed ${startupOrphans.length} orphan processes at startup`);
   setInterval(() => {
     const orphans = sweepOrphans(activeMarkers());
-    if (orphans.length > 0) console.log(`killed orphans: ${orphans.map((proc) => `${proc.pid} ${proc.command.slice(0, 60)}`).join("; ")}`);
+    if (orphans.length > 0)
+      console.log(`killed orphans: ${orphans.map((proc) => `${proc.pid} ${proc.command.slice(0, 60)}`).join("; ")}`);
     closeIdleBrowsers((botId) => botStatuses()[botId] === "working" || hasLiveClients(botId));
   }, 60_000).unref();
-  void refreshAccounts().then((accounts) => console.log(`accounts: ${accounts.map((item) => `${item.id}=${item.status}`).join(", ")}`));
+  void refreshAccounts().then((accounts) =>
+    console.log(`accounts: ${accounts.map((item) => `${item.id}=${item.status}`).join(", ")}`),
+  );
   const server = http.createServer((req, res) => {
     route(req, res).catch((error) => {
       console.error(error);
@@ -880,7 +1146,8 @@ async function main() {
     if (handlePreviewUpgrade(req, socket, head)) return;
     const botId = decodeURIComponent(url.pathname.split("/")[2] ?? "");
     const bot = getBot(botId);
-    if (bot && bot.capabilities.desktop && isDesktopUpgrade(url.pathname)) return handleDesktopUpgrade(req, socket, head, botId);
+    if (bot && bot.capabilities.desktop && isDesktopUpgrade(url.pathname))
+      return handleDesktopUpgrade(req, socket, head, botId);
     const browserAllowed = bot ? bot.capabilities.browser || (await botIsCoding(bot.id).catch(() => false)) : false;
     if (!isLiveUpgrade(url.pathname) || !bot || !browserAllowed) {
       socket.end("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");

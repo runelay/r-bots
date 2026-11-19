@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, type Dirent, type Stats } from "node:fs";
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -69,7 +69,7 @@ async function listJsonl(root: string) {
   const found: string[] = [];
   const walk = async (dir: string, depth: number) => {
     if (depth > 6) return;
-    let entries;
+    let entries: Dirent[];
     try {
       entries = await readdir(dir, { withFileTypes: true });
     } catch {
@@ -168,14 +168,25 @@ export class UsageScanner {
     if (!usage || !model || model === "<synthetic>") return;
     const hour = hourOf(record.timestamp as string | undefined);
     if (hour === null) return;
-    const dedupe = createHash("sha1").update(`${String(message?.id ?? "")}:${String(record.requestId ?? record.uuid ?? "")}`).digest("base64url").slice(0, 12);
+    const dedupe = createHash("sha1")
+      .update(`${String(message?.id ?? "")}:${String(record.requestId ?? record.uuid ?? "")}`)
+      .digest("base64url")
+      .slice(0, 12);
     if (index.seen[dedupe] !== undefined) return;
     index.seen[dedupe] = hour;
     const creation = usage.cache_creation as Record<string, unknown> | undefined;
     const write = num(usage.cache_creation_input_tokens);
     const write1h = Math.min(write, num(creation?.ephemeral_1h_input_tokens));
     const speed = usage.speed === "fast" ? "fast" : "standard";
-    this.add(index, hour, "claude", model, speed, [num(usage.input_tokens), num(usage.cache_read_input_tokens), write - write1h, write1h, num(usage.output_tokens), 0, 1]);
+    this.add(index, hour, "claude", model, speed, [
+      num(usage.input_tokens),
+      num(usage.cache_read_input_tokens),
+      write - write1h,
+      write1h,
+      num(usage.output_tokens),
+      0,
+      1,
+    ]);
     this.session(index, "claude", String(record.sessionId ?? ""), hour, model);
   }
 
@@ -196,7 +207,8 @@ export class UsageScanner {
     }
     if (record.type === "turn_context") {
       if (typeof payload.model === "string") state.model = payload.model;
-      if (typeof payload.service_tier === "string") state.speed = /priority|fast/.test(payload.service_tier) ? "fast" : "standard";
+      if (typeof payload.service_tier === "string")
+        state.speed = /priority|fast/.test(payload.service_tier) ? "fast" : "standard";
       return;
     }
     if (payload.type === "thread_settings_applied") {
@@ -209,14 +221,21 @@ export class UsageScanner {
     const total = info?.total_token_usage as Record<string, unknown> | undefined;
     const last = info?.last_token_usage as Record<string, unknown> | undefined;
     if (!total) return;
-    const fields = ["input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens"];
+    const fields = [
+      "input_tokens",
+      "cached_input_tokens",
+      "cache_write_input_tokens",
+      "output_tokens",
+      "reasoning_output_tokens",
+    ];
     const totals = fields.map((field) => num(total[field]));
     const at = Date.parse(String(record.timestamp ?? ""));
     const previous = state.prev;
     state.prev = totals;
     if (state.start && Number.isFinite(at) && at < state.start - 1000) return;
     let delta: number[];
-    if (previous && totals.every((value, i) => value >= previous[i])) delta = totals.map((value, i) => value - previous[i]);
+    if (previous && totals.every((value, i) => value >= previous[i]))
+      delta = totals.map((value, i) => value - previous[i]);
     else if (previous) delta = fields.map((field) => num(last?.[field]));
     else delta = totals;
     if (delta[0] === 0 && delta[3] === 0) return;
@@ -233,7 +252,7 @@ export class UsageScanner {
     const [claudeFiles, codexFiles] = await Promise.all([listJsonl(this.claudeRoot), listJsonl(this.codexRoot)]);
     let changed = false;
     const visit = async (path: string, provider: UsageProvider) => {
-      let info;
+      let info: Stats;
       try {
         info = await stat(path);
       } catch {
@@ -245,7 +264,8 @@ export class UsageScanner {
         if (cursor.codex) cursor.codex = undefined;
       }
       if (info.size === cursor.offset) return;
-      if (provider === "codex" && !cursor.codex) cursor.codex = { model: "", speed: "standard", session: "", start: 0, prev: null };
+      if (provider === "codex" && !cursor.codex)
+        cursor.codex = { model: "", speed: "standard", session: "", start: 0, prev: null };
       const state = cursor.codex;
       cursor.offset = await readNewLines(path, cursor.offset, info.size, (line) => {
         if (provider === "claude") this.claudeLine(index, line);
@@ -285,7 +305,11 @@ export class UsageScanner {
       const [h, p, m, s] = key.split("|");
       return { h: Number(h), p: p as UsageProvider, m, s, c: [...c] as Counters };
     });
-    const sessions: SessionRow[] = Object.entries(index.sessions).map(([key, [h, m]]) => ({ p: key.split(":")[0] as UsageProvider, h, m }));
+    const sessions: SessionRow[] = Object.entries(index.sessions).map(([key, [h, m]]) => ({
+      p: key.split(":")[0] as UsageProvider,
+      h,
+      m,
+    }));
     return { rows, sessions, scannedAt: new Date().toISOString(), files };
   }
 }

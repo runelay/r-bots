@@ -25,6 +25,9 @@ export function updateJson<T>(path: string, fallback: T, update: (current: T) =>
     const result = update(current);
     if (result !== undefined) await writeJson(path, result);
   });
-  queues.set(path, next.catch(() => undefined));
+  queues.set(
+    path,
+    next.catch(() => undefined),
+  );
   return next;
 }

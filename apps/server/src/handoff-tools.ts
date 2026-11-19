@@ -42,11 +42,24 @@ export function registerThreadTools(server: McpServer, context: ToolContext) {
           type: "call.settled",
           data: failed
             ? { callId, outcome: "failed", error: { code: "ITEM_NOT_FOUND", message: String(result.error) } }
-            : { callId, outcome: "completed", output: { itemId, offset: result.offset, chars: result.text.length, totalChars: result.totalChars, nextOffset: result.nextOffset } },
+            : {
+                callId,
+                outcome: "completed",
+                output: {
+                  itemId,
+                  offset: result.offset,
+                  chars: result.text.length,
+                  totalChars: result.totalChars,
+                  nextOffset: result.nextOffset,
+                },
+              },
           scope: scopeOf(context),
         });
         context.onCallSettled(`thread_read(${itemId}) → ${failed ? "não achou" : "ok"}`);
-        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], ...(failed ? { isError: true } : {}) };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
+          ...(failed ? { isError: true } : {}),
+        };
       } finally {
         context.onCallEnd();
       }

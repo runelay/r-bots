@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { childEnv, findBinary, parseJson, runLines } from "./proc";
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { readUsage } from "./cursor";
+import { childEnv, findBinary, parseJson, runLines } from "./proc";
 
 const removedTools = [
   "run_terminal_cmd",
@@ -38,7 +38,12 @@ function textOf(event: Record<string, unknown>) {
   return "";
 }
 
-export async function runGrok(request: TurnRequest, workDir: string, signal: AbortSignal, emit: (event: ProviderEvent) => void) {
+export async function runGrok(
+  request: TurnRequest,
+  workDir: string,
+  signal: AbortSignal,
+  emit: (event: ProviderEvent) => void,
+) {
   const bin = findBinary(["grok"]);
   if (!bin) return emit({ type: "done", ok: false, message: "Grok CLI não está instalado." });
   await mkdir(join(workDir, ".grok"), { recursive: true });
@@ -105,7 +110,11 @@ export async function runGrok(request: TurnRequest, workDir: string, signal: Abo
   flush();
   if (signal.aborted) return emit({ type: "done", ok: false, message: "cancelled" });
   if (failure || code !== 0) {
-    return emit({ type: "done", ok: false, message: failure ?? (stderr.trim().split("\n").slice(-3).join(" ") || `grok saiu com código ${code}.`) });
+    return emit({
+      type: "done",
+      ok: false,
+      message: failure ?? (stderr.trim().split("\n").slice(-3).join(" ") || `grok saiu com código ${code}.`),
+    });
   }
   if (!finished) emit({ type: "warning", message: "Grok terminou sem evento de resultado." });
   emit({ type: "done", ok: true });

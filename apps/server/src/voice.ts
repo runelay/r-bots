@@ -2,7 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import type http from "node:http";
 import { join } from "node:path";
-import { query, type Query, type SDKUserMessage, type SpawnedProcess, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
+import {
+  type Query,
+  query,
+  type SDKUserMessage,
+  type SpawnedProcess,
+  type SpawnOptions,
+} from "@anthropic-ai/claude-agent-sdk";
 import { childEnv } from "@runelay-bots/providers/proc";
 import { spawnMarked } from "@runelay-bots/providers/proc-tree";
 import { type BotDefinition, voiceOf } from "./bots";
@@ -83,7 +89,14 @@ export async function listVoices(refresh = false) {
     const response = await fetch(url, { headers: { "xi-api-key": apiKey() }, signal: AbortSignal.timeout(10_000) });
     if (!response.ok) throw new VoiceError(`ElevenLabs não listou as vozes (${response.status}).`, 502);
     const body = (await response.json()) as {
-      voices?: Array<{ voice_id: string; name?: string; category?: string; description?: string | null; preview_url?: string | null; labels?: Record<string, string> }>;
+      voices?: Array<{
+        voice_id: string;
+        name?: string;
+        category?: string;
+        description?: string | null;
+        preview_url?: string | null;
+        labels?: Record<string, string>;
+      }>;
       has_more?: boolean;
       next_page_token?: string | null;
     };
@@ -138,7 +151,12 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
   private closed = false;
 
   push(text: string) {
-    const item: SDKUserMessage = { type: "user", message: { role: "user", content: text }, parent_tool_use_id: null, session_id: "" };
+    const item: SDKUserMessage = {
+      type: "user",
+      message: { role: "user", content: text },
+      parent_tool_use_id: null,
+      session_id: "",
+    };
     if (this.waiter) {
       const waiter = this.waiter;
       this.waiter = null;
@@ -156,7 +174,8 @@ class Inbox implements AsyncIterable<SDKUserMessage> {
 
   async *[Symbol.asyncIterator]() {
     while (!this.closed) {
-      const item = this.items.shift() ?? (await new Promise<SDKUserMessage | null>((resolve) => (this.waiter = resolve)));
+      const item =
+        this.items.shift() ?? (await new Promise<SDKUserMessage | null>((resolve) => (this.waiter = resolve)));
       if (!item) return;
       yield item;
     }
@@ -216,7 +235,13 @@ class FastLayer {
         ...(process.platform === "linux"
           ? {
               spawnClaudeCodeProcess: (options: SpawnOptions) =>
-                spawnMarked(options.command, options.args, { cwd: options.cwd, env: options.env, marker: `voice-${randomUUID().slice(0, 8)}`, nice: 0, signal: options.signal }) as unknown as SpawnedProcess,
+                spawnMarked(options.command, options.args, {
+                  cwd: options.cwd,
+                  env: options.env,
+                  marker: `voice-${randomUUID().slice(0, 8)}`,
+                  nice: 0,
+                  signal: options.signal,
+                }) as unknown as SpawnedProcess,
             }
           : {}),
       },
@@ -304,7 +329,12 @@ class FastLayer {
       for await (const message of stream) {
         if (message.type === "stream_event") {
           const event = message.event as { type: string; delta?: { type: string; text?: string } };
-          if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && this.current && !this.current.cancelled) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta?.type === "text_delta" &&
+            this.current &&
+            !this.current.cancelled
+          ) {
             const text = event.delta.text ?? "";
             this.current.text += text;
             this.current.onDelta(text);
@@ -321,7 +351,8 @@ class FastLayer {
         }
       }
     } catch (error) {
-      if (!this.closed && this.stream === stream) console.warn("voice fast layer stopped", error instanceof Error ? error.message : error);
+      if (!this.closed && this.stream === stream)
+        console.warn("voice fast layer stopped", error instanceof Error ? error.message : error);
     }
     if (this.stream !== stream && this.stream !== null) return;
     if (this.stream === stream) {
@@ -343,13 +374,15 @@ function fastPrompt(bot: BotDefinition) {
     `Você é a voz de ${bot.name} (${bot.role || "bot do time"}) numa chamada de voz com a pessoa, em português do Brasil.`,
     `Quem faz o trabalho de verdade é ${bot.name}, com ferramentas, memória e aprovações. Você só fala: confirma o que entendeu, preenche a espera e resume o resultado.`,
     "Cada mensagem começa com uma etiqueta:",
-    "- PESSOA: a pessoa acabou de falar. Responda em uma frase curta confirmando o que entendeu e que vai ver (\"Beleza, vou olhar seus e-mails do banco.\"). Nunca responda a pergunta você mesmo, nem diga o que o bot sabe ou consegue fazer: quem responde é o bot, e você resume depois. Se for só um cumprimento, cumprimente de volta em poucas palavras.",
-    "- FERRAMENTA: o bot começou a usar uma ferramenta. Diga algo bem curto sobre a espera (\"Tô abrindo o Gmail…\"), ou responda exatamente (silêncio) se não acrescentar nada.",
+    '- PESSOA: a pessoa acabou de falar. Responda em uma frase curta confirmando o que entendeu e que vai ver ("Beleza, vou olhar seus e-mails do banco."). Nunca responda a pergunta você mesmo, nem diga o que o bot sabe ou consegue fazer: quem responde é o bot, e você resume depois. Se for só um cumprimento, cumprimente de volta em poucas palavras.',
+    '- FERRAMENTA: o bot começou a usar uma ferramenta. Diga algo bem curto sobre a espera ("Tô abrindo o Gmail…"), ou responda exatamente (silêncio) se não acrescentar nada.',
     "- RESULTADO: a resposta escrita do bot. Resuma em no máximo duas frases curtas, faladas, sem markdown, sem links, sem listas, números por extenso quando curtos. Se você já disse tudo, responda (silêncio).",
     "- ERRO: o turno falhou. Diga em uma frase o que houve.",
-    "- APROVACAO: o bot precisa de permissão. Pergunte em uma frase o que ele quer fazer e termine com \"Posso?\".",
+    '- APROVACAO: o bot precisa de permissão. Pergunte em uma frase o que ele quer fazer e termine com "Posso?".',
     "- CLASSIFIQUE: diga só APROVAR, NEGAR ou OUTRO para a fala da pessoa sobre a pergunta de permissão. Nada mais.",
-    voiceOf(bot).language === "pt" ? "" : `Fale sempre em ${voiceOf(bot).language === "en" ? "inglês" : "espanhol"}, mesmo que as instruções estejam em português.`,
+    voiceOf(bot).language === "pt"
+      ? ""
+      : `Fale sempre em ${voiceOf(bot).language === "en" ? "inglês" : "espanhol"}, mesmo que as instruções estejam em português.`,
     "Fale como gente, no máximo 25 palavras, sem emoji, sem aspas, sem markdown. Nunca diga que é uma IA nem fale das etiquetas.",
   ]
     .filter(Boolean)
@@ -391,7 +424,10 @@ function emit(call: VoiceCall, event: CallEvent) {
 }
 
 function stripSpeech(text: string) {
-  return text.replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim();
+  return text
+    .replace(/[*_`#>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function speak(call: VoiceCall, kind: string, prompt: string, startedAt = Date.now()) {
@@ -424,15 +460,19 @@ function speak(call: VoiceCall, kind: string, prompt: string, startedAt = Date.n
     const text = held.replace(/[*_`#>]/g, "");
     if (text.trim()) emit(call, { type: "speech.delta", id, text });
   };
-  const { done } = call.fast.ask(`${kind === "ack" ? "PESSOA" : kind === "filler" ? "FERRAMENTA" : kind === "result" ? "RESULTADO" : kind === "error" ? "ERRO" : "APROVACAO"}: ${prompt}`, true, (delta) => {
-    if (released) {
-      const text = delta.replace(/[*_`#>]/g, "");
-      if (text) emit(call, { type: "speech.delta", id, text });
-      return;
-    }
-    held += delta;
-    release(false);
-  });
+  const { done } = call.fast.ask(
+    `${kind === "ack" ? "PESSOA" : kind === "filler" ? "FERRAMENTA" : kind === "result" ? "RESULTADO" : kind === "error" ? "ERRO" : "APROVACAO"}: ${prompt}`,
+    true,
+    (delta) => {
+      if (released) {
+        const text = delta.replace(/[*_`#>]/g, "");
+        if (text) emit(call, { type: "speech.delta", id, text });
+        return;
+      }
+      held += delta;
+      release(false);
+    },
+  );
   void done.then((text) => {
     if (text === null) {
       if (started) emit(call, { type: "speech.cancelled", id });
@@ -501,7 +541,17 @@ function retractAck(call: VoiceCall) {
   const runId = `voice_${call.id}`;
   call.session.log.emit({
     type: "content.completed",
-    data: { kind: "text", partId: ack.partId, phase: "reply", runId, value: "", voice: true, spoken: true, botId: call.botId, retracted: true },
+    data: {
+      kind: "text",
+      partId: ack.partId,
+      phase: "reply",
+      runId,
+      value: "",
+      voice: true,
+      spoken: true,
+      botId: call.botId,
+      retracted: true,
+    },
     scope: { runId },
   });
 }
@@ -538,7 +588,14 @@ function onFacts(call: VoiceCall, facts: Fact[]) {
       const label = String((fact.data.capability as { label?: string } | undefined)?.label ?? "");
       emit(call, { type: "bot.tool", label, turnId });
       const used = call.fillers.get(turnId) ?? 0;
-      if (!label || call.pending || call.fast.busy || used >= maxFillersPerTurn || Date.now() - call.lastSpeechAt < fillerGapMs) continue;
+      if (
+        !label ||
+        call.pending ||
+        call.fast.busy ||
+        used >= maxFillersPerTurn ||
+        Date.now() - call.lastSpeechAt < fillerGapMs
+      )
+        continue;
       call.fillers.set(turnId, used + 1);
       call.lastSpeechAt = Date.now();
       speak(call, "filler", label);
@@ -584,11 +641,19 @@ function onFacts(call: VoiceCall, facts: Fact[]) {
   }
 }
 
-const yes = /^(sim|pode|pode sim|pode ir|pode fazer|pode seguir|claro|manda|manda ver|vai|vai la|ok|okay|beleza|isso|autorizo|aprovo|aprovado|confirmo|confirmado|segue|siga|faz|fa[cç]a|com certeza|positivo|bora|uhum|aham)\b/;
-const no = /^(n[aã]o|nao|negativo|nega|para|pare|cancela|cancelar|nem pensar|melhor n[aã]o|deixa|esquece|n[aã]o pode)\b/;
+const yes =
+  /^(sim|pode|pode sim|pode ir|pode fazer|pode seguir|claro|manda|manda ver|vai|vai la|ok|okay|beleza|isso|autorizo|aprovo|aprovado|confirmo|confirmado|segue|siga|faz|fa[cç]a|com certeza|positivo|bora|uhum|aham)\b/;
+const no =
+  /^(n[aã]o|nao|negativo|nega|para|pare|cancela|cancelar|nem pensar|melhor n[aã]o|deixa|esquece|n[aã]o pode)\b/;
 
 function normalized(text: string) {
-  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^\w\s]/g, " ").replace(/\s+/g, " ").trim();
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 export function classifyAnswer(text: string): "approve" | "deny" | null {
@@ -645,7 +710,10 @@ function endCall(call: VoiceCall) {
   call.unsubscribe();
   call.fast.close();
   const durationSecs = Math.max(1, Math.round((Date.now() - call.startedAt) / 1000));
-  call.session.log.emit({ type: "voice.call.ended", data: { callId: call.id, botId: call.botId, durationSecs, startedAt: new Date(call.startedAt).toISOString() } });
+  call.session.log.emit({
+    type: "voice.call.ended",
+    data: { callId: call.id, botId: call.botId, durationSecs, startedAt: new Date(call.startedAt).toISOString() },
+  });
   void call.session.save();
   emit(call, { type: "call.ended", durationSecs });
   calls.delete(call.id);
@@ -657,7 +725,8 @@ const endedCalls = new Map<string, StoredSession>();
 export async function rateCall(res: Res, req: http.IncomingMessage, bot: BotDefinition, callId: string) {
   const body = await readJson(req);
   const rating = body.rating === "up" || body.rating === "down" || body.rating === null ? body.rating : undefined;
-  if (rating === undefined) return sendJson(res, 400, { ok: false, error: "Use rating up, down ou null.", field: "rating" });
+  if (rating === undefined)
+    return sendJson(res, 400, { ok: false, error: "Use rating up, down ou null.", field: "rating" });
   const live = calls.get(callId);
   const session = live?.session ?? endedCalls.get(callId) ?? (await ensureThreadSession(bot));
   if (!session) return sendJson(res, 404, { ok: false, code: "call_not_found", error: "Chamada não encontrada." });
@@ -706,13 +775,16 @@ async function startCall(bot: BotDefinition) {
   });
   calls.set(call.id, call);
   armIdle(call);
-  void fast.ask("CLASSIFIQUE: aquecimento. A pessoa disse: \"ok\"", false).done;
+  void fast.ask('CLASSIFIQUE: aquecimento. A pessoa disse: "ok"', false).done;
   return call;
 }
 
 function sendJson(res: Res, status: number, body: unknown) {
   const payload = JSON.stringify(body);
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": String(Buffer.byteLength(payload)) });
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": String(Buffer.byteLength(payload)),
+  });
   res.end(payload);
 }
 
@@ -731,13 +803,39 @@ async function credentials(bot: BotDefinition, types: Array<"stt" | "tts">) {
   ]);
   return {
     voice,
-    ...(stt ? { stt: { url: sttUrl(stt, voice.language), token: stt, modelId: sttModel, sampleRate: sttSampleRate, vadSilenceSecs: vadSilence, vadThreshold, minSpeechMs } } : {}),
-    ...(tts ? { tts: { url: ttsUrl(voice.voiceId, tts, voice.language), token: tts, modelId: ttsModel, outputFormat: `pcm_${ttsSampleRate}`, sampleRate: ttsSampleRate } } : {}),
+    ...(stt
+      ? {
+          stt: {
+            url: sttUrl(stt, voice.language),
+            token: stt,
+            modelId: sttModel,
+            sampleRate: sttSampleRate,
+            vadSilenceSecs: vadSilence,
+            vadThreshold,
+            minSpeechMs,
+          },
+        }
+      : {}),
+    ...(tts
+      ? {
+          tts: {
+            url: ttsUrl(voice.voiceId, tts, voice.language),
+            token: tts,
+            modelId: ttsModel,
+            outputFormat: `pcm_${ttsSampleRate}`,
+            sampleRate: ttsSampleRate,
+          },
+        }
+      : {}),
   };
 }
 
 function streamCall(req: http.IncomingMessage, res: Res, call: VoiceCall) {
-  res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store", "x-voice-call-id": call.id });
+  res.writeHead(200, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "cache-control": "no-store",
+    "x-voice-call-id": call.id,
+  });
   const write = (event: CallEvent) => res.write(`${JSON.stringify({ ...event, at: new Date().toISOString() })}\n`);
   write({ type: "call.ready", callId: call.id, sessionId: call.session.meta.sessionId, pending: call.pending });
   call.listeners.add(write);
@@ -756,17 +854,27 @@ export async function handleVoices(res: Res, url: URL) {
     return sendJson(res, 200, await listVoices(url.searchParams.get("refresh") === "1"));
   } catch (error) {
     if (error instanceof VoiceError) return sendJson(res, error.status, { ok: false, error: error.message });
-    return sendJson(res, 502, { ok: false, error: `ElevenLabs não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300) });
+    return sendJson(res, 502, {
+      ok: false,
+      error: `ElevenLabs não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+    });
   }
 }
 
-export async function handleVoice(req: http.IncomingMessage, res: Res, method: string, bot: BotDefinition, rest: string[]) {
+export async function handleVoice(
+  req: http.IncomingMessage,
+  res: Res,
+  method: string,
+  bot: BotDefinition,
+  rest: string[],
+) {
   try {
     if (rest[0] !== "session") return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
     if (rest.length === 1 && method === "POST") {
       await readJson(req).catch(() => ({}));
       if (bot.deletedAt) return sendJson(res, 409, { ok: false, code: "bot_deleted", error: "Esse bot foi excluído." });
-      if (bot.archivedAt) return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
+      if (bot.archivedAt)
+        return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
       const [call, creds] = await Promise.all([startCall(bot), credentials(bot, ["stt", "tts"])]);
       return sendJson(res, 201, {
         callId: call.id,
@@ -778,19 +886,25 @@ export async function handleVoice(req: http.IncomingMessage, res: Res, method: s
     }
     if (rest[2] === "rating" && method === "POST") return rateCall(res, req, bot, rest[1] ?? "");
     const call = calls.get(rest[1] ?? "");
-    if (!call || call.botId !== bot.id) return sendJson(res, 404, { ok: false, code: "call_not_found", error: "Essa chamada já terminou." });
+    if (!call || call.botId !== bot.id)
+      return sendJson(res, 404, { ok: false, code: "call_not_found", error: "Essa chamada já terminou." });
     const action = rest[2] ?? "";
     if (action === "stream" && method === "GET") return streamCall(req, res, call);
     if (action === "tokens" && method === "POST") {
       const body = await readJson(req);
-      const types = Array.isArray(body.types) ? (body.types as unknown[]).filter((item): item is "stt" | "tts" => item === "stt" || item === "tts") : ["stt", "tts"];
+      const types = Array.isArray(body.types)
+        ? (body.types as unknown[]).filter((item): item is "stt" | "tts" => item === "stt" || item === "tts")
+        : ["stt", "tts"];
       return sendJson(res, 200, await credentials(bot, types.length > 0 ? types : ["stt", "tts"]));
     }
     if (action === "utterance" && method === "POST") {
       const body = await readJson(req);
       const text = typeof body.text === "string" ? body.text.trim() : "";
       if (!text) return sendJson(res, 400, { ok: false, error: "Mande o texto da fala.", field: "text" });
-      return sendJson(res, 202, { ok: true, ...(await onUtterance(call, text.slice(0, 4_000), body.interrupted === true)) });
+      return sendJson(res, 202, {
+        ok: true,
+        ...(await onUtterance(call, text.slice(0, 4_000), body.interrupted === true)),
+      });
     }
     if (action === "interrupt" && method === "POST") {
       await readJson(req).catch(() => ({}));

@@ -133,7 +133,8 @@ function aad(name: string) {
 
 async function writeServerCopy(name: string, value: string) {
   const key = loadKey();
-  if (!key) throw new VaultError("no_key", "O servidor não tem a chave do cofre, então não dá para guardar uma cópia aqui.");
+  if (!key)
+    throw new VaultError("no_key", "O servidor não tem a chave do cofre, então não dá para guardar uma cópia aqui.");
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   cipher.setAAD(aad(name));
@@ -143,13 +144,24 @@ async function writeServerCopy(name: string, value: string) {
   await ensureDir();
   const file = encFile(name);
   const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify({ v: 1, alg: "aes-256-gcm", iv: iv.toString("base64"), tag: tag.toString("base64"), ct: ct.toString("base64") }), { mode: 0o600 });
+  await writeFile(
+    tmp,
+    JSON.stringify({
+      v: 1,
+      alg: "aes-256-gcm",
+      iv: iv.toString("base64"),
+      tag: tag.toString("base64"),
+      ct: ct.toString("base64"),
+    }),
+    { mode: 0o600 },
+  );
   await rename(tmp, file);
 }
 
 async function readServerCopy(name: string) {
   const key = loadKey();
-  if (!key) throw new VaultError("no_key", "O servidor perdeu a chave do cofre e não consegue abrir a cópia guardada aqui.");
+  if (!key)
+    throw new VaultError("no_key", "O servidor perdeu a chave do cofre e não consegue abrir a cópia guardada aqui.");
   try {
     const payload = JSON.parse(await readFile(encFile(name), "utf8")) as { iv: string; tag: string; ct: string };
     const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(payload.iv, "base64"));
@@ -157,7 +169,10 @@ async function readServerCopy(name: string) {
     decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
     return Buffer.concat([decipher.update(Buffer.from(payload.ct, "base64")), decipher.final()]).toString("utf8");
   } catch {
-    throw new VaultError("server_copy_broken", `A cópia do segredo:${name} no servidor não abriu. Peça à pessoa para salvar o segredo de novo no Cofre.`);
+    throw new VaultError(
+      "server_copy_broken",
+      `A cópia do segredo:${name} no servidor não abriu. Peça à pessoa para salvar o segredo de novo no Cofre.`,
+    );
   } finally {
     key.fill(0);
   }
@@ -214,7 +229,9 @@ export function normalizeDomains(list: unknown) {
   if (!Array.isArray(list)) throw new VaultError("bad_domains", "domains precisa ser uma lista de sites.");
   const out: string[] = [];
   for (const item of list) {
-    let value = String(item ?? "").trim().toLowerCase();
+    let value = String(item ?? "")
+      .trim()
+      .toLowerCase();
     if (!value) continue;
     if (value.includes("://")) {
       try {
@@ -222,7 +239,11 @@ export function normalizeDomains(list: unknown) {
       } catch {}
     }
     value = value.replace(/\/.*$/, "").replace(/^www\./, "");
-    if (!domainPattern.test(value) || value.length > 253) throw new VaultError("bad_domains", `“${String(item)}” não é um site válido. Use algo como github.com ou *.github.com.`);
+    if (!domainPattern.test(value) || value.length > 253)
+      throw new VaultError(
+        "bad_domains",
+        `“${String(item)}” não é um site válido. Use algo como github.com ou *.github.com.`,
+      );
     if (!out.includes(value)) out.push(value);
   }
   if (out.length > 30) throw new VaultError("bad_domains", "Use no máximo 30 sites por segredo.");
@@ -230,19 +251,36 @@ export function normalizeDomains(list: unknown) {
 }
 
 function dateLabel(iso: string) {
-  return new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function policyError(meta: SecretMeta, botId: string, host: string | null) {
   if (meta.expiresAt && Date.parse(meta.expiresAt) <= Date.now()) {
-    return new VaultError("expired", `O segredo:${meta.name} venceu em ${dateLabel(meta.expiresAt)}. Peça um novo com request_secret ou peça para a pessoa renovar no Cofre.`);
+    return new VaultError(
+      "expired",
+      `O segredo:${meta.name} venceu em ${dateLabel(meta.expiresAt)}. Peça um novo com request_secret ou peça para a pessoa renovar no Cofre.`,
+    );
   }
   if (meta.bots.length > 0 && !meta.bots.includes(botId)) {
-    return new VaultError("denied_bot", `O segredo:${meta.name} não está liberado para você. A pessoa pode liberar no Cofre do app, se quiser.`);
+    return new VaultError(
+      "denied_bot",
+      `O segredo:${meta.name} não está liberado para você. A pessoa pode liberar no Cofre do app, se quiser.`,
+    );
   }
   if (!hostAllowed(meta.domains, host)) {
     const where = meta.domains.join(", ");
-    return new VaultError("denied_domain", host ? `O segredo:${meta.name} só pode ser usado em ${where}, não em ${host}.` : `O segredo:${meta.name} só pode ser usado em ${where}, e aqui não dá para saber o site.`);
+    return new VaultError(
+      "denied_domain",
+      host
+        ? `O segredo:${meta.name} só pode ser usado em ${where}, não em ${host}.`
+        : `O segredo:${meta.name} só pode ser usado em ${where}, e aqui não dá para saber o site.`,
+    );
   }
   return null;
 }
@@ -259,10 +297,20 @@ async function markUsed(name: string, botId: string, tool: string) {
 export async function resolveSecret(request: ResolveRequest): Promise<string> {
   if (!loaded) await loadVault();
   const meta = index[request.name];
-  const base = { name: request.name, botId: request.botId, botName: request.botName, tool: request.tool, domain: request.host, sessionId: request.sessionId ?? null };
+  const base = {
+    name: request.name,
+    botId: request.botId,
+    botName: request.botName,
+    tool: request.tool,
+    domain: request.host,
+    sessionId: request.sessionId ?? null,
+  };
   if (!meta) {
     await audit({ ...base, outcome: "denied", reason: "not_found" });
-    throw new VaultError("not_found", `Não existe segredo:${request.name} no cofre. Veja os nomes com list_secrets ou peça à pessoa com request_secret.`);
+    throw new VaultError(
+      "not_found",
+      `Não existe segredo:${request.name} no cofre. Veja os nomes com list_secrets ou peça à pessoa com request_secret.`,
+    );
   }
   const denied = policyError(meta, request.botId, request.host);
   if (denied) {
@@ -278,7 +326,13 @@ export async function resolveSecret(request: ResolveRequest): Promise<string> {
     source = external.id;
   } else if (macRunnerSupports("vault")) {
     try {
-      const response = await macSecretResolve({ name: request.name, botId: request.botId, botName: request.botName, tool: request.tool, domain: request.host });
+      const response = await macSecretResolve({
+        name: request.name,
+        botId: request.botId,
+        botName: request.botName,
+        tool: request.tool,
+        domain: request.host,
+      });
       if (response.ok === true && typeof (response.result as { value?: unknown } | undefined)?.value === "string") {
         value = (response.result as { value: string }).value;
       } else {
@@ -366,26 +420,32 @@ function takeExecTicket(ticket: string) {
 
 export async function saveSecretMeta(name: string, body: Record<string, unknown>) {
   if (!loaded) await loadVault();
-  if (!secretNamePattern.test(name)) throw new VaultError("bad_name", "Use só letras minúsculas, números, - e _ no nome (até 64).");
+  if (!secretNamePattern.test(name))
+    throw new VaultError("bad_name", "Use só letras minúsculas, números, - e _ no nome (até 64).");
   const now = new Date().toISOString();
   const current = index[name];
   const touchId = body.touchId === undefined ? (current?.touchId ?? "hourly") : String(body.touchId);
-  if (!["always", "hourly", "never"].includes(touchId)) throw new VaultError("bad_touch", "touchId precisa ser always, hourly ou never.");
+  if (!["always", "hourly", "never"].includes(touchId))
+    throw new VaultError("bad_touch", "touchId precisa ser always, hourly ou never.");
   const kind = body.kind === undefined ? (current?.kind ?? "password") : String(body.kind);
-  if (!["password", "token", "text"].includes(kind)) throw new VaultError("bad_kind", "kind precisa ser password, token ou text.");
+  if (!["password", "token", "text"].includes(kind))
+    throw new VaultError("bad_kind", "kind precisa ser password, token ou text.");
   let expiresAt = current?.expiresAt ?? null;
   if (body.expiresAt !== undefined) {
     expiresAt = body.expiresAt === null || body.expiresAt === "" ? null : String(body.expiresAt);
-    if (expiresAt && Number.isNaN(Date.parse(expiresAt))) throw new VaultError("bad_expiry", "Data de validade inválida.");
+    if (expiresAt && Number.isNaN(Date.parse(expiresAt)))
+      throw new VaultError("bad_expiry", "Data de validade inválida.");
   }
   let bots = current?.bots ?? [];
   if (body.bots !== undefined) {
-    if (body.bots !== null && !Array.isArray(body.bots)) throw new VaultError("bad_bots", "bots precisa ser uma lista de ids.");
+    if (body.bots !== null && !Array.isArray(body.bots))
+      throw new VaultError("bad_bots", "bots precisa ser uma lista de ids.");
     bots = ((body.bots as unknown[] | null) ?? []).map(String).filter((id) => /^[a-z0-9-]{1,60}$/.test(id));
   }
   const meta: SecretMeta = {
     name,
-    description: body.description === undefined ? (current?.description ?? "") : String(body.description ?? "").slice(0, 200),
+    description:
+      body.description === undefined ? (current?.description ?? "") : String(body.description ?? "").slice(0, 200),
     domains: body.domains === undefined ? (current?.domains ?? []) : normalizeDomains(body.domains),
     bots,
     touchId: touchId as TouchPolicy,
@@ -464,15 +524,23 @@ function publicMeta(meta: SecretMeta) {
   return { ...meta, ref: `segredo:${meta.name}`, env: envNameOf(meta.name) };
 }
 
-export async function handleVaultRoute(req: http.IncomingMessage, res: http.ServerResponse, url: URL, method: string, parts: string[]) {
+export async function handleVaultRoute(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  url: URL,
+  method: string,
+  parts: string[],
+) {
   if (!loaded) await loadVault();
   if (parts[1] === "exec" && parts.length === 3 && method === "POST") {
-    if (req.headers["x-forwarded-for"] || req.headers["tailscale-user-login"]) return json(res, 404, { ok: false, error: "Rota não encontrada." });
+    if (req.headers["x-forwarded-for"] || req.headers["tailscale-user-login"])
+      return json(res, 404, { ok: false, error: "Rota não encontrada." });
     const entry = takeExecTicket(parts[2]);
     if (!entry) return json(res, 410, { ok: false, error: "Esse tíquete já foi usado ou venceu." });
     return json(res, 200, { env: entry.env, redact: entry.redact });
   }
-  if (!macRunnerAuthorized(req)) return json(res, 401, { ok: false, error: "O cofre só responde ao app runelay bots." });
+  if (!macRunnerAuthorized(req))
+    return json(res, 401, { ok: false, error: "O cofre só responde ao app runelay bots." });
   try {
     if (parts.length === 2 && parts[1] === "secrets" && method === "GET") {
       return json(res, 200, { secrets: listSecretMeta().map(publicMeta), serverStorage: serverStorageAvailable() });
@@ -502,22 +570,30 @@ export async function handleVaultRoute(req: http.IncomingMessage, res: http.Serv
       return json(res, 200, { ok: true });
     }
     const name = parts[2] ?? "";
-    if (parts[1] === "secrets" && parts.length === 3 && method === "PUT") return json(res, 200, publicMeta(await saveSecretMeta(name, await readJsonBody(req))));
+    if (parts[1] === "secrets" && parts.length === 3 && method === "PUT")
+      return json(res, 200, publicMeta(await saveSecretMeta(name, await readJsonBody(req))));
     if (parts[1] === "secrets" && parts.length === 3 && method === "DELETE") {
       const existed = await deleteSecret(name);
-      return json(res, existed ? 200 : 404, existed ? { ok: true, name } : { ok: false, error: "Esse segredo não existe no cofre." });
+      return json(
+        res,
+        existed ? 200 : 404,
+        existed ? { ok: true, name } : { ok: false, error: "Esse segredo não existe no cofre." },
+      );
     }
     if (parts[1] === "secrets" && parts.length === 4 && parts[3] === "server-copy" && method === "PUT") {
       const body = await readJsonBody(req);
       const value = typeof body.value === "string" ? body.value : "";
       body.value = null;
-      if (!value || value.length > 16_384) throw new VaultError("bad_value", "Valor vazio ou grande demais (máximo 16 KB).");
+      if (!value || value.length > 16_384)
+        throw new VaultError("bad_value", "Valor vazio ou grande demais (máximo 16 KB).");
       return json(res, 200, publicMeta(await setServerCopy(name, value)));
     }
-    if (parts[1] === "secrets" && parts.length === 4 && parts[3] === "server-copy" && method === "DELETE") return json(res, 200, publicMeta(await setServerCopy(name, null)));
+    if (parts[1] === "secrets" && parts.length === 4 && parts[3] === "server-copy" && method === "DELETE")
+      return json(res, 200, publicMeta(await setServerCopy(name, null)));
     return json(res, 404, { ok: false, error: "Rota não encontrada." });
   } catch (error) {
-    if (error instanceof VaultError) return json(res, error.code === "not_found" ? 404 : 400, { ok: false, code: error.code, error: error.message });
+    if (error instanceof VaultError)
+      return json(res, error.code === "not_found" ? 404 : 400, { ok: false, code: error.code, error: error.message });
     throw error;
   }
 }

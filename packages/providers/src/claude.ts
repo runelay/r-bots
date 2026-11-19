@@ -1,8 +1,16 @@
 import { readFile } from "node:fs/promises";
-import { type HookCallback, type HookJSONOutput, query, type SDKMessage, type SDKUserMessage, type SpawnedProcess, type SpawnOptions } from "@anthropic-ai/claude-agent-sdk";
+import {
+  type HookCallback,
+  type HookJSONOutput,
+  query,
+  type SDKMessage,
+  type SDKUserMessage,
+  type SpawnedProcess,
+  type SpawnOptions,
+} from "@anthropic-ai/claude-agent-sdk";
+import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { childEnv } from "./proc";
 import { spawnMarked } from "./proc-tree";
-import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 
 export const nativeTools = ["Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "Bash", "TodoWrite"];
 
@@ -10,7 +18,11 @@ function codeHooks(hooks: NativeToolHooks) {
   const matcher = `^(${nativeTools.join("|")}|NotebookEdit)$`;
   const pre: HookCallback = async (input, toolUseId) => {
     if (input.hook_event_name !== "PreToolUse") return {};
-    const gate = await hooks.before(input.tool_name, (input.tool_input ?? {}) as Record<string, unknown>, input.tool_use_id ?? toolUseId ?? "");
+    const gate = await hooks.before(
+      input.tool_name,
+      (input.tool_input ?? {}) as Record<string, unknown>,
+      input.tool_use_id ?? toolUseId ?? "",
+    );
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -22,9 +34,21 @@ function codeHooks(hooks: NativeToolHooks) {
   };
   const post: HookCallback = async (input, toolUseId) => {
     if (input.hook_event_name === "PostToolUse") {
-      await hooks.after(input.tool_name, (input.tool_input ?? {}) as Record<string, unknown>, input.tool_response, input.tool_use_id ?? toolUseId ?? "", false);
+      await hooks.after(
+        input.tool_name,
+        (input.tool_input ?? {}) as Record<string, unknown>,
+        input.tool_response,
+        input.tool_use_id ?? toolUseId ?? "",
+        false,
+      );
     } else if (input.hook_event_name === "PostToolUseFailure") {
-      await hooks.after(input.tool_name, (input.tool_input ?? {}) as Record<string, unknown>, input.error, input.tool_use_id ?? toolUseId ?? "", true);
+      await hooks.after(
+        input.tool_name,
+        (input.tool_input ?? {}) as Record<string, unknown>,
+        input.error,
+        input.tool_use_id ?? toolUseId ?? "",
+        true,
+      );
     }
     return {};
   };
@@ -45,13 +69,24 @@ async function promptWithImages(request: TurnRequest): Promise<string | AsyncIte
     content.push({ type: "image", source: { type: "base64", media_type: image.mime, data: data.toString("base64") } });
   }
   content.push({ type: "text", text: request.prompt || "Veja os anexos." });
-  const message = { type: "user", message: { role: "user", content }, parent_tool_use_id: null, session_id: "" } as unknown as SDKUserMessage;
+  const message = {
+    type: "user",
+    message: { role: "user", content },
+    parent_tool_use_id: null,
+    session_id: "",
+  } as unknown as SDKUserMessage;
   return (async function* () {
     yield message;
   })();
 }
 
-export async function runClaude(request: TurnRequest, workDir: string, signal: AbortSignal, emit: (event: ProviderEvent) => void, hooks?: NativeToolHooks) {
+export async function runClaude(
+  request: TurnRequest,
+  workDir: string,
+  signal: AbortSignal,
+  emit: (event: ProviderEvent) => void,
+  hooks?: NativeToolHooks,
+) {
   const code = request.code && hooks ? request.code : null;
   const abortController = new AbortController();
   signal.addEventListener("abort", () => abortController.abort(), { once: true });
@@ -73,11 +108,21 @@ export async function runClaude(request: TurnRequest, workDir: string, signal: A
       ...(code && hooks
         ? {
             hooks: codeHooks(hooks),
-            canUseTool: async (_name: string, input: Record<string, unknown>) => ({ behavior: "allow" as const, updatedInput: input }),
+            canUseTool: async (_name: string, input: Record<string, unknown>) => ({
+              behavior: "allow" as const,
+              updatedInput: input,
+            }),
           }
         : {}),
       mcpServers: request.mcp
-        ? { bots: { type: "http", url: request.mcp.url, headers: { Authorization: `Bearer ${request.mcp.token}` }, timeout: 900_000 } }
+        ? {
+            bots: {
+              type: "http",
+              url: request.mcp.url,
+              headers: { Authorization: `Bearer ${request.mcp.token}` },
+              timeout: 900_000,
+            },
+          }
         : {},
       permissionMode: code ? "default" : "dontAsk",
       settingSources: [],
@@ -88,7 +133,15 @@ export async function runClaude(request: TurnRequest, workDir: string, signal: A
       abortController,
       env,
       ...(process.platform === "linux"
-        ? { spawnClaudeCodeProcess: (spawnOptions: SpawnOptions) => spawnMarked(spawnOptions.command, spawnOptions.args, { cwd: spawnOptions.cwd, env: spawnOptions.env, marker: request.turnId, signal: spawnOptions.signal }) as unknown as SpawnedProcess }
+        ? {
+            spawnClaudeCodeProcess: (spawnOptions: SpawnOptions) =>
+              spawnMarked(spawnOptions.command, spawnOptions.args, {
+                cwd: spawnOptions.cwd,
+                env: spawnOptions.env,
+                marker: request.turnId,
+                signal: spawnOptions.signal,
+              }) as unknown as SpawnedProcess,
+          }
         : {}),
       ...(request.resume ? { resume: request.resume } : {}),
     },
@@ -116,7 +169,8 @@ export async function runClaude(request: TurnRequest, workDir: string, signal: A
         currentMessage = event.message?.id ?? String(Date.now());
         const usage = event.message?.usage;
         if (usage) {
-          contextTokens = (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+          contextTokens =
+            (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
         }
       } else if (event.type === "content_block_start" && event.content_block?.type === "text") {
         const part = `${currentMessage}:${event.index ?? 0}`;
@@ -141,7 +195,9 @@ export async function runClaude(request: TurnRequest, workDir: string, signal: A
     }
   }
 
-  const final = result as (Extract<SDKMessage, { type: "result" }> & { usage?: Record<string, number>; errors?: string[]; result?: string }) | null;
+  const final = result as
+    | (Extract<SDKMessage, { type: "result" }> & { usage?: Record<string, number>; errors?: string[]; result?: string })
+    | null;
   if (final?.usage) {
     emit({
       type: "usage",
@@ -155,7 +211,13 @@ export async function runClaude(request: TurnRequest, workDir: string, signal: A
     });
   }
   if (final?.session_id) emit({ type: "session", id: final.session_id });
-  if (!final) return emit({ type: "done", ok: false, message: signal.aborted ? "cancelled" : "O modelo não respondeu." });
-  if (final.is_error) return emit({ type: "done", ok: false, message: final.errors?.join(" ") || String(final.result ?? "Falha no Claude.") });
+  if (!final)
+    return emit({ type: "done", ok: false, message: signal.aborted ? "cancelled" : "O modelo não respondeu." });
+  if (final.is_error)
+    return emit({
+      type: "done",
+      ok: false,
+      message: final.errors?.join(" ") || String(final.result ?? "Falha no Claude."),
+    });
   emit({ type: "done", ok: true });
 }

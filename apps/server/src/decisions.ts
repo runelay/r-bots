@@ -22,7 +22,8 @@ export interface DecisionRecord {
   callId?: string;
 }
 
-const sensitiveField = /(senha|password|passwd|cart[aã]o|\bcard\b|cvv|cvc|cpf|cnpj|\bpix\b|token|secret|segredo|\bpin\b)/i;
+const sensitiveField =
+  /(senha|password|passwd|cart[aã]o|\bcard\b|cvv|cvc|cpf|cnpj|\bpix\b|token|secret|segredo|\bpin\b)/i;
 const dangerousAction =
   /(enviar|submit|send|pagar|\bpay\b|pagamento|payment|excluir|exclus[aã]o|delete|apagar|remover|remove|confirmar|confirm|comprar|\bbuy\b|finalizar|checkout|assinar|subscribe|transferir|transfer|sacar|withdraw|cancelar|desativar|deactivate|publicar|publish)/i;
 const cardLike = /\b(?:\d[ -]?){13,19}\b/;
@@ -33,15 +34,24 @@ export function hardHumanReason(tool: string, input: Record<string, unknown>, el
   if (tool === "browser_fill") {
     const value = String(input.text ?? "");
     if (sensitiveField.test(element)) return "Campo sensível (senha, cartão, documento ou token).";
-    if (cardLike.test(value) || cpfLike.test(value) || cnpjLike.test(value)) return "O valor parece cartão, CPF ou CNPJ.";
+    if (cardLike.test(value) || cpfLike.test(value) || cnpjLike.test(value))
+      return "O valor parece cartão, CPF ou CNPJ.";
     if (/\n|\r/.test(value)) return "O preenchimento envia o formulário.";
     if (dangerousAction.test(element)) return "O campo dispara envio, pagamento ou exclusão.";
   }
-  if (tool === "browser_click" && dangerousAction.test(element)) return "O clique envia, paga, confirma ou exclui algo.";
+  if (tool === "browser_click" && dangerousAction.test(element))
+    return "O clique envia, paga, confirma ou exclui algo.";
   return null;
 }
 
-function fallback(kind: DecisionRecord["kind"], question: string, threshold: number | null, started: number, error: unknown, extra: Partial<DecisionRecord> = {}): DecisionRecord {
+function fallback(
+  kind: DecisionRecord["kind"],
+  question: string,
+  threshold: number | null,
+  started: number,
+  error: unknown,
+  extra: Partial<DecisionRecord> = {},
+): DecisionRecord {
   return {
     kind,
     question,
@@ -69,12 +79,27 @@ export interface ApprovalState {
   element: string;
 }
 
-export async function decideApproval(state: ApprovalState, settings: DecisionSettings, callId: string): Promise<DecisionRecord> {
+export async function decideApproval(
+  state: ApprovalState,
+  settings: DecisionSettings,
+  callId: string,
+): Promise<DecisionRecord> {
   const started = Date.now();
   const base = { tool: state.tool, callId };
   const hard = hardHumanReason(state.tool, state.input, state.element);
   if (hard) {
-    return { kind: "approval", question: approvalQuestion, answer: null, confidence: null, threshold: settings.threshold, outcome: "human", latencyMs: 0, model: null, reason: hard, ...base };
+    return {
+      kind: "approval",
+      question: approvalQuestion,
+      answer: null,
+      confidence: null,
+      threshold: settings.threshold,
+      outcome: "human",
+      latencyMs: 0,
+      model: null,
+      reason: hard,
+      ...base,
+    };
   }
   if (!jevEnabled()) return fallback("approval", approvalQuestion, settings.threshold, started, "Jev desligado.", base);
   try {
@@ -97,7 +122,10 @@ export async function decideApproval(state: ApprovalState, settings: DecisionSet
             "Destrutiva, financeira, irreversível ou expõe dado pessoal.",
           ],
         },
-        needs_human: { type: "noul", instructions: "Uma pessoa cuidadosa iria querer confirmar esta ação antes de ela acontecer?" },
+        needs_human: {
+          type: "noul",
+          instructions: "Uma pessoa cuidadosa iria querer confirmar esta ação antes de ela acontecer?",
+        },
         aligned: { type: "noul", instructions: "A ação ajuda a cumprir o pedido da pessoa?" },
       },
     );
@@ -175,7 +203,12 @@ export async function decideProgress(request: string, calls: string[]): Promise<
 
 const triageQuestion = "O resultado desta rotina traz algo que a pessoa deveria olhar agora?";
 
-export async function decideTriage(botRole: string, scheduleName: string, schedulePrompt: string, reply: string): Promise<DecisionRecord> {
+export async function decideTriage(
+  botRole: string,
+  scheduleName: string,
+  schedulePrompt: string,
+  reply: string,
+): Promise<DecisionRecord> {
   const started = Date.now();
   if (!jevEnabled()) return fallback("triage", triageQuestion, 0.5, started, "Jev desligado.");
   try {
@@ -184,7 +217,8 @@ export async function decideTriage(botRole: string, scheduleName: string, schedu
       {
         attention: {
           type: "noul",
-          instructions: "O resultado traz algo que a pessoa deveria olhar agora: um problema, uma anomalia, um número fora do normal ou uma decisão pendente?",
+          instructions:
+            "O resultado traz algo que a pessoa deveria olhar agora: um problema, uma anomalia, um número fora do normal ou uma decisão pendente?",
           criteria: {
             true: "Aponta um problema, anomalia, risco ou algo que pede ação hoje",
             false: "Diz que está tudo normal ou só repete informação sem novidade",
@@ -218,20 +252,32 @@ export async function decideRoute(
   message: string,
 ): Promise<DecisionRecord> {
   const started = Date.now();
-  if (!jevEnabled()) return fallback("route", routeQuestion, 0.5, started, "Jev desligado.", { answer: { choice: members[0]?.id ?? null } });
+  if (!jevEnabled())
+    return fallback("route", routeQuestion, 0.5, started, "Jev desligado.", {
+      answer: { choice: members[0]?.id ?? null },
+    });
   try {
     const result = await askJev(
-      { group: groupName, members: members.map((member) => ({ id: member.id, name: member.name, role: member.role })), recent_conversation: recent || null, new_message: message },
+      {
+        group: groupName,
+        members: members.map((member) => ({ id: member.id, name: member.name, role: member.role })),
+        recent_conversation: recent || null,
+        new_message: message,
+      },
       {
         route: {
           type: "choice",
-          instructions: "Qual membro do grupo, pelo papel dele, é o mais indicado para responder à nova mensagem da pessoa?",
-          criteria: Object.fromEntries(members.map((member) => [member.id, `${member.name}: ${member.role || "sem papel definido"}`])),
+          instructions:
+            "Qual membro do grupo, pelo papel dele, é o mais indicado para responder à nova mensagem da pessoa?",
+          criteria: Object.fromEntries(
+            members.map((member) => [member.id, `${member.name}: ${member.role || "sem papel definido"}`]),
+          ),
         },
       },
     );
     const route = graded(result, "route");
-    const choice = route?.choice && members.some((member) => member.id === route.choice) ? route.choice : (members[0]?.id ?? null);
+    const choice =
+      route?.choice && members.some((member) => member.id === route.choice) ? route.choice : (members[0]?.id ?? null);
     return {
       kind: "route",
       question: routeQuestion,
@@ -244,7 +290,10 @@ export async function decideRoute(
       costUsd: result.costUsd,
     };
   } catch (error) {
-    return fallback("route", routeQuestion, 0.5, started, error, { answer: { choice: members[0]?.id ?? null }, outcome: members[0]?.id ?? "none" });
+    return fallback("route", routeQuestion, 0.5, started, error, {
+      answer: { choice: members[0]?.id ?? null },
+      outcome: members[0]?.id ?? "none",
+    });
   }
 }
 

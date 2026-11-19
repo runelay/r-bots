@@ -22,7 +22,9 @@ let seq = 0;
 const waiters: Waiter[] = [];
 
 function notifyPositions() {
-  waiters.forEach((waiter, index) => waiter.onPosition(index + 1));
+  waiters.forEach((waiter, index) => {
+    waiter.onPosition(index + 1);
+  });
 }
 
 function pump() {
@@ -63,7 +65,11 @@ function makeSlot(): TurnSlot {
   };
 }
 
-export function acquireTurnSlot(priority: SlotPriority, signal: AbortSignal, onQueued: (position: number) => void): Promise<TurnSlot> {
+export function acquireTurnSlot(
+  priority: SlotPriority,
+  signal: AbortSignal,
+  onQueued: (position: number) => void,
+): Promise<TurnSlot> {
   if (priority === "voice" || running < maxTurns) {
     running++;
     return Promise.resolve(makeSlot());

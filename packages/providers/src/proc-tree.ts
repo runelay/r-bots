@@ -85,24 +85,47 @@ export function sweepOrphans(extraActive: Iterable<string> = []) {
   const victims = listProcs().filter(
     (proc) =>
       (proc.marker !== null && proc.marker.startsWith(`${scope}:`) && !keep.has(proc.marker)) ||
-      (inContainer && proc.marker === null && proc.ppid === 1 && /claude-agent-sdk.*\/claude .*--input-format stream-json/.test(proc.command)),
+      (inContainer &&
+        proc.marker === null &&
+        proc.ppid === 1 &&
+        /claude-agent-sdk.*\/claude .*--input-format stream-json/.test(proc.command)),
   );
   killPids(victims.map((proc) => proc.pid));
   return victims;
 }
 
-export function spawnMarked(command: string, args: string[], options: { cwd?: string; env: Record<string, string | undefined>; marker: string; nice?: number; signal?: AbortSignal }): ChildProcess {
+export function spawnMarked(
+  command: string,
+  args: string[],
+  options: {
+    cwd?: string;
+    env: Record<string, string | undefined>;
+    marker: string;
+    nice?: number;
+    signal?: AbortSignal;
+  },
+): ChildProcess {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(options.env)) if (value !== undefined) env[key] = value;
   const marker = `${scope}:${options.marker}`;
   env[markerVar] = marker;
   active.add(marker);
   const wrapped = linux
-    ? spawn("sh", ["-c", `ulimit -c 0; echo 300 > /proc/self/oom_score_adj 2>/dev/null; exec nice -n ${options.nice ?? 5} "$@"`, "sh", command, ...args], {
-        cwd: options.cwd,
-        env,
-        stdio: ["pipe", "pipe", "pipe"],
-      })
+    ? spawn(
+        "sh",
+        [
+          "-c",
+          `ulimit -c 0; echo 300 > /proc/self/oom_score_adj 2>/dev/null; exec nice -n ${options.nice ?? 5} "$@"`,
+          "sh",
+          command,
+          ...args,
+        ],
+        {
+          cwd: options.cwd,
+          env,
+          stdio: ["pipe", "pipe", "pipe"],
+        },
+      )
     : spawn(command, args, { cwd: options.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
   let stderr = "";
   wrapped.stderr?.setEncoding("utf8");
@@ -124,7 +147,8 @@ export function spawnMarked(command: string, args: string[], options: { cwd?: st
     { once: true },
   );
   wrapped.once("exit", (code) => {
-    if (code && code !== 0 && stderr.trim()) console.warn(`claude ${marker} saiu com ${code}: ${stderr.trim().slice(-600)}`);
+    if (code && code !== 0 && stderr.trim())
+      console.warn(`claude ${marker} saiu com ${code}: ${stderr.trim().slice(-600)}`);
     cleanup();
   });
   return wrapped;

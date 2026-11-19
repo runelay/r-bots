@@ -1,5 +1,14 @@
 import { join } from "node:path";
-import { baseContent, changedFiles, clipText, diffTexts, invalidateStatus, readMaybe, type FileChange, type WorkspaceState } from "./code";
+import {
+  baseContent,
+  changedFiles,
+  clipText,
+  diffTexts,
+  type FileChange,
+  invalidateStatus,
+  readMaybe,
+  type WorkspaceState,
+} from "./code";
 import type { EventLog } from "./sessions";
 
 const bulkLimit = Number(process.env.CODE_LIVE_BULK_LIMIT ?? 25);
@@ -18,7 +27,9 @@ export class CodeLive {
   ) {}
 
   scan(callId: string | null, source: "tool" | "sweep") {
-    const next = this.chain.then(() => this.run(callId, source)).catch((error) => console.warn("code scan failed", error));
+    const next = this.chain
+      .then(() => this.run(callId, source))
+      .catch((error) => console.warn("code scan failed", error));
     this.chain = next;
     return next;
   }
@@ -33,7 +44,11 @@ export class CodeLive {
   private async run(callId: string | null, source: "tool" | "sweep") {
     invalidateStatus(this.workspace);
     const files = await changedFiles(this.workspace, true).catch(() => [] as FileChange[]);
-    const paths = new Set([...files.filter((file) => !file.binary).map((file) => file.path), ...this.snapshot.keys(), ...this.last.keys()]);
+    const paths = new Set([
+      ...files.filter((file) => !file.binary).map((file) => file.path),
+      ...this.snapshot.keys(),
+      ...this.last.keys(),
+    ]);
     const changed: { rel: string; absPath: string; after: string | null }[] = [];
     for (const rel of paths) {
       const absPath = join(this.workspace.path, rel);
@@ -94,6 +109,10 @@ export class CodeLive {
     const signature = JSON.stringify(summary);
     if (signature === this.lastStatus) return;
     this.lastStatus = signature;
-    this.log.emit({ type: "code.status", data: { workspaceId: this.workspace.id, ...summary }, scope: { turnId: this.turnId } });
+    this.log.emit({
+      type: "code.status",
+      data: { workspaceId: this.workspace.id, ...summary },
+      scope: { turnId: this.turnId },
+    });
   }
 }

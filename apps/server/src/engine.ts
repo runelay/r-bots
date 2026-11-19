@@ -2,36 +2,52 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { Provider, ProviderEvent, Usage } from "@runelay-bots/protocol";
 import { emptyUsage } from "@runelay-bots/protocol";
 import { type Account, findAccount, mcpBaseFor, type RunnerId, runOnRunner } from "./accounts";
-import { type BotDefinition, connectorsOf, decisionsOf, engineOf, getBot, isActive, memoryOf, suggestedFallback } from "./bots";
-import { watchComputerEvents } from "./computer";
-import { capture, recall, recallBlock, type RecallItem, teamLogBlock } from "./memory";
-import { handoffBlock, refreshSummary } from "./handoff";
-import { formatReset, isLimitError, isLimitReply, type LimitState, limitOf, markLimited, providerName } from "./limits";
-import { type DecisionRecord, decideProgress, decideRoute, decideTriage } from "./decisions";
-import { activeMembers, getGroup, mentionedMembers } from "./groups";
-import { startLiveView } from "./browser";
-import { type ApprovalResult, newToken, registerContext, type ToolContext } from "./mcp";
-import type { EventLog, Fact, StoredSession } from "./sessions";
-import { titleFrom } from "./sessions";
-import { recordThreadMessage } from "./threads";
-import { type LoadedSkill, skillsBlock } from "./skills";
-import { type ApprovalDetails, toolsFor } from "./tools";
 import { artifactGuide } from "./artifacts";
-import { vaultGuide } from "./vault-tools";
+import {
+  type BotDefinition,
+  connectorsOf,
+  decisionsOf,
+  engineOf,
+  getBot,
+  isActive,
+  listBots,
+  memoryOf,
+  suggestedFallback,
+} from "./bots";
+import { startLiveView } from "./browser";
+import { canvasEditNote, canvasGuide } from "./canvas";
 import { activeWorkspace, cachedRepoNames, createCheckpoint, snapshotChanges, type WorkspaceState } from "./code";
+import { mentionedRepo, openTaskWorkspace } from "./code-actions";
 import { nativeHooks } from "./code-hooks";
 import { CodeLive } from "./code-live";
-import { codeModeSupported } from "./code-tools";
-import { mentionedRepo, openTaskWorkspace } from "./code-actions";
 import { touchWorktree } from "./code-store";
-import { devServersOf } from "./devserver";
-import { listBots } from "./bots";
-import { canvasEditNote, canvasGuide } from "./canvas";
-import { attachmentsTitle, type PreparedImage, prepareAttachments, publicUpload, type UploadMeta, uploadGuide } from "./uploads";
-import { askedDelivery, type DeliveryAsk, noDeliveryAsk } from "./delivery-intent";
-import { acquireTurnSlot, maxTurns, type SlotPriority, type TurnSlot } from "./turn-slots";
+import { codeModeSupported } from "./code-tools";
+import { watchComputerEvents } from "./computer";
 import { autoTitle, createConversation } from "./conversations";
+import { type DecisionRecord, decideProgress, decideRoute, decideTriage } from "./decisions";
+import { askedDelivery, type DeliveryAsk, noDeliveryAsk } from "./delivery-intent";
+import { devServersOf } from "./devserver";
+import { activeMembers, getGroup, mentionedMembers } from "./groups";
+import { handoffBlock, refreshSummary } from "./handoff";
+import { formatReset, isLimitError, isLimitReply, type LimitState, limitOf, markLimited, providerName } from "./limits";
+import { type ApprovalResult, newToken, registerContext, type ToolContext } from "./mcp";
+import { capture, type RecallItem, recall, recallBlock, teamLogBlock } from "./memory";
 import { effectivePermission, type PermissionMode, permissionGuide } from "./permissions";
+import type { EventLog, Fact, StoredSession } from "./sessions";
+import { titleFrom } from "./sessions";
+import { type LoadedSkill, skillsBlock } from "./skills";
+import { recordThreadMessage } from "./threads";
+import { type ApprovalDetails, toolsFor } from "./tools";
+import { acquireTurnSlot, maxTurns, type SlotPriority, type TurnSlot } from "./turn-slots";
+import {
+  attachmentsTitle,
+  type PreparedImage,
+  prepareAttachments,
+  publicUpload,
+  type UploadMeta,
+  uploadGuide,
+} from "./uploads";
+import { vaultGuide } from "./vault-tools";
 
 export interface DelegationResult {
   outcome: "completed" | "failed" | "cancelled";
@@ -154,7 +170,8 @@ interface Runtime {
 const runtimes = new Map<string, Runtime>();
 const contextLimit = Number(process.env.BOTS_CONTEXT_LIMIT ?? 120_000);
 const summaryChars = 600;
-const voiceNote = "A pessoa está falando com você por chamada de voz. Uma voz rápida já confirmou o pedido e vai resumir a sua resposta em fala. Responda curto, sem tabelas nem listas longas, com o resultado primeiro.";
+const voiceNote =
+  "A pessoa está falando com você por chamada de voz. Uma voz rápida já confirmou o pedido e vai resumir a sua resposta em fala. Responda curto, sem tabelas nem listas longas, com o resultado primeiro.";
 
 const footer = [
   "",
@@ -173,7 +190,7 @@ function codeGuide() {
   const repos = cachedRepoNames();
   return [
     "## Código",
-    "Você pode codar nos repositórios da pessoa, na VPS. Quando o pedido envolver código de um repositório (\"muda o botão na whitelabel\" → conty-whitelabel), chame `workspace_open` com o repositório e uma frase curta da tarefa: isso cria uma worktree e uma branch feat/<tarefa> só desta conversa e liga as ferramentas de código. Se não for óbvio qual repositório, pergunte antes.",
+    'Você pode codar nos repositórios da pessoa, na VPS. Quando o pedido envolver código de um repositório ("muda o botão na whitelabel" → conty-whitelabel), chame `workspace_open` com o repositório e uma frase curta da tarefa: isso cria uma worktree e uma branch feat/<tarefa> só desta conversa e liga as ferramentas de código. Se não for óbvio qual repositório, pergunte antes.',
     repos.length > 0 ? `Repositórios: ${repos.join(", ")}.` : "",
     "Você tem autonomia: não peça permissão para commit, push, PR, testes, build, instalar dependência ou tarefas no Linear. Faça direto. Só pede aprovação a lista dura: push --force, push ou merge direto em main/master/develop, gh pr merge, deploy, migration ou escrita em banco de produção, apagar dados fora da worktree, dinheiro (pagamento, estorno) e mensagem para pessoas de fora (e-mail, Slack, WhatsApp). Se a pessoa pedir push, dê push; se já houver PR, o push atualiza o PR. Nunca diga que não pode dar push ou abrir PR. Uma negação antiga não vale para o próximo pedido.",
   ]
@@ -199,12 +216,14 @@ function workspaceGuide(code: CodePrompt) {
   return [
     "## Repositório aberto",
     `Repositório ${workspace.repoName}. Worktree ${workspace.path} (é o seu diretório de trabalho), branch ${workspace.branch}, a partir de ${workspace.base}. Dependências: ${install}.`,
-    servers.length > 0 ? `Servidores no ar: ${servers.map((server) => `${server.url} (${server.command})`).join("; ")}.` : "",
+    servers.length > 0
+      ? `Servidores no ar: ${servers.map((server) => `${server.url} (${server.command})`).join("; ")}.`
+      : "",
     "- Você tem autonomia: Read, Edit, Write, Bash, testes, build, dev server, instalar dependência, commit, push da branch da tarefa, abrir ou atualizar PR (gh pr create/edit/comment) e tarefas no Linear rodam direto, sem card. Não peça permissão para isso. Só a lista dura pede aprovação: push --force, push ou merge direto em main/master/develop, gh pr merge, deploy, migration ou escrita em banco de produção, apagar dados fora da worktree, dinheiro (pagamento, estorno) e mensagem para pessoas de fora (e-mail, Slack, WhatsApp).",
     "- Para subir o app, use `dev_server_start` (nunca & no Bash) e teste no seu navegador com `browser_open` na url que ele devolver; confira com `browser_screenshot` e clique quando precisar.",
     "- Rode só os testes, lint ou build da parte que mudou.",
     "- .git, .claude, .env* e a configuração dos bots são protegidos: não tente escrever neles.",
-    "- Commits por módulo ou feature no Bash (`git add <arquivos>` + `git commit -m`), em conventional commits em inglês, curtos e sem assinatura de IA (nada de Co-Authored-By). `workspace_deliver` faz um commit só com tudo o que estiver pendente: use para um único módulo ou com action pr para push e PR depois dos commits. Base do PR: a que a pessoa pedir; se ela não disser, a base de onde a branch saiu (develop quando existe). PR para a main é permitido quando a branch saiu da main ou a pessoa pede (hotfix); só o merge passa por ela. Se a pessoa pedir push, dê push (`git push -u origin <branch da tarefa>` ou workspace_deliver action push); se a branch já tem PR, o push atualiza o PR e você nunca abre outro. \"Só push\" nunca vira PR novo. Nunca diga que não pode dar push. Uma negação antiga não vale para o próximo pedido.",
+    '- Commits por módulo ou feature no Bash (`git add <arquivos>` + `git commit -m`), em conventional commits em inglês, curtos e sem assinatura de IA (nada de Co-Authored-By). `workspace_deliver` faz um commit só com tudo o que estiver pendente: use para um único módulo ou com action pr para push e PR depois dos commits. Base do PR: a que a pessoa pedir; se ela não disser, a base de onde a branch saiu (develop quando existe). PR para a main é permitido quando a branch saiu da main ou a pessoa pede (hotfix); só o merge passa por ela. Se a pessoa pedir push, dê push (`git push -u origin <branch da tarefa>` ou workspace_deliver action push); se a branch já tem PR, o push atualiza o PR e você nunca abre outro. "Só push" nunca vira PR novo. Nunca diga que não pode dar push. Uma negação antiga não vale para o próximo pedido.',
     "- No fim, diga em uma ou duas linhas o que mudou e como conferir.",
   ]
     .filter(Boolean)
@@ -225,7 +244,13 @@ function newBotPrompt(bot: BotDefinition) {
   ].join("\n");
 }
 
-function systemPromptFor(bot: BotDefinition, delegates: BotDefinition[], isNew: boolean, code: CodePrompt | null = null, permission: PermissionMode = "default") {
+function systemPromptFor(
+  bot: BotDefinition,
+  delegates: BotDefinition[],
+  isNew: boolean,
+  code: CodePrompt | null = null,
+  permission: PermissionMode = "default",
+) {
   const parts = [bot.instructions.trim() || newBotPrompt(bot)];
   const tools = toolsFor(bot).map((tool) => tool.name);
   if (tools.length > 0) parts.push("", `Ferramentas disponíveis (servidor MCP \`bots\`): ${tools.join(", ")}.`);
@@ -239,9 +264,16 @@ function systemPromptFor(bot: BotDefinition, delegates: BotDefinition[], isNew: 
   }
   const connectors = connectorsOf(bot);
   if (connectors.allowed.length > 0) {
-    parts.push("", `Serviços conectados liberados (runelay): ${connectors.allowed.join(", ")}. Use \`connector_search\` para achar a ferramenta e \`connector_call\` para chamar. Leitura e escrita comuns (criar, atualizar) rodam direto; só mensagem para fora e ação destrutiva ou financeira pedem aprovação. Memória você salva direto, sem pedir.`);
+    parts.push(
+      "",
+      `Serviços conectados liberados (runelay): ${connectors.allowed.join(", ")}. Use \`connector_search\` para achar a ferramenta e \`connector_call\` para chamar. Leitura e escrita comuns (criar, atualizar) rodam direto; só mensagem para fora e ação destrutiva ou financeira pedem aprovação. Memória você salva direto, sem pedir.`,
+    );
   }
-  if (connectors.memory) parts.push("", "Você pode consultar as memórias e skills da pessoa com `memory_search`, `memory_read` e `skill_read`.");
+  if (connectors.memory)
+    parts.push(
+      "",
+      "Você pode consultar as memórias e skills da pessoa com `memory_search`, `memory_read` e `skill_read`.",
+    );
   if (bot.capabilities.computer) {
     parts.push(
       "",
@@ -267,7 +299,10 @@ function systemPromptFor(bot: BotDefinition, delegates: BotDefinition[], isNew: 
     "Você pode se configurar com as ferramentas do servidor MCP `bots`: `set_role`, `update_instructions`, `add_schedule` (converta o pedido em cron), e `remove_schedule`. Use quando a pessoa pedir algo recorrente ou uma mudança no seu jeito de trabalhar. Para criar um bot novo no time, use `create_bot`; para criar um grupo de bots, use `create_group`; para adicionar, tirar ou renomear num grupo existente, use `update_group` (nunca crie outro grupo para isso); `archive_group` arquiva, mas só quando a pessoa pedir com todas as letras. Nunca arquive, apague ou desfaça nada por iniciativa própria, nem para “arrumar”: confira o estado atual com as ferramentas antes de mexer, sua memória da conversa pode estar velha. Faça direto, sem pedir confirmação nem delegar. Nunca use o computador (cliques na tela) para mexer no próprio app runelay bots: tudo dele tem ferramenta. Delegar para outro bot também não pede permissão: faça. Você já tem acesso a tudo (navegador, o Mac da pessoa, banco em leitura, todos os conectores e os outros bots): nunca peça acesso nem diga que não tem.",
   );
   if (isNew) {
-    parts.push("", "Você acabou de ser criado. Se a pessoa pedir algo recorrente ou que precisa de uma capacidade que você não tem, configure-se com essas ferramentas.");
+    parts.push(
+      "",
+      "Você acabou de ser criado. Se a pessoa pedir algo recorrente ou que precisa de uma capacidade que você não tem, configure-se com essas ferramentas.",
+    );
   }
   return `${parts.join("\n")}\n${code?.workspace && code.supported ? codeFooter : footer}`;
 }
@@ -279,11 +314,13 @@ function escapeRegExp(value: string) {
 function requestText(delivery: Delivery) {
   let text = delivery.text;
   for (const skill of delivery.skills ?? []) {
-    for (const name of [skill.name, skill.slug]) text = text.replace(new RegExp(`(^|\\s)/${escapeRegExp(name)}(?=\\s|$)`, "gi"), "$1");
+    for (const name of [skill.name, skill.slug])
+      text = text.replace(new RegExp(`(^|\\s)/${escapeRegExp(name)}(?=\\s|$)`, "gi"), "$1");
   }
   text = text.replace(/[ \t]{2,}/g, " ").trim();
   if (text) return text;
-  if (delivery.skills?.length) return `Faça o que ${delivery.skills.length === 1 ? "a skill anexada pede" : "as skills anexadas pedem"}, nesta ordem: ${delivery.skills.map((skill) => skill.name).join(", ")}.`;
+  if (delivery.skills?.length)
+    return `Faça o que ${delivery.skills.length === 1 ? "a skill anexada pede" : "as skills anexadas pedem"}, nesta ordem: ${delivery.skills.map((skill) => skill.name).join(", ")}.`;
   return "";
 }
 
@@ -298,11 +335,16 @@ function deliveryNote(delivery: Delivery) {
   if (!asked.commit) return "";
   const parts = [
     `A pessoa pediu ${asked.pr ? "commit, push e PR" : asked.push ? "push (e commit do que estiver pendente)" : "o commit"} nesta mensagem. Faça direto, sem perguntar.`,
-    asked.push && !asked.pr ? "Ela pediu push, não PR: use `git push -u origin <branch da tarefa>` ou workspace_deliver action push. Se a branch já tem PR, esse push atualiza o PR. Não abra PR novo." : "",
-    "Commits: agrupe as mudanças por módulo ou feature e faça um commit por grupo no Bash (`git add <arquivos do grupo>` e depois `git commit -m \"tipo(escopo): assunto\"`). Conventional commits em inglês, assunto curto no imperativo, no máximo 2 linhas, sem Co-Authored-By nem Generated with. Nunca junte tudo num commit genérico.",
+    asked.push && !asked.pr
+      ? "Ela pediu push, não PR: use `git push -u origin <branch da tarefa>` ou workspace_deliver action push. Se a branch já tem PR, esse push atualiza o PR. Não abra PR novo."
+      : "",
+    'Commits: agrupe as mudanças por módulo ou feature e faça um commit por grupo no Bash (`git add <arquivos do grupo>` e depois `git commit -m "tipo(escopo): assunto"`). Conventional commits em inglês, assunto curto no imperativo, no máximo 2 linhas, sem Co-Authored-By nem Generated with. Nunca junte tudo num commit genérico.',
     "workspace_deliver commita num commit só tudo o que ainda estiver pendente: use só para o que sobrar de um mesmo módulo, ou com action pr depois dos commits para push e PR.",
   ];
-  if (asked.pr) parts.push("PR: `git push -u origin <branch>` e, se a branch ainda não tem PR aberto (`gh pr view`), `gh pr create --base <base da tarefa> --title ... --body ...` (ou workspace_deliver action pr, que já reaproveita o PR existente). Título e corpo sem assinatura de IA.");
+  if (asked.pr)
+    parts.push(
+      "PR: `git push -u origin <branch>` e, se a branch ainda não tem PR aberto (`gh pr view`), `gh pr create --base <base da tarefa> --title ... --body ...` (ou workspace_deliver action pr, que já reaproveita o PR existente). Título e corpo sem assinatura de IA.",
+    );
   return parts.filter(Boolean).join("\n");
 }
 
@@ -356,18 +398,51 @@ export function isBusy(sessionId: string) {
 function steerPausedTurn(session: StoredSession, runtime: Runtime, delivery: Delivery) {
   const turn = runtime.turn;
   if (!turn?.stopRun || turn.interactions.size === 0 || session.meta.kind === "group") return false;
-  if (delivery.source !== "chat" || delivery.voice || delivery.skills?.length || delivery.attachments?.length || !delivery.text.trim()) return false;
+  if (
+    delivery.source !== "chat" ||
+    delivery.voice ||
+    delivery.skills?.length ||
+    delivery.attachments?.length ||
+    !delivery.text.trim()
+  )
+    return false;
   const scope = { turnId: turn.turnId };
-  (turn.steer ??= []).push(delivery);
+  turn.steer ??= [];
+  turn.steer.push(delivery);
   session.log.emit(
-    { type: "delivery.admitted", data: { deliveryId: delivery.deliveryId, principal: { id: "anonymous", type: "anonymous" }, source: { channel: "channel:eve" } } },
-    { type: "delivery.consumed", data: { deliveryId: delivery.deliveryId, parts: [{ kind: "text", text: delivery.text }], turnId: turn.turnId, source: "chat", steer: true }, scope },
+    {
+      type: "delivery.admitted",
+      data: {
+        deliveryId: delivery.deliveryId,
+        principal: { id: "anonymous", type: "anonymous" },
+        source: { channel: "channel:eve" },
+      },
+    },
+    {
+      type: "delivery.consumed",
+      data: {
+        deliveryId: delivery.deliveryId,
+        parts: [{ kind: "text", text: delivery.text }],
+        turnId: turn.turnId,
+        source: "chat",
+        steer: true,
+      },
+      scope,
+    },
   );
-  void recordThreadMessage(session.meta.botId, session.meta.sessionId, { role: "user", text: titleFrom(delivery.text), at: new Date().toISOString() }).catch(() => undefined);
+  void recordThreadMessage(session.meta.botId, session.meta.sessionId, {
+    role: "user",
+    text: titleFrom(delivery.text),
+    at: new Date().toISOString(),
+  }).catch(() => undefined);
   turn.stopRun();
   for (const [interactionId, pending] of [...turn.interactions]) {
     turn.interactions.delete(interactionId);
-    session.log.emit({ type: "interaction.settled", data: { interactionId, outcome: "withdrawn", reason: "message" }, scope });
+    session.log.emit({
+      type: "interaction.settled",
+      data: { interactionId, outcome: "withdrawn", reason: "message" },
+      scope,
+    });
     pending.resolve("deny");
   }
   return true;
@@ -424,7 +499,12 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
   if (mentioned.length > 0) {
     for (const id of mentioned) queue.push({ bot: members.find((member) => member.id === id)!, note: null });
   } else {
-    const decision = await decideRoute(group.name, members.map((member) => ({ id: member.id, name: member.name, role: member.role })), before, delivery.text);
+    const decision = await decideRoute(
+      group.name,
+      members.map((member) => ({ id: member.id, name: member.name, role: member.role })),
+      before,
+      delivery.text,
+    );
     session.log.emit({ type: "decision.made", data: { ...decision, groupId: group.id } });
     const choice = String((decision.answer as { choice?: string } | null)?.choice ?? members[0].id);
     queue.push({ bot: members.find((member) => member.id === choice) ?? members[0], note: null });
@@ -435,7 +515,9 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
     const next = queue.shift()!;
     turns++;
     let handoff: { botId: string; note: string } | null = null;
-    const roster = members.map((member) => `- ${member.name} (\`${member.id}\`): ${member.role || "sem papel"}`).join("\n");
+    const roster = members
+      .map((member) => `- ${member.name} (\`${member.id}\`): ${member.role || "sem papel"}`)
+      .join("\n");
     const prompt = [
       `Você está no grupo "${group.name}" com estes bots:`,
       roster,
@@ -466,7 +548,8 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
     const passed = handoff as { botId: string; note: string } | null;
     if (passed) {
       const target = members.find((member) => member.id === passed.botId);
-      if (target) queue.push({ bot: target, note: `${next.bot.name} passou a vez para você com esta nota: ${passed.note}` });
+      if (target)
+        queue.push({ bot: target, note: `${next.bot.name} passou a vez para você com esta nota: ${passed.note}` });
     }
   }
 }
@@ -481,7 +564,11 @@ async function drain(session: StoredSession, runtime: Runtime) {
         else await runTurn(session, runtime, delivery);
       } catch (error) {
         console.error("turn crashed", session.meta.sessionId, error);
-        delivery.delegation?.finish({ outcome: "failed", reply: "", error: error instanceof Error ? error.message : String(error) });
+        delivery.delegation?.finish({
+          outcome: "failed",
+          reply: "",
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
       if (runtime.queue.length === 0) setStatus(session.meta.sessionId, session.meta.botId, "idle");
     }
@@ -490,7 +577,12 @@ async function drain(session: StoredSession, runtime: Runtime) {
   }
 }
 
-export function answer(session: StoredSession, deliveryId: string, interactionId: string, optionId: "approve" | "deny" | "approve_always") {
+export function answer(
+  session: StoredSession,
+  deliveryId: string,
+  interactionId: string,
+  optionId: "approve" | "deny" | "approve_always",
+) {
   const turn = runtimes.get(session.meta.sessionId)?.turn;
   const pending = turn?.interactions.get(interactionId);
   if (!turn || !pending) return false;
@@ -503,7 +595,12 @@ export function answer(session: StoredSession, deliveryId: string, interactionId
     { type: "response.settled", data: { outcome: "applied", responseId }, scope },
     {
       type: "interaction.settled",
-      data: { cause: { responseId }, interactionId, outcome: optionId === "deny" ? "declined" : "accepted", response: { optionId } },
+      data: {
+        cause: { responseId },
+        interactionId,
+        outcome: optionId === "deny" ? "declined" : "accepted",
+        response: { optionId },
+      },
       scope,
     },
   );
@@ -534,7 +631,9 @@ function addUsage(total: Usage, usage: Usage) {
 
 function unavailableMessage(accountId: string, account: Account | undefined) {
   if (!account) return `A conta ${accountId} não existe.`;
-  const reason = { offline: "está fora do ar", logged_out: "está sem login", missing: "não está instalada", ready: "" }[account.status];
+  const reason = { offline: "está fora do ar", logged_out: "está sem login", missing: "não está instalada", ready: "" }[
+    account.status
+  ];
   return `A conta ${account.label} ${reason}. ${account.detail}`.trim();
 }
 
@@ -600,7 +699,10 @@ async function executeProvider(run: ProviderRun) {
   const log = run.log;
   const codeWorkspace = run.codeRun && run.ownerCallId === null ? run.codeRun.workspace : null;
   const coding = Boolean(codeWorkspace && codeModeSupported(run.provider, run.account.runner));
-  const bot = coding && !run.bot.capabilities.browser ? { ...run.bot, capabilities: { ...run.bot.capabilities, browser: true } } : run.bot;
+  const bot =
+    coding && !run.bot.capabilities.browser
+      ? { ...run.bot, capabilities: { ...run.bot.capabilities, browser: true } }
+      : run.bot;
   const delegates = delegatesOf(bot);
   const tools = toolsFor(bot);
   const token = newToken();
@@ -640,7 +742,8 @@ async function executeProvider(run: ProviderRun) {
     decisions: decisionsOf(bot),
     emitDecision: (record) => emitDecision(log, turn, record),
     onCallSettled: (summary) => onToolSettled(log, turn, summary),
-    groupMembers: run.group && run.ownerCallId === null ? run.group.members.filter((member) => member.id !== bot.id) : [],
+    groupMembers:
+      run.group && run.ownerCallId === null ? run.group.members.filter((member) => member.id !== bot.id) : [],
     onHandoff: (botId, note) => run.group?.onHandoff(botId, note),
     provider: run.provider,
     runner: run.account.runner,
@@ -693,13 +796,20 @@ async function executeProvider(run: ProviderRun) {
         prompt: run.prompt,
         ...(run.images?.length ? { images: run.images } : {}),
         resume: run.resume,
-        mcp: needsMcp ? { url: `${mcpBaseFor(run.account.runner)}/mcp/${bot.id}/${session.meta.sessionId}`, token } : null,
+        mcp: needsMcp
+          ? { url: `${mcpBaseFor(run.account.runner)}/mcp/${bot.id}/${session.meta.sessionId}`, token }
+          : null,
         workKey: `${bot.id}/${run.ownerCallId ? "delegate" : session.meta.sessionId}`,
-        code: coding && codeWorkspace ? { cwd: codeWorkspace.path, ...(permission === "readonly" ? { readOnly: true } : {}) } : null,
+        code:
+          coding && codeWorkspace
+            ? { cwd: codeWorkspace.path, ...(permission === "readonly" ? { readOnly: true } : {}) }
+            : null,
       },
       runAbort.signal,
       run.onEvent,
-      coding && codeWorkspace && run.provider === "claude" && run.codeRun ? nativeHooks(context, codeWorkspace, run.codeRun.live) : undefined,
+      coding && codeWorkspace && run.provider === "claude" && run.codeRun
+        ? nativeHooks(context, codeWorkspace, run.codeRun.live)
+        : undefined,
     );
   } finally {
     turn.abort.signal.removeEventListener("abort", forwardAbort);
@@ -708,7 +818,14 @@ async function executeProvider(run: ProviderRun) {
   }
 }
 
-function requestApproval(log: EventLog, turn: Turn, prompt: string, callId: string, origin: string | null, details?: ApprovalDetails) {
+function requestApproval(
+  log: EventLog,
+  turn: Turn,
+  prompt: string,
+  callId: string,
+  origin: string | null,
+  details?: ApprovalDetails,
+) {
   const interactionId = randomBytes(12).toString("base64url").slice(0, 16);
   const scope = { turnId: turn.turnId };
   return new Promise<ApprovalResult>((resolve) => {
@@ -754,7 +871,10 @@ function requestApproval(log: EventLog, turn: Turn, prompt: string, callId: stri
         scope,
       },
       { type: "turn.paused", data: { awaiting: [{ interactionId }], turnId: turn.turnId }, scope },
-      { type: "delivery.settled", data: { deliveryId: turn.deliveryId, outcome: "awaiting-input", turnId: turn.turnId } },
+      {
+        type: "delivery.settled",
+        data: { deliveryId: turn.deliveryId, outcome: "awaiting-input", turnId: turn.turnId },
+      },
     );
     turn.delegation?.onAwaiting(true);
     turn.slot?.suspend();
@@ -806,7 +926,8 @@ function withdrawDelivery(session: StoredSession, hooks: DelegationHooks, reason
 async function delegateTo(parent: ProviderRun, targetId: string, message: string, callId: string) {
   const target = getBot(targetId);
   if (!target || !isActive(target)) throw new Error(`O bot ${targetId} não está disponível.`);
-  if (waitsOn(target.id, parent.bot.id)) throw new Error(`${target.name} está esperando uma resposta sua agora. Resolva você mesmo, sem delegar de volta.`);
+  if (waitsOn(target.id, parent.bot.id))
+    throw new Error(`${target.name} está esperando uma resposta sua agora. Resolva você mesmo, sem delegar de volta.`);
   const engine = engineOf(target);
   const account = await findAccount(engine.account);
   if (!account || account.status !== "ready") throw new Error(unavailableMessage(engine.account, account));
@@ -821,7 +942,15 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
   const update = (status: string, extra: Record<string, unknown> = {}) =>
     parent.log.emit({
       type: "delegation.updated",
-      data: { callId, botId: target.id, sessionId: session.meta.sessionId, deliveryId, status, ...(turnId ? { turnId } : {}), ...extra },
+      data: {
+        callId,
+        botId: target.id,
+        sessionId: session.meta.sessionId,
+        deliveryId,
+        status,
+        ...(turnId ? { turnId } : {}),
+        ...extra,
+      },
       scope,
     });
   const edge = { from: parent.bot.id, to: target.id };
@@ -851,7 +980,13 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
         text: message,
         source: "delegate",
         asked: parent.turn.asked,
-        from: { botId: parent.bot.id, name: parent.bot.name, role: parent.bot.role, sessionId: parent.session.meta.sessionId, callId },
+        from: {
+          botId: parent.bot.id,
+          name: parent.bot.name,
+          role: parent.bot.role,
+          sessionId: parent.session.meta.sessionId,
+          callId,
+        },
         delegation: hooks,
       });
     });
@@ -893,7 +1028,13 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     guardStop: false,
     ...(delivery.delegation ? { delegation: delivery.delegation } : {}),
     owner: { sessionId: session.meta.sessionId, botId: session.meta.botId },
-    priority: delivery.voice ? "voice" : delivery.source === "delegate" ? "delegate" : delivery.source === "schedule" ? "schedule" : "chat",
+    priority: delivery.voice
+      ? "voice"
+      : delivery.source === "delegate"
+        ? "delegate"
+        : delivery.source === "schedule"
+          ? "schedule"
+          : "chat",
   };
   runtime.turn = turn;
   setStatus(session.meta.sessionId, session.meta.botId, "working");
@@ -903,46 +1044,76 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
   const now = () => new Date().toISOString();
   let stopLive = () => undefined as void;
 
-  if (showDelivery) session.log.emit({
-    type: "delivery.admitted",
+  if (showDelivery)
+    session.log.emit({
+      type: "delivery.admitted",
+      data: {
+        deliveryId: delivery.deliveryId,
+        principal: { id: "anonymous", type: "anonymous" },
+        source: isSchedule
+          ? { channel: "channel:schedule", scheduleId: delivery.scheduleId }
+          : from
+            ? { channel: "channel:delegate", botId: from.botId, sessionId: from.sessionId, callId: from.callId }
+            : { channel: "channel:eve" },
+      },
+    });
+  log.emit({
+    type: "turn.started",
     data: {
-      deliveryId: delivery.deliveryId,
-      principal: { id: "anonymous", type: "anonymous" },
-      source: isSchedule
-        ? { channel: "channel:schedule", scheduleId: delivery.scheduleId }
-        : from
-          ? { channel: "channel:delegate", botId: from.botId, sessionId: from.sessionId, callId: from.callId }
-          : { channel: "channel:eve" },
-    },
-  });
-  log.emit({ type: "turn.started", data: { cause: { deliveryId: delivery.deliveryId }, follows: null, turnId, ...(from ? { delegatedBy: from.botId } : {}) }, scope: turnScope });
-  delivery.delegation?.onStart(turnId);
-  if (showDelivery) session.log.emit({
-    type: "delivery.consumed",
-    data: {
-      deliveryId: delivery.deliveryId,
-      parts: [{ kind: "text", text: delivery.text }],
+      cause: { deliveryId: delivery.deliveryId },
+      follows: null,
       turnId,
-      source: delivery.source,
-      ...(from ? { from: { botId: from.botId, name: from.name, sessionId: from.sessionId, callId: from.callId } } : {}),
-      ...(delivery.scheduleId ? { scheduleId: delivery.scheduleId } : {}),
-      ...(delivery.voice ? { voice: true } : {}),
-      ...(delivery.skills?.length ? { skills: delivery.skills.map((skill) => ({ slug: skill.slug, name: skill.name })) } : {}),
-      ...(delivery.attachments?.length ? { attachments: delivery.attachments.map((item) => publicUpload(session.meta.botId, item)) } : {}),
+      ...(from ? { delegatedBy: from.botId } : {}),
     },
     scope: turnScope,
   });
+  delivery.delegation?.onStart(turnId);
+  if (showDelivery)
+    session.log.emit({
+      type: "delivery.consumed",
+      data: {
+        deliveryId: delivery.deliveryId,
+        parts: [{ kind: "text", text: delivery.text }],
+        turnId,
+        source: delivery.source,
+        ...(from
+          ? { from: { botId: from.botId, name: from.name, sessionId: from.sessionId, callId: from.callId } }
+          : {}),
+        ...(delivery.scheduleId ? { scheduleId: delivery.scheduleId } : {}),
+        ...(delivery.voice ? { voice: true } : {}),
+        ...(delivery.skills?.length
+          ? { skills: delivery.skills.map((skill) => ({ slug: skill.slug, name: skill.name })) }
+          : {}),
+        ...(delivery.attachments?.length
+          ? { attachments: delivery.attachments.map((item) => publicUpload(session.meta.botId, item)) }
+          : {}),
+      },
+      scope: turnScope,
+    });
   const shownText = delivery.text.trim() || attachmentsTitle(delivery.attachments ?? []);
   if (!meta.title) meta.title = titleFrom(shownText);
   if (from && (meta.kind === "thread" || meta.kind === "conversation")) {
-    await recordThreadMessage(meta.botId, meta.sessionId, { role: "bot", text: titleFrom(`${from.name} pediu: ${shownText}`), at: now(), botId: from.botId }, true);
-  } else if (!isSchedule && (meta.kind === "thread" || meta.kind === "group" || meta.kind === "conversation") && showDelivery) {
+    await recordThreadMessage(
+      meta.botId,
+      meta.sessionId,
+      { role: "bot", text: titleFrom(`${from.name} pediu: ${shownText}`), at: now(), botId: from.botId },
+      true,
+    );
+  } else if (
+    !isSchedule &&
+    (meta.kind === "thread" || meta.kind === "group" || meta.kind === "conversation") &&
+    showDelivery
+  ) {
     await recordThreadMessage(meta.botId, meta.sessionId, { role: "user", text: titleFrom(shownText), at: now() });
   }
 
   const settle = (outcome: string, extra: Record<string, unknown> = {}) => {
     const error = (extra.error as { message?: string } | undefined)?.message;
-    result = { outcome: outcome === "completed" ? "completed" : outcome === "cancelled" ? "cancelled" : "failed", reply: result.reply, ...(error ? { error } : {}) };
+    result = {
+      outcome: outcome === "completed" ? "completed" : outcome === "cancelled" ? "cancelled" : "failed",
+      reply: result.reply,
+      ...(error ? { error } : {}),
+    };
     log.emit({ type: "turn.settled", data: { outcome, turnId, ...extra }, scope: turnScope });
     log.emit({ type: "delivery.settled", data: { deliveryId: turn.deliveryId, outcome: "handled", turnId } });
   };
@@ -955,7 +1126,9 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     const engine = engineOf(bot);
     const found = await findAccount(engine.account);
     if (!found || found.status !== "ready") {
-      settle("failed", { error: { code: "ACCOUNT_UNAVAILABLE", id: randomUUID(), message: unavailableMessage(engine.account, found) } });
+      settle("failed", {
+        error: { code: "ACCOUNT_UNAVAILABLE", id: randomUUID(), message: unavailableMessage(engine.account, found) },
+      });
       return;
     }
     let account: Account = found;
@@ -966,15 +1139,37 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       const target = engine.fallback;
       if (!target || target.account === from) return null;
       const backup = await findAccount(target.account);
-      return backup && backup.status === "ready" && !limitOf(backup.id) ? { account: backup, model: target.model } : null;
+      return backup && backup.status === "ready" && !limitOf(backup.id)
+        ? { account: backup, model: target.model }
+        : null;
     };
-    const nameOf = (item: Account, other: Account) => (item.provider === other.provider ? `${providerName(item.provider)} (${item.runner === "mac" ? "Mac" : "VPS"})` : providerName(item.provider));
+    const nameOf = (item: Account, other: Account) =>
+      item.provider === other.provider
+        ? `${providerName(item.provider)} (${item.runner === "mac" ? "Mac" : "VPS"})`
+        : providerName(item.provider);
     const failOver = (from: Account, to: Account, state: LimitState) => {
       const line = `Limite do ${nameOf(from, to)} acabou · continuei com ${nameOf(to, from)}`;
       if (meta.failover?.from !== from.id || meta.failover?.to !== to.id) {
-        log.emit({ type: "account.failover", data: { from: from.id, to: to.id, fromModel: from.id === engine.account ? engine.model : model, toModel: to.id === engine.fallback?.account ? engine.fallback.model : model, reason: `Limite do ${providerName(from.provider)}`, until: state.known ? state.until.toISOString() : null, line }, scope: turnScope });
+        log.emit({
+          type: "account.failover",
+          data: {
+            from: from.id,
+            to: to.id,
+            fromModel: from.id === engine.account ? engine.model : model,
+            toModel: to.id === engine.fallback?.account ? engine.fallback.model : model,
+            reason: `Limite do ${providerName(from.provider)}`,
+            until: state.known ? state.until.toISOString() : null,
+            line,
+          },
+          scope: turnScope,
+        });
       }
-      meta.failover = { from: from.id, to: to.id, since: meta.failover?.from === from.id ? meta.failover.since : now(), until: state.known ? state.until.toISOString() : null };
+      meta.failover = {
+        from: from.id,
+        to: to.id,
+        since: meta.failover?.from === from.id ? meta.failover.since : now(),
+        until: state.known ? state.until.toISOString() : null,
+      };
     };
     const earlyLimit = limitOf(account.id);
     if (earlyLimit && !group) {
@@ -994,18 +1189,32 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       const mentioned = await mentionedRepo(delivery.text, names).catch(() => null);
       if (mentioned && activeWorkspace(session)?.repo !== mentioned.path) {
         await openTaskWorkspace(session, bot.id, mentioned.path, delivery.text).catch((error) =>
-          log.emit({ type: "code.workspace", data: { action: "failed", repo: mentioned.name, error: error instanceof Error ? error.message : String(error) }, scope: turnScope }),
+          log.emit({
+            type: "code.workspace",
+            data: {
+              action: "failed",
+              repo: mentioned.name,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            scope: turnScope,
+          }),
         );
       }
     }
     const opened = activeWorkspace(session);
     if (opened) {
       await createCheckpoint(session, opened, turnId).catch((error) => console.warn("checkpoint failed", error));
-      codeLive = new CodeLive(log, turnId, opened, await snapshotChanges(opened).catch(() => new Map<string, string | null>()));
+      codeLive = new CodeLive(
+        log,
+        turnId,
+        opened,
+        await snapshotChanges(opened).catch(() => new Map<string, string | null>()),
+      );
       void touchWorktree(opened.id);
       codeWorkspace = opened;
     }
-    const keyFor = (workspace: WorkspaceState | null) => (workspace && codeModeSupported(account.provider, account.runner) ? `${account.id}@${workspace.id}` : account.id);
+    const keyFor = (workspace: WorkspaceState | null) =>
+      workspace && codeModeSupported(account.provider, account.runner) ? `${account.id}@${workspace.id}` : account.id;
     let sessionKey = keyFor(codeWorkspace);
     let switching = false;
 
@@ -1029,7 +1238,12 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       needsRun = false;
       log.emit({
         type: "model.started",
-        data: { attempt: 0, modelId: model, runId, account: { id: account.id, provider: account.provider, runner: account.runner, label: account.label } },
+        data: {
+          attempt: 0,
+          modelId: model,
+          runId,
+          account: { id: account.id, provider: account.provider, runner: account.runner, label: account.label },
+        },
         scope: { runId, turnId },
       });
     };
@@ -1045,7 +1259,18 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     const flush = (phase: "narration" | "reply") => {
       for (const part of pendingTexts) {
         if (!part.value.trim()) continue;
-        log.emit({ type: "content.completed", data: { kind: "text", partId: part.partId, phase, runId, value: part.value, ...(delivery.voice && phase === "reply" ? { voice: true } : {}) }, scope: { runId, turnId } });
+        log.emit({
+          type: "content.completed",
+          data: {
+            kind: "text",
+            partId: part.partId,
+            phase,
+            runId,
+            value: part.value,
+            ...(delivery.voice && phase === "reply" ? { voice: true } : {}),
+          },
+          scope: { runId, turnId },
+        });
         if (phase === "reply") {
           replyParts.push(part.partId);
           replyTexts.push(part.value);
@@ -1062,14 +1287,21 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       const [items, team] = await Promise.all([recall(bot, delivery.text || shownText), teamLogBlock(bot.id)]);
       recalled = items;
       extraSystem = [recallBlock(items), team].filter(Boolean).join("\n\n");
-      if (items.length > 0) log.emit({ type: "memory.recalled", data: { slugs: items.map((item) => item.slug), titles: items.map((item) => item.name) }, scope: turnScope });
+      if (items.length > 0)
+        log.emit({
+          type: "memory.recalled",
+          data: { slugs: items.map((item) => item.slug), titles: items.map((item) => item.name) },
+          scope: turnScope,
+        });
     }
     if (!isSchedule && !group) {
       const canvasNote = await canvasEditNote(bot.id).catch(() => "");
       if (canvasNote) extraSystem = [extraSystem, canvasNote].filter(Boolean).join("\n\n");
     }
     if (delivery.voice) extraSystem = [extraSystem, voiceNote].filter(Boolean).join("\n\n");
-    const liveBots = [bot, ...delegatesOf(bot)].filter((item) => item.capabilities.browser || (item.id === bot.id && activeWorkspace(session))).map((item) => item.id);
+    const liveBots = [bot, ...delegatesOf(bot)]
+      .filter((item) => item.capabilities.browser || (item.id === bot.id && activeWorkspace(session)))
+      .map((item) => item.id);
     stopLive = startLiveView(liveBots);
     if (bot.capabilities.computer) {
       const stopWatch = watchComputerEvents((event) => {
@@ -1090,86 +1322,145 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     let attachmentImages: PreparedImage[] = [];
     if (delivery.attachments?.length && !group) {
       log.emit({ type: "attachments.preparing", data: { count: delivery.attachments.length }, scope: turnScope });
-      const prepared = await prepareAttachments(bot.id, delivery.attachments, account.provider === "claude" && account.runner !== "mac");
+      const prepared = await prepareAttachments(
+        bot.id,
+        delivery.attachments,
+        account.provider === "claude" && account.runner !== "mac",
+      );
       attachmentText = prepared.text;
       attachmentImages = prepared.images;
     }
     const runProvider = (prompt: string, resumeFrom: string | null, images: PreparedImage[] = []) =>
       executeProvider({
-      account,
-      images,
-      provider: account.provider,
-      model,
-      effort,
-      bot,
-      session,
-      turn,
-      prompt,
-      extraSystem,
-      log,
-      group,
-      resume: resumeFrom,
-      codeRun: codeWorkspace && codeLive ? { workspace: codeWorkspace, live: codeLive } : null,
-      onEndRun: () => {
-        switching = true;
-      },
-      origin: null,
-      ownerCallId: null,
-      isSchedule,
-      usage,
-      request: delivery.text,
-      runIdRef: () => runId,
-      onCallStart: () => {
-        flush("narration");
-        if (needsRun) startRun();
-      },
-      onCallEnd: () => {
-        needsRun = true;
-      },
-      onEvent: (event) => {
-        if (event.type === "session") providerSession = event.id;
-        else if ((event.type === "text" || event.type === "text.delta") && turn.steer?.length) return;
-        else if (event.type === "text.delta") {
-          log.progress({ type: "content.delta", data: { delta: event.text, kind: "text", partId: partFor(event.part) }, scope: { runId, turnId } });
-        } else if (event.type === "text") {
-          pendingTexts.push({ partId: partFor(event.part), value: event.text });
-        } else if (event.type === "usage") {
-          usageSeen = true;
-          addUsage(usage, event.usage);
-          if (event.contextTokens !== null) contextTokens = event.contextTokens;
-        } else if (event.type === "tool") {
-          const callId = `ext_${event.id}`;
-          if (event.phase === "start") {
-            flush("narration");
-            if (needsRun) startRun();
-            const input = event.input ?? {};
-            const label = event.name === "Bash" ? `Rodar ${String(input.command ?? "").replace(/\s+/g, " ").slice(0, 70)}` : `Editar ${((input.files as string[] | undefined) ?? []).map((file) => file.split("/").pop()).join(", ")}`;
-            log.emit({ type: "call.requested", data: { callId, capability: { kind: "tool", name: event.name, label, surface: "code" }, input, owner: { runId } }, scope: { runId, turnId } });
-            log.emit({ type: "call.started", data: { callId }, scope: { runId, turnId } });
-          } else {
-            log.emit({ type: "call.settled", data: { callId, outcome: event.ok === false ? "failed" : "completed", output: event.output ?? null, ...(event.ok === false ? { error: { code: "TOOL_EXECUTION_FAILED", message: "O comando falhou." } } : {}) }, scope: { runId, turnId } });
-            turn.calls.push(`${event.name}(${JSON.stringify(event.input ?? {}).slice(0, 120)})`);
-            needsRun = true;
-            void codeLive?.scan(callId, "tool");
+        account,
+        images,
+        provider: account.provider,
+        model,
+        effort,
+        bot,
+        session,
+        turn,
+        prompt,
+        extraSystem,
+        log,
+        group,
+        resume: resumeFrom,
+        codeRun: codeWorkspace && codeLive ? { workspace: codeWorkspace, live: codeLive } : null,
+        onEndRun: () => {
+          switching = true;
+        },
+        origin: null,
+        ownerCallId: null,
+        isSchedule,
+        usage,
+        request: delivery.text,
+        runIdRef: () => runId,
+        onCallStart: () => {
+          flush("narration");
+          if (needsRun) startRun();
+        },
+        onCallEnd: () => {
+          needsRun = true;
+        },
+        onEvent: (event) => {
+          if (event.type === "session") providerSession = event.id;
+          else if ((event.type === "text" || event.type === "text.delta") && turn.steer?.length) return;
+          else if (event.type === "text.delta") {
+            log.progress({
+              type: "content.delta",
+              data: { delta: event.text, kind: "text", partId: partFor(event.part) },
+              scope: { runId, turnId },
+            });
+          } else if (event.type === "text") {
+            pendingTexts.push({ partId: partFor(event.part), value: event.text });
+          } else if (event.type === "usage") {
+            usageSeen = true;
+            addUsage(usage, event.usage);
+            if (event.contextTokens !== null) contextTokens = event.contextTokens;
+          } else if (event.type === "tool") {
+            const callId = `ext_${event.id}`;
+            if (event.phase === "start") {
+              flush("narration");
+              if (needsRun) startRun();
+              const input = event.input ?? {};
+              const label =
+                event.name === "Bash"
+                  ? `Rodar ${String(input.command ?? "")
+                      .replace(/\s+/g, " ")
+                      .slice(0, 70)}`
+                  : `Editar ${((input.files as string[] | undefined) ?? []).map((file) => file.split("/").pop()).join(", ")}`;
+              log.emit({
+                type: "call.requested",
+                data: {
+                  callId,
+                  capability: { kind: "tool", name: event.name, label, surface: "code" },
+                  input,
+                  owner: { runId },
+                },
+                scope: { runId, turnId },
+              });
+              log.emit({ type: "call.started", data: { callId }, scope: { runId, turnId } });
+            } else {
+              log.emit({
+                type: "call.settled",
+                data: {
+                  callId,
+                  outcome: event.ok === false ? "failed" : "completed",
+                  output: event.output ?? null,
+                  ...(event.ok === false
+                    ? { error: { code: "TOOL_EXECUTION_FAILED", message: "O comando falhou." } }
+                    : {}),
+                },
+                scope: { runId, turnId },
+              });
+              turn.calls.push(`${event.name}(${JSON.stringify(event.input ?? {}).slice(0, 120)})`);
+              needsRun = true;
+              void codeLive?.scan(callId, "tool");
+            }
+          } else if (event.type === "warning") {
+            console.warn(`provider warning ${account.id}: ${event.message}`);
+          } else if (event.type === "done" && !event.ok) {
+            if (!switching) failure = event.message ?? "Falha no provedor.";
           }
-        } else if (event.type === "warning") {
-          console.warn(`provider warning ${account.id}: ${event.message}`);
-        } else if (event.type === "done" && !event.ok) {
-          if (!switching) failure = event.message ?? "Falha no provedor.";
-        }
-      },
-    });
+        },
+      });
     const skillNames = (delivery.skills ?? []).map((skill) => skill.name);
-    const withAttachments = (prompt: string) => (attachmentText ? `${prompt}${delivery.text.trim() ? "\n\n" : ""}${attachmentText}` : prompt);
-    const carry = group || isSchedule ? "" : await handoffBlock(session, { key: sessionKey, currentTurnId: turnId, skills: skillNames });
+    const withAttachments = (prompt: string) =>
+      attachmentText ? `${prompt}${delivery.text.trim() ? "\n\n" : ""}${attachmentText}` : prompt;
+    const carry =
+      group || isSchedule
+        ? ""
+        : await handoffBlock(session, { key: sessionKey, currentTurnId: turnId, skills: skillNames });
     const previous = meta.lastEngine;
-    if (carry && previous && meta.failover?.from !== account.id && (previous.account !== account.id || previous.model !== model)) {
-      log.emit({ type: "context.handoff", data: { from: previous.account, fromModel: previous.model, to: account.id, toModel: model }, scope: turnScope });
+    if (
+      carry &&
+      previous &&
+      meta.failover?.from !== account.id &&
+      (previous.account !== account.id || previous.model !== model)
+    ) {
+      log.emit({
+        type: "context.handoff",
+        data: { from: previous.account, fromModel: previous.model, to: account.id, toModel: model },
+        scope: turnScope,
+      });
     }
     const basePrompt = group ? group.prompt : promptFor(session, delivery, carry, connectorsOf(bot).memory);
     await runProvider(withAttachments(basePrompt), resume, attachmentImages);
-    const limitText = failure ?? (replyTexts.length === 0 && turn.calls.length === 0 ? pendingTexts.map((part) => part.value).join(" ").trim() : "");
-    if (!group && !turn.cancelled && !turn.abort.signal.aborted && limitText && (failure ? isLimitError(failure) : isLimitReply(limitText))) {
+    const limitText =
+      failure ??
+      (replyTexts.length === 0 && turn.calls.length === 0
+        ? pendingTexts
+            .map((part) => part.value)
+            .join(" ")
+            .trim()
+        : "");
+    if (
+      !group &&
+      !turn.cancelled &&
+      !turn.abort.signal.aborted &&
+      limitText &&
+      (failure ? isLimitError(failure) : isLimitReply(limitText))
+    ) {
       const state = markLimited(account.id, limitText, account.runner === "mac" ? "America/Sao_Paulo" : undefined);
       const backup = await backupFor(account.id);
       if (backup) {
@@ -1183,9 +1474,20 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         sessionKey = keyFor(codeWorkspace);
         providerSession = null;
         needsRun = true;
-        const handoff = isSchedule ? "" : await handoffBlock(session, { key: sessionKey, currentTurnId: turnId, skills: skillNames, reason: `o limite do ${providerName(from.provider)} acabou no meio deste pedido; refaça o pedido em curso sem repetir o que já foi feito` });
+        const handoff = isSchedule
+          ? ""
+          : await handoffBlock(session, {
+              key: sessionKey,
+              currentTurnId: turnId,
+              skills: skillNames,
+              reason: `o limite do ${providerName(from.provider)} acabou no meio deste pedido; refaça o pedido em curso sem repetir o que já foi feito`,
+            });
         const retryPrompt = promptFor(session, delivery, handoff, connectorsOf(bot).memory);
-        await runProvider(withAttachments(retryPrompt), isSchedule ? null : (meta.providerSessions?.[sessionKey] ?? null), account.provider === "claude" && account.runner !== "mac" ? attachmentImages : []);
+        await runProvider(
+          withAttachments(retryPrompt),
+          isSchedule ? null : (meta.providerSessions?.[sessionKey] ?? null),
+          account.provider === "claude" && account.runner !== "mac" ? attachmentImages : [],
+        );
       } else {
         pendingTexts = [];
         failure = limitText;
@@ -1200,12 +1502,22 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       switching = false;
       await createCheckpoint(session, next, turnId).catch((error) => console.warn("checkpoint failed", error));
       if (codeLive) await codeLive.scan(null, "sweep");
-      codeLive = new CodeLive(log, turnId, next, await snapshotChanges(next).catch(() => new Map<string, string | null>()));
+      codeLive = new CodeLive(
+        log,
+        turnId,
+        next,
+        await snapshotChanges(next).catch(() => new Map<string, string | null>()),
+      );
       codeWorkspace = next;
       sessionKey = keyFor(next);
       providerSession = null;
       needsRun = true;
-      const carry = await handoffBlock(session, { key: sessionKey, currentTurnId: turnId, skills: skillNames, full: true });
+      const carry = await handoffBlock(session, {
+        key: sessionKey,
+        currentTurnId: turnId,
+        skills: skillNames,
+        full: true,
+      });
       await runProvider(
         `${carry ? `${carry}\n\n---\n\n` : ""}O repositório ${next.repoName} está aberto na worktree ${next.path} (branch ${next.branch}), que é o seu diretório de trabalho. Continue agora o pedido da pessoa com as ferramentas de código:\n${delivery.text}`,
         null,
@@ -1213,7 +1525,10 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     }
     for (let steers = 0; steers < 5 && turn.steer?.length; steers++) {
       if (turn.cancelled || failure || turn.guardStop || turn.abort.signal.aborted) break;
-      const note = turn.steer.splice(0).map((item) => item.text.trim()).join("\n\n");
+      const note = turn.steer
+        .splice(0)
+        .map((item) => item.text.trim())
+        .join("\n\n");
       const prompt = `A pessoa respondeu por mensagem enquanto seu pedido de aprovação estava aberto. O pedido foi fechado e a ação não rodou. Siga a partir desta mensagem, numa resposta só:\n${note}`;
       pendingTexts = [];
       switching = false;
@@ -1223,7 +1538,12 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       if (failure && from && !turn.cancelled) {
         failure = null;
         needsRun = true;
-        const carry = await handoffBlock(session, { key: sessionKey, currentTurnId: turnId, skills: skillNames, full: true });
+        const carry = await handoffBlock(session, {
+          key: sessionKey,
+          currentTurnId: turnId,
+          skills: skillNames,
+          full: true,
+        });
         await runProvider(`${carry ? `${carry}\n\n---\n\n` : ""}${prompt}`, null);
       }
     }
@@ -1231,17 +1551,28 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
 
     flush("reply");
     if (usageSeen || usage.inputTokens + usage.outputTokens > 0) {
-      log.emit({ type: "usage.recorded", data: { kind: "model", owner: { runId }, usage, account: account.id }, scope: { runId, turnId } });
+      log.emit({
+        type: "usage.recorded",
+        data: { kind: "model", owner: { runId }, usage, account: account.id },
+        scope: { runId, turnId },
+      });
     }
     if (!isSchedule && !group && providerSession) {
       meta.providerSessions = { ...meta.providerSessions, [sessionKey]: providerSession };
       meta.providerSynced = { ...meta.providerSynced, [sessionKey]: turnId };
     }
     if (turn.guardStop && !turn.cancelled) {
-      const tried = turn.calls.slice(-6).map((call) => `- ${clip(call, 200)}`).join("\n");
+      const tried = turn.calls
+        .slice(-6)
+        .map((call) => `- ${clip(call, 200)}`)
+        .join("\n");
       const value = `Parei aqui porque não estava avançando no seu pedido e não quis gastar sua assinatura à toa.\n\nO que tentei:\n${tried}\n\nMe diga como seguir ou reformule o pedido.`;
       const partId = `${runId}.guard`;
-      log.emit({ type: "content.completed", data: { kind: "text", partId, phase: "reply", runId, value }, scope: { runId, turnId } });
+      log.emit({
+        type: "content.completed",
+        data: { kind: "text", partId, phase: "reply", runId, value },
+        scope: { runId, turnId },
+      });
       replyParts.push(partId);
       replyTexts.push(value);
       failure = null;
@@ -1256,31 +1587,59 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       const usable = target && target.status === "ready" && !limitOf(target.id) ? target : null;
       const message = `O limite do ${providerName(from.provider)} acabou${state.known ? `, volta ${formatReset(state.until)}` : ""}.${usable ? ` Quer que eu continue com o ${nameOf(usable, from)}?` : ""}`;
       settle("failed", {
-        error: { code: "ACCOUNT_LIMIT", id: randomUUID(), message, detail: state.message.slice(0, 500), until: state.known ? state.until.toISOString() : null, ...(usable ? { suggest: { account: usable.id, model: suggestion.model, label: nameOf(usable, from) } } : {}) },
+        error: {
+          code: "ACCOUNT_LIMIT",
+          id: randomUUID(),
+          message,
+          detail: state.message.slice(0, 500),
+          until: state.known ? state.until.toISOString() : null,
+          ...(usable ? { suggest: { account: usable.id, model: suggestion.model, label: nameOf(usable, from) } } : {}),
+        },
       });
     } else if (failure) {
       if (!isSchedule && resume && !replyText) {
         meta.providerSessions = { ...meta.providerSessions };
         delete meta.providerSessions[sessionKey];
       }
-      settle("failed", { error: { code: "MODEL_CALL_FAILED", id: randomUUID(), message: String(failure).slice(0, 2000) } });
+      settle("failed", {
+        error: { code: "MODEL_CALL_FAILED", id: randomUUID(), message: String(failure).slice(0, 2000) },
+      });
     } else {
       if (!isSchedule && !group && memorySettings.capture && replyText) {
-        void capture({ bot, account, model, userText: delivery.text, replyText, recalled, log, turnId }).catch((error) =>
-          console.warn("memory capture failed", error instanceof Error ? error.message : error),
+        void capture({ bot, account, model, userText: delivery.text, replyText, recalled, log, turnId }).catch(
+          (error) => console.warn("memory capture failed", error instanceof Error ? error.message : error),
         );
       }
       let quiet = false;
       if (isSchedule && replyText) {
         const schedule = bot.schedules.find((item) => item.name === delivery.scheduleId);
-        const triage = await decideTriage(bot.role, delivery.scheduleId ?? "rotina", schedule?.prompt ?? delivery.text, replyText);
+        const triage = await decideTriage(
+          bot.role,
+          delivery.scheduleId ?? "rotina",
+          schedule?.prompt ?? delivery.text,
+          replyText,
+        );
         emitDecision(log, turn, triage);
         quiet = triage.outcome === "quiet";
       }
       result.reply = replyText;
-      settle("completed", { reply: replyParts, ...(quiet ? { quiet: true } : {}), ...(turn.guardStop ? { stoppedBy: "progress_guard" } : {}) });
+      settle("completed", {
+        reply: replyParts,
+        ...(quiet ? { quiet: true } : {}),
+        ...(turn.guardStop ? { stoppedBy: "progress_guard" } : {}),
+      });
       if ((meta.kind === "thread" || meta.kind === "group" || meta.kind === "conversation") && replyText) {
-        await recordThreadMessage(meta.botId, meta.sessionId, { role: "bot", text: titleFrom(group ? `${bot.name}: ${replyText}` : replyText), at: now(), ...(group ? { botId: bot.id } : {}) }, quiet);
+        await recordThreadMessage(
+          meta.botId,
+          meta.sessionId,
+          {
+            role: "bot",
+            text: titleFrom(group ? `${bot.name}: ${replyText}` : replyText),
+            at: now(),
+            ...(group ? { botId: bot.id } : {}),
+          },
+          quiet,
+        );
       }
       if (isSchedule && replyText) {
         const name = delivery.scheduleId ?? "rotina";
@@ -1297,17 +1656,37 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           delete meta.providerSessions[sessionKey];
         }
         if (meta.failover && meta.failover.from === account.id) {
-          log.emit({ type: "account.restored", data: { account: account.id, from: meta.failover.to, fromModel: meta.lastEngine?.account === meta.failover.to ? meta.lastEngine.model : null, toModel: model, reason: "Limite liberado", line: `Voltei para o ${providerName(account.provider)}` }, scope: turnScope });
+          log.emit({
+            type: "account.restored",
+            data: {
+              account: account.id,
+              from: meta.failover.to,
+              fromModel: meta.lastEngine?.account === meta.failover.to ? meta.lastEngine.model : null,
+              toModel: model,
+              reason: "Limite liberado",
+              line: `Voltei para o ${providerName(account.provider)}`,
+            },
+            scope: turnScope,
+          });
           delete meta.failover;
         }
         meta.lastEngine = { account: account.id, model };
-        void refreshSummary(session, account, model, bot.name, overflow).catch((error) => console.warn("summary failed", error instanceof Error ? error.message : error));
+        void refreshSummary(session, account, model, bot.name, overflow).catch((error) =>
+          console.warn("summary failed", error instanceof Error ? error.message : error),
+        );
       }
     }
   } catch (error) {
     for (const pending of turn.interactions.values()) pending.resolve("deny");
     if (turn.cancelled) settle("cancelled");
-    else settle("failed", { error: { code: "MODEL_CALL_FAILED", id: randomUUID(), message: (error instanceof Error ? error.message : String(error)).slice(0, 2000) } });
+    else
+      settle("failed", {
+        error: {
+          code: "MODEL_CALL_FAILED",
+          id: randomUUID(),
+          message: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
+        },
+      });
   } finally {
     turn.slot?.release();
     stopLive();

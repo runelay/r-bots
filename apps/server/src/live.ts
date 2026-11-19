@@ -18,7 +18,12 @@ interface PageState {
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 const lives = new Map<string, LiveBrowser>();
 
-const mouseTypes: Record<string, string> = { move: "mouseMoved", down: "mousePressed", up: "mouseReleased", wheel: "mouseWheel" };
+const mouseTypes: Record<string, string> = {
+  move: "mouseMoved",
+  down: "mousePressed",
+  up: "mouseReleased",
+  wheel: "mouseWheel",
+};
 const keyTypes: Record<string, string> = { down: "keyDown", up: "keyUp" };
 
 class LiveBrowser {
@@ -83,7 +88,13 @@ class LiveBrowser {
       case "Page.screencastFrame": {
         void this.send("Page.screencastFrameAck", { sessionId: params.sessionId }).catch(() => undefined);
         const meta = (params.metadata ?? {}) as Json;
-        this.lastFrame = { type: "frame", data: params.data, width: meta.deviceWidth, height: meta.deviceHeight, ts: Date.now() };
+        this.lastFrame = {
+          type: "frame",
+          data: params.data,
+          width: meta.deviceWidth,
+          height: meta.deviceHeight,
+          ts: Date.now(),
+        };
         this.broadcast(this.lastFrame);
         break;
       }
@@ -137,7 +148,12 @@ class LiveBrowser {
       ws.addEventListener("close", () => {
         if (this.cdp === ws) this.reset();
       });
-      const targets = (await this.send("Target.getTargets", {}, false)).targetInfos as Array<{ targetId: string; type: string; url: string; attached: boolean }>;
+      const targets = (await this.send("Target.getTargets", {}, false)).targetInfos as Array<{
+        targetId: string;
+        type: string;
+        url: string;
+        attached: boolean;
+      }>;
       const pages = targets.filter((target) => target.type === "page");
       const page = pages.find((target) => target.attached) ?? pages[0];
       if (!page) throw new Error("Nenhuma aba aberta no navegador do bot.");
@@ -157,16 +173,33 @@ class LiveBrowser {
       const entries = (history.entries ?? []) as Array<{ url: string; title: string }>;
       const index = Number(history.currentIndex ?? 0);
       const current = entries[index] ?? { url: "", title: "" };
-      this.state = { ...this.state, url: current.url, title: current.title, canGoBack: index > 0, canGoForward: index < entries.length - 1 };
+      this.state = {
+        ...this.state,
+        url: current.url,
+        title: current.title,
+        canGoBack: index > 0,
+        canGoForward: index < entries.length - 1,
+      };
       this.publishState();
-      if (current.url) await writeJson(browserStateFile(this.botId), { url: current.url, title: current.title, updatedAt: new Date().toISOString() });
+      if (current.url)
+        await writeJson(browserStateFile(this.botId), {
+          url: current.url,
+          title: current.title,
+          updatedAt: new Date().toISOString(),
+        });
     } catch {}
   }
 
   async startCast() {
     await this.ensure();
     if (this.casting) return;
-    await this.send("Page.startScreencast", { format: "jpeg", quality: 70, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 });
+    await this.send("Page.startScreencast", {
+      format: "jpeg",
+      quality: 70,
+      maxWidth: 1280,
+      maxHeight: 800,
+      everyNthFrame: 1,
+    });
     this.casting = true;
   }
 
@@ -195,7 +228,10 @@ class LiveBrowser {
           type,
           x: Number(message.x ?? 0),
           y: Number(message.y ?? 0),
-          button: type === "mouseMoved" || type === "mouseWheel" ? String(message.button ?? "none") : String(message.button ?? "left"),
+          button:
+            type === "mouseMoved" || type === "mouseWheel"
+              ? String(message.button ?? "none")
+              : String(message.button ?? "left"),
           clickCount: Number(message.clickCount ?? (type === "mousePressed" || type === "mouseReleased" ? 1 : 0)),
           deltaX: Number(message.deltaX ?? 0),
           deltaY: Number(message.deltaY ?? 0),
@@ -259,7 +295,8 @@ export function handleLiveUpgrade(req: http.IncomingMessage, socket: Duplex, hea
     live.clients.add(client);
     markBrowserViewed(botId);
     const fail = (error: unknown) => {
-      if (client.readyState === client.OPEN) client.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
+      if (client.readyState === client.OPEN)
+        client.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
     };
     live
       .startCast()

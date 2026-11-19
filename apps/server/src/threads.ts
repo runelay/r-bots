@@ -2,9 +2,9 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { ulid } from "ulid";
 import { model, threadsDir } from "./config";
+import { notifyConversation, recordConversationMessage, titleMainFromMessage } from "./conversations";
 import { readJson, writeJson } from "./json-file";
 import { createStoredSession, getStoredSession } from "./sessions";
-import { notifyConversation, recordConversationMessage, titleMainFromMessage } from "./conversations";
 
 export interface ThreadMessage {
   role: "user" | "bot";
@@ -49,7 +49,12 @@ async function load(botId: string) {
 }
 
 async function startThread(botId: string, kind: "thread" | "group") {
-  const session = await createStoredSession({ botId, kind, source: "chat", title: kind === "group" ? "Conversa do grupo" : "Conversa principal" });
+  const session = await createStoredSession({
+    botId,
+    kind,
+    source: "chat",
+    title: kind === "group" ? "Conversa do grupo" : "Conversa principal",
+  });
   session.log.emit({
     type: "session.started",
     data: { runtime: { agentId: botId, agentName: botId, engine: "claude-agent-sdk", model }, thread: true },

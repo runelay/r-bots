@@ -50,7 +50,11 @@ export function elementTarget(botId: string, ref: string): ApprovalTarget | null
   return match ? { label: (match[2] ?? "").trim(), role: match[1] } : null;
 }
 
-export function cropPreview(source: string | Buffer, box: { x: number; y: number; width: number; height: number }, pad = 28) {
+export function cropPreview(
+  source: string | Buffer,
+  box: { x: number; y: number; width: number; height: number },
+  pad = 28,
+) {
   const width = Math.max(48, Math.round(box.width + pad * 2));
   const height = Math.max(32, Math.round(box.height + pad * 2));
   const left = Math.max(0, Math.round(box.x - pad));
@@ -60,9 +64,26 @@ export function cropPreview(source: string | Buffer, box: { x: number; y: number
   return new Promise<string | null>((resolve) => {
     const child = execFile(
       "ffmpeg",
-      ["-v", "error", "-i", input, "-vf", filter, "-frames:v", "1", "-q:v", "4", "-f", "image2", "-c:v", "mjpeg", "pipe:1"],
+      [
+        "-v",
+        "error",
+        "-i",
+        input,
+        "-vf",
+        filter,
+        "-frames:v",
+        "1",
+        "-q:v",
+        "4",
+        "-f",
+        "image2",
+        "-c:v",
+        "mjpeg",
+        "pipe:1",
+      ],
       { encoding: "buffer", maxBuffer: 8 * 1024 * 1024, timeout: 8000 },
-      (error, stdout) => resolve(error || !stdout.length ? null : `data:image/jpeg;base64,${stdout.toString("base64")}`),
+      (error, stdout) =>
+        resolve(error || !stdout.length ? null : `data:image/jpeg;base64,${stdout.toString("base64")}`),
     );
     if (typeof source !== "string") child.stdin?.end(source);
   });
@@ -77,7 +98,12 @@ export async function elementPreview(botId: string, ref: string) {
     const box = await run(botId, ["get", "box", target], undefined, 8000);
     if (!(Number(box.width) > 0 && Number(box.height) > 0)) return null;
     await run(botId, ["screenshot", file], undefined, 15_000);
-    return await cropPreview(file, { x: Number(box.x), y: Number(box.y), width: Number(box.width), height: Number(box.height) });
+    return await cropPreview(file, {
+      x: Number(box.x),
+      y: Number(box.y),
+      width: Number(box.width),
+      height: Number(box.height),
+    });
   } catch {
     return null;
   } finally {
@@ -88,7 +114,9 @@ export async function elementPreview(botId: string, ref: string) {
 export function elementText(botId: string, ref: string) {
   const id = ref.trim().replace(/^@/, "");
   const snapshot = lastSnapshots.get(botId) ?? "";
-  const line = snapshot.split("\n").find((item) => item.includes(`[ref=${id}]`) || item.includes(`ref=${id},`) || item.includes(`ref=${id} `));
+  const line = snapshot
+    .split("\n")
+    .find((item) => item.includes(`[ref=${id}]`) || item.includes(`ref=${id},`) || item.includes(`ref=${id} `));
   return line?.trim().slice(0, 300) ?? "";
 }
 
@@ -295,14 +323,26 @@ function runFillStdin(botId: string, ref: string, text: string, signal?: AbortSi
         try {
           const parsed = JSON.parse(stdout.trim().split("\n").filter(Boolean).pop() ?? "null") as unknown;
           const results = Array.isArray(parsed) ? parsed : [parsed];
-          if (results.some((item) => item && typeof item === "object" && (item as { success?: boolean }).success === false)) ok = false;
+          if (
+            results.some(
+              (item) => item && typeof item === "object" && (item as { success?: boolean }).success === false,
+            )
+          )
+            ok = false;
         } catch {}
         if (ok) resolve();
-        else reject(new Error("Não consegui preencher o campo com o segredo. Confira a referência com browser_snapshot."));
+        else
+          reject(new Error("Não consegui preencher o campo com o segredo. Confira a referência com browser_snapshot."));
       },
     );
-    const mask = "(() => { const el = document.activeElement; if (el && 'value' in el) { el.style.setProperty('-webkit-text-security', 'disc'); el.setAttribute('autocomplete', 'off'); } return true; })()";
-    child.stdin?.end(JSON.stringify([["fill", normalizeRef(ref), text], ["eval", mask]]));
+    const mask =
+      "(() => { const el = document.activeElement; if (el && 'value' in el) { el.style.setProperty('-webkit-text-security', 'disc'); el.setAttribute('autocomplete', 'off'); } return true; })()";
+    child.stdin?.end(
+      JSON.stringify([
+        ["fill", normalizeRef(ref), text],
+        ["eval", mask],
+      ]),
+    );
   });
 }
 

@@ -1,11 +1,11 @@
 import { execFile } from "node:child_process";
-import { appWatching } from "./viewers";
 import { childEnv } from "@runelay-bots/providers/proc";
-import { activeWorkspace, closeWorkspace, CodeError, git, publicWorkspace, type WorkspaceState } from "./code";
+import { activeWorkspace, CodeError, closeWorkspace, git, publicWorkspace, type WorkspaceState } from "./code";
 import { touchWorktree } from "./code-store";
 import { stopDevServers } from "./devserver";
 import { isBusy } from "./engine";
 import { allStoredSessions, type StoredSession } from "./sessions";
+import { appWatching } from "./viewers";
 
 export type PrStatus = "open" | "draft" | "merged" | "closed";
 export type CheckStatus = "pending" | "success" | "failure" | "skipped" | "neutral";
@@ -55,7 +55,8 @@ interface GhResult {
   stderr: string;
 }
 
-const viewFields = "number,title,state,isDraft,mergedAt,closedAt,baseRefName,headRefName,additions,deletions,files,statusCheckRollup,reviewDecision,url,updatedAt";
+const viewFields =
+  "number,title,state,isDraft,mergedAt,closedAt,baseRefName,headRefName,additions,deletions,files,statusCheckRollup,reviewDecision,url,updatedAt";
 const tickMs = 10_000;
 const pendingDelayMs = 30_000;
 const openDelayMs = 2 * 60_000;
@@ -68,10 +69,24 @@ const ghBin = process.env.CODE_GH_BIN || "gh";
 
 function gh(cwd: string, args: string[], timeoutMs = 30_000) {
   return new Promise<GhResult>((done) => {
-    execFile(ghBin, args, { cwd, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024, env: childEnv({ GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }) }, (error, stdout, stderr) => {
-      const code = error ? (typeof (error as { code?: unknown }).code === "number" ? Number((error as { code?: number }).code) : 1) : 0;
-      done({ code, stdout: String(stdout), stderr: String(stderr) });
-    });
+    execFile(
+      ghBin,
+      args,
+      {
+        cwd,
+        timeout: timeoutMs,
+        maxBuffer: 16 * 1024 * 1024,
+        env: childEnv({ GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }),
+      },
+      (error, stdout, stderr) => {
+        const code = error
+          ? typeof (error as { code?: unknown }).code === "number"
+            ? Number((error as { code?: number }).code)
+            : 1
+          : 0;
+        done({ code, stdout: String(stdout), stderr: String(stderr) });
+      },
+    );
   });
 }
 
@@ -87,7 +102,13 @@ const generatedPatterns = [
   /\.d\.ts\.map$|\.js\.map$/,
 ];
 const docPatterns = [/\.(md|mdx|markdown|rst|txt)$/i, /(^|\/)docs?\//i, /(^|\/)(LICENSE|CHANGELOG|README)(\.\w+)?$/i];
-const testPatterns = [/\.(test|spec)\.[\w]+$/, /(^|\/)(__tests__|_tests_|tests?|e2e|__mocks__|fixtures)\//, /(^|\/)Tests\//, /_test\.(go|py)$/, /(^|\/)test_[\w]+\.py$/];
+const testPatterns = [
+  /\.(test|spec)\.[\w]+$/,
+  /(^|\/)(__tests__|_tests_|tests?|e2e|__mocks__|fixtures)\//,
+  /(^|\/)Tests\//,
+  /_test\.(go|py)$/,
+  /(^|\/)test_[\w]+\.py$/,
+];
 
 export function classifyFile(path: string): FileCategory {
   if (generatedPatterns.some((pattern) => pattern.test(path))) return "generated";
@@ -97,7 +118,12 @@ export function classifyFile(path: string): FileCategory {
 }
 
 function emptyCategories(): Record<FileCategory, PrCategoryCount> {
-  return { code: { files: 0, added: 0, removed: 0 }, tests: { files: 0, added: 0, removed: 0 }, generated: { files: 0, added: 0, removed: 0 }, docs: { files: 0, added: 0, removed: 0 } };
+  return {
+    code: { files: 0, added: 0, removed: 0 },
+    tests: { files: 0, added: 0, removed: 0 },
+    generated: { files: 0, added: 0, removed: 0 },
+    docs: { files: 0, added: 0, removed: 0 },
+  };
 }
 
 function validDate(value: unknown) {
@@ -108,8 +134,17 @@ function validDate(value: unknown) {
 function checkOf(item: Record<string, unknown>): PrCheck {
   if (item.__typename === "StatusContext") {
     const state = String(item.state ?? "").toUpperCase();
-    const status: CheckStatus = state === "SUCCESS" ? "success" : state === "FAILURE" || state === "ERROR" ? "failure" : "pending";
-    return { name: String(item.context ?? "status"), workflow: null, status, startedAt: validDate(item.startedAt), completedAt: null, durationMs: null, url: typeof item.targetUrl === "string" && item.targetUrl ? item.targetUrl : null };
+    const status: CheckStatus =
+      state === "SUCCESS" ? "success" : state === "FAILURE" || state === "ERROR" ? "failure" : "pending";
+    return {
+      name: String(item.context ?? "status"),
+      workflow: null,
+      status,
+      startedAt: validDate(item.startedAt),
+      completedAt: null,
+      durationMs: null,
+      url: typeof item.targetUrl === "string" && item.targetUrl ? item.targetUrl : null,
+    };
   }
   const conclusion = String(item.conclusion ?? "").toUpperCase();
   const running = String(item.status ?? "").toUpperCase() !== "COMPLETED";
@@ -161,9 +196,17 @@ export function snapshotFromView(view: Record<string, unknown>): PrSnapshot {
   }
   const checks = [...latest.values()];
   const state = String(view.state ?? "").toUpperCase();
-  const status: PrStatus = state === "MERGED" ? "merged" : state === "CLOSED" ? "closed" : view.isDraft ? "draft" : "open";
+  const status: PrStatus =
+    state === "MERGED" ? "merged" : state === "CLOSED" ? "closed" : view.isDraft ? "draft" : "open";
   const decision = String(view.reviewDecision ?? "").toUpperCase();
-  const review: ReviewStatus = decision === "APPROVED" ? "approved" : decision === "CHANGES_REQUESTED" ? "changes_requested" : decision === "REVIEW_REQUIRED" ? "review_required" : null;
+  const review: ReviewStatus =
+    decision === "APPROVED"
+      ? "approved"
+      : decision === "CHANGES_REQUESTED"
+        ? "changes_requested"
+        : decision === "REVIEW_REQUIRED"
+          ? "review_required"
+          : null;
   return {
     number: Number(view.number),
     title: String(view.title ?? ""),
@@ -201,11 +244,25 @@ async function hasUpstream(workspace: WorkspaceState) {
 
 async function wasPushed(workspace: WorkspaceState) {
   if (await hasUpstream(workspace)) return true;
-  return (await git(workspace.path, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${workspace.branch}`])).code === 0;
+  return (
+    (await git(workspace.path, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${workspace.branch}`]))
+      .code === 0
+  );
 }
 
 export async function discoverPr(workspace: WorkspaceState) {
-  const result = await gh(workspace.path, ["pr", "list", "--head", workspace.branch, "--state", "all", "--json", "number,url,updatedAt", "--limit", "5"]);
+  const result = await gh(workspace.path, [
+    "pr",
+    "list",
+    "--head",
+    workspace.branch,
+    "--state",
+    "all",
+    "--json",
+    "number,url,updatedAt",
+    "--limit",
+    "5",
+  ]);
   if (result.code !== 0) return null;
   try {
     const list = JSON.parse(result.stdout) as Array<{ number: number; updatedAt?: string }>;
@@ -227,7 +284,9 @@ function cleanLogLine(line: string) {
 export function summarizeLog(raw: string) {
   const lines = raw.split("\n").map(cleanLogLine);
   const end = lines.findIndex((line) => /^(Post job cleanup|Cleaning up orphan processes)/.test(line));
-  const body = (end >= 0 ? lines.slice(0, end) : lines).filter((line) => !/^##\[(group|endgroup)\]|Process completed with exit code|^\s*✓ /.test(line));
+  const body = (end >= 0 ? lines.slice(0, end) : lines).filter(
+    (line) => !/^##\[(group|endgroup)\]|Process completed with exit code|^\s*✓ /.test(line),
+  );
   while (body.length > 0 && !body[body.length - 1].trim()) body.pop();
   const marker = body.findIndex((line) => /Failed Tests \d|^\s*FAIL\s|^error(\[|:)|^ERR!|npm ERR!/.test(line));
   const tail = marker >= 0 ? body.slice(marker, marker + 45) : body.slice(-45);
@@ -243,7 +302,9 @@ export function summarizeLog(raw: string) {
 export async function failedLog(workspace: WorkspaceState, check: PrCheck) {
   const match = check.url?.match(/\/actions\/runs\/(\d+)(?:\/job\/(\d+))?/);
   if (!match) return null;
-  const args = match[2] ? ["run", "view", "--job", match[2], "--log-failed"] : ["run", "view", match[1], "--log-failed"];
+  const args = match[2]
+    ? ["run", "view", "--job", match[2], "--log-failed"]
+    : ["run", "view", match[1], "--log-failed"];
   const result = await gh(workspace.path, args, 60_000);
   if (result.code !== 0 || !result.stdout.trim()) return null;
   return summarizeLog(result.stdout) || null;
@@ -253,19 +314,50 @@ export async function reviewSummary(workspace: WorkspaceState, number: number) {
   const reviews = await gh(workspace.path, ["pr", "view", String(number), "--json", "reviews"]);
   let review: { id?: string; body?: string; author?: string } | null = null;
   try {
-    const list = (JSON.parse(reviews.stdout) as { reviews?: Array<{ id?: string; state?: string; body?: string; author?: { login?: string }; submittedAt?: string }> }).reviews ?? [];
-    const latest = list.filter((item) => item.state === "CHANGES_REQUESTED").sort((a, b) => String(b.submittedAt ?? "").localeCompare(String(a.submittedAt ?? "")))[0];
+    const list =
+      (
+        JSON.parse(reviews.stdout) as {
+          reviews?: Array<{
+            id?: string;
+            state?: string;
+            body?: string;
+            author?: { login?: string };
+            submittedAt?: string;
+          }>;
+        }
+      ).reviews ?? [];
+    const latest = list
+      .filter((item) => item.state === "CHANGES_REQUESTED")
+      .sort((a, b) => String(b.submittedAt ?? "").localeCompare(String(a.submittedAt ?? "")))[0];
     if (latest) review = { id: latest.id, body: latest.body?.trim(), author: latest.author?.login };
   } catch {}
   const comments: Array<{ path: string; line: number | null; body: string }> = [];
   const inline = await gh(workspace.path, ["api", `repos/{owner}/{repo}/pulls/${number}/comments`, "--paginate"]);
   try {
-    const list = JSON.parse(inline.stdout) as Array<{ path?: string; line?: number | null; original_line?: number | null; body?: string; in_reply_to_id?: number; created_at?: string }>;
+    const list = JSON.parse(inline.stdout) as Array<{
+      path?: string;
+      line?: number | null;
+      original_line?: number | null;
+      body?: string;
+      in_reply_to_id?: number;
+      created_at?: string;
+    }>;
     for (const item of list.filter((entry) => !entry.in_reply_to_id).slice(-8)) {
-      comments.push({ path: String(item.path ?? ""), line: item.line ?? item.original_line ?? null, body: String(item.body ?? "").replace(/\s+/g, " ").trim().slice(0, 200) });
+      comments.push({
+        path: String(item.path ?? ""),
+        line: item.line ?? item.original_line ?? null,
+        body: String(item.body ?? "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 200),
+      });
     }
   } catch {}
-  return { author: review?.author ?? null, body: review?.body ? review.body.replace(/\s+/g, " ").slice(0, 400) : null, comments };
+  return {
+    author: review?.author ?? null,
+    body: review?.body ? review.body.replace(/\s+/g, " ").slice(0, 400) : null,
+    comments,
+  };
 }
 
 function sameState(a: PrSnapshot | null | undefined, b: PrSnapshot) {
@@ -293,23 +385,54 @@ async function applySnapshot(session: StoredSession, workspace: WorkspaceState, 
   await session.save();
   session.log.emit({ type: "code.pr", data: publicPr(workspace, next) });
   if (previous && previous.number !== next.number) return;
-  const failedBefore = new Set((previous?.checks ?? []).filter((check) => check.status === "failure").map((check) => `${check.name}|${check.url}`));
-  const failedNow = next.checks.filter((check) => check.status === "failure" && !failedBefore.has(`${check.name}|${check.url}`));
+  const failedBefore = new Set(
+    (previous?.checks ?? []).filter((check) => check.status === "failure").map((check) => `${check.name}|${check.url}`),
+  );
+  const failedNow = next.checks.filter(
+    (check) => check.status === "failure" && !failedBefore.has(`${check.name}|${check.url}`),
+  );
   if (next.ci === "failure" && failedNow.length > 0 && next.status !== "merged") {
     const first = failedNow[0];
     const log = await failedLog(workspace, first).catch(() => null);
     session.log.emit({
       type: "code.ci",
-      data: { workspaceId: workspace.id, number: next.number, prUrl: next.url, outcome: "failure", check: first, failed: failedNow.map((check) => ({ name: check.name, url: check.url })), log },
+      data: {
+        workspaceId: workspace.id,
+        number: next.number,
+        prUrl: next.url,
+        outcome: "failure",
+        check: first,
+        failed: failedNow.map((check) => ({ name: check.name, url: check.url })),
+        log,
+      },
     });
   } else if (previous && (previous.ci === "pending" || previous.ci === "failure") && next.ci === "success") {
-    session.log.emit({ type: "code.ci", data: { workspaceId: workspace.id, number: next.number, prUrl: next.url, outcome: "success", checks: next.checks.length } });
+    session.log.emit({
+      type: "code.ci",
+      data: {
+        workspaceId: workspace.id,
+        number: next.number,
+        prUrl: next.url,
+        outcome: "success",
+        checks: next.checks.length,
+      },
+    });
   }
   if (next.review === "changes_requested" && previous?.review !== "changes_requested") {
-    const summary = await reviewSummary(workspace, next.number).catch(() => ({ author: null, body: null, comments: [] }));
-    session.log.emit({ type: "code.review", data: { workspaceId: workspace.id, number: next.number, prUrl: next.url, state: "changes_requested", ...summary } });
+    const summary = await reviewSummary(workspace, next.number).catch(() => ({
+      author: null,
+      body: null,
+      comments: [],
+    }));
+    session.log.emit({
+      type: "code.review",
+      data: { workspaceId: workspace.id, number: next.number, prUrl: next.url, state: "changes_requested", ...summary },
+    });
   } else if (next.review === "approved" && previous && previous.review !== "approved") {
-    session.log.emit({ type: "code.review", data: { workspaceId: workspace.id, number: next.number, prUrl: next.url, state: "approved" } });
+    session.log.emit({
+      type: "code.review",
+      data: { workspaceId: workspace.id, number: next.number, prUrl: next.url, state: "approved" },
+    });
   }
   if (next.status !== previous?.status && (next.status === "merged" || next.status === "closed")) {
     await touchWorktree(workspace.id, { prUrl: next.url });
@@ -352,11 +475,16 @@ export function kickPr(session: StoredSession, url?: string | null) {
 
 async function isClean(workspace: WorkspaceState) {
   const dirty = (await git(workspace.path, ["status", "--porcelain"])).stdout.trim();
-  if (dirty) return { clean: false, reason: "Tem mudança não commitada na worktree. Commite ou descarte antes de fechar." };
+  if (dirty)
+    return { clean: false, reason: "Tem mudança não commitada na worktree. Commite ou descarte antes de fechar." };
   const upstream = await hasUpstream(workspace);
   if (upstream) {
     const ahead = (await git(workspace.path, ["rev-list", "--count", "@{u}..HEAD"])).stdout.trim();
-    if (ahead && ahead !== "0") return { clean: false, reason: `Tem ${ahead} commit${ahead === "1" ? "" : "s"} que não ${ahead === "1" ? "foi" : "foram"} para o GitHub.` };
+    if (ahead && ahead !== "0")
+      return {
+        clean: false,
+        reason: `Tem ${ahead} commit${ahead === "1" ? "" : "s"} que não ${ahead === "1" ? "foi" : "foram"} para o GitHub.`,
+      };
   }
   return { clean: true, reason: "" };
 }
@@ -369,7 +497,11 @@ export async function finishWorkspace(session: StoredSession, by: "user" | "auto
   if (!check.clean) throw new CodeError(check.reason, 409);
   await stopDevServers(workspace);
   const removed = await git(workspace.repo, ["worktree", "remove", workspace.path], 120_000);
-  if (removed.code !== 0) throw new CodeError(`Não consegui remover a worktree: ${(removed.stderr || removed.stdout).trim().slice(0, 300)}`, 500);
+  if (removed.code !== 0)
+    throw new CodeError(
+      `Não consegui remover a worktree: ${(removed.stderr || removed.stdout).trim().slice(0, 300)}`,
+      500,
+    );
   await closeWorkspace(session, true);
   session.meta.providerSessions = {};
   await session.save();
@@ -385,7 +517,8 @@ export async function reopenPr(session: StoredSession) {
   if (!workspace?.pr) throw new CodeError("Esta conversa não tem PR.", 404);
   if (workspace.pr.status !== "closed") throw new CodeError("O PR não está fechado.", 409);
   const result = await gh(workspace.path, ["pr", "reopen", String(workspace.pr.number)], 60_000);
-  if (result.code !== 0) throw new CodeError(`Não consegui reabrir o PR: ${(result.stderr || result.stdout).trim().slice(0, 300)}`, 500);
+  if (result.code !== 0)
+    throw new CodeError(`Não consegui reabrir o PR: ${(result.stderr || result.stdout).trim().slice(0, 300)}`, 500);
   nextCheck.set(session.meta.sessionId, Date.now());
   return refreshPr(session);
 }

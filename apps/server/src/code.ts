@@ -1,11 +1,11 @@
 import { execFile, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { childEnv, findBinary } from "@runelay-bots/providers/proc";
-import { dataDir } from "./config";
 import type { PrSnapshot } from "./code-pr";
+import { dataDir } from "./config";
 import type { StoredSession } from "./sessions";
 
 export const repoRoots = (process.env.CODE_REPO_ROOTS ?? "/home/anderson/projects/conty-dev,/home/anderson/projects")
@@ -65,17 +65,34 @@ export interface FileChange {
 }
 
 export class CodeError extends Error {
-  constructor(message: string, readonly status = 400) {
+  constructor(
+    message: string,
+    readonly status = 400,
+  ) {
     super(message);
   }
 }
 
 export function git(cwd: string, args: string[], timeoutMs = 60_000, extraEnv: Record<string, string> = {}) {
   return new Promise<{ code: number; stdout: string; stderr: string }>((done) => {
-    execFile("git", args, { cwd, timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024, env: childEnv({ GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", ...extraEnv }) }, (error, stdout, stderr) => {
-      const code = error ? (typeof (error as { code?: unknown }).code === "number" ? Number((error as { code?: number }).code) : 1) : 0;
-      done({ code, stdout: String(stdout), stderr: String(stderr) });
-    });
+    execFile(
+      "git",
+      args,
+      {
+        cwd,
+        timeout: timeoutMs,
+        maxBuffer: 64 * 1024 * 1024,
+        env: childEnv({ GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", ...extraEnv }),
+      },
+      (error, stdout, stderr) => {
+        const code = error
+          ? typeof (error as { code?: unknown }).code === "number"
+            ? Number((error as { code?: number }).code)
+            : 1
+          : 0;
+        done({ code, stdout: String(stdout), stderr: String(stderr) });
+      },
+    );
   });
 }
 
@@ -135,7 +152,11 @@ export async function listRepos(refresh = false): Promise<RepoInfo[]> {
 }
 
 function loose(text: string) {
-  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
 }
 
 export async function resolveRepo(input: string) {
@@ -156,7 +177,10 @@ export async function resolveRepo(input: string) {
   if (same.length === 1) return same[0];
   const partial = repos.filter((repo) => loose(repo.name).includes(target) || target.includes(loose(repo.name)));
   if (partial.length === 1) return partial[0];
-  const options = (partial.length > 1 ? partial : repos).map((repo) => repo.name).slice(0, 30).join(", ");
+  const options = (partial.length > 1 ? partial : repos)
+    .map((repo) => repo.name)
+    .slice(0, 30)
+    .join(", ");
   if (partial.length > 1) throw new CodeError(`Achei mais de um repositório para "${value}": ${options}. Qual deles?`);
   throw new CodeError(`Não achei o repositório "${value}". Os que existem: ${options}.`);
 }
@@ -204,7 +228,8 @@ export function waitForInstall(workspace: WorkspaceState) {
 }
 
 function installPlan(files: Set<string>) {
-  if (files.has("bun.lock") || files.has("bun.lockb")) return { manager: "bun", bin: "bun", args: ["install", "--frozen-lockfile"] };
+  if (files.has("bun.lock") || files.has("bun.lockb"))
+    return { manager: "bun", bin: "bun", args: ["install", "--frozen-lockfile"] };
   if (files.has("pnpm-lock.yaml")) return { manager: "pnpm", bin: "pnpm", args: ["install", "--frozen-lockfile"] };
   if (files.has("yarn.lock")) return { manager: "yarn", bin: "yarn", args: ["install", "--frozen-lockfile"] };
   if (files.has("package-lock.json")) return { manager: "npm", bin: "npm", args: ["ci", "--no-audit", "--no-fund"] };
@@ -219,28 +244,52 @@ function startInstall(session: StoredSession, workspace: WorkspaceState) {
   const work = (async () => {
     const files = new Set(await readdir(workspace.path).catch(() => [] as string[]));
     const plan = installPlan(files);
-    const emit = () => session.log.emit({ type: "code.install", data: { workspaceId: workspace.id, ...workspace.install } });
+    const emit = () =>
+      session.log.emit({ type: "code.install", data: { workspaceId: workspace.id, ...workspace.install } });
     if (!plan || files.has("node_modules")) {
-      workspace.install = { status: "skipped", manager: plan?.manager ?? null, command: null, startedAt: null, finishedAt: new Date().toISOString() };
+      workspace.install = {
+        status: "skipped",
+        manager: plan?.manager ?? null,
+        command: null,
+        startedAt: null,
+        finishedAt: new Date().toISOString(),
+      };
       await session.save();
       return;
     }
     const bin = findBinary([plan.bin]);
     const command = `${plan.bin} ${plan.args.join(" ")}`;
     if (!bin) {
-      workspace.install = { status: "failed", manager: plan.manager, command, startedAt: null, finishedAt: new Date().toISOString(), error: `${plan.bin} não está instalado na VPS.` };
+      workspace.install = {
+        status: "failed",
+        manager: plan.manager,
+        command,
+        startedAt: null,
+        finishedAt: new Date().toISOString(),
+        error: `${plan.bin} não está instalado na VPS.`,
+      };
       emit();
       await session.save();
       return;
     }
     const started = Date.now();
-    workspace.install = { status: "running", manager: plan.manager, command, startedAt: new Date(started).toISOString(), finishedAt: null };
+    workspace.install = {
+      status: "running",
+      manager: plan.manager,
+      command,
+      startedAt: new Date(started).toISOString(),
+      finishedAt: null,
+    };
     emit();
     await session.save();
     await mkdir(join(codeDataDir, workspace.id), { recursive: true });
     const out = createWriteStream(installLogPath(workspace));
     const code = await new Promise<number>((done) => {
-      const child = spawn(bin, plan.args, { cwd: workspace.path, env: childEnv({ CI: "1" }), stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(bin, plan.args, {
+        cwd: workspace.path,
+        env: childEnv({ CI: "1" }),
+        stdio: ["ignore", "pipe", "pipe"],
+      });
       child.stdout.pipe(out, { end: false });
       child.stderr.pipe(out, { end: false });
       const timer = setTimeout(() => child.kill("SIGTERM"), 20 * 60_000);
@@ -252,7 +301,12 @@ function startInstall(session: StoredSession, workspace: WorkspaceState) {
     });
     out.end();
     let tail = "";
-    if (code !== 0) tail = (await readFile(installLogPath(workspace), "utf8").catch(() => "")).trim().split("\n").slice(-6).join("\n");
+    if (code !== 0)
+      tail = (await readFile(installLogPath(workspace), "utf8").catch(() => ""))
+        .trim()
+        .split("\n")
+        .slice(-6)
+        .join("\n");
     workspace.install = {
       status: code === 0 ? "done" : "failed",
       manager: plan.manager,
@@ -261,7 +315,10 @@ function startInstall(session: StoredSession, workspace: WorkspaceState) {
       finishedAt: new Date().toISOString(),
       ...(code === 0 ? {} : { error: tail.slice(-1500) || `${command} saiu com código ${code}.` }),
     };
-    session.log.emit({ type: "code.install", data: { workspaceId: workspace.id, ...workspace.install, durationMs: Date.now() - started } });
+    session.log.emit({
+      type: "code.install",
+      data: { workspaceId: workspace.id, ...workspace.install, durationMs: Date.now() - started },
+    });
     await session.save();
   })().catch((error) => console.warn("install failed", error));
   installs.set(workspace.path, work);
@@ -316,7 +373,8 @@ export async function openWorkspace(session: StoredSession, botId: string, repoI
   const path = join(worktreesRoot, id);
   await mkdir(worktreesRoot, { recursive: true });
   const added = await git(repo.path, ["worktree", "add", "-b", branch, path, commit], 180_000);
-  if (added.code !== 0) throw new CodeError(`Não consegui criar a worktree: ${(added.stderr || added.stdout).trim().slice(0, 400)}`, 500);
+  if (added.code !== 0)
+    throw new CodeError(`Não consegui criar a worktree: ${(added.stderr || added.stdout).trim().slice(0, 400)}`, 500);
   const workspace: WorkspaceState = {
     id,
     repo: repo.path,
@@ -405,7 +463,10 @@ export async function changedFiles(workspace: WorkspaceState, fresh = false): Pr
     const [code, ...paths] = line.split("\t");
     const path = unquote(paths[paths.length - 1] ?? "");
     const letter = code[0];
-    statusByPath.set(path, letter === "A" ? "added" : letter === "D" ? "deleted" : letter === "R" ? "renamed" : "modified");
+    statusByPath.set(
+      path,
+      letter === "A" ? "added" : letter === "D" ? "deleted" : letter === "R" ? "renamed" : "modified",
+    );
   }
   const files: FileChange[] = [];
   for (const line of numstat.stdout.split("\n")) {
@@ -416,7 +477,13 @@ export async function changedFiles(workspace: WorkspaceState, fresh = false): Pr
     if (arrow) path = `${arrow[1]}${arrow[3]}${arrow[4]}`.replace(/\/\//g, "/");
     else if (path.includes(" => ")) path = path.split(" => ")[1];
     const binary = addedRaw === "-";
-    files.push({ path, status: statusByPath.get(path) ?? "modified", added: binary ? 0 : Number(addedRaw), removed: binary ? 0 : Number(removedRaw), binary });
+    files.push({
+      path,
+      status: statusByPath.get(path) ?? "modified",
+      added: binary ? 0 : Number(addedRaw),
+      removed: binary ? 0 : Number(removedRaw),
+      binary,
+    });
   }
   for (const line of untracked.stdout.split("\n")) {
     const path = unquote(line.trim());
@@ -459,7 +526,14 @@ export function parsePatch(text: string) {
     const header = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$/);
     if (header) {
       const section = (header[5] ?? "").trim().slice(0, 120);
-      hunk = { oldStart: Number(header[1]), oldLines: header[2] === undefined ? 1 : Number(header[2]), newStart: Number(header[3]), newLines: header[4] === undefined ? 1 : Number(header[4]), ...(section ? { section } : {}), lines: [] };
+      hunk = {
+        oldStart: Number(header[1]),
+        oldLines: header[2] === undefined ? 1 : Number(header[2]),
+        newStart: Number(header[3]),
+        newLines: header[4] === undefined ? 1 : Number(header[4]),
+        ...(section ? { section } : {}),
+        lines: [],
+      };
       file.hunks.push(hunk);
       continue;
     }
@@ -618,7 +692,8 @@ async function snapshotTree(workspace: WorkspaceState) {
   return withIndex(async (env) => {
     await git(workspace.path, ["read-tree", "HEAD"], 60_000, env);
     const added = await git(workspace.path, ["add", "-A", "--", "."], 120_000, env);
-    if (added.code !== 0) throw new CodeError(`Não consegui guardar o ponto de volta: ${added.stderr.trim().slice(0, 300)}`, 500);
+    if (added.code !== 0)
+      throw new CodeError(`Não consegui guardar o ponto de volta: ${added.stderr.trim().slice(0, 300)}`, 500);
     const tree = await git(workspace.path, ["write-tree"], 60_000, env);
     return tree.stdout.trim();
   });
@@ -629,20 +704,34 @@ export function checkpointRef(sessionId: string, turnId: string) {
 }
 
 export async function createCheckpoint(session: StoredSession, workspace: WorkspaceState, turnId: string) {
-  const existing = session.meta.checkpoints?.find((item) => item.turnId === turnId && item.workspaceId === workspace.id);
+  const existing = session.meta.checkpoints?.find(
+    (item) => item.turnId === turnId && item.workspaceId === workspace.id,
+  );
   if (existing) return existing;
   const tree = await snapshotTree(workspace);
   const head = (await git(workspace.path, ["rev-parse", "HEAD"])).stdout.trim();
-  const commit = await git(workspace.path, ["commit-tree", tree, "-p", head, "-m", `runelay checkpoint ${session.meta.sessionId} ${turnId}`], 60_000, {
-    GIT_AUTHOR_NAME: "runelay bots",
-    GIT_AUTHOR_EMAIL: "bots@runelay.local",
-    GIT_COMMITTER_NAME: "runelay bots",
-    GIT_COMMITTER_EMAIL: "bots@runelay.local",
-  });
-  if (commit.code !== 0) throw new CodeError(`Não consegui guardar o ponto de volta: ${commit.stderr.trim().slice(0, 300)}`, 500);
+  const commit = await git(
+    workspace.path,
+    ["commit-tree", tree, "-p", head, "-m", `runelay checkpoint ${session.meta.sessionId} ${turnId}`],
+    60_000,
+    {
+      GIT_AUTHOR_NAME: "runelay bots",
+      GIT_AUTHOR_EMAIL: "bots@runelay.local",
+      GIT_COMMITTER_NAME: "runelay bots",
+      GIT_COMMITTER_EMAIL: "bots@runelay.local",
+    },
+  );
+  if (commit.code !== 0)
+    throw new CodeError(`Não consegui guardar o ponto de volta: ${commit.stderr.trim().slice(0, 300)}`, 500);
   const ref = checkpointRef(session.meta.sessionId, turnId);
   await git(workspace.path, ["update-ref", ref, commit.stdout.trim()]);
-  const checkpoint: Checkpoint = { turnId, ref, commit: commit.stdout.trim(), workspaceId: workspace.id, at: new Date().toISOString() };
+  const checkpoint: Checkpoint = {
+    turnId,
+    ref,
+    commit: commit.stdout.trim(),
+    workspaceId: workspace.id,
+    at: new Date().toISOString(),
+  };
   session.meta.checkpoints = [...(session.meta.checkpoints ?? []), checkpoint].slice(-200);
   session.log.emit({ type: "code.checkpoint", data: { ...checkpoint }, scope: { turnId } });
   await session.save();
@@ -655,10 +744,15 @@ export async function restoreCheckpoint(workspace: WorkspaceState, checkpoint: C
     await git(workspace.path, ["add", "-A", "--", "."], 120_000, env);
     return (await git(workspace.path, ["ls-files", "-z"], 60_000, env)).stdout.split("\0").filter(Boolean);
   });
-  const then = new Set((await git(workspace.path, ["ls-tree", "-r", "-z", "--name-only", checkpoint.commit])).stdout.split("\0").filter(Boolean));
+  const then = new Set(
+    (await git(workspace.path, ["ls-tree", "-r", "-z", "--name-only", checkpoint.commit])).stdout
+      .split("\0")
+      .filter(Boolean),
+  );
   const restored = await withIndex(async (env) => {
     const read = await git(workspace.path, ["read-tree", checkpoint.commit], 60_000, env);
-    if (read.code !== 0) throw new CodeError(`Esse ponto de volta não existe mais: ${read.stderr.trim().slice(0, 200)}`, 404);
+    if (read.code !== 0)
+      throw new CodeError(`Esse ponto de volta não existe mais: ${read.stderr.trim().slice(0, 200)}`, 404);
     const out = await git(workspace.path, ["checkout-index", "-a", "-f"], 120_000, env);
     if (out.code !== 0) throw new CodeError(`Não consegui voltar os arquivos: ${out.stderr.trim().slice(0, 300)}`, 500);
     return then.size;

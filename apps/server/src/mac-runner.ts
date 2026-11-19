@@ -1,8 +1,8 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type http from "node:http";
 import type { Duplex } from "node:stream";
-import { type WebSocket, WebSocketServer } from "ws";
 import type { AccountProbe, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import { type WebSocket, WebSocketServer } from "ws";
 
 export const runnerConnectPath = "/runner/connect";
 
@@ -41,7 +41,9 @@ export function macRunnerAuthorized(req: http.IncomingMessage) {
 }
 
 export function macRunnerSupports(capability: string) {
-  return macRunnerConnected() && Array.isArray(hello.capabilities) && (hello.capabilities as unknown[]).includes(capability);
+  return (
+    macRunnerConnected() && Array.isArray(hello.capabilities) && (hello.capabilities as unknown[]).includes(capability)
+  );
 }
 
 export function isRunnerUpgrade(pathname: string) {
@@ -70,7 +72,8 @@ function notifyChange(connected: boolean) {
 }
 
 function send(message: Record<string, unknown>) {
-  if (!client || client.readyState !== client.OPEN) throw new MacRunnerUnavailable("O app runelay bots não está conectado.");
+  if (!client || client.readyState !== client.OPEN)
+    throw new MacRunnerUnavailable("O app runelay bots não está conectado.");
   client.send(JSON.stringify(message));
 }
 
@@ -224,7 +227,10 @@ export async function macComputerHealth() {
 
 export async function macComputerCall(tool: string, body: Record<string, unknown>, signal?: AbortSignal) {
   const response = await request("computer.tool", { tool, body }, 180_000, signal);
-  return { status: Number(response.status ?? 500), body: (response.body ?? {}) as { ok?: boolean; code?: string; error?: string; result?: unknown } };
+  return {
+    status: Number(response.status ?? 500),
+    body: (response.body ?? {}) as { ok?: boolean; code?: string; error?: string; result?: unknown },
+  };
 }
 
 export async function macTranscribeFile(audioBase64: string, name: string, signal?: AbortSignal) {
@@ -245,7 +251,13 @@ export async function macUsageBuckets(since: number) {
   return (response.result ?? {}) as Record<string, unknown>;
 }
 
-export async function macSecretResolve(body: { name: string; botId: string; botName: string; tool: string; domain: string | null }) {
+export async function macSecretResolve(body: {
+  name: string;
+  botId: string;
+  botName: string;
+  tool: string;
+  domain: string | null;
+}) {
   return request("secret.resolve", { body }, 95_000);
 }
 
@@ -260,7 +272,12 @@ export function runMacTurn(turn: TurnRequest, signal: AbortSignal, emit: (event:
   return new Promise<void>((resolve) => {
     let done = false;
     const finish = () => {
-      if (!done) emit({ type: "done", ok: false, message: signal.aborted ? "cancelled" : "O Mac encerrou o turno sem resposta." });
+      if (!done)
+        emit({
+          type: "done",
+          ok: false,
+          message: signal.aborted ? "cancelled" : "O Mac encerrou o turno sem resposta.",
+        });
       signal.removeEventListener("abort", onAbort);
       resolve();
     };

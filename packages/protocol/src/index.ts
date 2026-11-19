@@ -35,7 +35,13 @@ export interface NativeToolGate {
 
 export interface NativeToolHooks {
   before: (tool: string, input: Record<string, unknown>, toolUseId: string) => Promise<NativeToolGate>;
-  after: (tool: string, input: Record<string, unknown>, response: unknown, toolUseId: string, failed: boolean) => Promise<void>;
+  after: (
+    tool: string,
+    input: Record<string, unknown>,
+    response: unknown,
+    toolUseId: string,
+    failed: boolean,
+  ) => Promise<void>;
 }
 
 export type ProviderEvent =
@@ -44,7 +50,15 @@ export type ProviderEvent =
   | { type: "text"; part: string; text: string }
   | { type: "usage"; usage: Usage; contextTokens: number | null }
   | { type: "warning"; message: string }
-  | { type: "tool"; id: string; name: string; phase: "start" | "end"; input?: Record<string, unknown>; output?: unknown; ok?: boolean }
+  | {
+      type: "tool";
+      id: string;
+      name: string;
+      phase: "start" | "end";
+      input?: Record<string, unknown>;
+      output?: unknown;
+      ok?: boolean;
+    }
   | { type: "done"; ok: boolean; message?: string };
 
 export interface ModelOption {

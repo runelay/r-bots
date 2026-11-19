@@ -20,7 +20,8 @@ export async function waitForBotControl(botId: string, signal?: AbortSignal, tim
   const deadline = Date.now() + timeoutMs;
   while (controllerOf(botId) === "user") {
     if (signal?.aborted) throw new Error("Cancelado.");
-    if (Date.now() > deadline) throw new Error("O usuário está controlando o navegador. Tente de novo quando ele devolver o controle.");
+    if (Date.now() > deadline)
+      throw new Error("O usuário está controlando o navegador. Tente de novo quando ele devolver o controle.");
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
 }

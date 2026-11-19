@@ -41,13 +41,15 @@ export function activeMembers(group: Group) {
 }
 
 function validName(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) throw new ValidationError("O nome do grupo não pode ficar vazio.", "name");
+  if (typeof value !== "string" || !value.trim())
+    throw new ValidationError("O nome do grupo não pode ficar vazio.", "name");
   if (value.trim().length > 40) throw new ValidationError("O nome do grupo pode ter no máximo 40 caracteres.", "name");
   return value.trim();
 }
 
 function validMembers(value: unknown) {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) throw new ValidationError("members precisa ser uma lista de ids de bots.", "members");
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string"))
+    throw new ValidationError("members precisa ser uma lista de ids de bots.", "members");
   const members = [...new Set(value as string[])];
   if (members.length < 2) throw new ValidationError("Um grupo precisa de pelo menos dois bots.", "members");
   if (members.length > 8) throw new ValidationError("Um grupo pode ter no máximo 8 bots.", "members");

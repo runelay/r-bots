@@ -1,11 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
-import { randomBytes } from "node:crypto";
 import net from "node:net";
 import { join, resolve } from "node:path";
 import { childEnv } from "@runelay-bots/providers/proc";
-import { codeDataDir, insideWorkspace, waitForInstall, type WorkspaceState } from "./code";
+import { codeDataDir, insideWorkspace, type WorkspaceState, waitForInstall } from "./code";
 
 export interface DevServer {
   id: string;
@@ -68,7 +68,8 @@ function withPort(command: string, port: number) {
   if (/\$PORT\b|--port\b|\s-p\s+\d|PORT=/.test(command)) return command;
   if (/^(npm)\s+run\s+[\w:.-]+/.test(command.trim())) return `${command} -- --port ${port}`;
   if (/^(npm\s+start)\b/.test(command.trim())) return `${command} -- --port ${port}`;
-  if (/^(pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+/.test(command.trim()) || /\b(vite|next|astro|wrangler)\b/.test(command)) return `${command} --port ${port}`;
+  if (/^(pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+/.test(command.trim()) || /\b(vite|next|astro|wrangler)\b/.test(command))
+    return `${command} --port ${port}`;
   return command;
 }
 
@@ -89,11 +90,18 @@ function publicServer(server: DevServer) {
 export type PublicDevServer = ReturnType<typeof publicServer>;
 
 export function devServersOf(workspace: WorkspaceState) {
-  return [...servers.values()].filter((server) => server.workspacePath === workspace.path && (server.status === "running" || server.status === "starting")).map(publicServer);
+  return [...servers.values()]
+    .filter(
+      (server) =>
+        server.workspacePath === workspace.path && (server.status === "running" || server.status === "starting"),
+    )
+    .map(publicServer);
 }
 
 export function previewTarget(workspaceId: string, port: number) {
-  const server = [...servers.values()].find((item) => item.workspaceId === workspaceId && item.port === port && item.status === "running");
+  const server = [...servers.values()].find(
+    (item) => item.workspaceId === workspaceId && item.port === port && item.status === "running",
+  );
   return server ? { port: server.port, token: server.previewToken } : null;
 }
 
@@ -110,7 +118,11 @@ function pushTail(server: DevServer, chunk: string) {
   if (server.tail.length > 400) server.tail.splice(0, server.tail.length - 400);
 }
 
-export async function startDevServer(workspace: WorkspaceState, input: { cmd: string; port?: number; cwd?: string }, onExit: (server: PublicDevServer) => void) {
+export async function startDevServer(
+  workspace: WorkspaceState,
+  input: { cmd: string; port?: number; cwd?: string },
+  onExit: (server: PublicDevServer) => void,
+) {
   const command = input.cmd.trim();
   if (!command) throw new Error("Diga o comando, por exemplo npm run dev.");
   const cwd = resolve(workspace.path, input.cwd ?? ".");
@@ -127,7 +139,14 @@ export async function startDevServer(workspace: WorkspaceState, input: { cmd: st
   out.write(`\n$ ${finalCommand}\n`);
   const child = spawn("bash", ["-lc", finalCommand], {
     cwd,
-    env: childEnv({ PORT: String(port), HOST: "127.0.0.1", BROWSER: "none", FORCE_COLOR: "0", CI: "", NODE_ENV: "development" }),
+    env: childEnv({
+      PORT: String(port),
+      HOST: "127.0.0.1",
+      BROWSER: "none",
+      FORCE_COLOR: "0",
+      CI: "",
+      NODE_ENV: "development",
+    }),
     stdio: ["ignore", "pipe", "pipe"],
     detached: true,
   });
@@ -203,7 +222,9 @@ export async function stopDevServer(server: DevServer) {
 }
 
 export function serversOf(workspace: WorkspaceState, port?: number) {
-  return [...servers.values()].filter((server) => server.workspacePath === workspace.path && (port === undefined || server.port === port));
+  return [...servers.values()].filter(
+    (server) => server.workspacePath === workspace.path && (port === undefined || server.port === port),
+  );
 }
 
 export async function stopDevServers(workspace: WorkspaceState, port?: number) {

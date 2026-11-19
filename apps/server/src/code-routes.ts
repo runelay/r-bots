@@ -1,20 +1,36 @@
 import http from "node:http";
 import type { Duplex } from "node:stream";
 import type { BotDefinition } from "./bots";
-import { activeWorkspace, allDiffs, changedFiles, CodeError, codeSummary, fileDiff, listRepos, publicWorkspace, restoreCheckpoint, revertFile, type WorkspaceState } from "./code";
+import {
+  activeWorkspace,
+  allDiffs,
+  CodeError,
+  changedFiles,
+  codeSummary,
+  fileDiff,
+  listRepos,
+  publicWorkspace,
+  restoreCheckpoint,
+  revertFile,
+  type WorkspaceState,
+} from "./code";
 import { closeTaskWorkspace, deliverWorkspace, openTaskWorkspace } from "./code-actions";
 import { finishWorkspace, kickPr, refreshPr, reopenPr, startPrWatcher } from "./code-pr";
 import { listGrants, listWorktrees, removeGrant, startWorktreeCollector, touchWorktree } from "./code-store";
 import { devServersOf, findPreviewByToken, previewTarget, stopDevServers } from "./devserver";
 import { isBusy, isRunning } from "./engine";
-import { getStoredSession, sessionsOf, type Fact, type StoredSession } from "./sessions";
+import { type Fact, getStoredSession, type StoredSession, sessionsOf } from "./sessions";
 import { ensureThread, peekThread } from "./threads";
 
 type Res = http.ServerResponse;
 
 function sendJson(res: Res, status: number, body: unknown, headers: Record<string, string> = {}) {
   const payload = JSON.stringify(body);
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "content-length": String(Buffer.byteLength(payload)), ...headers });
+  res.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": String(Buffer.byteLength(payload)),
+    ...headers,
+  });
   res.end(payload);
 }
 
@@ -31,7 +47,10 @@ async function readBody(req: http.IncomingMessage) {
 function fail(res: Res, error: unknown) {
   if (error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: "JSON inválido." });
   if (error instanceof CodeError) return sendJson(res, error.status, { ok: false, error: error.message });
-  return sendJson(res, 500, { ok: false, error: (error instanceof Error ? error.message : String(error)).slice(0, 400) });
+  return sendJson(res, 500, {
+    ok: false,
+    error: (error instanceof Error ? error.message : String(error)).slice(0, 400),
+  });
 }
 
 export async function handleCodeRoute(req: http.IncomingMessage, res: Res, url: URL, method: string, parts: string[]) {
@@ -45,7 +64,9 @@ export async function handleCodeRoute(req: http.IncomingMessage, res: Res, url: 
     if (parts[1] === "grants" && method === "DELETE") {
       const body = await readBody(req);
       const removed = await removeGrant(String(body.repo ?? ""), String(body.key ?? ""));
-      return removed ? sendJson(res, 200, { ok: true }) : sendJson(res, 404, { ok: false, error: "Essa permissão não existe." });
+      return removed
+        ? sendJson(res, 200, { ok: true })
+        : sendJson(res, 404, { ok: false, error: "Essa permissão não existe." });
     }
     if (parts[1] === "worktrees" && method === "GET") return sendJson(res, 200, await listWorktrees());
     return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
@@ -75,10 +96,22 @@ function requireWorkspace(session: StoredSession) {
 
 async function codeState(session: StoredSession) {
   const workspace = activeWorkspace(session);
-  if (!workspace) return { workspace: null, files: [], servers: [], checkpoints: checkpointsOf(session, null), running: isRunning(session.meta.sessionId) };
+  if (!workspace)
+    return {
+      workspace: null,
+      files: [],
+      servers: [],
+      checkpoints: checkpointsOf(session, null),
+      running: isRunning(session.meta.sessionId),
+    };
   const files = await changedFiles(workspace).catch(() => []);
   return {
-    workspace: { ...publicWorkspace(workspace), files: files.length, added: files.reduce((sum, file) => sum + file.added, 0), removed: files.reduce((sum, file) => sum + file.removed, 0) },
+    workspace: {
+      ...publicWorkspace(workspace),
+      files: files.length,
+      added: files.reduce((sum, file) => sum + file.added, 0),
+      removed: files.reduce((sum, file) => sum + file.removed, 0),
+    },
     files,
     servers: devServersOf(workspace),
     checkpoints: checkpointsOf(session, workspace),
@@ -99,16 +132,23 @@ function attachmentLabel(attachments: Array<{ kind?: string; name?: string; dura
   const first = attachments[0];
   if (!first) return null;
   const extra = attachments.length > 1 ? ` e mais ${attachments.length - 1}` : "";
-  if (first.kind === "audio") return `Áudio${typeof first.duration === "number" ? ` de ${duration(first.duration)}` : ""}${extra}`;
-  if (first.kind === "video") return `Vídeo${typeof first.duration === "number" ? ` de ${duration(first.duration)}` : ""}${extra}`;
+  if (first.kind === "audio")
+    return `Áudio${typeof first.duration === "number" ? ` de ${duration(first.duration)}` : ""}${extra}`;
+  if (first.kind === "video")
+    return `Vídeo${typeof first.duration === "number" ? ` de ${duration(first.duration)}` : ""}${extra}`;
   if (first.kind === "image") return `${attachments.length > 1 ? `${attachments.length} imagens` : "Imagem"}`;
   return `${first.name ?? "Arquivo"}${extra}`;
 }
 
 function requestLabel(data: Record<string, unknown>) {
   const parts = (data.parts as Array<{ text?: string }> | undefined) ?? [];
-  const text = parts.map((part) => part.text ?? "").join(" ").replace(/\s+/g, " ").trim();
-  const attachments = (data.attachments as Array<{ kind?: string; name?: string; duration?: number }> | undefined) ?? [];
+  const text = parts
+    .map((part) => part.text ?? "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const attachments =
+    (data.attachments as Array<{ kind?: string; name?: string; duration?: number }> | undefined) ?? [];
   const body = text || attachmentLabel(attachments);
   const from = (data.from as { name?: string } | undefined)?.name;
   if (data.source === "delegate" || from) return body ? clipLabel(`${from ?? "Outro bot"} pediu: ${body}`) : null;
@@ -135,7 +175,12 @@ function checkpointsOf(session: StoredSession, workspace: WorkspaceState | null)
   const requests = turnRequests(session);
   return (session.meta.checkpoints ?? [])
     .filter((item) => (!workspace || item.workspaceId === workspace.id) && !reverted.has(item.turnId))
-    .map((item) => ({ turnId: item.turnId, at: item.at, workspaceId: item.workspaceId, request: requests.get(item.turnId) ?? null }));
+    .map((item) => ({
+      turnId: item.turnId,
+      at: item.at,
+      workspaceId: item.workspaceId,
+      request: requests.get(item.turnId) ?? null,
+    }));
 }
 
 function turnNumber(turnId: string) {
@@ -159,11 +204,17 @@ function turnsFrom(session: StoredSession, first: number) {
 async function rewind(session: StoredSession, turnId: string) {
   const number = turnNumber(turnId);
   if (number < 0) throw new CodeError("Turno inválido.");
-  if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando. Pare a resposta antes de desfazer.", 409);
+  if (isBusy(session.meta.sessionId))
+    throw new CodeError("O bot ainda está trabalhando. Pare a resposta antes de desfazer.", 409);
   const workspace = activeWorkspace(session) ?? session.meta.workspace ?? null;
   const reverted = new Set(session.meta.revertedTurns ?? []);
   const checkpoint = (session.meta.checkpoints ?? [])
-    .filter((item) => !reverted.has(item.turnId) && (!workspace || item.workspaceId === workspace.id) && turnNumber(item.turnId) >= number)
+    .filter(
+      (item) =>
+        !reverted.has(item.turnId) &&
+        (!workspace || item.workspaceId === workspace.id) &&
+        turnNumber(item.turnId) >= number,
+    )
     .sort((a, b) => turnNumber(a.turnId) - turnNumber(b.turnId))[0];
   let files = { restored: 0, removed: 0 };
   if (checkpoint && workspace) {
@@ -176,11 +227,27 @@ async function rewind(session: StoredSession, turnId: string) {
   session.meta.carryOver = null;
   session.meta.pendingNotes = [];
   await session.save();
-  session.log.emit({ type: "turn.reverted", data: { turnId, turnIds, files: Boolean(checkpoint && workspace), ...files, ...(checkpoint ? { checkpoint: checkpoint.ref } : {}) } });
+  session.log.emit({
+    type: "turn.reverted",
+    data: {
+      turnId,
+      turnIds,
+      files: Boolean(checkpoint && workspace),
+      ...files,
+      ...(checkpoint ? { checkpoint: checkpoint.ref } : {}),
+    },
+  });
   return { turnId, turnIds, filesRestored: Boolean(checkpoint && workspace), ...files };
 }
 
-export async function handleBotCode(req: http.IncomingMessage, res: Res, url: URL, method: string, bot: BotDefinition, rest: string[]) {
+export async function handleBotCode(
+  req: http.IncomingMessage,
+  res: Res,
+  url: URL,
+  method: string,
+  bot: BotDefinition,
+  rest: string[],
+) {
   try {
     const tail = rest.join("/");
     const session = await sessionFor(bot, url);
@@ -188,17 +255,28 @@ export async function handleBotCode(req: http.IncomingMessage, res: Res, url: UR
     if (tail === "workspace" && method === "POST") {
       const body = await readBody(req);
       if (typeof body.repo !== "string" || !body.repo.trim()) throw new CodeError("Diga qual repositório.");
-      if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando. Abra o repositório quando ele terminar.", 409);
-      const task = typeof body.task === "string" && body.task.trim() ? body.task : `${String(body.repo).split("/").pop()} ${new Date().toISOString().slice(0, 10)}`;
+      if (isBusy(session.meta.sessionId))
+        throw new CodeError("O bot ainda está trabalhando. Abra o repositório quando ele terminar.", 409);
+      const task =
+        typeof body.task === "string" && body.task.trim()
+          ? body.task
+          : `${String(body.repo).split("/").pop()} ${new Date().toISOString().slice(0, 10)}`;
       const { workspace, created } = await openTaskWorkspace(session, bot.id, String(body.repo), task);
-      return sendJson(res, created ? 201 : 200, { ...(await codeState(session)), created, workspace: await codeSummary(workspace) });
+      return sendJson(res, created ? 201 : 200, {
+        ...(await codeState(session)),
+        created,
+        workspace: await codeSummary(workspace),
+      });
     }
     if (tail === "workspace" && method === "DELETE") {
       if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando.", 409);
       const closed = await closeTaskWorkspace(session);
-      return closed ? sendJson(res, 200, { ok: true, path: closed.path, branch: closed.branch }) : sendJson(res, 404, { ok: false, error: "Esta conversa não tem repositório aberto." });
+      return closed
+        ? sendJson(res, 200, { ok: true, path: closed.path, branch: closed.branch })
+        : sendJson(res, 404, { ok: false, error: "Esta conversa não tem repositório aberto." });
     }
-    if (tail === "files" && method === "GET") return sendJson(res, 200, await changedFiles(requireWorkspace(session), url.searchParams.get("fresh") === "1"));
+    if (tail === "files" && method === "GET")
+      return sendJson(res, 200, await changedFiles(requireWorkspace(session), url.searchParams.get("fresh") === "1"));
     if (tail === "diff" && method === "GET") {
       const workspace = requireWorkspace(session);
       const path = url.searchParams.get("path");
@@ -220,7 +298,8 @@ export async function handleBotCode(req: http.IncomingMessage, res: Res, url: UR
       const workspace = requireWorkspace(session);
       if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando.", 409);
       const body = await readBody(req);
-      const action = body.action === "pr" ? "pr" : body.action === "push" ? "push" : body.action === "commit" ? "commit" : null;
+      const action =
+        body.action === "pr" ? "pr" : body.action === "push" ? "push" : body.action === "commit" ? "commit" : null;
       if (!action) throw new CodeError("action precisa ser commit, push ou pr.");
       const result = await deliverWorkspace(workspace, {
         action,
@@ -235,13 +314,18 @@ export async function handleBotCode(req: http.IncomingMessage, res: Res, url: UR
     if (tail === "finish" && method === "POST") return sendJson(res, 200, await finishWorkspace(session, "user"));
     if (tail === "pr" && method === "GET") {
       requireWorkspace(session);
-      return sendJson(res, 200, { pr: url.searchParams.get("refresh") === "1" ? await refreshPr(session) : (activeWorkspace(session)?.pr ?? null) });
+      return sendJson(res, 200, {
+        pr: url.searchParams.get("refresh") === "1" ? await refreshPr(session) : (activeWorkspace(session)?.pr ?? null),
+      });
     }
     if (tail === "pr/reopen" && method === "POST") return sendJson(res, 200, { pr: await reopenPr(session) });
     if (tail === "servers" && method === "GET") return sendJson(res, 200, devServersOf(requireWorkspace(session)));
     if (tail === "servers/stop" && method === "POST") {
       const body = await readBody(req);
-      const stopped = await stopDevServers(requireWorkspace(session), typeof body.port === "number" ? body.port : undefined);
+      const stopped = await stopDevServers(
+        requireWorkspace(session),
+        typeof body.port === "number" ? body.port : undefined,
+      );
       return sendJson(res, 200, { ok: true, stopped: stopped.map((item) => item.port) });
     }
     return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
@@ -263,16 +347,43 @@ export async function botCodeSummary(bot: BotDefinition) {
   if (cached && Date.now() - cached.at < 3_000) return { ...(cached.value as object), running };
   const summary = await codeSummary(workspace);
   const pr = workspace.pr ? { number: workspace.pr.number, status: workspace.pr.status, ci: workspace.pr.ci } : null;
-  const value = { repoName: summary.repoName, branch: summary.branch, path: summary.path, files: summary.files, added: summary.added, removed: summary.removed, pr };
+  const value = {
+    repoName: summary.repoName,
+    branch: summary.branch,
+    path: summary.path,
+    files: summary.files,
+    added: summary.added,
+    removed: summary.removed,
+    pr,
+  };
   summaryCache.set(workspace.id, { at: Date.now(), value });
   return { ...value, running };
 }
 
 export function botIsCoding(botId: string) {
-  return Promise.resolve(sessionsOf(botId).some((session) => (session.meta.kind === "thread" || session.meta.kind === "conversation") && Boolean(activeWorkspace(session))));
+  return Promise.resolve(
+    sessionsOf(botId).some(
+      (session) =>
+        (session.meta.kind === "thread" || session.meta.kind === "conversation") && Boolean(activeWorkspace(session)),
+    ),
+  );
 }
 
-const apiPrefixes = new Set(["health", "meta", "mcp", "accounts", "voice", "skills", "sections", "groups", "computer", "connectors", "bots", "code", "preview"]);
+const apiPrefixes = new Set([
+  "health",
+  "meta",
+  "mcp",
+  "accounts",
+  "voice",
+  "skills",
+  "sections",
+  "groups",
+  "computer",
+  "connectors",
+  "bots",
+  "code",
+  "preview",
+]);
 const cookieName = "rb_preview";
 
 function previewCookie(req: http.IncomingMessage) {
@@ -282,12 +393,16 @@ function previewCookie(req: http.IncomingMessage) {
 }
 
 function proxy(req: http.IncomingMessage, res: Res, port: number, path: string) {
-  const upstream = http.request({ host: "localhost", port, method: req.method, path, headers: { ...req.headers, host: `localhost:${port}` } }, (answer) => {
-    res.writeHead(answer.statusCode ?? 502, answer.headers);
-    answer.pipe(res);
-  });
+  const upstream = http.request(
+    { host: "localhost", port, method: req.method, path, headers: { ...req.headers, host: `localhost:${port}` } },
+    (answer) => {
+      res.writeHead(answer.statusCode ?? 502, answer.headers);
+      answer.pipe(res);
+    },
+  );
   upstream.on("error", (error) => {
-    if (!res.headersSent) sendJson(res, 502, { ok: false, error: `O servidor de desenvolvimento não respondeu: ${error.message}` });
+    if (!res.headersSent)
+      sendJson(res, 502, { ok: false, error: `O servidor de desenvolvimento não respondeu: ${error.message}` });
     else res.end();
   });
   req.pipe(upstream);
@@ -302,7 +417,11 @@ export function handlePreview(req: http.IncomingMessage, res: Res, url: URL, par
       return true;
     }
     const rest = `/${parts.slice(3).join("/")}`;
-    res.writeHead(302, { location: rest, "set-cookie": `${cookieName}=${target.token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200`, "cache-control": "no-store" });
+    res.writeHead(302, {
+      location: rest,
+      "set-cookie": `${cookieName}=${target.token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200`,
+      "cache-control": "no-store",
+    });
     res.end();
     return true;
   }
@@ -319,10 +438,17 @@ export function handlePreviewUpgrade(req: http.IncomingMessage, socket: Duplex, 
   if (apiPrefixes.has(first)) return false;
   const target = previewCookie(req);
   if (!target) return false;
-  const upstream = http.request({ host: "localhost", port: target.port, method: req.method, path: req.url, headers: { ...req.headers, host: `localhost:${target.port}` } });
+  const upstream = http.request({
+    host: "localhost",
+    port: target.port,
+    method: req.method,
+    path: req.url,
+    headers: { ...req.headers, host: `localhost:${target.port}` },
+  });
   upstream.on("upgrade", (answer, upstreamSocket, upstreamHead) => {
     const lines = [`HTTP/1.1 ${answer.statusCode ?? 101} ${answer.statusMessage ?? "Switching Protocols"}`];
-    for (let index = 0; index < answer.rawHeaders.length; index += 2) lines.push(`${answer.rawHeaders[index]}: ${answer.rawHeaders[index + 1]}`);
+    for (let index = 0; index < answer.rawHeaders.length; index += 2)
+      lines.push(`${answer.rawHeaders[index]}: ${answer.rawHeaders[index + 1]}`);
     socket.write(`${lines.join("\r\n")}\r\n\r\n`);
     if (upstreamHead.length > 0) socket.write(upstreamHead);
     if (head.length > 0) upstreamSocket.write(head);

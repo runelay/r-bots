@@ -16,7 +16,16 @@ export async function settleOrphanTurns() {
       } catch {}
     }
     if (open.size === 0) continue;
-    session.log.emit(...[...open].map((turnId) => ({ type: "turn.settled", data: { outcome: "cancelled", turnId, reason: "server_restart" }, scope: { turnId } }) as Fact));
+    session.log.emit(
+      ...[...open].map(
+        (turnId) =>
+          ({
+            type: "turn.settled",
+            data: { outcome: "cancelled", turnId, reason: "server_restart" },
+            scope: { turnId },
+          }) as Fact,
+      ),
+    );
     await session.save().catch(() => undefined);
     repaired += open.size;
   }

@@ -63,7 +63,8 @@ export async function hasGrant(repo: string, key: string) {
 export async function addGrant(repo: string, key: string) {
   const all = await loadGrants();
   const list = all[repo] ?? [];
-  if (!list.some((item) => item.key === key)) list.push({ key, createdAt: new Date().toISOString(), uses: 0, lastUsedAt: null });
+  if (!list.some((item) => item.key === key))
+    list.push({ key, createdAt: new Date().toISOString(), uses: 0, lastUsedAt: null });
   all[repo] = list;
   await persist(grantsFile, all);
 }
@@ -82,7 +83,12 @@ export async function removeGrant(repo: string, key: string) {
   return before !== (all[repo]?.length ?? 0);
 }
 
-export async function recordWorktree(workspace: WorkspaceState, botId: string, sessionId: string, status: WorktreeRecord["status"] = "alive") {
+export async function recordWorktree(
+  workspace: WorkspaceState,
+  botId: string,
+  sessionId: string,
+  status: WorktreeRecord["status"] = "alive",
+) {
   const list = await loadRegistry();
   const now = new Date().toISOString();
   const current = list.find((item) => item.id === workspace.id);

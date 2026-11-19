@@ -8,7 +8,8 @@ export const noDeliveryAsk: DeliveryAsk = { commit: false, push: false, pr: fals
 
 const commitText = /\b(commit(s|ar|a|e|ou|ando|ado|ados|em)?|comit(ar|a|e|ou|ando|ado)?)\b/i;
 const prText = /\b((abr(e|ir|a|indo)|cri(a|ar|e)|mand(a|ar|e))\s+(o\s+|um\s+)?pr|pull\s*request|pr\s+summary)\b/i;
-const pushText = /\b(push|pusha(r)?|d(á|a|ar)\s+(um\s+)?push|sob(e|ir|a)(\s+(a|o|essa|esse|isso|pro|para\s+o))?\s+(branch|c[oó]digo|commits?|corre[cç][aã]o|isso|pr|github|remoto|origin)|manda(r)?\s+(pro|para\s+o)\s+github|envia(r)?\s+(pro|para\s+o)\s+github|atualiz(a|ar|e)\s+(o\s+)?pr)\b/i;
+const pushText =
+  /\b(push|pusha(r)?|d(á|a|ar)\s+(um\s+)?push|sob(e|ir|a)(\s+(a|o|essa|esse|isso|pro|para\s+o))?\s+(branch|c[oó]digo|commits?|corre[cç][aã]o|isso|pr|github|remoto|origin)|manda(r)?\s+(pro|para\s+o)\s+github|envia(r)?\s+(pro|para\s+o)\s+github|atualiz(a|ar|e)\s+(o\s+)?pr)\b/i;
 const negation = /\b(n[ãa]o|sem|nunca|nem)\s+(\S+\s+){0,3}$/i;
 
 const commitSkill = /(^|[-_])(commit|commita|commitar)([-_]|$)/i;

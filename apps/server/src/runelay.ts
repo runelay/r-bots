@@ -1,6 +1,6 @@
-import { setKnownConnectors } from "./bots";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { setKnownConnectors } from "./bots";
 
 const url = process.env.RUNELAY_MCP_URL ?? "";
 const token = process.env.RUNELAY_MCP_TOKEN ?? "";
@@ -18,7 +18,9 @@ async function connect() {
   if (connecting) return connecting;
   connecting = (async () => {
     const next = new Client({ name: "runelay-bots", version: "1.0.0" });
-    const transport = new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers: { Authorization: `Bearer ${token}` } } });
+    const transport = new StreamableHTTPClientTransport(new URL(url), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    });
     await next.connect(transport);
     next.onclose = () => {
       if (client === next) client = null;
@@ -88,18 +90,31 @@ const labels: Record<string, string> = {
 };
 
 function labelOf(name: string) {
-  return labels[name] ?? name.split(/[_-]/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  return (
+    labels[name] ??
+    name
+      .split(/[_-]/)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ")
+  );
 }
 
 let cache: { at: number; list: Connection[] } | null = null;
 
 export async function listConnections(force = false): Promise<Connection[]> {
   if (!force && cache && Date.now() - cache.at < 60_000) return cache.list;
-  const raw = (await runelayCall("list_connections", {})) as Array<{ name: string; status?: string; toolCount?: number; icon?: string | null; enabled?: boolean }>;
+  const raw = (await runelayCall("list_connections", {})) as Array<{
+    name: string;
+    status?: string;
+    toolCount?: number;
+    icon?: string | null;
+    enabled?: boolean;
+  }>;
   const list = raw
     .filter((item) => item.enabled !== false)
     .map((item) => {
-      const status: Connection["status"] = item.status === "ok" ? "ok" : item.status === "needs_auth" ? "needs_auth" : "error";
+      const status: Connection["status"] =
+        item.status === "ok" ? "ok" : item.status === "needs_auth" ? "needs_auth" : "error";
       return {
         name: item.name,
         label: labelOf(item.name),
@@ -124,20 +139,31 @@ export async function searchTools(query: string, allowed: string[], limit = 8): 
   const results: FoundTool[] = [];
   const sources = allowed.length === 1 ? [allowed[0]] : [undefined];
   for (const source of sources) {
-    const found = (await runelayCall("search_tools", { query, limit: Math.min(30, limit * 3), ...(source ? { source } : {}) })) as FoundTool[];
+    const found = (await runelayCall("search_tools", {
+      query,
+      limit: Math.min(30, limit * 3),
+      ...(source ? { source } : {}),
+    })) as FoundTool[];
     for (const item of Array.isArray(found) ? found : []) {
       const connection = item.name.split(".")[0];
-      if (allowed.includes(connection)) results.push({ name: item.name, description: String(item.description ?? "").slice(0, 600), inputSchema: item.inputSchema });
+      if (allowed.includes(connection))
+        results.push({
+          name: item.name,
+          description: String(item.description ?? "").slice(0, 600),
+          inputSchema: item.inputSchema,
+        });
     }
   }
   return results.slice(0, limit);
 }
 
-const outbound = /(send|email|mail|message|reply|chat|notify|sms|whatsapp|tweet|dm\b|invite|slack|refund|charge|payment|payout|pay\b|transfer|deploy|publish|merge|delete|purge|drop|truncate|apply_migration|migrate)/i;
+const outbound =
+  /(send|email|mail|message|reply|chat|notify|sms|whatsapp|tweet|dm\b|invite|slack|refund|charge|payment|payout|pay\b|transfer|deploy|publish|merge|delete|purge|drop|truncate|apply_migration|migrate)/i;
 const writeSql = /\b(insert|update|delete|drop|alter|truncate|create|grant|revoke)\b/i;
 const writes =
   /(create|update|delete|remove|save|set_|add|post|put|patch|merge|deploy|archive|restore|write|insert|upsert|move|assign|close|cancel|approve|reject|publish|execute|run|trigger|import|upload|retire|unshare|mark|link|submit|resolve|refund|charge|pay|transfer|revoke|rotate|purge|drop|truncate|rename|edit|modify|apply|enable|disable|start|stop|schedule|book|respond)/i;
-const reads = /^(?:get|list|search|read|fetch|query|find|describe|show|view|count|whoami|me|lookup|retrieve|check|preview|inspect|extract|explain|status)(?:[_-]|$)/i;
+const reads =
+  /^(?:get|list|search|read|fetch|query|find|describe|show|view|count|whoami|me|lookup|retrieve|check|preview|inspect|extract|explain|status)(?:[_-]|$)/i;
 
 export type ToolKind = "read" | "write" | "outbound";
 
@@ -166,17 +192,34 @@ export async function runelayApi<T>(method: string, path: string, body?: unknown
   try {
     response = await fetch(`${apiBase}/v1${path}`, {
       method,
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(30_000),
     });
   } catch (error) {
-    throw new RunelayApiError(502, `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300));
+    throw new RunelayApiError(
+      502,
+      `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+    );
   }
   const payload = (await response.json().catch(() => null)) as { data?: T; error?: { message?: string } | null } | null;
   if (!response.ok || payload?.error) {
-    const status = response.status === 404 ? 404 : response.status >= 500 ? 502 : response.status === 401 || response.status === 403 ? 502 : 400;
-    throw new RunelayApiError(status, (payload?.error?.message ?? `runelay respondeu ${response.status}.`).slice(0, 300));
+    const status =
+      response.status === 404
+        ? 404
+        : response.status >= 500
+          ? 502
+          : response.status === 401 || response.status === 403
+            ? 502
+            : 400;
+    throw new RunelayApiError(
+      status,
+      (payload?.error?.message ?? `runelay respondeu ${response.status}.`).slice(0, 300),
+    );
   }
   return payload?.data as T;
 }
@@ -224,7 +267,11 @@ function catalogItemOf(raw: Record<string, unknown>): CatalogItem {
 export async function getCatalog(query: string) {
   const params = query ? `?${new URLSearchParams({ query })}` : "";
   const raw = await runelayApi<RawCatalog>("GET", `/catalog${params}`);
-  const sections = (raw?.sections ?? []).map((section) => ({ id: section.id, title: section.title, items: section.items.map(catalogItemOf) }));
+  const sections = (raw?.sections ?? []).map((section) => ({
+    id: section.id,
+    title: section.title,
+    items: section.items.map(catalogItemOf),
+  }));
   return {
     featured: sections.flatMap((section) => section.items.filter((item) => item.featured)),
     sections: sections
@@ -234,7 +281,10 @@ export async function getCatalog(query: string) {
 }
 
 async function startLogin(sourceName: string) {
-  const started = await runelayApi<{ authorizationUrl: string | null }>("POST", `/sources/${encodeURIComponent(sourceName)}/oauth`);
+  const started = await runelayApi<{ authorizationUrl: string | null }>(
+    "POST",
+    `/sources/${encodeURIComponent(sourceName)}/oauth`,
+  );
   return started?.authorizationUrl ?? null;
 }
 

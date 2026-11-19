@@ -3,7 +3,18 @@ import { activeWorkspace, changedFiles } from "./code";
 import { summarizeForReset } from "./memory";
 import type { Fact, StoredSession } from "./sessions";
 
-export type ItemKind = "user_message" | "assistant_message" | "tool_call" | "code_edit" | "approval" | "artifact" | "file" | "delegation" | "workspace" | "turn_error" | "account";
+export type ItemKind =
+  | "user_message"
+  | "assistant_message"
+  | "tool_call"
+  | "code_edit"
+  | "approval"
+  | "artifact"
+  | "file"
+  | "delegation"
+  | "workspace"
+  | "turn_error"
+  | "account";
 
 export interface ThreadItem {
   id: string;
@@ -52,10 +63,20 @@ function clipBlock(text: string, max: number) {
 function asText(value: unknown) {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
-  if (typeof value === "object" && !Array.isArray(value) && typeof (value as { stdout?: unknown }).stdout === "string") {
+  if (
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { stdout?: unknown }).stdout === "string"
+  ) {
     const shell = value as { stdout: string; stderr?: string; exitCode?: number; code?: number };
     const exit = shell.exitCode ?? shell.code;
-    return [shell.stdout, shell.stderr ? `stderr:\n${shell.stderr}` : "", exit !== undefined ? `Exit code: ${exit}` : ""].filter(Boolean).join("\n");
+    return [
+      shell.stdout,
+      shell.stderr ? `stderr:\n${shell.stderr}` : "",
+      exit !== undefined ? `Exit code: ${exit}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
   if (Array.isArray(value) && value.every((part) => part && typeof part === "object" && "text" in part)) {
     return value.map((part) => String((part as { text: unknown }).text ?? "")).join("\n");
@@ -71,8 +92,17 @@ function hunkText(hunks: unknown) {
   if (!Array.isArray(hunks)) return "";
   return hunks
     .map((hunk) => {
-      const value = hunk as { oldStart?: number; oldLines?: number; newStart?: number; newLines?: number; lines?: string[] };
-      return [`@@ -${value.oldStart ?? 0},${value.oldLines ?? 0} +${value.newStart ?? 0},${value.newLines ?? 0} @@`, ...(value.lines ?? [])].join("\n");
+      const value = hunk as {
+        oldStart?: number;
+        oldLines?: number;
+        newStart?: number;
+        newLines?: number;
+        lines?: string[];
+      };
+      return [
+        `@@ -${value.oldStart ?? 0},${value.oldLines ?? 0} +${value.newStart ?? 0},${value.newLines ?? 0} @@`,
+        ...(value.lines ?? []),
+      ].join("\n");
     })
     .join("\n");
 }
@@ -116,9 +146,16 @@ export function threadItems(session: StoredSession): ThreadItem[] {
           if (data.source === "schedule") break;
           const parts = (data.parts as Array<{ text?: string }> | undefined) ?? [];
           const from = (data.from as { name?: string } | undefined)?.name;
-          const skills = ((data.skills as Array<{ name?: string }> | undefined) ?? []).map((skill) => skill.name).filter(Boolean);
-          const attachments = ((data.attachments as Array<{ name?: string; kind?: string; uploadId?: string }> | undefined) ?? []).map((item) => `${item.name} (${item.kind}, ${item.uploadId})`);
-          const body = parts.map((part) => part.text ?? "").join("\n").trim();
+          const skills = ((data.skills as Array<{ name?: string }> | undefined) ?? [])
+            .map((skill) => skill.name)
+            .filter(Boolean);
+          const attachments = (
+            (data.attachments as Array<{ name?: string; kind?: string; uploadId?: string }> | undefined) ?? []
+          ).map((item) => `${item.name} (${item.kind}, ${item.uploadId})`);
+          const body = parts
+            .map((part) => part.text ?? "")
+            .join("\n")
+            .trim();
           const text = [
             from ? `${from} (bot do time) pediu:` : "",
             body,
@@ -127,7 +164,16 @@ export function threadItems(session: StoredSession): ThreadItem[] {
           ]
             .filter(Boolean)
             .join("\n");
-          put({ id: `u_${turnId}`, kind: "user_message", role: "user", turnId, at, text, brief: oneLine(text, 400), meta: { attachments: data.attachments ?? [], skills } });
+          put({
+            id: `u_${turnId}`,
+            kind: "user_message",
+            role: "user",
+            turnId,
+            at,
+            text,
+            brief: oneLine(text, 400),
+            meta: { attachments: data.attachments ?? [], skills },
+          });
           break;
         }
         case "content.completed": {
@@ -135,12 +181,24 @@ export function threadItems(session: StoredSession): ThreadItem[] {
           const value = String(data.value ?? "");
           if (!value.trim()) break;
           const narration = data.phase !== "reply";
-          put({ id: `a_${data.partId}`, kind: "assistant_message", role: "assistant", turnId, at, text: value, brief: `${narration ? "(narração) " : ""}${oneLine(value, 400)}` });
+          put({
+            id: `a_${data.partId}`,
+            kind: "assistant_message",
+            role: "assistant",
+            turnId,
+            at,
+            text: value,
+            brief: `${narration ? "(narração) " : ""}${oneLine(value, 400)}`,
+          });
           break;
         }
         case "call.requested": {
           const capability = (data.capability as { name?: string; label?: string } | undefined) ?? {};
-          calls.set(String(data.callId), { name: String(capability.name ?? "ferramenta"), label: String(capability.label ?? ""), input: data.input ?? {} });
+          calls.set(String(data.callId), {
+            name: String(capability.name ?? "ferramenta"),
+            label: String(capability.label ?? ""),
+            input: data.input ?? {},
+          });
           break;
         }
         case "call.settled": {
@@ -152,8 +210,13 @@ export function threadItems(session: StoredSession): ThreadItem[] {
           const input = start.input as Record<string, unknown>;
           const output = asText(data.output);
           const command = typeof input?.command === "string" ? input.command : null;
-          const head = command ? `Comando: ${command}` : `Ferramenta: ${start.name}${start.label ? ` (${start.label})` : ""}\nEntrada: ${asText(input)}`;
-          const result = outcome === "completed" ? `Resultado:\n${output || "(vazio)"}` : `Resultado (${outcome}): ${error ?? (output || "sem detalhe")}`;
+          const head = command
+            ? `Comando: ${command}`
+            : `Ferramenta: ${start.name}${start.label ? ` (${start.label})` : ""}\nEntrada: ${asText(input)}`;
+          const result =
+            outcome === "completed"
+              ? `Resultado:\n${output || "(vazio)"}`
+              : `Resultado (${outcome}): ${error ?? (output || "sem detalhe")}`;
           put({
             id: `t_${callId}`,
             kind: "tool_call",
@@ -162,7 +225,14 @@ export function threadItems(session: StoredSession): ThreadItem[] {
             at,
             text: `${head}\n${result}`,
             brief: `${start.label || start.name} → ${outcome === "completed" ? oneLine(output || "ok", 300) : `${outcome}: ${oneLine(error ?? output, 200)}`}`,
-            meta: { name: start.name, label: start.label, input: oneLine(command ?? asText(input), 600), output, outcome, error },
+            meta: {
+              name: start.name,
+              label: start.label,
+              input: oneLine(command ?? asText(input), 600),
+              output,
+              outcome,
+              error,
+            },
           });
           break;
         }
@@ -172,19 +242,39 @@ export function threadItems(session: StoredSession): ThreadItem[] {
           const removed = Number(data.removed ?? 0);
           const flag = data.created ? " (novo)" : data.deleted ? " (apagado)" : "";
           const brief = `${path} +${added} −${removed}${flag}`;
-          put({ id: `e_${turnId}:${path}`, kind: "code_edit", role: "assistant", turnId, at, text: `Arquivo ${brief}\n${hunkText(data.hunks)}`, brief });
+          put({
+            id: `e_${turnId}:${path}`,
+            kind: "code_edit",
+            role: "assistant",
+            turnId,
+            at,
+            text: `Arquivo ${brief}\n${hunkText(data.hunks)}`,
+            brief,
+          });
           break;
         }
         case "interaction.opened": {
           const request = (data.request as { prompt?: string; kind?: string } | undefined) ?? {};
-          const prompt = request.kind === "secret" ? "Pedido de segredo pelo formulário seguro." : String(request.prompt ?? "");
-          put({ id: `p_${data.interactionId}`, kind: "approval", role: "system", turnId, at, text: `Aprovação pedida: ${prompt}`, brief: `Aprovação pedida: ${oneLine(prompt, 240)} (pendente)`, pending: true });
+          const prompt =
+            request.kind === "secret" ? "Pedido de segredo pelo formulário seguro." : String(request.prompt ?? "");
+          put({
+            id: `p_${data.interactionId}`,
+            kind: "approval",
+            role: "system",
+            turnId,
+            at,
+            text: `Aprovação pedida: ${prompt}`,
+            brief: `Aprovação pedida: ${oneLine(prompt, 240)} (pendente)`,
+            pending: true,
+          });
           break;
         }
         case "interaction.settled": {
           const existing = byId.get(`p_${data.interactionId}`);
           if (!existing) break;
-          const outcome = { accepted: "aprovada", declined: "negada", withdrawn: "retirada" }[String(data.outcome)] ?? String(data.outcome);
+          const outcome =
+            { accepted: "aprovada", declined: "negada", withdrawn: "retirada" }[String(data.outcome)] ??
+            String(data.outcome);
           existing.pending = false;
           existing.text = `${existing.text}\nResposta: ${outcome}.`;
           existing.brief = existing.brief.replace("(pendente)", `(${outcome})`);
@@ -193,13 +283,34 @@ export function threadItems(session: StoredSession): ThreadItem[] {
         case "artifact.created":
         case "artifact.updated": {
           const text = `Artefato “${data.title}” (${data.kind}) versão ${data.version}, id ${data.artifactId}.`;
-          put({ id: `r_${data.artifactId}_v${data.version}`, kind: "artifact", role: "assistant", turnId, at, text, brief: text, meta: { artifactId: data.artifactId, title: data.title, kind: data.kind, version: data.version } });
+          put({
+            id: `r_${data.artifactId}_v${data.version}`,
+            kind: "artifact",
+            role: "assistant",
+            turnId,
+            at,
+            text,
+            brief: text,
+            meta: { artifactId: data.artifactId, title: data.title, kind: data.kind, version: data.version },
+          });
           break;
         }
         case "file.sent": {
-          const attachment = (data.attachment as { uploadId?: string; name?: string; mime?: string; kind?: string; url?: string } | undefined) ?? {};
+          const attachment =
+            (data.attachment as
+              | { uploadId?: string; name?: string; mime?: string; kind?: string; url?: string }
+              | undefined) ?? {};
           const text = `Arquivo enviado à pessoa: ${attachment.name} (${attachment.mime}, ${attachment.uploadId}).`;
-          put({ id: `f_${attachment.uploadId}`, kind: "file", role: "assistant", turnId, at, text, brief: text, meta: { ...attachment } });
+          put({
+            id: `f_${attachment.uploadId}`,
+            kind: "file",
+            role: "assistant",
+            turnId,
+            at,
+            text,
+            brief: text,
+            meta: { ...attachment },
+          });
           break;
         }
         case "delegation.updated": {
@@ -207,18 +318,42 @@ export function threadItems(session: StoredSession): ThreadItem[] {
           if (!["completed", "failed", "cancelled"].includes(status)) break;
           const detail = String(data.summary ?? data.error ?? "");
           const text = `Delegação para ${data.botId}: ${status}${detail ? `. ${detail}` : "."}`;
-          put({ id: `d_${data.callId}`, kind: "delegation", role: "assistant", turnId, at, text, brief: oneLine(text, 300) });
+          put({
+            id: `d_${data.callId}`,
+            kind: "delegation",
+            role: "assistant",
+            turnId,
+            at,
+            text,
+            brief: oneLine(text, 300),
+          });
           break;
         }
         case "code.workspace": {
           if (!data.action || data.action === "failed") break;
           const text = `Repositório ${data.repoName ?? data.repo}: ${data.action}${data.branch ? `, branch ${data.branch}` : ""}${data.path ? `, worktree ${data.path}` : ""}.`;
-          put({ id: `w_${turnId || at}_${data.action}`, kind: "workspace", role: "system", turnId, at, text, brief: text });
+          put({
+            id: `w_${turnId || at}_${data.action}`,
+            kind: "workspace",
+            role: "system",
+            turnId,
+            at,
+            text,
+            brief: text,
+          });
           break;
         }
         case "code.delivered": {
           const text = `Entrega do código: ${data.action}${data.commit ? `, commit ${data.commit}` : ""}${data.prUrl ? `, PR ${data.prUrl}` : ""}, ${data.files} arquivos na branch ${data.branch}.`;
-          put({ id: `w_${data.commit ?? at}_delivered`, kind: "workspace", role: "system", turnId, at, text, brief: text });
+          put({
+            id: `w_${data.commit ?? at}_delivered`,
+            kind: "workspace",
+            role: "system",
+            turnId,
+            at,
+            text,
+            brief: text,
+          });
           break;
         }
         case "account.failover": {
@@ -228,8 +363,12 @@ export function threadItems(session: StoredSession): ThreadItem[] {
         }
         case "turn.settled": {
           if (data.outcome !== "failed" && data.outcome !== "cancelled") break;
-          const message = (data.error as { message?: string } | undefined)?.message ?? (data.reason as string | undefined) ?? "";
-          const text = data.outcome === "failed" ? `O turno falhou: ${message || "sem detalhe"}` : `Turno interrompido${message ? `: ${message}` : ""}.`;
+          const message =
+            (data.error as { message?: string } | undefined)?.message ?? (data.reason as string | undefined) ?? "";
+          const text =
+            data.outcome === "failed"
+              ? `O turno falhou: ${message || "sem detalhe"}`
+              : `Turno interrompido${message ? `: ${message}` : ""}.`;
           put({ id: `x_${turnId}`, kind: "turn_error", role: "system", turnId, at, text, brief: oneLine(text, 300) });
           break;
         }
@@ -244,9 +383,15 @@ const roleLabel: Record<ThreadItem["role"], string> = { user: "pessoa", assistan
 function intactText(item: ThreadItem) {
   if (item.kind === "tool_call") {
     const meta = item.meta ?? {};
-    const head = String(meta.name) === "Bash" || /^Comando:/.test(item.text) ? `Comando: ${meta.input}` : `Ferramenta: ${meta.name}${meta.label ? ` (${meta.label})` : ""}\nEntrada: ${meta.input}`;
+    const head =
+      String(meta.name) === "Bash" || /^Comando:/.test(item.text)
+        ? `Comando: ${meta.input}`
+        : `Ferramenta: ${meta.name}${meta.label ? ` (${meta.label})` : ""}\nEntrada: ${meta.input}`;
     const output = String(meta.output ?? "");
-    const result = meta.outcome === "completed" ? `Resultado (resumido):\n${clipBlock(output || "(vazio)", 1_500)}` : `Resultado (${meta.outcome}): ${oneLine(String(meta.error ?? output), 400)}`;
+    const result =
+      meta.outcome === "completed"
+        ? `Resultado (resumido):\n${clipBlock(output || "(vazio)", 1_500)}`
+        : `Resultado (${meta.outcome}): ${oneLine(String(meta.error ?? output), 400)}`;
     return `${head}\n${result}`;
   }
   if (item.kind === "code_edit") return `Arquivo ${item.brief} (diff no thread_read)`;
@@ -295,28 +440,43 @@ async function stateBlock(session: StoredSession, items: ThreadItem[], skills: s
   const lines: string[] = [];
   const workspace = activeWorkspace(session);
   if (workspace) {
-    lines.push(`- Repositório aberto: ${workspace.repoName}, branch ${workspace.branch} (base ${workspace.base}), worktree ${workspace.path}.`);
+    lines.push(
+      `- Repositório aberto: ${workspace.repoName}, branch ${workspace.branch} (base ${workspace.base}), worktree ${workspace.path}.`,
+    );
     const files = await changedFiles(workspace).catch(() => []);
     if (files.length > 0) {
       const added = files.reduce((sum, file) => sum + file.added, 0);
       const removed = files.reduce((sum, file) => sum + file.removed, 0);
       const shown = files.slice(0, 30).map((file) => `${file.path} +${file.added} −${file.removed}`);
-      lines.push(`- Arquivos mudados na worktree (${files.length}, +${added} −${removed}): ${shown.join("; ")}${files.length > 30 ? `; e mais ${files.length - 30}` : ""}.`);
+      lines.push(
+        `- Arquivos mudados na worktree (${files.length}, +${added} −${removed}): ${shown.join("; ")}${files.length > 30 ? `; e mais ${files.length - 30}` : ""}.`,
+      );
     } else {
       lines.push("- Nenhum arquivo mudado na worktree.");
     }
   }
   const pending = items.filter((item) => item.kind === "approval" && item.pending && item.turnId === currentTurnId);
-  if (pending.length > 0) lines.push(`- Aprovações pendentes: ${pending.map((item) => `${item.id} (${oneLine(item.text, 160)})`).join("; ")}.`);
+  if (pending.length > 0)
+    lines.push(
+      `- Aprovações pendentes: ${pending.map((item) => `${item.id} (${oneLine(item.text, 160)})`).join("; ")}.`,
+    );
   const declined = items.filter((item) => item.kind === "approval" && /\(negada\)$/.test(item.brief)).slice(-3);
-  if (declined.length > 0) lines.push(`- Aprovações negadas recentemente (não insista sem a pessoa pedir): ${declined.map((item) => `${item.id} (${oneLine(item.text, 140)})`).join("; ")}.`);
+  if (declined.length > 0)
+    lines.push(
+      `- Aprovações negadas recentemente (não insista sem a pessoa pedir): ${declined.map((item) => `${item.id} (${oneLine(item.text, 140)})`).join("; ")}.`,
+    );
   const artifacts = new Map<string, ThreadItem>();
   for (const item of items) if (item.kind === "artifact") artifacts.set(String(item.meta?.artifactId), item);
   const recentArtifacts = [...artifacts.values()].slice(-5);
-  if (recentArtifacts.length > 0) lines.push(`- Artefatos recentes: ${recentArtifacts.map((item) => `“${item.meta?.title}” (${item.meta?.kind}, v${item.meta?.version}, ${item.meta?.artifactId})`).join("; ")}.`);
+  if (recentArtifacts.length > 0)
+    lines.push(
+      `- Artefatos recentes: ${recentArtifacts.map((item) => `“${item.meta?.title}” (${item.meta?.kind}, v${item.meta?.version}, ${item.meta?.artifactId})`).join("; ")}.`,
+    );
   const uploads: string[] = [];
   for (const item of items) {
-    if (item.kind === "user_message") for (const file of (item.meta?.attachments as Array<{ name?: string; kind?: string; uploadId?: string }>) ?? []) uploads.push(`${file.name} (da pessoa, ${file.kind}, ${file.uploadId})`);
+    if (item.kind === "user_message")
+      for (const file of (item.meta?.attachments as Array<{ name?: string; kind?: string; uploadId?: string }>) ?? [])
+        uploads.push(`${file.name} (da pessoa, ${file.kind}, ${file.uploadId})`);
     if (item.kind === "file") uploads.push(`${item.meta?.name} (enviado por você, ${item.meta?.uploadId})`);
   }
   if (uploads.length > 0) lines.push(`- Anexos recentes: ${uploads.slice(-5).join("; ")}.`);
@@ -328,14 +488,17 @@ export async function handoffBlock(session: StoredSession, options: HandoffOptio
   const mode = options.full ? { mode: "full" as const, since: -1 } : handoffMode(session, options.key);
   if (!mode) return "";
   const all = threadItems(session);
-  const visible = all.filter((item) => item.id !== `u_${options.currentTurnId}` && turnNumber(item.turnId) > mode.since);
+  const visible = all.filter(
+    (item) => item.id !== `u_${options.currentTurnId}` && turnNumber(item.turnId) > mode.since,
+  );
   const state = await stateBlock(session, all, options.skills ?? [], options.currentTurnId);
   if (visible.length === 0) {
     if (mode.mode === "delta") return "";
     return state ? `## Contexto da conversa (handoff)\n${state}` : "";
   }
   const summaryState = session.meta.handoff;
-  const summaryIndex = mode.mode === "full" && summaryState ? visible.findIndex((item) => item.id === summaryState.lastItemId) : -1;
+  const summaryIndex =
+    mode.mode === "full" && summaryState ? visible.findIndex((item) => item.id === summaryState.lastItemId) : -1;
   const summary = mode.mode === "full" && summaryState?.summary ? summaryState.summary : "";
   const reserve = summary.length + state.length + 2_000;
   const chosen = selectItems(visible, Math.max(8_000, budgetChars - reserve - timelineChars));
@@ -363,7 +526,9 @@ export async function handoffBlock(session: StoredSession, options: HandoffOptio
     "## Contexto da conversa (handoff)",
     header,
     summary ? `Resumo da conversa até ${summaryState?.lastItemId}:\n${summary}` : "",
-    timeline.length ? `Linha do tempo depois do resumo (uma linha por item omitido, mais novos por último):\n${timeline.join("\n")}` : "",
+    timeline.length
+      ? `Linha do tempo depois do resumo (uma linha por item omitido, mais novos por último):\n${timeline.join("\n")}`
+      : "",
     state,
     "Recupere um item omitido só quando o pedido precisar, com a ferramenta `thread_read({itemId})`; texto longo continua com `offset = nextOffset` até vir null. Os itens abaixo estão inteiros e não precisam de leitura (resultado de ferramenta vem resumido; a íntegra e o diff de código vêm pelo thread_read).",
     `Selecionei ${chosen.length} itens inteiros; omiti ${omitted.length}.${omittedIds.length ? ` Ids omitidos, mais novos por último${omittedIds.length > shownIds.length ? ` (mostrando ${shownIds.length}; os ${omittedIds.length - shownIds.length} mais antigos ${summary ? "estão no resumo" : "não aparecem aqui"})` : ""}: ${shownIds.join(", ")}.` : ""}`,
@@ -377,7 +542,10 @@ export function readItem(session: StoredSession, itemId: string, offset = 0) {
   const items = threadItems(session);
   const item = items.find((entry) => entry.id === itemId);
   if (!item) {
-    return { error: `Não achei o item ${itemId} nesta conversa.`, recentIds: items.slice(-20).map((entry) => entry.id) };
+    return {
+      error: `Não achei o item ${itemId} nesta conversa.`,
+      recentIds: items.slice(-20).map((entry) => entry.id),
+    };
   }
   const start = Math.max(0, Math.min(offset, item.text.length));
   let end = Math.min(item.text.length, start + readChunk);
@@ -397,7 +565,13 @@ export function readItem(session: StoredSession, itemId: string, offset = 0) {
 
 const summarizing = new Set<string>();
 
-export async function refreshSummary(session: StoredSession, account: Account, model: string, botName: string, force = false) {
+export async function refreshSummary(
+  session: StoredSession,
+  account: Account,
+  model: string,
+  botName: string,
+  force = false,
+) {
   const sessionId = session.meta.sessionId;
   if (summarizing.has(sessionId)) return;
   const items = threadItems(session);
@@ -420,7 +594,13 @@ export async function refreshSummary(session: StoredSession, account: Account, m
   if (last < start) return;
   summarizing.add(sessionId);
   try {
-    const summary = await summarizeForReset(account, model, botName, found >= 0 ? (previous?.summary ?? "") : "", lines.join("\n"));
+    const summary = await summarizeForReset(
+      account,
+      model,
+      botName,
+      found >= 0 ? (previous?.summary ?? "") : "",
+      lines.join("\n"),
+    );
     if (!summary) return;
     session.meta.handoff = { summary, lastItemId: items[last].id, updatedAt: new Date().toISOString() };
     await session.save();

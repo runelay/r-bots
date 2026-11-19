@@ -28,7 +28,9 @@ export function publicSection(section: Section) {
 }
 
 export function listSections() {
-  return sections.filter((section) => !section.archivedAt).sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt));
+  return sections
+    .filter((section) => !section.archivedAt)
+    .sort((a, b) => a.order - b.order || a.createdAt.localeCompare(b.createdAt));
 }
 
 export function sectionExists(id: string) {
@@ -36,7 +38,8 @@ export function sectionExists(id: string) {
 }
 
 function validName(value: unknown) {
-  if (typeof value !== "string" || !value.trim()) throw new ValidationError("O nome da seção não pode ficar vazio.", "name");
+  if (typeof value !== "string" || !value.trim())
+    throw new ValidationError("O nome da seção não pode ficar vazio.", "name");
   if (value.trim().length > 40) throw new ValidationError("O nome da seção pode ter no máximo 40 caracteres.", "name");
   return value.trim();
 }

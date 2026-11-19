@@ -19,15 +19,24 @@ const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
 const desktops = new Map<string, Desktop>();
 
 function asUser(display: number, args: string[]) {
-  return spawn("sudo", ["-n", "-u", desktopUser, "env", `DISPLAY=:${display}`, `HOME=${desktopHome}`, ...args], { stdio: "ignore", detached: true, cwd: "/tmp" });
+  return spawn("sudo", ["-n", "-u", desktopUser, "env", `DISPLAY=:${display}`, `HOME=${desktopHome}`, ...args], {
+    stdio: "ignore",
+    detached: true,
+    cwd: "/tmp",
+  });
 }
 
 function x(display: number, args: string[], timeoutMs = 10_000) {
   return new Promise<string>((resolve, reject) => {
-    execFile("xdotool", args, { env: { ...process.env, DISPLAY: `:${display}` }, timeout: timeoutMs }, (error, stdout, stderr) => {
-      if (error) reject(new Error(stderr.trim() || error.message));
-      else resolve(stdout.trim());
-    });
+    execFile(
+      "xdotool",
+      args,
+      { env: { ...process.env, DISPLAY: `:${display}` }, timeout: timeoutMs },
+      (error, stdout, stderr) => {
+        if (error) reject(new Error(stderr.trim() || error.message));
+        else resolve(stdout.trim());
+      },
+    );
   });
 }
 
@@ -102,7 +111,16 @@ class Desktop {
     if (this.starting) return this.starting;
     this.starting = (async () => {
       this.display = freeDisplay();
-      const xvfb = asUser(this.display, ["Xvfb", `:${this.display}`, "-screen", "0", `${width}x${height}x24`, "-nolisten", "tcp", "-ac"]);
+      const xvfb = asUser(this.display, [
+        "Xvfb",
+        `:${this.display}`,
+        "-screen",
+        "0",
+        `${width}x${height}x24`,
+        "-nolisten",
+        "tcp",
+        "-ac",
+      ]);
       this.procs.push(xvfb);
       for (let attempt = 0; attempt < 50 && !existsSync(`/tmp/.X11-unix/X${this.display}`); attempt++) await sleep(100);
       if (!existsSync(`/tmp/.X11-unix/X${this.display}`)) throw new Error("O Xvfb não subiu.");
@@ -139,7 +157,9 @@ class Desktop {
 
   async openTerminal() {
     await this.ensure();
-    this.procs.push(asUser(this.display, ["sh", "-c", `cd ${desktopHome} && exec xterm -geometry 120x36+60+60 -fa Monospace -fs 11`]));
+    this.procs.push(
+      asUser(this.display, ["sh", "-c", `cd ${desktopHome} && exec xterm -geometry 120x36+60+60 -fa Monospace -fs 11`]),
+    );
     await sleep(800);
     return this.state();
   }
@@ -154,7 +174,16 @@ class Desktop {
   }
 
   stateMessage() {
-    return { type: "state", url: "", title: this.title, canGoBack: false, canGoForward: false, loading: false, controller: controllerOf(this.botId), surface: "desktop" };
+    return {
+      type: "state",
+      url: "",
+      title: this.title,
+      canGoBack: false,
+      canGoForward: false,
+      loading: false,
+      controller: controllerOf(this.botId),
+      surface: "desktop",
+    };
   }
 
   private broadcast(message: Json) {
@@ -170,7 +199,27 @@ class Desktop {
     if (this.streamer) return;
     const ffmpeg = spawn(
       "ffmpeg",
-      ["-loglevel", "error", "-f", "x11grab", "-draw_mouse", "1", "-video_size", `${width}x${height}`, "-framerate", String(fps), "-i", `:${this.display}`, "-f", "image2pipe", "-c:v", "mjpeg", "-q:v", "7", "-"],
+      [
+        "-loglevel",
+        "error",
+        "-f",
+        "x11grab",
+        "-draw_mouse",
+        "1",
+        "-video_size",
+        `${width}x${height}`,
+        "-framerate",
+        String(fps),
+        "-i",
+        `:${this.display}`,
+        "-f",
+        "image2pipe",
+        "-c:v",
+        "mjpeg",
+        "-q:v",
+        "7",
+        "-",
+      ],
       { stdio: ["ignore", "pipe", "ignore"] },
     );
     this.streamer = ffmpeg;
@@ -210,7 +259,23 @@ class Desktop {
     return new Promise<Buffer>((resolve, reject) => {
       execFile(
         "ffmpeg",
-        ["-loglevel", "error", "-f", "x11grab", "-video_size", `${width}x${height}`, "-i", `:${this.display}`, "-frames:v", "1", "-f", "image2pipe", "-c:v", "png", "-"],
+        [
+          "-loglevel",
+          "error",
+          "-f",
+          "x11grab",
+          "-video_size",
+          `${width}x${height}`,
+          "-i",
+          `:${this.display}`,
+          "-frames:v",
+          "1",
+          "-f",
+          "image2pipe",
+          "-c:v",
+          "png",
+          "-",
+        ],
         { encoding: "buffer", maxBuffer: 20 * 1024 * 1024, timeout: 15_000 },
         (error, stdout) => (error ? reject(error) : resolve(stdout)),
       );
@@ -265,7 +330,14 @@ class Desktop {
   async click(px: number, py: number, button: "left" | "right" = "left", double = false) {
     await this.ensure();
     this.lastUsed = Date.now();
-    await x(this.display, ["mousemove", String(Math.round(px)), String(Math.round(py)), "click", ...(double ? ["--repeat", "2"] : []), button === "right" ? "3" : "1"]);
+    await x(this.display, [
+      "mousemove",
+      String(Math.round(px)),
+      String(Math.round(py)),
+      "click",
+      ...(double ? ["--repeat", "2"] : []),
+      button === "right" ? "3" : "1",
+    ]);
     await sleep(600);
     return this.state();
   }
@@ -289,7 +361,15 @@ class Desktop {
   async scroll(px: number, py: number, direction: "up" | "down", amount: number) {
     await this.ensure();
     this.lastUsed = Date.now();
-    await x(this.display, ["mousemove", String(Math.round(px)), String(Math.round(py)), "click", "--repeat", String(Math.max(1, Math.min(20, amount))), direction === "down" ? "5" : "4"]);
+    await x(this.display, [
+      "mousemove",
+      String(Math.round(px)),
+      String(Math.round(py)),
+      "click",
+      "--repeat",
+      String(Math.max(1, Math.min(20, amount))),
+      direction === "down" ? "5" : "4",
+    ]);
     await sleep(300);
     return this.state();
   }
@@ -304,7 +384,11 @@ class Desktop {
     this.procs = [];
     const display = this.display;
     if (display) {
-      execFile("sudo", ["-n", "-u", desktopUser, "pkill", "-TERM", "-f", `chrome-${this.botId}|Xvfb :${display} |DISPLAY=:${display}`], () => undefined);
+      execFile(
+        "sudo",
+        ["-n", "-u", desktopUser, "pkill", "-TERM", "-f", `chrome-${this.botId}|Xvfb :${display} |DISPLAY=:${display}`],
+        () => undefined,
+      );
     }
   }
 }
@@ -351,7 +435,8 @@ export function handleDesktopUpgrade(req: http.IncomingMessage, socket: Duplex, 
     const desktop = desktopOf(botId);
     desktop.clients.add(client);
     const fail = (error: unknown) => {
-      if (client.readyState === client.OPEN) client.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
+      if (client.readyState === client.OPEN)
+        client.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
     };
     desktop
       .ensure()

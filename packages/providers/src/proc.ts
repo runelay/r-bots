@@ -39,10 +39,15 @@ export function childEnv(extra: Record<string, string> = {}) {
 
 export function capture(bin: string, args: string[], timeoutMs = 20_000) {
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-    execFile(bin, args, { timeout: timeoutMs, env: childEnv(), maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
-      const code = error ? (typeof error.code === "number" ? error.code : 1) : 0;
-      resolve({ code, stdout: String(stdout), stderr: String(stderr) });
-    });
+    execFile(
+      bin,
+      args,
+      { timeout: timeoutMs, env: childEnv(), maxBuffer: 10 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        const code = error ? (typeof error.code === "number" ? error.code : 1) : 0;
+        resolve({ code, stdout: String(stdout), stderr: String(stderr) });
+      },
+    );
   });
 }
 

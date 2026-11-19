@@ -1,8 +1,17 @@
+import {
+  type AccountProbe,
+  type ModelOption,
+  type NativeToolHooks,
+  type Provider,
+  type ProviderEvent,
+  providerLabels,
+  providers,
+  type TurnRequest,
+} from "@runelay-bots/protocol";
 import { probe, runTurn } from "@runelay-bots/providers";
-import { type AccountProbe, type ModelOption, type NativeToolHooks, type Provider, type ProviderEvent, providerLabels, providers, type TurnRequest } from "@runelay-bots/protocol";
 import { dataDir } from "./config";
-import { macAccounts, macRunnerConnected, onMacRunnerChange, runMacTurn } from "./mac-runner";
 import { emitFault, injectedFault } from "./limits";
+import { macAccounts, macRunnerConnected, onMacRunnerChange, runMacTurn } from "./mac-runner";
 
 export type RunnerId = "vps" | "mac";
 export type AccountStatus = "ready" | "logged_out" | "offline" | "missing";
@@ -28,7 +37,10 @@ let cache: Account[] = [];
 let checkedAt = 0;
 let pending: Promise<Account[]> | null = null;
 
-function toAccount(runner: RunnerId, result: AccountProbe | { provider: Provider; status: AccountStatus; detail: string; models: ModelOption[] }): Account {
+function toAccount(
+  runner: RunnerId,
+  result: AccountProbe | { provider: Provider; status: AccountStatus; detail: string; models: ModelOption[] },
+): Account {
   return {
     id: `${runner}:${result.provider}`,
     runner,
@@ -55,7 +67,10 @@ async function probeMac(): Promise<Account[]> {
     const list = macRunnerConnected() ? await macAccounts() : await probeMacHttp();
     return providers.map((provider) => {
       const found = list.find((item) => item.provider === provider);
-      return toAccount("mac", found ?? { provider, status: "missing", detail: "CLI não instalada no Mac.", models: [] });
+      return toAccount(
+        "mac",
+        found ?? { provider, status: "missing", detail: "CLI não instalada no Mac.", models: [] },
+      );
     });
   } catch (error) {
     const detail = `Mac fora do ar: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200);
@@ -166,17 +181,34 @@ async function runRemote(request: TurnRequest, signal: AbortSignal, emit: (event
       }
     }
   } catch (error) {
-    if (!done) emit({ type: "done", ok: false, message: signal.aborted ? "cancelled" : `Runner do Mac caiu: ${error instanceof Error ? error.message : String(error)}` });
+    if (!done)
+      emit({
+        type: "done",
+        ok: false,
+        message: signal.aborted
+          ? "cancelled"
+          : `Runner do Mac caiu: ${error instanceof Error ? error.message : String(error)}`,
+      });
     done = true;
   } finally {
     signal.removeEventListener("abort", onAbort);
   }
-  if (!done) emit({ type: "done", ok: false, message: signal.aborted ? "cancelled" : "Runner do Mac fechou a conexão." });
+  if (!done)
+    emit({ type: "done", ok: false, message: signal.aborted ? "cancelled" : "Runner do Mac fechou a conexão." });
 }
 
-export function runOnRunner(runner: RunnerId, request: TurnRequest, signal: AbortSignal, emit: (event: ProviderEvent) => void, hooks?: NativeToolHooks) {
+export function runOnRunner(
+  runner: RunnerId,
+  request: TurnRequest,
+  signal: AbortSignal,
+  emit: (event: ProviderEvent) => void,
+  hooks?: NativeToolHooks,
+) {
   const fault = injectedFault(`${runner}:${request.provider}`);
   if (fault) return Promise.resolve(emitFault(fault, emit));
-  if (runner === "mac") return macRunnerConnected() ? runMacTurn({ ...request, code: null }, signal, emit) : runRemote({ ...request, code: null }, signal, emit);
+  if (runner === "mac")
+    return macRunnerConnected()
+      ? runMacTurn({ ...request, code: null }, signal, emit)
+      : runRemote({ ...request, code: null }, signal, emit);
   return runTurn(request, dataDir, signal, emit, hooks);
 }

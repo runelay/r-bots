@@ -24,16 +24,24 @@ export function reloadSchedules() {
     for (const schedule of bot.schedules) {
       try {
         jobs.push(
-          new Cron(schedule.cron, { timezone: schedule.timezone, protect: true, name: `${bot.id}:${schedule.name}` }, () => {
-            void fire(bot.id, schedule.name, schedule.prompt).catch((error) => console.error("schedule failed", error));
-          }),
+          new Cron(
+            schedule.cron,
+            { timezone: schedule.timezone, protect: true, name: `${bot.id}:${schedule.name}` },
+            () => {
+              void fire(bot.id, schedule.name, schedule.prompt).catch((error) =>
+                console.error("schedule failed", error),
+              );
+            },
+          ),
         );
       } catch (error) {
         console.error(`invalid schedule ${bot.id}/${schedule.name}`, error);
       }
     }
   }
-  console.log(`schedules loaded: ${jobs.map((job) => `${job.name}@${job.nextRun()?.toISOString()}`).join(", ") || "none"}`);
+  console.log(
+    `schedules loaded: ${jobs.map((job) => `${job.name}@${job.nextRun()?.toISOString()}`).join(", ") || "none"}`,
+  );
 }
 
 export function startScheduler() {

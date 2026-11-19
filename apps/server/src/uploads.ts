@@ -3,9 +3,15 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import type http from "node:http";
 import { basename, extname, join, resolve, sep } from "node:path";
-import { pipeline } from "node:stream/promises";
 import { Transform } from "node:stream";
-import { type Format as AnydocFormat, formatFromBytes, formatFromExtension, toDocument, toMarkdownBytes } from "@firecrawl/anydoc";
+import { pipeline } from "node:stream/promises";
+import {
+  type Format as AnydocFormat,
+  formatFromBytes,
+  formatFromExtension,
+  toDocument,
+  toMarkdownBytes,
+} from "@firecrawl/anydoc";
 import { ulid } from "ulid";
 import { z } from "zod";
 import { botDir, dataDir } from "./config";
@@ -111,13 +117,82 @@ const mimeByExt: Record<string, string> = {
 };
 
 const textExts = new Set([
-  ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".jsonl", ".yaml", ".yml", ".toml", ".xml", ".html", ".htm", ".css", ".scss",
-  ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".swift", ".py", ".rb", ".go", ".rs", ".java", ".kt", ".c", ".h", ".cpp", ".hpp", ".m",
-  ".sh", ".bash", ".zsh", ".sql", ".graphql", ".env.example", ".ini", ".conf", ".log", ".vue", ".svelte", ".php", ".lua", ".dart", ".r",
+  ".txt",
+  ".md",
+  ".markdown",
+  ".csv",
+  ".tsv",
+  ".json",
+  ".jsonl",
+  ".yaml",
+  ".yml",
+  ".toml",
+  ".xml",
+  ".html",
+  ".htm",
+  ".css",
+  ".scss",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".jsx",
+  ".ts",
+  ".tsx",
+  ".swift",
+  ".py",
+  ".rb",
+  ".go",
+  ".rs",
+  ".java",
+  ".kt",
+  ".c",
+  ".h",
+  ".cpp",
+  ".hpp",
+  ".m",
+  ".sh",
+  ".bash",
+  ".zsh",
+  ".sql",
+  ".graphql",
+  ".env.example",
+  ".ini",
+  ".conf",
+  ".log",
+  ".vue",
+  ".svelte",
+  ".php",
+  ".lua",
+  ".dart",
+  ".r",
 ]);
 
 const claudeImageMimes = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-const anydocExts = new Set([".doc", ".docx", ".docm", ".dot", ".dotx", ".ppt", ".pps", ".pot", ".pptx", ".pptm", ".ppsx", ".ppsm", ".xls", ".xlsx", ".xlsm", ".xlsb", ".odt", ".ods", ".odp", ".rtf", ".epub", ".csv", ".pdf"]);
+const anydocExts = new Set([
+  ".doc",
+  ".docx",
+  ".docm",
+  ".dot",
+  ".dotx",
+  ".ppt",
+  ".pps",
+  ".pot",
+  ".pptx",
+  ".pptm",
+  ".ppsx",
+  ".ppsm",
+  ".xls",
+  ".xlsx",
+  ".xlsm",
+  ".xlsb",
+  ".odt",
+  ".ods",
+  ".odp",
+  ".rtf",
+  ".epub",
+  ".csv",
+  ".pdf",
+]);
 const maxDocImages = 8;
 
 function uploadsDir(botId: string) {
@@ -156,25 +231,45 @@ export function kindOf(mime: string, name: string): UploadKind {
 
 function mimeOf(declared: string | undefined, name: string) {
   const clean = (declared ?? "").split(";")[0].trim().toLowerCase();
-  if (clean && !["application/octet-stream", "application/x-www-form-urlencoded", "multipart/form-data"].includes(clean)) return clean;
+  if (
+    clean &&
+    !["application/octet-stream", "application/x-www-form-urlencoded", "multipart/form-data"].includes(clean)
+  )
+    return clean;
   return mimeByExt[extname(name).toLowerCase()] ?? "application/octet-stream";
 }
 
 function run(cmd: string, args: string[], options: { encoding?: "buffer"; timeout?: number; maxBuffer?: number } = {}) {
   return new Promise<{ stdout: Buffer; stderr: string }>((resolvePromise, reject) => {
-    execFile(cmd, args, { encoding: "buffer", timeout: options.timeout ?? 120_000, maxBuffer: options.maxBuffer ?? 64 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) reject(new Error(`${cmd} falhou: ${String(stderr ?? "").slice(-300) || error.message}`));
-      else resolvePromise({ stdout: stdout as Buffer, stderr: String(stderr ?? "") });
-    });
+    execFile(
+      cmd,
+      args,
+      { encoding: "buffer", timeout: options.timeout ?? 120_000, maxBuffer: options.maxBuffer ?? 64 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) reject(new Error(`${cmd} falhou: ${String(stderr ?? "").slice(-300) || error.message}`));
+        else resolvePromise({ stdout: stdout as Buffer, stderr: String(stderr ?? "") });
+      },
+    );
   });
 }
 
 async function probe(path: string) {
   try {
-    const { stdout } = await run("ffprobe", ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", path], { timeout: 30_000 });
+    const { stdout } = await run(
+      "ffprobe",
+      ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", path],
+      { timeout: 30_000 },
+    );
     return JSON.parse(stdout.toString("utf8")) as {
       format?: { duration?: string };
-      streams?: Array<{ codec_type?: string; width?: number; height?: number; duration?: string; tags?: { rotate?: string }; side_data_list?: Array<{ rotation?: number }> }>;
+      streams?: Array<{
+        codec_type?: string;
+        width?: number;
+        height?: number;
+        duration?: string;
+        tags?: { rotate?: string };
+        side_data_list?: Array<{ rotation?: number }>;
+      }>;
     };
   } catch {
     return null;
@@ -182,7 +277,11 @@ async function probe(path: string) {
 }
 
 async function waveformOf(path: string, bars = 48) {
-  const { stdout } = await run("ffmpeg", ["-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", "2000", "-f", "s16le", "-"], { timeout: 60_000, maxBuffer: 256 * 1024 * 1024 });
+  const { stdout } = await run(
+    "ffmpeg",
+    ["-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", "2000", "-f", "s16le", "-"],
+    { timeout: 60_000, maxBuffer: 256 * 1024 * 1024 },
+  );
   const samples = Math.floor(stdout.length / 2);
   if (samples === 0) return [];
   const size = Math.max(1, Math.floor(samples / bars));
@@ -208,22 +307,49 @@ async function analyze(botId: string, meta: UploadMeta) {
   const duration = Number(info?.format?.duration ?? video?.duration ?? NaN);
   if (meta.kind === "image" || meta.kind === "video") {
     if (video?.width && video?.height) {
-      const rotation = Math.abs(Number(video.tags?.rotate ?? video.side_data_list?.find((item) => item.rotation !== undefined)?.rotation ?? 0));
+      const rotation = Math.abs(
+        Number(video.tags?.rotate ?? video.side_data_list?.find((item) => item.rotation !== undefined)?.rotation ?? 0),
+      );
       const swap = rotation === 90 || rotation === 270;
       meta.width = swap ? video.height : video.width;
       meta.height = swap ? video.width : video.height;
     }
   }
-  if ((meta.kind === "video" || meta.kind === "audio") && Number.isFinite(duration)) meta.duration = Math.round(duration * 10) / 10;
-  if (meta.kind === "audio" || (meta.kind === "video" && info?.streams?.some((stream) => stream.codec_type === "audio"))) {
+  if ((meta.kind === "video" || meta.kind === "audio") && Number.isFinite(duration))
+    meta.duration = Math.round(duration * 10) / 10;
+  if (
+    meta.kind === "audio" ||
+    (meta.kind === "video" && info?.streams?.some((stream) => stream.codec_type === "audio"))
+  ) {
     meta.waveform = await waveformOf(path).catch(() => undefined);
   }
-  if (meta.kind === "video" || (meta.kind === "image" && (Math.max(meta.width ?? 0, meta.height ?? 0) > 640 || !claudeImageMimes.has(meta.mime)))) {
+  if (
+    meta.kind === "video" ||
+    (meta.kind === "image" && (Math.max(meta.width ?? 0, meta.height ?? 0) > 640 || !claudeImageMimes.has(meta.mime)))
+  ) {
     const dir = derivedDir(botId, meta.uploadId);
     await mkdir(dir, { recursive: true });
     const at = meta.kind === "video" ? ["-ss", String(Math.min(0.5, (meta.duration ?? 1) / 4))] : [];
     try {
-      await run("ffmpeg", ["-v", "error", "-y", ...at, "-i", path, "-frames:v", "1", "-vf", "scale='min(640,iw)':'min(640,ih)':force_original_aspect_ratio=decrease", "-q:v", "4", join(dir, "thumb.jpg")], { timeout: 60_000 });
+      await run(
+        "ffmpeg",
+        [
+          "-v",
+          "error",
+          "-y",
+          ...at,
+          "-i",
+          path,
+          "-frames:v",
+          "1",
+          "-vf",
+          "scale='min(640,iw)':'min(640,ih)':force_original_aspect_ratio=decrease",
+          "-q:v",
+          "4",
+          join(dir, "thumb.jpg"),
+        ],
+        { timeout: 60_000 },
+      );
       meta.thumb = true;
     } catch {}
   }
@@ -307,11 +433,21 @@ export async function receiveUpload(botId: string, req: http.IncomingMessage) {
     await rm(target, { force: true });
     throw new UploadError("O arquivo está vazio.", 400);
   }
-  const meta: UploadMeta = { uploadId, name, mime, size, kind: kindOf(mime, name), file, createdAt: new Date().toISOString(), source: "user" };
+  const meta: UploadMeta = {
+    uploadId,
+    name,
+    mime,
+    size,
+    kind: kindOf(mime, name),
+    file,
+    createdAt: new Date().toISOString(),
+    source: "user",
+  };
   return register(botId, meta);
 }
 
-const sendRoots = () => [dataDir, "/home/anderson/projects/worktrees", "/home/runelaybot", "/tmp"].map((root) => resolve(root));
+const sendRoots = () =>
+  [dataDir, "/home/anderson/projects/worktrees", "/home/runelaybot", "/tmp"].map((root) => resolve(root));
 
 export async function importBotFile(botId: string, rawPath: string, name?: string) {
   let real: string;
@@ -321,7 +457,9 @@ export async function importBotFile(botId: string, rawPath: string, name?: strin
     throw new Error("Não achei esse arquivo.");
   }
   if (!sendRoots().some((root) => real === root || real.startsWith(root + sep))) {
-    throw new Error("Só dá para enviar arquivos da pasta de dados do bot, de uma worktree, do computador do bot ou de /tmp.");
+    throw new Error(
+      "Só dá para enviar arquivos da pasta de dados do bot, de uma worktree, do computador do bot ou de /tmp.",
+    );
   }
   if (/(^|\/)(\.env[^/]*|\.git|\.ssh|\.claude)(\/|$)/.test(real)) throw new Error("Esse arquivo é protegido.");
   const info = await stat(real);
@@ -333,7 +471,16 @@ export async function importBotFile(botId: string, rawPath: string, name?: strin
   const file = `${uploadId}-${finalName}`;
   await mkdir(uploadsDir(botId), { recursive: true });
   await copyFile(real, join(uploadsDir(botId), file));
-  const meta: UploadMeta = { uploadId, name: finalName, mime, size: info.size, kind: kindOf(mime, finalName), file, createdAt: new Date().toISOString(), source: "bot" };
+  const meta: UploadMeta = {
+    uploadId,
+    name: finalName,
+    mime,
+    size: info.size,
+    kind: kindOf(mime, finalName),
+    file,
+    createdAt: new Date().toISOString(),
+    source: "bot",
+  };
   return register(botId, meta);
 }
 
@@ -379,7 +526,12 @@ async function scribe(path: string) {
         form.append("model_id", model);
         form.append("file", new Blob([bytes]), basename(path));
         const response = await withSttSlot(() =>
-          fetch("https://api.elevenlabs.io/v1/speech-to-text", { method: "POST", headers: { "xi-api-key": key }, body: form, signal: AbortSignal.timeout(300_000) }),
+          fetch("https://api.elevenlabs.io/v1/speech-to-text", {
+            method: "POST",
+            headers: { "xi-api-key": key },
+            body: form,
+            signal: AbortSignal.timeout(300_000),
+          }),
         );
         if (response.ok) {
           const body = (await response.json()) as { text?: string };
@@ -426,12 +578,16 @@ async function transcribeUpload(botId: string, meta: UploadMeta) {
       try {
         text = await scribe(source);
       } catch (scribeError) {
-        console.warn(`scribe falhou para ${meta.name}: ${scribeError instanceof Error ? scribeError.message : String(scribeError)}; tentando no Mac`);
+        console.warn(
+          `scribe falhou para ${meta.name}: ${scribeError instanceof Error ? scribeError.message : String(scribeError)}; tentando no Mac`,
+        );
         try {
           text = await transcribeOnMac(botId, meta);
           via = "mac";
         } catch (macError) {
-          throw new Error(`${scribeError instanceof Error ? scribeError.message : String(scribeError)}; no Mac também falhou: ${macError instanceof Error ? macError.message : String(macError)}`);
+          throw new Error(
+            `${scribeError instanceof Error ? scribeError.message : String(scribeError)}; no Mac também falhou: ${macError instanceof Error ? macError.message : String(macError)}`,
+          );
         }
       }
       const latest = (await readUpload(botId, meta.uploadId)) ?? meta;
@@ -455,7 +611,11 @@ function rememberLabel(meta: UploadMeta) {
 async function extractAudio(botId: string, meta: UploadMeta) {
   const out = join(derivedDir(botId, meta.uploadId), "audio.mp3");
   await mkdir(derivedDir(botId, meta.uploadId), { recursive: true });
-  await run("ffmpeg", ["-v", "error", "-y", "-i", uploadPath(botId, meta), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", out], { timeout: 300_000 });
+  await run(
+    "ffmpeg",
+    ["-v", "error", "-y", "-i", uploadPath(botId, meta), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", out],
+    { timeout: 300_000 },
+  );
   return out;
 }
 
@@ -465,7 +625,24 @@ async function resizedImage(botId: string, meta: UploadMeta) {
   if (!big && claudeImageMimes.has(meta.mime) && meta.size <= 3_500_000 && meta.mime !== "image/gif") return source;
   const out = join(derivedDir(botId, meta.uploadId), "model.jpg");
   await mkdir(derivedDir(botId, meta.uploadId), { recursive: true });
-  await run("ffmpeg", ["-v", "error", "-y", "-i", source, "-frames:v", "1", "-vf", `scale='min(${maxImageSide},iw)':'min(${maxImageSide},ih)':force_original_aspect_ratio=decrease`, "-q:v", "3", out], { timeout: 60_000 });
+  await run(
+    "ffmpeg",
+    [
+      "-v",
+      "error",
+      "-y",
+      "-i",
+      source,
+      "-frames:v",
+      "1",
+      "-vf",
+      `scale='min(${maxImageSide},iw)':'min(${maxImageSide},ih)':force_original_aspect_ratio=decrease`,
+      "-q:v",
+      "3",
+      out,
+    ],
+    { timeout: 60_000 },
+  );
   return out;
 }
 
@@ -479,7 +656,26 @@ async function videoFrames(botId: string, meta: UploadMeta) {
     const at = duration > 0 ? Math.min(duration - 0.05, ((index + 0.5) * duration) / count) : 0;
     const out = join(dir, `${String(index).padStart(2, "0")}.jpg`);
     try {
-      await run("ffmpeg", ["-v", "error", "-y", "-ss", at.toFixed(2), "-i", uploadPath(botId, meta), "-frames:v", "1", "-vf", "scale='min(1024,iw)':'min(1024,ih)':force_original_aspect_ratio=decrease", "-q:v", "4", out], { timeout: 60_000 });
+      await run(
+        "ffmpeg",
+        [
+          "-v",
+          "error",
+          "-y",
+          "-ss",
+          at.toFixed(2),
+          "-i",
+          uploadPath(botId, meta),
+          "-frames:v",
+          "1",
+          "-vf",
+          "scale='min(1024,iw)':'min(1024,ih)':force_original_aspect_ratio=decrease",
+          "-q:v",
+          "4",
+          out,
+        ],
+        { timeout: 60_000 },
+      );
       frames.push({ path: out, at: Math.round(at * 10) / 10 });
     } catch {}
   }
@@ -488,7 +684,12 @@ async function videoFrames(botId: string, meta: UploadMeta) {
 
 function isTextLike(meta: UploadMeta) {
   const ext = extname(meta.name).toLowerCase();
-  return meta.mime.startsWith("text/") || meta.mime === "application/json" || meta.mime === "application/xml" || textExts.has(ext);
+  return (
+    meta.mime.startsWith("text/") ||
+    meta.mime === "application/json" ||
+    meta.mime === "application/xml" ||
+    textExts.has(ext)
+  );
 }
 
 function anydocFormat(meta: UploadMeta, bytes: Buffer): AnydocFormat | null {
@@ -503,16 +704,25 @@ async function convertWithAnydoc(meta: UploadMeta, bytes: Buffer) {
   try {
     return { text: await toMarkdownBytes(bytes, format, { ocr: "reject" }), format };
   } catch (error) {
-    console.warn(`anydoc failed for ${meta.name}: ${(error as { code?: string }).code ?? ""} ${error instanceof Error ? error.message : String(error)}`.slice(0, 300));
+    console.warn(
+      `anydoc failed for ${meta.name}: ${(error as { code?: string }).code ?? ""} ${error instanceof Error ? error.message : String(error)}`.slice(
+        0,
+        300,
+      ),
+    );
     return null;
   }
 }
 
-async function fullText(botId: string, meta: UploadMeta): Promise<{ text: string; converter: Prepared["converter"]; format?: AnydocFormat } | null> {
+async function fullText(
+  botId: string,
+  meta: UploadMeta,
+): Promise<{ text: string; converter: Prepared["converter"]; format?: AnydocFormat } | null> {
   const path = uploadPath(botId, meta);
   const bytes = await readFile(path);
   const converted = await convertWithAnydoc(meta, bytes);
-  if (converted && converted.text.trim()) return { text: converted.text, converter: "anydoc", format: converted.format };
+  if (converted && converted.text.trim())
+    return { text: converted.text, converter: "anydoc", format: converted.format };
   if (meta.mime === "application/pdf" || extname(meta.name).toLowerCase() === ".pdf") {
     const { stdout } = await run("pdftotext", ["-layout", "-enc", "UTF-8", path, "-"], { timeout: 120_000 });
     return { text: stdout.toString("utf8"), converter: "pdftotext" };
@@ -525,7 +735,13 @@ async function extractText(botId: string, meta: UploadMeta, limit = maxTextChars
   const full = await fullText(botId, meta);
   if (!full) return null;
   const text = full.text.replace(/\r\n/g, "\n").replace(/\n{4,}/g, "\n\n\n");
-  return { text: text.slice(offset, offset + limit), truncated: text.length > offset + limit, total: text.length, converter: full.converter, format: full.format };
+  return {
+    text: text.slice(offset, offset + limit),
+    truncated: text.length > offset + limit,
+    total: text.length,
+    converter: full.converter,
+    format: full.format,
+  };
 }
 
 async function documentImages(botId: string, meta: UploadMeta, format: AnydocFormat | undefined) {
@@ -536,7 +752,9 @@ async function documentImages(botId: string, meta: UploadMeta, format: AnydocFor
   } catch {
     return [];
   }
-  const images = assets.filter((asset) => asset.mediaType.startsWith("image/") && asset.data.length > 2_000).slice(0, maxDocImages);
+  const images = assets
+    .filter((asset) => asset.mediaType.startsWith("image/") && asset.data.length > 2_000)
+    .slice(0, maxDocImages);
   if (images.length === 0) return [];
   const dir = join(derivedDir(botId, meta.uploadId), "doc-images");
   await mkdir(dir, { recursive: true });
@@ -558,7 +776,24 @@ async function documentImages(botId: string, meta: UploadMeta, format: AnydocFor
     }
     const final = join(dir, `${String(index).padStart(2, "0")}.jpg`);
     try {
-      await run("ffmpeg", ["-v", "error", "-y", "-i", source, "-frames:v", "1", "-vf", `scale='min(${maxImageSide},iw)':'min(${maxImageSide},ih)':force_original_aspect_ratio=decrease`, "-q:v", "3", final], { timeout: 60_000 });
+      await run(
+        "ffmpeg",
+        [
+          "-v",
+          "error",
+          "-y",
+          "-i",
+          source,
+          "-frames:v",
+          "1",
+          "-vf",
+          `scale='min(${maxImageSide},iw)':'min(${maxImageSide},ih)':force_original_aspect_ratio=decrease`,
+          "-q:v",
+          "3",
+          final,
+        ],
+        { timeout: 60_000 },
+      );
       out.push({ path: final, mime: "image/jpeg" });
     } catch {}
     await rm(source, { force: true });
@@ -647,23 +882,48 @@ export async function prepareAttachments(botId: string, metas: UploadMeta[], vis
     const trouble = prepared.error ? ` (não consegui processar: ${prepared.error.slice(0, 200)})` : "";
     if (meta.kind === "image") {
       if (vision && prepared.image) {
-        images.push({ path: prepared.image, mime: prepared.image.endsWith(".jpg") ? "image/jpeg" : meta.mime, label: `Imagem anexada: ${meta.name}` });
-        lines.push(`- ${head} (${[dims, sizeLabel(meta.size)].filter(Boolean).join(", ")}) vai junto nesta mensagem. Arquivo: ${path}`);
+        images.push({
+          path: prepared.image,
+          mime: prepared.image.endsWith(".jpg") ? "image/jpeg" : meta.mime,
+          label: `Imagem anexada: ${meta.name}`,
+        });
+        lines.push(
+          `- ${head} (${[dims, sizeLabel(meta.size)].filter(Boolean).join(", ")}) vai junto nesta mensagem. Arquivo: ${path}`,
+        );
       } else {
-        lines.push(`- ${head} (${[meta.mime, dims, sizeLabel(meta.size)].filter(Boolean).join(", ")}) está em ${path}. Este modelo não recebe a imagem em si: se precisar do conteúdo, diga à pessoa o que consegue fazer sem vê-la.${trouble}`);
+        lines.push(
+          `- ${head} (${[meta.mime, dims, sizeLabel(meta.size)].filter(Boolean).join(", ")}) está em ${path}. Este modelo não recebe a imagem em si: se precisar do conteúdo, diga à pessoa o que consegue fazer sem vê-la.${trouble}`,
+        );
       }
     } else if (meta.kind === "audio") {
       const transcript = prepared.transcript ? `[áudio: ${prepared.transcript}]` : `[áudio sem fala reconhecida]`;
-      lines.push(`- ${head}${meta.duration ? ` (${clock(meta.duration)})` : ""}: ${transcript}${trouble} Arquivo: ${path}`);
+      lines.push(
+        `- ${head}${meta.duration ? ` (${clock(meta.duration)})` : ""}: ${transcript}${trouble} Arquivo: ${path}`,
+      );
     } else if (meta.kind === "video") {
       const frames = prepared.frames ?? [];
       const parts = [`- ${head}, duração ${clock(meta.duration ?? 0)}${dims ? `, ${dims}` : ""}.`];
-      parts.push(prepared.transcript ? `Áudio: [áudio: ${prepared.transcript}]` : meta.waveform?.length ? "Áudio sem fala reconhecida." : "Sem faixa de áudio.");
+      parts.push(
+        prepared.transcript
+          ? `Áudio: [áudio: ${prepared.transcript}]`
+          : meta.waveform?.length
+            ? "Áudio sem fala reconhecida."
+            : "Sem faixa de áudio.",
+      );
       if (vision && frames.length) {
-        parts.push(`Seguem ${frames.length} quadros-chave em ordem (${frames.map((frame) => clock(frame.at)).join(", ")}).`);
-        for (const frame of frames) images.push({ path: frame.path, mime: "image/jpeg", label: `Quadro de "${meta.name}" em ${clock(frame.at)}` });
+        parts.push(
+          `Seguem ${frames.length} quadros-chave em ordem (${frames.map((frame) => clock(frame.at)).join(", ")}).`,
+        );
+        for (const frame of frames)
+          images.push({
+            path: frame.path,
+            mime: "image/jpeg",
+            label: `Quadro de "${meta.name}" em ${clock(frame.at)}`,
+          });
       } else if (frames.length) {
-        parts.push(`Quadros-chave extraídos em ${derivedDir(botId, meta.uploadId)}/frames (este modelo não recebe imagens).`);
+        parts.push(
+          `Quadros-chave extraídos em ${derivedDir(botId, meta.uploadId)}/frames (este modelo não recebe imagens).`,
+        );
       }
       parts.push(`Arquivo: ${path}${trouble}`);
       lines.push(parts.join(" "));
@@ -672,32 +932,51 @@ export async function prepareAttachments(botId: string, metas: UploadMeta[], vis
       let imageNote = "";
       if (docImages.length && vision) {
         imageNote = ` As ${docImages.length} primeiras imagens do documento vão junto, em ordem.`;
-        docImages.forEach((image, index) => images.push({ path: image.path, mime: image.mime, label: `Imagem ${index + 1} de "${meta.name}"` }));
+        docImages.forEach((image, index) => {
+          images.push({ path: image.path, mime: image.mime, label: `Imagem ${index + 1} de "${meta.name}"` });
+        });
       } else if (docImages.length) {
         imageNote = ` O documento tem imagens, salvas em ${derivedDir(botId, meta.uploadId)}/doc-images (este modelo não recebe imagens).`;
       }
-      lines.push(`- ${head} (${sizeLabel(meta.size)}). Arquivo: ${path}.${imageNote} Conteúdo${prepared.converter === "anydoc" ? " em markdown" : ""}${prepared.textTruncated ? ` (cortado em ${maxTextChars} caracteres; leia o resto com attachment_read)` : ""}:\n<<<\n${prepared.text}\n>>>`);
+      lines.push(
+        `- ${head} (${sizeLabel(meta.size)}). Arquivo: ${path}.${imageNote} Conteúdo${prepared.converter === "anydoc" ? " em markdown" : ""}${prepared.textTruncated ? ` (cortado em ${maxTextChars} caracteres; leia o resto com attachment_read)` : ""}:\n<<<\n${prepared.text}\n>>>`,
+      );
     } else {
-      lines.push(`- ${head} (${meta.mime}, ${sizeLabel(meta.size)}) está em ${path}. Use attachment_read com uploadId ${meta.uploadId} se precisar do conteúdo.${trouble}`);
+      lines.push(
+        `- ${head} (${meta.mime}, ${sizeLabel(meta.size)}) está em ${path}. Use attachment_read com uploadId ${meta.uploadId} se precisar do conteúdo.${trouble}`,
+      );
     }
   }
   return { text: lines.length ? `Anexos da pessoa:\n${lines.join("\n")}` : "", images };
 }
 
-export async function serveUpload(req: http.IncomingMessage, res: http.ServerResponse, botId: string, uploadId: string, variant: string | undefined) {
+export async function serveUpload(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  botId: string,
+  uploadId: string,
+  variant: string | undefined,
+) {
   const meta = await readUpload(botId, uploadId);
   const notFound = () => {
     const payload = JSON.stringify({ ok: false, error: "Anexo não encontrado." });
-    res.writeHead(404, { "content-type": "application/json; charset=utf-8", "content-length": String(Buffer.byteLength(payload)) });
+    res.writeHead(404, {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": String(Buffer.byteLength(payload)),
+    });
     res.end(payload);
   };
   if (!meta) return notFound();
   if (variant === "meta") {
     const payload = JSON.stringify(publicUpload(botId, meta));
-    res.writeHead(200, { "content-type": "application/json; charset=utf-8", "content-length": String(Buffer.byteLength(payload)) });
+    res.writeHead(200, {
+      "content-type": "application/json; charset=utf-8",
+      "content-length": String(Buffer.byteLength(payload)),
+    });
     return res.end(payload);
   }
-  const path = variant === "thumb.jpg" ? join(derivedDir(botId, uploadId), "thumb.jpg") : variant ? null : uploadPath(botId, meta);
+  const path =
+    variant === "thumb.jpg" ? join(derivedDir(botId, uploadId), "thumb.jpg") : variant ? null : uploadPath(botId, meta);
   if (!path) return notFound();
   let size: number;
   try {
@@ -713,7 +992,8 @@ export async function serveUpload(req: http.IncomingMessage, res: http.ServerRes
     "x-content-type-options": "nosniff",
     "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(meta.name)}`,
   };
-  if (type === "text/html" || type === "image/svg+xml") headers["content-security-policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+  if (type === "text/html" || type === "image/svg+xml")
+    headers["content-security-policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
   const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
   if (range && (range[1] || range[2])) {
     let start = range[1] ? Number(range[1]) : size - Number(range[2]);
@@ -724,7 +1004,11 @@ export async function serveUpload(req: http.IncomingMessage, res: http.ServerRes
       res.writeHead(416, { "content-range": `bytes */${size}` });
       return res.end();
     }
-    res.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${size}`, "content-length": String(end - start + 1) });
+    res.writeHead(206, {
+      ...headers,
+      "content-range": `bytes ${start}-${end}/${size}`,
+      "content-length": String(end - start + 1),
+    });
     if (req.method === "HEAD") return res.end();
     return createReadStream(path, { start, end }).pipe(res);
   }
@@ -736,8 +1020,12 @@ export async function serveUpload(req: http.IncomingMessage, res: http.ServerRes
 export async function listUploads(botId: string) {
   const dir = join(uploadsDir(botId), ".meta");
   const names = await readdir(dir).catch(() => [] as string[]);
-  const metas = await Promise.all(names.filter((name) => name.endsWith(".json")).map((name) => readUpload(botId, name.slice(0, -5))));
-  return metas.filter((meta): meta is UploadMeta => Boolean(meta)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const metas = await Promise.all(
+    names.filter((name) => name.endsWith(".json")).map((name) => readUpload(botId, name.slice(0, -5))),
+  );
+  return metas
+    .filter((meta): meta is UploadMeta => Boolean(meta))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export interface FileEvent {
@@ -760,15 +1048,30 @@ export function uploadTools(botId: string): BotTool[] {
       approval: null,
       label: (input) => `Enviar ${basename(String(input.name ?? input.path ?? "arquivo"))}`,
       run: async (input) => {
-        const meta = await importBotFile(botId, String(input.path), typeof input.name === "string" ? input.name : undefined);
+        const meta = await importBotFile(
+          botId,
+          String(input.path),
+          typeof input.name === "string" ? input.name : undefined,
+        );
         const attachment = publicUpload(botId, meta);
-        return { uploadId: meta.uploadId, name: meta.name, kind: meta.kind, size: meta.size, fileEvent: { type: "file.sent", data: { attachment } } };
+        return {
+          uploadId: meta.uploadId,
+          name: meta.name,
+          kind: meta.kind,
+          size: meta.size,
+          fileEvent: { type: "file.sent", data: { attachment } },
+        };
       },
     },
     {
       name: "attachment_read",
-      description: "Lê o conteúdo de um anexo da conversa pelo uploadId: texto de PDF, documento, código ou CSV em pedaços, e a transcrição de áudio e vídeo. Para outros tipos devolve tipo, tamanho e caminho.",
-      shape: { uploadId: z.string().min(1), offset: z.number().int().min(0).optional(), limit: z.number().int().min(1000).max(200_000).optional() },
+      description:
+        "Lê o conteúdo de um anexo da conversa pelo uploadId: texto de PDF, documento, código ou CSV em pedaços, e a transcrição de áudio e vídeo. Para outros tipos devolve tipo, tamanho e caminho.",
+      shape: {
+        uploadId: z.string().min(1),
+        offset: z.number().int().min(0).optional(),
+        limit: z.number().int().min(1000).max(200_000).optional(),
+      },
       approval: null,
       label: (input) => labels.get(String(input.uploadId)) ?? "Ler o anexo",
       run: async (input) => {
@@ -778,13 +1081,32 @@ export function uploadTools(botId: string): BotTool[] {
           const transcript = await transcribeUpload(botId, meta);
           return { name: meta.name, kind: meta.kind, duration: meta.duration ?? null, transcript };
         }
-        const extracted = await extractText(botId, meta, Number(input.limit ?? 100_000), Number(input.offset ?? 0)).catch(() => null);
-        if (!extracted) return { name: meta.name, mime: meta.mime, size: meta.size, kind: meta.kind, path: uploadPath(botId, meta), text: null };
-        return { name: meta.name, offset: Number(input.offset ?? 0), total: extracted.total, truncated: extracted.truncated, text: extracted.text };
+        const extracted = await extractText(
+          botId,
+          meta,
+          Number(input.limit ?? 100_000),
+          Number(input.offset ?? 0),
+        ).catch(() => null);
+        if (!extracted)
+          return {
+            name: meta.name,
+            mime: meta.mime,
+            size: meta.size,
+            kind: meta.kind,
+            path: uploadPath(botId, meta),
+            text: null,
+          };
+        return {
+          name: meta.name,
+          offset: Number(input.offset ?? 0),
+          total: extracted.total,
+          truncated: extracted.truncated,
+          text: extracted.text,
+        };
       },
     },
   ];
 }
 
 export const uploadGuide =
-  "## Arquivos\nA pessoa pode anexar imagem, vídeo, áudio e arquivos. Imagens chegam junto da mensagem; áudio chega transcrito como \"[áudio: …]\"; vídeo chega com a transcrição e quadros-chave; PDF e texto chegam com o conteúdo extraído. Para devolver um arquivo que você gerou (imagem, PDF, CSV…), use `send_file` com o caminho; não cole o caminho na resposta.";
+  '## Arquivos\nA pessoa pode anexar imagem, vídeo, áudio e arquivos. Imagens chegam junto da mensagem; áudio chega transcrito como "[áudio: …]"; vídeo chega com a transcrição e quadros-chave; PDF e texto chegam com o conteúdo extraído. Para devolver um arquivo que você gerou (imagem, PDF, CSV…), use `send_file` com o caminho; não cole o caminho na resposta.';

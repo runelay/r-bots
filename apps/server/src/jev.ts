@@ -47,7 +47,11 @@ export async function askJev(state: unknown, questions: Record<string, JevQuesti
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`Jev respondeu ${response.status}.`);
-  const body = (await response.json()) as { model?: string; answers?: Record<string, JevAnswer>; usage?: { input_tokens?: number } };
+  const body = (await response.json()) as {
+    model?: string;
+    answers?: Record<string, JevAnswer>;
+    usage?: { input_tokens?: number };
+  };
   const inputTokens = body.usage?.input_tokens ?? 0;
   const result: JevResult = {
     answers: body.answers ?? {},

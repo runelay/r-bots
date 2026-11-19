@@ -1,11 +1,16 @@
-import { getBot, isActive, permissionOfBot } from "./bots";
+import { getBot, isActive, permissionOfBot, ValidationError } from "./bots";
 import { activeWorkspace } from "./code";
+import { model } from "./config";
 import { conversationStatus, isBusy } from "./engine";
 import { effectivePermission, isPermissionMode, type PermissionMode } from "./permissions";
-import { type ConversationInfo, createStoredSession, getStoredSession, sessionsOf, type StoredSession } from "./sessions";
+import {
+  type ConversationInfo,
+  createStoredSession,
+  getStoredSession,
+  type StoredSession,
+  sessionsOf,
+} from "./sessions";
 import { peekThread, type ThreadMessage } from "./threads";
-import { ValidationError } from "./bots";
-import { model } from "./config";
 
 export interface ConversationEvent {
   botId: string;
@@ -69,15 +74,19 @@ function firstUserText(session: StoredSession) {
   for (const line of session.log.lines) {
     if (!line.includes('"delivery.consumed"')) continue;
     try {
-      const parsed = JSON.parse(line) as { facts?: Array<{ type?: string; data?: { source?: string; parts?: Array<{ kind?: string; text?: string }> } }> };
+      const parsed = JSON.parse(line) as {
+        facts?: Array<{ type?: string; data?: { source?: string; parts?: Array<{ kind?: string; text?: string }> } }>;
+      };
       for (const fact of parsed.facts ?? []) {
         if (fact.type !== "delivery.consumed" || fact.data?.source !== "chat") continue;
-        const text = (fact.data.parts ?? []).filter((part) => part.kind === "text" && part.text).map((part) => part.text).join(" ").trim();
+        const text = (fact.data.parts ?? [])
+          .filter((part) => part.kind === "text" && part.text)
+          .map((part) => part.text)
+          .join(" ")
+          .trim();
         if (text) return text;
       }
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return null;
 }
@@ -110,7 +119,9 @@ export async function notifyConversation(sessionId: string) {
 }
 
 export function conversationSessions(botId: string, archived = false) {
-  return sessionsOf(botId).filter((session) => session.meta.kind === "conversation" && Boolean(session.meta.conversation?.archivedAt) === archived);
+  return sessionsOf(botId).filter(
+    (session) => session.meta.kind === "conversation" && Boolean(session.meta.conversation?.archivedAt) === archived,
+  );
 }
 
 export async function listConversations(botId: string, archived = false) {
@@ -122,10 +133,16 @@ export async function listConversations(botId: string, archived = false) {
 }
 
 const fillers = /^(oi|olá|ola|bom dia|boa tarde|boa noite|e aí|e ai|hey|opa)[,!.\s]+/i;
-const asks = /^(por favor[,\s]+|pfv[,\s]+|você pode|voce pode|vc pode|pode|consegue|preciso que você|preciso que voce|quero que você|quero que voce|me ajuda a|me ajude a|dá para|da pra|dá pra)\s+/i;
+const asks =
+  /^(por favor[,\s]+|pfv[,\s]+|você pode|voce pode|vc pode|pode|consegue|preciso que você|preciso que voce|quero que você|quero que voce|me ajuda a|me ajude a|dá para|da pra|dá pra)\s+/i;
 
 export function autoTitle(text: string) {
-  let clean = text.replace(/```[\s\S]*?```/g, " ").replace(/https?:\/\/\S+/g, " ").replace(/[`#>]/g, "").replace(/\s+/g, " ").trim();
+  let clean = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/[`#>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   for (let index = 0; index < 3; index++) clean = clean.replace(fillers, "").replace(asks, "").trim();
   clean = clean.replace(/[?!.:;,]+$/, "").trim();
   if (!clean) return "Nova conversa";
@@ -139,7 +156,15 @@ export function autoTitle(text: string) {
   return title.charAt(0).toUpperCase() + title.slice(1);
 }
 
-export async function createConversation(botId: string, input: { title?: string; permission?: PermissionMode; delegatedBy?: ConversationInfo["delegatedBy"]; firstMessage?: string } = {}) {
+export async function createConversation(
+  botId: string,
+  input: {
+    title?: string;
+    permission?: PermissionMode;
+    delegatedBy?: ConversationInfo["delegatedBy"];
+    firstMessage?: string;
+  } = {},
+) {
   const typed = input.title?.trim() ? input.title.trim().slice(0, 80) : "";
   const title = typed || (input.firstMessage?.trim() ? autoTitle(input.firstMessage) : "");
   const session = await createStoredSession({ botId, kind: "conversation", source: "chat", title });
@@ -154,7 +179,10 @@ export async function createConversation(botId: string, input: { title?: string;
     ...(input.delegatedBy ? { delegatedBy: input.delegatedBy } : {}),
   };
   if (input.permission) session.meta.permission = input.permission;
-  session.log.emit({ type: "session.started", data: { runtime: { agentId: botId, agentName: botId, engine: "claude-agent-sdk", model }, conversation: true } });
+  session.log.emit({
+    type: "session.started",
+    data: { runtime: { agentId: botId, agentName: botId, engine: "claude-agent-sdk", model }, conversation: true },
+  });
   await session.save();
   void notifyConversation(session.meta.sessionId);
   return session;
@@ -182,9 +210,11 @@ export function conversationOf(botId: string, sessionId: string) {
 export async function updateConversation(session: StoredSession, body: unknown) {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new ValidationError("Corpo inválido.", "body");
   const raw = body as Record<string, unknown>;
-  for (const key of Object.keys(raw)) if (!["title", "permission"].includes(key)) throw new ValidationError(`Campo desconhecido: ${key}.`, key);
+  for (const key of Object.keys(raw))
+    if (!["title", "permission"].includes(key)) throw new ValidationError(`Campo desconhecido: ${key}.`, key);
   if (raw.title !== undefined) {
-    if (typeof raw.title !== "string" || !raw.title.trim() || raw.title.trim().length > 80) throw new ValidationError("O título precisa ter de 1 a 80 caracteres.", "title");
+    if (typeof raw.title !== "string" || !raw.title.trim() || raw.title.trim().length > 80)
+      throw new ValidationError("O título precisa ter de 1 a 80 caracteres.", "title");
     session.meta.title = raw.title.trim();
     info(session).titleSource = "user";
   }
@@ -209,8 +239,10 @@ export class ConversationError extends Error {
 }
 
 export async function archiveConversation(session: StoredSession, archived: boolean) {
-  if (session.meta.kind === "thread") throw new ConversationError("A conversa principal não é arquivada. Use Limpar conversa.", 400, "main_conversation");
-  if (archived && isBusy(session.meta.sessionId)) throw new ConversationError("Essa conversa ainda está trabalhando. Pare antes de arquivar.", 409, "turn_running");
+  if (session.meta.kind === "thread")
+    throw new ConversationError("A conversa principal não é arquivada. Use Limpar conversa.", 400, "main_conversation");
+  if (archived && isBusy(session.meta.sessionId))
+    throw new ConversationError("Essa conversa ainda está trabalhando. Pare antes de arquivar.", 409, "turn_running");
   info(session).archivedAt = archived ? new Date().toISOString() : null;
   await session.save();
   void notifyConversation(session.meta.sessionId);
@@ -229,11 +261,14 @@ export async function markConversation(session: StoredSession, read: boolean) {
 }
 
 export async function moveConversation(session: StoredSession, targetId: unknown) {
-  if (session.meta.kind === "thread") throw new ConversationError("A conversa principal fica com o bot.", 400, "main_conversation");
+  if (session.meta.kind === "thread")
+    throw new ConversationError("A conversa principal fica com o bot.", 400, "main_conversation");
   const target = typeof targetId === "string" ? getBot(targetId) : undefined;
-  if (!target || !isActive(target)) throw new ConversationError("Esse bot não está disponível.", 400, "bot_unavailable");
+  if (!target || !isActive(target))
+    throw new ConversationError("Esse bot não está disponível.", 400, "bot_unavailable");
   if (target.id === session.meta.botId) return session;
-  if (isBusy(session.meta.sessionId)) throw new ConversationError("Essa conversa ainda está trabalhando. Pare antes de mover.", 409, "turn_running");
+  if (isBusy(session.meta.sessionId))
+    throw new ConversationError("Essa conversa ainda está trabalhando. Pare antes de mover.", 409, "turn_running");
   const from = session.meta.botId;
   session.meta.botId = target.id;
   delete session.meta.providerSessions;

@@ -91,7 +91,12 @@ export async function loadSkill(slug: string): Promise<LoadedSkill> {
   const hit = detailCache.get(slug);
   if (hit && Date.now() - hit.at < listTtl) return hit.skill;
   const raw = await runelayApi<RawDetail>("GET", `/skills/${encodeURIComponent(slug)}`);
-  const skill = { slug: raw.slug, name: readableName(raw), body: raw.body ?? "", files: (raw.files ?? []).map((file) => file.path) };
+  const skill = {
+    slug: raw.slug,
+    name: readableName(raw),
+    body: raw.body ?? "",
+    files: (raw.files ?? []).map((file) => file.path),
+  };
   detailCache.set(slug, { at: Date.now(), skill });
   return skill;
 }
@@ -101,12 +106,16 @@ const maxBody = 40_000;
 export function skillsBlock(skills: LoadedSkill[], canReadFiles: boolean) {
   return skills
     .map((skill) => {
-      const body = skill.body.length > maxBody ? `${skill.body.slice(0, maxBody)}\n\n[cortado; o resto está em skill_read("${skill.slug}")]` : skill.body;
-      const files = skill.files.length === 0
-        ? ""
-        : canReadFiles
-          ? `\n\nArquivos da skill (leia com skill_read(slug: "${skill.slug}", path) quando o passo pedir): ${skill.files.slice(0, 60).join(", ")}${skill.files.length > 60 ? ", …" : ""}`
-          : "";
+      const body =
+        skill.body.length > maxBody
+          ? `${skill.body.slice(0, maxBody)}\n\n[cortado; o resto está em skill_read("${skill.slug}")]`
+          : skill.body;
+      const files =
+        skill.files.length === 0
+          ? ""
+          : canReadFiles
+            ? `\n\nArquivos da skill (leia com skill_read(slug: "${skill.slug}", path) quando o passo pedir): ${skill.files.slice(0, 60).join(", ")}${skill.files.length > 60 ? ", …" : ""}`
+            : "";
       return `## Siga a skill ${skill.name}\nA pessoa anexou esta skill à mensagem. Siga as instruções dela neste turno.\n\n${body}${files}`;
     })
     .join("\n\n");

@@ -2,7 +2,15 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { type ArtifactEvent, type ArtifactMeta, artifactDir, eventOf, listArtifacts, readArtifact, writeAtomic } from "./artifacts";
+import {
+  type ArtifactEvent,
+  type ArtifactMeta,
+  artifactDir,
+  eventOf,
+  listArtifacts,
+  readArtifact,
+  writeAtomic,
+} from "./artifacts";
 import type { BotTool } from "./tools";
 
 export type CanvasLayout = "flow" | "mindmap" | "diagram";
@@ -55,7 +63,20 @@ export class CanvasError extends Error {
 const layouts = ["flow", "mindmap", "diagram"] as const;
 const shapes = ["box", "round", "diamond", "ellipse", "note"] as const;
 const styles = ["solid", "dashed"] as const;
-export const canvasColors = ["neutral", "grey", "red", "orange", "amber", "yellow", "green", "teal", "blue", "indigo", "violet", "pink"] as const;
+export const canvasColors = [
+  "neutral",
+  "grey",
+  "red",
+  "orange",
+  "amber",
+  "yellow",
+  "green",
+  "teal",
+  "blue",
+  "indigo",
+  "violet",
+  "pink",
+] as const;
 const maxNodes = 400;
 const maxEdges = 800;
 const userMergeWindowMs = 120_000;
@@ -79,7 +100,9 @@ function newId(prefix: string) {
 }
 
 function finite(value: unknown, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value) ? Math.max(-1_000_000, Math.min(1_000_000, value)) : fallback;
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(-1_000_000, Math.min(1_000_000, value))
+    : fallback;
 }
 
 function cleanText(value: unknown, max = 300) {
@@ -137,7 +160,9 @@ export function sizeFor(text: string, shape: NodeShape) {
 function sanitize(raw: unknown): CanvasDoc {
   if (!raw || typeof raw !== "object") throw new CanvasError("Mande o documento do canvas.");
   const input = raw as Record<string, unknown>;
-  const layout = (layouts as readonly string[]).includes(String(input.layout)) ? (input.layout as CanvasLayout) : "diagram";
+  const layout = (layouts as readonly string[]).includes(String(input.layout))
+    ? (input.layout as CanvasLayout)
+    : "diagram";
   const rawNodes = Array.isArray(input.nodes) ? input.nodes : [];
   const rawEdges = Array.isArray(input.edges) ? input.edges : [];
   if (rawNodes.length > maxNodes) throw new CanvasError(`Canvas grande demais (máximo ${maxNodes} caixas).`);
@@ -175,7 +200,13 @@ function sanitize(raw: unknown): CanvasDoc {
     while (edgeIds.has(id)) id = newId("e");
     edgeIds.add(id);
     const label = cleanText(item.label, 120).trim();
-    edges.push({ id, from, to, ...(label ? { label } : {}), ...(item.style === "dashed" ? { style: "dashed" as const } : {}) });
+    edges.push({
+      id,
+      from,
+      to,
+      ...(label ? { label } : {}),
+      ...(item.style === "dashed" ? { style: "dashed" as const } : {}),
+    });
   }
   const groups: CanvasGroup[] = [];
   for (const item of (Array.isArray(input.groups) ? input.groups : []) as Record<string, unknown>[]) {
@@ -232,7 +263,8 @@ function layered(doc: CanvasDoc) {
     if (known !== undefined) return known;
     trail.add(id);
     let value = 0;
-    for (const parent of realParents.get(id) ?? []) if (!trail.has(parent)) value = Math.max(value, depth(parent, trail) + 1);
+    for (const parent of realParents.get(id) ?? [])
+      if (!trail.has(parent)) value = Math.max(value, depth(parent, trail) + 1);
     trail.delete(id);
     layer.set(id, value);
     return value;
@@ -267,18 +299,36 @@ function layered(doc: CanvasDoc) {
     if (lean && to === from + 1) bias.set(edge.to, (bias.get(edge.to) ?? 0) + lean);
   });
   const layers: string[][] = [];
-  for (const [id, index] of layer) (layers[index] ??= []).push(id);
+  for (const [id, index] of layer) {
+    const row = layers[index] ?? [];
+    layers[index] = row;
+    row.push(id);
+  }
   const position = new Map<string, number>();
-  const refresh = () => layers.forEach((row) => row?.forEach((id, index) => position.set(id, index)));
+  const refresh = () => {
+    for (const row of layers) {
+      if (!row) continue;
+      row.forEach((id, index) => {
+        position.set(id, index);
+      });
+    }
+  };
   refresh();
   const barycenter = (id: string, neighbors: Map<string, string[]>) => {
     const list = neighbors.get(id) ?? [];
-    const base = list.length ? list.reduce((sum, item) => sum + (position.get(item) ?? 0), 0) / list.length : (position.get(id) ?? 0);
+    const base = list.length
+      ? list.reduce((sum, item) => sum + (position.get(item) ?? 0), 0) / list.length
+      : (position.get(id) ?? 0);
     return base + (bias.get(id) ?? 0) * 0.6;
   };
   for (let pass = 0; pass < 8; pass++) {
     const down = pass % 2 === 0;
-    const order = down ? layers.map((_, index) => index).slice(1) : layers.map((_, index) => index).reverse().slice(1);
+    const order = down
+      ? layers.map((_, index) => index).slice(1)
+      : layers
+          .map((_, index) => index)
+          .reverse()
+          .slice(1);
     for (const index of order) {
       const row = layers[index];
       if (!row) continue;
@@ -325,7 +375,9 @@ function layered(doc: CanvasDoc) {
         placed.push(x);
       });
       const shift = (wanted.reduce((a, b) => a + b, 0) - placed.reduce((a, b) => a + b, 0)) / row.length;
-      row.forEach((id, index) => xs.set(id, placed[index] + shift));
+      row.forEach((id, index) => {
+        xs.set(id, placed[index] + shift);
+      });
     }
   }
   for (const id of ids) {
@@ -374,7 +426,10 @@ function rootOf(doc: CanvasDoc) {
   }
   const candidates = doc.nodes.filter((node) => !incoming.get(node.id));
   const pool = candidates.length ? candidates : doc.nodes;
-  return pool.reduce((best, node) => ((outgoing.get(node.id) ?? 0) > (outgoing.get(best.id) ?? 0) ? node : best), pool[0]);
+  return pool.reduce(
+    (best, node) => ((outgoing.get(node.id) ?? 0) > (outgoing.get(best.id) ?? 0) ? node : best),
+    pool[0],
+  );
 }
 
 function radial(doc: CanvasDoc) {
@@ -441,19 +496,29 @@ export function layoutDoc(doc: CanvasDoc) {
 }
 
 function overlaps(node: CanvasNode, others: CanvasNode[]) {
-  return others.some((other) => other !== node && node.x < other.x + other.w + 24 && other.x < node.x + node.w + 24 && node.y < other.y + other.h + 24 && other.y < node.y + node.h + 24);
+  return others.some(
+    (other) =>
+      other !== node &&
+      node.x < other.x + other.w + 24 &&
+      other.x < node.x + node.w + 24 &&
+      node.y < other.y + other.h + 24 &&
+      other.y < node.y + node.h + 24,
+  );
 }
 
 function placeNew(doc: CanvasDoc, pending: Set<string>) {
   const byId = new Map(doc.nodes.map((node) => [node.id, node]));
-  const root = doc.layout === "mindmap" ? rootOf({ ...doc, nodes: doc.nodes.filter((node) => !pending.has(node.id)) }) : undefined;
+  const root =
+    doc.layout === "mindmap" ? rootOf({ ...doc, nodes: doc.nodes.filter((node) => !pending.has(node.id)) }) : undefined;
   const placed = () => doc.nodes.filter((node) => !pending.has(node.id));
   let progress = true;
   while (pending.size && progress) {
     progress = false;
     for (const id of [...pending]) {
       const node = byId.get(id)!;
-      const link = doc.edges.find((edge) => (edge.to === id && !pending.has(edge.from)) || (edge.from === id && !pending.has(edge.to)));
+      const link = doc.edges.find(
+        (edge) => (edge.to === id && !pending.has(edge.from)) || (edge.from === id && !pending.has(edge.to)),
+      );
       if (!link) continue;
       const anchor = byId.get(link.to === id ? link.from : link.to)!;
       const base = center(anchor);
@@ -527,13 +592,28 @@ async function persist(meta: ArtifactMeta, doc: CanvasDoc, author: "bot" | "user
   const entry = { n, createdAt: now, size: Buffer.byteLength(body), author };
   const versions = replaceLatest && last ? [...meta.versions.slice(0, -1), entry] : [...meta.versions, entry];
   const seen = author === "bot" ? n : (meta.canvas?.seen ?? 0);
-  const next: ArtifactMeta = { ...meta, updatedAt: now, versions, canvas: { seen, notified: Math.max(meta.canvas?.notified ?? 0, seen) } };
+  const next: ArtifactMeta = {
+    ...meta,
+    updatedAt: now,
+    versions,
+    canvas: { seen, notified: Math.max(meta.canvas?.notified ?? 0, seen) },
+  };
   await writeAtomic(join(artifactDir(meta.botId, meta.id), "meta.json"), JSON.stringify(next, null, 2));
   return next;
 }
 
-export async function createCanvas(botId: string, title: string, raw: { layout?: string; nodes: unknown[]; edges: unknown[]; groups?: unknown[] }) {
-  const positioned = raw.nodes.every((item) => item && typeof item === "object" && typeof (item as { x?: unknown }).x === "number" && typeof (item as { y?: unknown }).y === "number");
+export async function createCanvas(
+  botId: string,
+  title: string,
+  raw: { layout?: string; nodes: unknown[]; edges: unknown[]; groups?: unknown[] },
+) {
+  const positioned = raw.nodes.every(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      typeof (item as { x?: unknown }).x === "number" &&
+      typeof (item as { y?: unknown }).y === "number",
+  );
   const doc = sanitize(raw);
   if (doc.nodes.length === 0) throw new CanvasError("Mande pelo menos uma caixa.");
   if (!positioned) layoutDoc(doc);
@@ -553,7 +633,11 @@ function describeChanges(before: CanvasDoc | null, after: CanvasDoc) {
   const renamed = after.nodes.filter((node) => old.has(node.id) && old.get(node.id)!.text !== node.text);
   const moved = after.nodes.filter((node) => {
     const prior = old.get(node.id);
-    return prior && (Math.abs(prior.x + prior.w / 2 - node.x - node.w / 2) > 4 || Math.abs(prior.y + prior.h / 2 - node.y - node.h / 2) > 4);
+    return (
+      prior &&
+      (Math.abs(prior.x + prior.w / 2 - node.x - node.w / 2) > 4 ||
+        Math.abs(prior.y + prior.h / 2 - node.y - node.h / 2) > 4)
+    );
   });
   const restyled = after.nodes.filter((node) => {
     const prior = old.get(node.id);
@@ -564,17 +648,47 @@ function describeChanges(before: CanvasDoc | null, after: CanvasDoc) {
   const newEdges = new Map(after.edges.map((edge) => [key(edge), edge]));
   const addedEdges = after.edges.filter((edge) => !oldEdges.has(key(edge)));
   const removedEdges = before.edges.filter((edge) => !newEdges.has(key(edge)));
-  const relabeled = after.edges.filter((edge) => oldEdges.has(key(edge)) && (oldEdges.get(key(edge))!.label ?? "") !== (edge.label ?? ""));
+  const relabeled = after.edges.filter(
+    (edge) => oldEdges.has(key(edge)) && (oldEdges.get(key(edge))!.label ?? "") !== (edge.label ?? ""),
+  );
   const quote = (text: string) => `"${text.replace(/\s+/g, " ").slice(0, 40)}"`;
   const parts: string[] = [];
-  if (added.length) parts.push(`+${added.length} ${added.length === 1 ? "caixa" : "caixas"} (${added.slice(0, 5).map((node) => quote(node.text)).join(", ")})`);
-  if (removed.length) parts.push(`−${removed.length} ${removed.length === 1 ? "caixa" : "caixas"} (${removed.slice(0, 5).map((node) => quote(node.text)).join(", ")})`);
-  if (renamed.length) parts.push(`${renamed.length} ${renamed.length === 1 ? "caixa renomeada" : "caixas renomeadas"} (${renamed.slice(0, 5).map((node) => `${quote(old.get(node.id)!.text)} → ${quote(node.text)}`).join(", ")})`);
-  if (addedEdges.length) parts.push(`+${addedEdges.length} ${addedEdges.length === 1 ? "conexão" : "conexões"} (${addedEdges.slice(0, 5).map((edge) => `${quote(now.get(edge.from)?.text ?? edge.from)} → ${quote(now.get(edge.to)?.text ?? edge.to)}`).join(", ")})`);
+  if (added.length)
+    parts.push(
+      `+${added.length} ${added.length === 1 ? "caixa" : "caixas"} (${added
+        .slice(0, 5)
+        .map((node) => quote(node.text))
+        .join(", ")})`,
+    );
+  if (removed.length)
+    parts.push(
+      `−${removed.length} ${removed.length === 1 ? "caixa" : "caixas"} (${removed
+        .slice(0, 5)
+        .map((node) => quote(node.text))
+        .join(", ")})`,
+    );
+  if (renamed.length)
+    parts.push(
+      `${renamed.length} ${renamed.length === 1 ? "caixa renomeada" : "caixas renomeadas"} (${renamed
+        .slice(0, 5)
+        .map((node) => `${quote(old.get(node.id)!.text)} → ${quote(node.text)}`)
+        .join(", ")})`,
+    );
+  if (addedEdges.length)
+    parts.push(
+      `+${addedEdges.length} ${addedEdges.length === 1 ? "conexão" : "conexões"} (${addedEdges
+        .slice(0, 5)
+        .map((edge) => `${quote(now.get(edge.from)?.text ?? edge.from)} → ${quote(now.get(edge.to)?.text ?? edge.to)}`)
+        .join(", ")})`,
+    );
   if (removedEdges.length) parts.push(`−${removedEdges.length} ${removedEdges.length === 1 ? "conexão" : "conexões"}`);
-  if (relabeled.length) parts.push(`${relabeled.length} ${relabeled.length === 1 ? "rótulo de seta mudou" : "rótulos de seta mudaram"}`);
+  if (relabeled.length)
+    parts.push(`${relabeled.length} ${relabeled.length === 1 ? "rótulo de seta mudou" : "rótulos de seta mudaram"}`);
   if (moved.length) parts.push(`${moved.length} ${moved.length === 1 ? "caixa movida" : "caixas movidas"}`);
-  if (restyled.length) parts.push(`${restyled.length} ${restyled.length === 1 ? "caixa com forma ou cor nova" : "caixas com forma ou cor nova"}`);
+  if (restyled.length)
+    parts.push(
+      `${restyled.length} ${restyled.length === 1 ? "caixa com forma ou cor nova" : "caixas com forma ou cor nova"}`,
+    );
   return parts.join(", ");
 }
 
@@ -595,7 +709,11 @@ const edgeInput = z.object({
   style: z.enum(styles).optional(),
 });
 
-const groupInput = z.object({ id: z.string().min(1).max(60).optional(), label: z.string().max(120), nodeIds: z.array(z.string()).min(1) });
+const groupInput = z.object({
+  id: z.string().min(1).max(60).optional(),
+  label: z.string().max(120),
+  nodeIds: z.array(z.string()).min(1),
+});
 
 const opInput = z.discriminatedUnion("op", [
   z.object({
@@ -626,9 +744,24 @@ const opInput = z.discriminatedUnion("op", [
     label: z.string().max(120).optional(),
     style: z.enum(styles).optional(),
   }),
-  z.object({ op: z.literal("update_edge"), id: z.string().min(1), label: z.string().max(120).optional(), style: z.enum(styles).optional() }),
-  z.object({ op: z.literal("remove_edge"), id: z.string().optional(), from: z.string().optional(), to: z.string().optional() }),
-  z.object({ op: z.literal("set_group"), id: z.string().optional(), label: z.string().max(120), nodeIds: z.array(z.string()).min(1) }),
+  z.object({
+    op: z.literal("update_edge"),
+    id: z.string().min(1),
+    label: z.string().max(120).optional(),
+    style: z.enum(styles).optional(),
+  }),
+  z.object({
+    op: z.literal("remove_edge"),
+    id: z.string().optional(),
+    from: z.string().optional(),
+    to: z.string().optional(),
+  }),
+  z.object({
+    op: z.literal("set_group"),
+    id: z.string().optional(),
+    label: z.string().max(120),
+    nodeIds: z.array(z.string()).min(1),
+  }),
   z.object({ op: z.literal("remove_group"), id: z.string().min(1) }),
   z.object({ op: z.literal("relayout") }),
 ]);
@@ -648,9 +781,18 @@ function applyOps(source: CanvasDoc, ops: CanvasOp[]) {
     switch (op.op) {
       case "add_node": {
         const id = op.id ?? newId("n");
-        if (doc.nodes.some((item) => item.id === id)) throw new CanvasError(`Operação ${index + 1}: já existe caixa "${id}".`);
+        if (doc.nodes.some((item) => item.id === id))
+          throw new CanvasError(`Operação ${index + 1}: já existe caixa "${id}".`);
         const shape = op.shape ?? "box";
-        const node: CanvasNode = { id, text: op.text, x: Math.round(op.x ?? 0), y: Math.round(op.y ?? 0), shape, ...sizeFor(op.text, shape), ...(op.color ? { color: op.color } : {}) };
+        const node: CanvasNode = {
+          id,
+          text: op.text,
+          x: Math.round(op.x ?? 0),
+          y: Math.round(op.y ?? 0),
+          shape,
+          ...sizeFor(op.text, shape),
+          ...(op.color ? { color: op.color } : {}),
+        };
         doc.nodes.push(node);
         if (op.x === undefined || op.y === undefined) pending.add(id);
         if (op.parent) {
@@ -674,17 +816,28 @@ function applyOps(source: CanvasDoc, ops: CanvasOp[]) {
         nodeOf(op.id, index);
         doc.nodes = doc.nodes.filter((item) => item.id !== op.id);
         doc.edges = doc.edges.filter((edge) => edge.from !== op.id && edge.to !== op.id);
-        if (doc.groups) doc.groups = doc.groups.map((group) => ({ ...group, nodeIds: group.nodeIds.filter((id) => id !== op.id) })).filter((group) => group.nodeIds.length);
+        if (doc.groups)
+          doc.groups = doc.groups
+            .map((group) => ({ ...group, nodeIds: group.nodeIds.filter((id) => id !== op.id) }))
+            .filter((group) => group.nodeIds.length);
         pending.delete(op.id);
         break;
       }
       case "add_edge": {
         nodeOf(op.from, index);
         nodeOf(op.to, index);
-        if (op.from === op.to) throw new CanvasError(`Operação ${index + 1}: a conexão precisa ligar duas caixas diferentes.`);
+        if (op.from === op.to)
+          throw new CanvasError(`Operação ${index + 1}: a conexão precisa ligar duas caixas diferentes.`);
         const id = op.id ?? newId("e");
-        if (doc.edges.some((edge) => edge.id === id)) throw new CanvasError(`Operação ${index + 1}: já existe conexão "${id}".`);
-        doc.edges.push({ id, from: op.from, to: op.to, ...(op.label ? { label: op.label } : {}), ...(op.style === "dashed" ? { style: "dashed" as const } : {}) });
+        if (doc.edges.some((edge) => edge.id === id))
+          throw new CanvasError(`Operação ${index + 1}: já existe conexão "${id}".`);
+        doc.edges.push({
+          id,
+          from: op.from,
+          to: op.to,
+          ...(op.label ? { label: op.label } : {}),
+          ...(op.style === "dashed" ? { style: "dashed" as const } : {}),
+        });
         break;
       }
       case "update_edge": {
@@ -700,7 +853,9 @@ function applyOps(source: CanvasDoc, ops: CanvasOp[]) {
       }
       case "remove_edge": {
         const before = doc.edges.length;
-        doc.edges = doc.edges.filter((edge) => !(op.id ? edge.id === op.id : edge.from === op.from && edge.to === op.to));
+        doc.edges = doc.edges.filter(
+          (edge) => !(op.id ? edge.id === op.id : edge.from === op.from && edge.to === op.to),
+        );
         if (doc.edges.length === before) throw new CanvasError(`Operação ${index + 1}: conexão não encontrada.`);
         break;
       }
@@ -764,7 +919,8 @@ export async function saveUserCanvas(botId: string, artifactId: string, body: un
       throw new CanvasError("O canvas mudou enquanto você editava. Recarregue para ver a versão nova.", 409, "stale");
     }
     const seen = meta.canvas?.seen ?? 0;
-    const merge = last.author === "user" && last.n > seen && Date.now() - Date.parse(last.createdAt) < userMergeWindowMs;
+    const merge =
+      last.author === "user" && last.n > seen && Date.now() - Date.parse(last.createdAt) < userMergeWindowMs;
     const saved = await persist(meta, doc, "user", merge);
     return { meta: saved, doc, event: eventOf("artifact.updated", saved) };
   });
@@ -784,31 +940,63 @@ export async function canvasEditNote(botId: string) {
     const seen = meta.canvas?.seen ?? last.n;
     const notified = meta.canvas?.notified ?? seen;
     if (last.author !== "user" || last.n <= seen || last.n <= notified) continue;
-    const [before, after] = await Promise.all([readCanvasDoc(botId, meta.id, seen), readCanvasDoc(botId, meta.id, last.n)]);
+    const [before, after] = await Promise.all([
+      readCanvasDoc(botId, meta.id, seen),
+      readCanvasDoc(botId, meta.id, last.n),
+    ]);
     if (!after) continue;
     const summary = describeChanges(before, after) || "mudanças pequenas";
     lines.push(`- O canvas "${meta.title}" (${meta.id}) foi editado pela pessoa: ${summary}.`);
     await locked(`${botId}/${meta.id}`, async () => {
       const fresh = await readArtifact(botId, meta.id);
       if (!fresh) return;
-      await writeAtomic(join(artifactDir(botId, meta.id), "meta.json"), JSON.stringify({ ...fresh, canvas: { seen: fresh.canvas?.seen ?? seen, notified: last.n } }, null, 2));
+      await writeAtomic(
+        join(artifactDir(botId, meta.id), "meta.json"),
+        JSON.stringify({ ...fresh, canvas: { seen: fresh.canvas?.seen ?? seen, notified: last.n } }, null, 2),
+      );
     });
   }
   if (!lines.length) return "";
-  return ["## Canvas editado pela pessoa", ...lines, "Respeite essas edições: use canvas_read antes de mudar esse canvas e não desfaça o que a pessoa mudou."].join("\n");
+  return [
+    "## Canvas editado pela pessoa",
+    ...lines,
+    "Respeite essas edições: use canvas_read antes de mudar esse canvas e não desfaça o que a pessoa mudou.",
+  ].join("\n");
 }
 
 function compact(doc: CanvasDoc) {
   return {
     layout: doc.layout,
-    nodes: doc.nodes.map((node) => ({ id: node.id, text: node.text, shape: node.shape, ...(node.color ? { color: node.color } : {}), x: node.x, y: node.y, w: node.w, h: node.h })),
-    edges: doc.edges.map((edge) => ({ id: edge.id, from: edge.from, to: edge.to, ...(edge.label ? { label: edge.label } : {}), ...(edge.style ? { style: edge.style } : {}) })),
+    nodes: doc.nodes.map((node) => ({
+      id: node.id,
+      text: node.text,
+      shape: node.shape,
+      ...(node.color ? { color: node.color } : {}),
+      x: node.x,
+      y: node.y,
+      w: node.w,
+      h: node.h,
+    })),
+    edges: doc.edges.map((edge) => ({
+      id: edge.id,
+      from: edge.from,
+      to: edge.to,
+      ...(edge.label ? { label: edge.label } : {}),
+      ...(edge.style ? { style: edge.style } : {}),
+    })),
     ...(doc.groups?.length ? { groups: doc.groups } : {}),
   };
 }
 
 function withEvent(type: ArtifactEvent["type"], meta: ArtifactMeta, extra: Record<string, unknown>) {
-  return { artifactId: meta.id, title: meta.title, kind: meta.kind, version: latestOf(meta).n, ...extra, artifactEvent: eventOf(type, meta) };
+  return {
+    artifactId: meta.id,
+    title: meta.title,
+    kind: meta.kind,
+    version: latestOf(meta).n,
+    ...extra,
+    artifactEvent: eventOf(type, meta),
+  };
 }
 
 export function canvasTools(botId: string): BotTool[] {
@@ -819,7 +1007,12 @@ export function canvasTools(botId: string): BotTool[] {
         "Cria um canvas editável (mapa mental, fluxo, diagrama, arquitetura, processo) que a pessoa vê e edita no app. nodes com id curto e poucas palavras; edges ligam ids. Sem x/y o servidor organiza sozinho: mindmap radial a partir da raiz, flow e diagram em camadas de cima para baixo. Devolve o id para canvas_read e canvas_update.",
       shape: {
         title: z.string().min(1).max(120),
-        kind: z.enum(layouts).optional().describe("flow (processo, aprovação), mindmap (ideias a partir de um centro), diagram (arquitetura, relações). Padrão: diagram"),
+        kind: z
+          .enum(layouts)
+          .optional()
+          .describe(
+            "flow (processo, aprovação), mindmap (ideias a partir de um centro), diagram (arquitetura, relações). Padrão: diagram",
+          ),
         nodes: z.array(nodeInput).min(1).max(maxNodes),
         edges: z.array(edgeInput).max(maxEdges),
         groups: z.array(groupInput).max(40).optional(),
@@ -838,13 +1031,20 @@ export function canvasTools(botId: string): BotTool[] {
     },
     {
       name: "canvas_read",
-      description: "Lê o estado ATUAL de um canvas, incluindo o que a pessoa editou no app. Use antes de alterar um canvas que a pessoa pode ter mexido.",
+      description:
+        "Lê o estado ATUAL de um canvas, incluindo o que a pessoa editou no app. Use antes de alterar um canvas que a pessoa pode ter mexido.",
       shape: { id: z.string().min(1) },
       approval: null,
       label: () => "Ler canvas",
       run: async (input) => {
         const { meta, doc, userEdits, version } = await readCanvasForBot(botId, String(input.id));
-        return { artifactId: meta.id, title: meta.title, version, ...(userEdits ? { editedByPerson: userEdits } : {}), doc: compact(doc) };
+        return {
+          artifactId: meta.id,
+          title: meta.title,
+          version,
+          ...(userEdits ? { editedByPerson: userEdits } : {}),
+          doc: compact(doc),
+        };
       },
     },
     {
@@ -859,8 +1059,17 @@ export function canvasTools(botId: string): BotTool[] {
       approval: null,
       label: () => "Atualizar canvas",
       run: async (input) => {
-        const { meta, doc, userEdits } = await updateCanvas(botId, String(input.id), input.ops as CanvasOp[], typeof input.title === "string" ? input.title : undefined);
-        return withEvent("artifact.updated", meta, { nodes: doc.nodes.length, edges: doc.edges.length, ...(userEdits ? { editedByPersonBefore: userEdits } : {}) });
+        const { meta, doc, userEdits } = await updateCanvas(
+          botId,
+          String(input.id),
+          input.ops as CanvasOp[],
+          typeof input.title === "string" ? input.title : undefined,
+        );
+        return withEvent("artifact.updated", meta, {
+          nodes: doc.nodes.length,
+          edges: doc.edges.length,
+          ...(userEdits ? { editedByPersonBefore: userEdits } : {}),
+        });
       },
     },
   ];
@@ -871,7 +1080,7 @@ export const canvasGuide = [
   "Quando o pedido for lógica, fluxo, mapa mental, arquitetura ou processo, use o canvas (`canvas_create`) em vez de HTML. A pessoa vê e edita o canvas no app: move caixas, renomeia, conecta.",
   "- Poucas palavras por caixa (2 a 5). No máximo ~25 caixas; passou disso, agrupe (groups / set_group) ou divida em dois canvas.",
   "- kind: mindmap para ideias a partir de um centro (a raiz é a caixa sem setas chegando), flow para processos de cima para baixo, diagram para arquitetura e relações.",
-  "- Formas: diamond para decisão (setas com label \"sim\"/\"não\"), ellipse para início e fim, round para etapas, box padrão, note para observação. Cada forma já tem cor padrão (início/fim verde, decisão amarela, etapa azul); só mande color para destacar algo diferente.",
+  '- Formas: diamond para decisão (setas com label "sim"/"não"), ellipse para início e fim, round para etapas, box padrão, note para observação. Cada forma já tem cor padrão (início/fim verde, decisão amarela, etapa azul); só mande color para destacar algo diferente.',
   "- Não mande x/y: o servidor organiza. Ao mudar um canvas que a pessoa editou, chame `canvas_read` antes e use `canvas_update` com operações pontuais; não use relayout nem desfaça o que ela mudou.",
   "- Na conversa, diga em uma frase o que montou, sem repetir as caixas.",
 ].join("\n");

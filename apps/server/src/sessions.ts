@@ -1,11 +1,11 @@
 import { appendFile, mkdir, readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ulid } from "ulid";
+import type { Checkpoint, WorkspaceState } from "./code";
 import { sessionsDir } from "./config";
 import { readJson, writeJson } from "./json-file";
-import { redactDeep } from "./redact";
-import type { Checkpoint, WorkspaceState } from "./code";
 import type { PermissionMode } from "./permissions";
+import { redactDeep } from "./redact";
 
 export interface Fact {
   type: string;
@@ -135,7 +135,9 @@ export async function loadSessions() {
   }
 }
 
-export async function createStoredSession(input: Pick<SessionMeta, "botId" | "kind" | "source" | "title"> & { scheduleId?: string }) {
+export async function createStoredSession(
+  input: Pick<SessionMeta, "botId" | "kind" | "source" | "title"> & { scheduleId?: string },
+) {
   const sessionId = newSessionId();
   const meta: SessionMeta = {
     sessionId,
