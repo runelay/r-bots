@@ -168,8 +168,18 @@ struct TopStrip: View {
     var body: some View {
         HStack(spacing: Spacing.s) {
             if model.section == .conversations && !model.settingsPresented, let bot = model.selectedBot {
-                Spacer(minLength: 0)
-                    .frame(width: (sidebarCollapsed ? FrameMetrics.railWidth + Spacing.l : FrameMetrics.railWidth + FrameMetrics.sidebarWidth + 1) - Spacing.s)
+                ZStack(alignment: .leading) {
+                    Color.clear
+                    HeaderIconButton(
+                        systemImage: "sidebar.left",
+                        help: "Mostrar ou ocultar as conversas (⌃⌘S)",
+                        isActive: !sidebarCollapsed
+                    ) {
+                        sidebarCollapsed.toggle()
+                    }
+                    .padding(.leading, 84)
+                }
+                .frame(width: max((sidebarCollapsed ? FrameMetrics.railWidth + Spacing.l : FrameMetrics.railWidth + FrameMetrics.sidebarWidth + 1) - Spacing.s, 128))
                 BotTagButton(bot: bot, mood: model.mood(for: bot.id)) {
                     model.openProfile(bot)
                 }
@@ -196,13 +206,6 @@ struct TopStrip: View {
                     }
                 }
                 HeaderIconButton(
-                    systemImage: "sidebar.left",
-                    help: "Mostrar ou ocultar as conversas (⌃⌘S)",
-                    isActive: !sidebarCollapsed
-                ) {
-                    sidebarCollapsed.toggle()
-                }
-                HeaderIconButton(
                     systemImage: "sidebar.right",
                     help: "Mostrar ou ocultar o painel (⌥⌘I)",
                     isActive: model.inspectorPresented
@@ -214,6 +217,7 @@ struct TopStrip: View {
             }
         }
         .padding(.trailing, FrameMetrics.panelInset + Spacing.xs)
+        .frame(minWidth: 0, maxWidth: .infinity)
         .frame(height: FrameMetrics.stripHeight)
         .background {
             Rectangle()
