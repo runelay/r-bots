@@ -538,10 +538,12 @@ private struct UsageAreaChart: View {
     let mode: UsageMode
     @State private var hovered: Date?
 
-    private struct Band: Identifiable {
+    private static let areaSuffix = " · área"
+
+    private struct Stack: Identifiable {
         let date: Date
         let provider: String
-        let start: Double
+        let value: Double
         let end: Double
 
         var id: String { "\(date.timeIntervalSince1970)|\(provider)" }
@@ -555,22 +557,38 @@ private struct UsageAreaChart: View {
         Array(Set(points.map(\.provider))).sorted { total($0) > total($1) }
     }
 
-    private var bands: [Band] {
+    private var stacks: [Stack] {
         let order = providers
         var values: [String: Double] = [:]
         for point in points {
             values[point.id, default: 0] += point.value
         }
-        var result: [Band] = []
+        var result: [Stack] = []
         for date in dates {
             var base = 0.0
             for provider in order {
                 let value = values["\(date.timeIntervalSince1970)|\(provider)"] ?? 0
-                result.append(Band(date: date, provider: provider, start: base, end: base + value))
                 base += value
+                result.append(Stack(date: date, provider: provider, value: value, end: base))
             }
         }
         return result
+    }
+
+    private var ticks: [Date] {
+        let all = dates
+        guard all.count > 4 else { return all }
+        let step = Int((Double(all.count - 1) / 3).rounded(.up))
+        return stride(from: 0, to: all.count, by: step).map { all[$0] }
+    }
+
+    private func upperBound(_ stacks: [Stack]) -> Double {
+        let peak = stacks.map(\.end).max() ?? 0
+        guard peak > 0 else { return 1 }
+        let target = peak * 1.1
+        let magnitude = pow(10, floor(log10(target)))
+        let step = [1, 2, 2.5, 5, 10].first { $0 * magnitude >= target } ?? 10
+        return step * magnitude
     }
 
     private func total(_ provider: String) -> Double {
@@ -578,7 +596,13 @@ private struct UsageAreaChart: View {
     }
 
     private func color(_ provider: String) -> Color {
-        provider == "Claude" ? UsagePalette.claude : UsagePalette.codexChart
+        UsagePalette.provider(provider.lowercased())
+    }
+
+    private func style(_ key: String) -> AnyShapeStyle {
+        guard key.hasSuffix(Self.areaSuffix) else { return AnyShapeStyle(color(key)) }
+        let base = color(String(key.dropLast(Self.areaSuffix.count)))
+        return AnyShapeStyle(LinearGradient(colors: [base.opacity(0.32), base.opacity(0.03)], startPoint: .top, endPoint: .bottom))
     }
 
     private func format(_ value: Double) -> String {
@@ -601,6 +625,14 @@ private struct UsageAreaChart: View {
         formatter.locale = Locale(identifier: "pt_BR")
         formatter.timeZone = TimeZone(identifier: "America/Sao_Paulo")
         formatter.dateFormat = hourly ? "d MMM, HH'h'" : "EEE, d MMM"
+        return formatter.string(from: date)
+    }
+
+    private func tick(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.timeZone = TimeZone(identifier: "America/Sao_Paulo")
+        formatter.dateFormat = hourly ? "HH'h'" : "d MMM"
         return formatter.string(from: date)
     }
 
@@ -640,43 +672,41 @@ private struct UsageAreaChart: View {
     }
 
     private var chart: some View {
-        let bands = bands
+        let stacks = stacks
         return Chart {
-            ForEach(bands) { band in
+            ForEach(stacks) { item in
                 AreaMark(
-                    x: .value("Data", band.date),
-                    yStart: .value("Base", band.start),
-                    yEnd: .value("Valor", band.end),
-                    series: .value("Provedor", band.provider)
+                    x: .value("Data", item.date),
+                    y: .value("Valor", item.value),
+                    stacking: .standard
                 )
+                .foregroundStyle(by: .value("Série", item.provider + Self.areaSuffix))
                 .interpolationMethod(.monotone)
-                .foregroundStyle(LinearGradient(colors: [color(band.provider).opacity(0.42), color(band.provider).opacity(0.04)], startPoint: .top, endPoint: .bottom))
             }
-            ForEach(bands) { band in
+            ForEach(stacks) { item in
                 LineMark(
-                    x: .value("Data", band.date),
-                    y: .value("Valor", band.end),
-                    series: .value("Provedor", band.provider)
+                    x: .value("Data", item.date),
+                    y: .value("Valor", item.end),
+                    series: .value("Linha", item.provider)
                 )
+                .foregroundStyle(by: .value("Série", item.provider))
                 .interpolationMethod(.monotone)
-                .foregroundStyle(color(band.provider))
                 .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
             }
             if let hovered {
                 RuleMark(x: .value("Data", hovered))
                     .foregroundStyle(Theme.textTertiary.opacity(0.6))
                     .lineStyle(StrokeStyle(lineWidth: 1))
-                    .annotation(position: .top, spacing: Spacing.xs, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
-                        tooltip(hovered)
-                    }
-                ForEach(bands.filter { $0.date == hovered }) { band in
-                    PointMark(x: .value("Data", band.date), y: .value("Valor", band.end))
+                ForEach(stacks.filter { $0.date == hovered }) { item in
+                    PointMark(x: .value("Data", item.date), y: .value("Valor", item.end))
                         .symbolSize(42)
-                        .foregroundStyle(color(band.provider))
+                        .foregroundStyle(by: .value("Série", item.provider))
                 }
             }
         }
+        .chartForegroundStyleScale { (key: String) in style(key) }
         .chartLegend(.hidden)
+        .chartYScale(domain: 0...upperBound(stacks))
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
                 AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
@@ -693,10 +723,10 @@ private struct UsageAreaChart: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 4)) { value in
-                AxisValueLabel {
+            AxisMarks(values: ticks) { value in
+                AxisValueLabel(anchor: .top) {
                     if let date = value.as(Date.self) {
-                        Text(date, format: hourly ? .dateTime.hour() : .dateTime.day().month(.abbreviated))
+                        Text(tick(date))
                             .font(TypeScale.caption)
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
@@ -707,23 +737,33 @@ private struct UsageAreaChart: View {
         }
         .chartOverlay { proxy in
             GeometryReader { geometry in
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(Rectangle())
-                    .onContinuousHover { phase in
-                        switch phase {
-                        case .active(let location):
-                            guard let frame = proxy.plotFrame.map({ geometry[$0] }) else { return }
-                            let x = location.x - frame.origin.x
-                            guard x >= 0, x <= frame.width, let date: Date = proxy.value(atX: x) else {
+                let plot = proxy.plotFrame.map { geometry[$0] } ?? .zero
+                ZStack(alignment: .topLeading) {
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            switch phase {
+                            case .active(let location):
+                                let x = location.x - plot.origin.x
+                                guard x >= 0, x <= plot.width, let date: Date = proxy.value(atX: x) else {
+                                    hovered = nil
+                                    return
+                                }
+                                hovered = dates.min { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) }
+                            case .ended:
                                 hovered = nil
-                                return
                             }
-                            hovered = dates.min { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) }
-                        case .ended:
-                            hovered = nil
                         }
+                    if let hovered, let position = proxy.position(forX: hovered) {
+                        let x = plot.minX + position
+                        let flipped = x > plot.midX
+                        tooltip(hovered)
+                            .frame(width: max(0, flipped ? x - plot.minX - Spacing.s : plot.maxX - x - Spacing.s), alignment: flipped ? .trailing : .leading)
+                            .offset(x: flipped ? plot.minX : x + Spacing.s, y: plot.minY + Spacing.xs)
+                            .allowsHitTesting(false)
                     }
+                }
             }
         }
     }
@@ -765,7 +805,8 @@ private struct UsageAreaChart: View {
         .fixedSize()
         .frame(minWidth: 160, alignment: .leading)
         .padding(Spacing.s + 2)
-        .glassSurface(RoundedRectangle(cornerRadius: Radius.small, style: .continuous), fallback: Theme.background)
+        .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+        .softElevation(lifted: true)
     }
 }
 
@@ -957,6 +998,10 @@ private struct UsageDetailTable: View {
     let rows: [UsageDetailRow]
     let mode: UsageMode
     @State private var grouping: DetailGrouping = .model
+    @State private var rowFrames: [String: CGRect] = [:]
+    @State private var hoveredLine: String?
+
+    private static let space = "usage-detail"
 
     private var lines: [DetailLine] {
         var map: [String: DetailLine] = [:]
@@ -985,6 +1030,8 @@ private struct UsageDetailTable: View {
     }
 
     var body: some View {
+        let lines = lines
+        let totalShare = max(lines.reduce(0) { $0 + share(of: $1) }, 0.000_001)
         UsageCard {
             VStack(alignment: .leading, spacing: Spacing.m) {
                 HStack {
@@ -994,38 +1041,81 @@ private struct UsageDetailTable: View {
                     Spacer()
                     UsageSegmented(options: [(DetailGrouping.model, "Modelo"), (DetailGrouping.day, "Dia")], selection: $grouping, namespaceID: "detail")
                 }
-                Grid(alignment: .trailing, horizontalSpacing: Spacing.l, verticalSpacing: Spacing.s) {
+                Grid(alignment: .trailing, horizontalSpacing: Spacing.l, verticalSpacing: 0) {
                     GridRow {
                         Text(grouping == .model ? "Modelo" : "Dia")
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .gridColumnAlignment(.leading)
                         Text("Fora do cache")
                         Text("Em cache")
                         Text("Output")
-                        Text(mode == .cost ? "Custo" : "Total")
+                        Text("Total")
+                        Text("Custo")
                     }
                     .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                     .font(TypeScale.captionStrong)
                     .foregroundStyle(Theme.textTertiary)
+                    .padding(.bottom, Spacing.xs)
                     ForEach(lines) { line in
                         GridRow {
-                            HStack(spacing: Spacing.s) {
-                                if let provider = line.provider {
-                                    ProviderLogo(provider: provider, size: 14)
+                            VStack(alignment: .leading, spacing: Spacing.xs + 1) {
+                                HStack(spacing: Spacing.s) {
+                                    if let provider = line.provider {
+                                        ProviderLogo(provider: provider, size: 14)
+                                    }
+                                    Text(line.title)
+                                        .foregroundStyle(Theme.textPrimary)
+                                        .lineLimit(1)
                                 }
-                                Text(line.title)
-                                    .foregroundStyle(Theme.textPrimary)
-                                    .lineLimit(1)
+                                Capsule()
+                                    .fill(UsagePalette.track)
+                                    .frame(height: 3)
+                                    .overlay(alignment: .leading) {
+                                        Capsule()
+                                            .fill(line.provider.map { UsagePalette.provider($0) } ?? Theme.brandAccent)
+                                            .scaleEffect(x: share(of: line) / totalShare, anchor: .leading)
+                                    }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .gridColumnAlignment(.leading)
+                            .padding(.vertical, Spacing.s)
+                            .onGeometryChange(for: CGRect.self) { proxy in
+                                proxy.frame(in: .named(Self.space))
+                            } action: { frame in
+                                rowFrames[line.id] = frame
+                            }
                             Text(UsageFormat.tokens(line.input))
                             Text(UsageFormat.tokens(line.cacheRead))
                             Text(UsageFormat.tokens(line.output))
-                            Text(mode == .cost ? (line.priced ? UsageFormat.usd(line.cost) : "sem preço") : UsageFormat.tokens(line.processed))
-                                .foregroundStyle(Theme.textPrimary)
+                            Text(UsageFormat.tokens(line.processed))
+                                .foregroundStyle(mode == .tokens ? Theme.textPrimary : Theme.textSecondary)
+                            Text(line.priced ? UsageFormat.usd(line.cost) : "sem preço")
+                                .foregroundStyle(mode == .cost ? Theme.textPrimary : Theme.textSecondary)
                         }
                         .lineLimit(1)
                         .font(TypeScale.rowSubtitle.monospacedDigit())
                         .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .coordinateSpace(.named(Self.space))
+                .background(alignment: .topLeading) {
+                    if let hoveredLine, let frame = rowFrames[hoveredLine] {
+                        RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
+                            .fill(Theme.hover)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: frame.height)
+                            .padding(.horizontal, -Spacing.s)
+                            .offset(y: frame.minY)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .onContinuousHover(coordinateSpace: .named(Self.space)) { phase in
+                    switch phase {
+                    case .active(let location):
+                        hoveredLine = rowFrames.first { $0.value.minY <= location.y && location.y < $0.value.maxY }?.key
+                    case .ended:
+                        hoveredLine = nil
                     }
                 }
                 if lines.isEmpty {
@@ -1035,5 +1125,9 @@ private struct UsageDetailTable: View {
                 }
             }
         }
+    }
+
+    private func share(of line: DetailLine) -> Double {
+        mode == .cost ? line.cost : line.processed
     }
 }
