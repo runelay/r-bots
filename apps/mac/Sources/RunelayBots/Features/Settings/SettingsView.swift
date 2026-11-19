@@ -54,6 +54,7 @@ struct SettingsScreen: View {
                                 .foregroundStyle(Theme.textPrimary)
                             switch model.settingsSection {
                             case .server: ServerSettings()
+                            case .account: AccountSettings()
                             case .appearance: AppearanceSettings()
                             case .notifications: NotificationSettings()
                             case .bots: BotsSettings()
@@ -315,8 +316,6 @@ struct ServerSettings: View {
                 }
                 .padding(Spacing.l)
             }
-
-            AccountSettingsGroup()
 
             SettingsGroup(caption: "Conexão") {
                 SettingsRow(title: "Motor", detail: nil) {

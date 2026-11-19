@@ -135,6 +135,7 @@ enum AccountsState {
 
 enum SettingsSection: String, CaseIterable, Identifiable {
     case server
+    case account
     case appearance
     case notifications
     case bots
@@ -148,6 +149,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .server: "Servidor"
+        case .account: "Conta"
         case .appearance: "Aparência"
         case .notifications: "Notificações"
         case .bots: "Bots"
@@ -161,6 +163,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .server: "server.rack"
+        case .account: "person.crop.circle"
         case .appearance: "paintbrush"
         case .notifications: "bell"
         case .bots: "person.2"
@@ -456,6 +459,15 @@ final class AppModel {
         } catch {
             connection = .offline(ErrorMessage.describe(error))
         }
+    }
+
+    func reloadAfterSignIn() async {
+        applyMeta(await client.meta())
+        await loadBots()
+        await loadSections()
+        await loadGroups()
+        await loadAccounts()
+        await loadConnectors()
     }
 
     var readyAccounts: [AIAccount] {

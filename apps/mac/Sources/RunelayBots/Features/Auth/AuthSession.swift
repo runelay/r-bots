@@ -19,6 +19,7 @@ final class AuthSession: NSObject {
     var expired = false
     var pendingUserCode: String?
     var browserBusy = false
+    var status: SetupStatus?
 
     @ObservationIgnored private var bootedServer: String?
     @ObservationIgnored private var browserTask: Task<Void, Never>?
@@ -37,10 +38,24 @@ final class AuthSession: NSObject {
         }
     }
 
+    var needsOwner: Bool {
+        if case .signedOut(let needsOwner) = state { return needsOwner }
+        return false
+    }
+
+    var canSkipAccount: Bool {
+        needsOwner && status?.required == false
+    }
+
+    var serverSupportsLogin: Bool {
+        status != nil
+    }
+
     private var server: URL { ServerConfig.currentURL() }
     private var client: AuthClient { AuthClient(baseURL: server) }
 
     private var cachedUserKey: String { "auth.user.\(AuthStore.origin(of: server) ?? "")" }
+    private var supportKey: String { "auth.required.\(AuthStore.origin(of: server) ?? "")" }
 
     func onSignIn(_ action: @escaping () -> Void) {
         onSignedIn = action
@@ -51,23 +66,29 @@ final class AuthSession: NSObject {
         guard force || bootedServer != origin else { return }
         bootedServer = origin
         let client = client
-        let needsOwner: Bool?
+        let fetched: SetupStatus?
         do {
-            needsOwner = try await client.needsOwner()
+            fetched = try await client.setupStatus()
         } catch {
-            state = AuthStore.read(.session) == nil ? .signedOut(needsOwner: false) : cachedSignedIn()
+            if AuthStore.read(.session) != nil {
+                state = cachedSignedIn()
+            } else {
+                state = UserDefaults.standard.bool(forKey: supportKey) ? .signedOut(needsOwner: false) : .disabled
+            }
             return
         }
-        guard let needsOwner else {
+        status = fetched
+        UserDefaults.standard.set(fetched?.required == true, forKey: supportKey)
+        guard let fetched else {
             state = .disabled
             return
         }
-        if needsOwner {
+        if fetched.needsOwner {
             state = .signedOut(needsOwner: true)
             return
         }
         guard let token = AuthStore.read(.session) else {
-            state = .signedOut(needsOwner: false)
+            state = fetched.required ? .signedOut(needsOwner: false) : .disabled
             return
         }
         do {
@@ -102,6 +123,31 @@ final class AuthSession: NSObject {
             password: password
         )
         try await finish(token: token)
+    }
+
+    func acceptInvite(code: String, name: String, email: String, password: String) async throws {
+        let token = try await client.acceptInvite(
+            code: code.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: name.trimmingCharacters(in: .whitespaces),
+            email: email.trimmingCharacters(in: .whitespaces).lowercased(),
+            password: password
+        )
+        try await finish(token: token)
+    }
+
+    func continueWithoutAccount() {
+        guard canSkipAccount else { return }
+        state = .disabled
+    }
+
+    func changePassword(current: String, new: String) async throws {
+        guard let token = AuthStore.read(.session) else { throw AuthFailure.server(401, nil) }
+        if let fresh = try await client.changePassword(token: token, current: current, new: new), fresh != token {
+            AuthStore.save(fresh, as: .session)
+            if let profile = try? await client.profile(token: fresh) {
+                apply(profile)
+            }
+        }
     }
 
     func signInWithBrowser() {
@@ -163,6 +209,7 @@ final class AuthSession: NSObject {
         clearLocal()
         expired = false
         state = .signedOut(needsOwner: false)
+        await bootstrap(force: true)
     }
 
     func sessionExpired() {

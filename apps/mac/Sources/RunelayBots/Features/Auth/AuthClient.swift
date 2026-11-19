@@ -20,6 +20,13 @@ struct AuthProfile: Sendable {
     let cookie: AuthCookie?
 }
 
+struct SetupStatus: Equatable, Sendable {
+    let needsOwner: Bool
+    let required: Bool
+    let passwordReset: Bool
+    let passkey: Bool
+}
+
 struct DeviceGrant: Sendable {
     let deviceCode: String
     let userCode: String
@@ -120,11 +127,74 @@ struct AuthClient: Sendable {
         }
     }
 
-    func needsOwner() async throws -> Bool? {
+    func setupStatus() async throws -> SetupStatus? {
         let (data, response) = try await send("GET", "/auth/setup")
         if response.statusCode == 404 { return nil }
         try Self.ensure(data, response)
-        return Self.object(data)["needsOwner"] as? Bool ?? false
+        let body = Self.object(data)
+        let methods = body["methods"] as? [String: Any] ?? [:]
+        return SetupStatus(
+            needsOwner: body["needsOwner"] as? Bool ?? false,
+            required: body["required"] as? Bool ?? true,
+            passwordReset: methods["passwordReset"] as? Bool ?? false,
+            passkey: methods["passkey"] as? Bool ?? true
+        )
+    }
+
+    func health() async throws {
+        let (data, response) = try await send("GET", "/health")
+        try Self.ensure(data, response)
+    }
+
+    func acceptInvite(code: String, name: String, email: String, password: String) async throws -> String {
+        let (data, response) = try await send(
+            "POST",
+            "/auth/invites/accept",
+            body: ["code": code, "name": name, "email": email, "password": password]
+        )
+        try Self.ensure(data, response)
+        guard let token = Self.object(data)["token"] as? String else {
+            throw AuthFailure.server(response.statusCode, "O servidor não devolveu a sessão.")
+        }
+        return token
+    }
+
+    func changePassword(token: String, current: String, new: String) async throws -> String? {
+        var request = URLRequest(url: try url("/api/auth/change-password"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let origin = AuthStore.origin(of: baseURL) {
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+        }
+        let body: [String: JSONValue] = [
+            "currentPassword": .string(current),
+            "newPassword": .string(new),
+            "revokeOtherSessions": .bool(true),
+        ]
+        request.httpBody = try JSONEncoder().encode(body)
+        let data: Data
+        let http: HTTPURLResponse
+        do {
+            let (received, response) = try await Self.session.data(for: request)
+            guard let response = response as? HTTPURLResponse else { throw AuthFailure.unreachable }
+            data = received
+            http = response
+        } catch let failure as AuthFailure {
+            throw failure
+        } catch {
+            throw AuthFailure.unreachable
+        }
+        if http.statusCode == 400 || http.statusCode == 401 {
+            let message = Self.message(data) ?? ""
+            if message.localizedCaseInsensitiveContains("password") {
+                throw AuthFailure.server(http.statusCode, "A senha atual não confere.")
+            }
+        }
+        try Self.ensure(data, http)
+        if let fresh = http.value(forHTTPHeaderField: "set-auth-token"), !fresh.isEmpty { return fresh }
+        return Self.object(data)["token"] as? String
     }
 
     func signIn(email: String, password: String) async throws -> String {
