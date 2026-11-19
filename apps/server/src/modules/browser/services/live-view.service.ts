@@ -1,7 +1,5 @@
-import type http from "node:http";
-import type { Duplex } from "node:stream";
-import { type WebSocket, WebSocketServer } from "ws";
 import { writeJson } from "../../../shared/json-file";
+import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 import { browserStateFile, cdpUrl, markBrowserViewed } from "./browser.service";
 import { controllerOf, onControllerChange } from "./control.service";
 
@@ -15,7 +13,7 @@ interface PageState {
   loading: boolean;
 }
 
-const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+const maxLiveMessage = 1024 * 1024;
 const lives = new Map<string, LiveBrowser>();
 
 const mouseTypes: Record<string, string> = {
@@ -27,8 +25,8 @@ const mouseTypes: Record<string, string> = {
 const keyTypes: Record<string, string> = { down: "keyDown", up: "keyUp" };
 
 class LiveBrowser {
-  readonly clients = new Set<WebSocket>();
-  private cdp: WebSocket | globalThis.WebSocket | null = null;
+  readonly clients = new Set<Socket>();
+  private cdp: WebSocket | null = null;
   private sessionId: string | null = null;
   private nextId = 1;
   private pending = new Map<number, { resolve: (value: Json) => void; reject: (error: Error) => void }>();
@@ -41,7 +39,7 @@ class LiveBrowser {
 
   private broadcast(message: Json) {
     const payload = JSON.stringify(message);
-    for (const client of this.clients) if (client.readyState === client.OPEN) client.send(payload);
+    for (const client of this.clients) if (client.readyState === socketOpen) client.send(payload);
   }
 
   stateMessage() {
@@ -53,7 +51,7 @@ class LiveBrowser {
   }
 
   private send(method: string, params: Json = {}, withSession = true): Promise<Json> {
-    const socket = this.cdp as globalThis.WebSocket | null;
+    const socket = this.cdp;
     if (!socket || socket.readyState !== 1) return Promise.reject(new Error("CDP desconectado."));
     const id = this.nextId++;
     const message: Json = { id, method, params };
@@ -124,7 +122,7 @@ class LiveBrowser {
     this.casting = false;
     for (const waiter of this.pending.values()) waiter.reject(new Error("CDP desconectado."));
     this.pending.clear();
-    const socket = this.cdp as globalThis.WebSocket | null;
+    const socket = this.cdp;
     this.cdp = null;
     try {
       socket?.close();
@@ -132,13 +130,13 @@ class LiveBrowser {
   }
 
   async ensure() {
-    const socket = this.cdp as globalThis.WebSocket | null;
+    const socket = this.cdp;
     if (socket && socket.readyState === 1 && this.sessionId) return;
     if (this.connecting) return this.connecting;
     this.connecting = (async () => {
       this.reset();
       const url = await cdpUrl(this.botId);
-      const ws = new globalThis.WebSocket(url);
+      const ws = new WebSocket(url);
       await new Promise<void>((resolve, reject) => {
         ws.addEventListener("open", () => resolve(), { once: true });
         ws.addEventListener("error", () => reject(new Error("Não consegui abrir o CDP.")), { once: true });
@@ -289,39 +287,54 @@ export function isLiveUpgrade(pathname: string) {
   return /^\/bots\/[^/]+\/browser\/live$/.test(pathname);
 }
 
-export function handleLiveUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer, botId: string) {
-  wss.handleUpgrade(req, socket, head, (client) => {
+function liveFail(client: Socket, error: unknown) {
+  if (client.readyState === socketOpen)
+    client.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
+}
+
+export const liveSocket: SocketHandler = {
+  open(client) {
+    const botId = String(client.data.botId);
     const live = liveOf(botId);
     live.clients.add(client);
     markBrowserViewed(botId);
-    const fail = (error: unknown) => {
-      if (client.readyState === client.OPEN)
-        client.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
-    };
     live
       .startCast()
       .then(() => {
         client.send(JSON.stringify(live.stateMessage()));
-        if (live.lastFrame && client.readyState === client.OPEN) client.send(JSON.stringify(live.lastFrame));
+        if (live.lastFrame && client.readyState === socketOpen) client.send(JSON.stringify(live.lastFrame));
       })
-      .catch(fail);
-    client.on("message", (data) => {
-      let message: Json;
-      try {
-        message = JSON.parse(String(data)) as Json;
-      } catch {
-        return fail(new Error("JSON inválido."));
-      }
-      if (message.type === "ping") return client.send(JSON.stringify({ type: "pong", ts: Date.now() }));
-      if (controllerOf(botId) !== "user") return fail(new Error("Assuma o controle do navegador antes de interagir."));
-      live.command(message).catch(fail);
-    });
-    client.on("close", () => {
-      live.clients.delete(client);
-      if (live.clients.size === 0) void live.stopCast();
-    });
-  });
-}
+      .catch((error) => liveFail(client, error));
+  },
+  message(client, data) {
+    const botId = String(client.data.botId);
+    if (data.length > maxLiveMessage) {
+      client.close(1009, "Message too big");
+      return;
+    }
+    let message: Json;
+    try {
+      message = JSON.parse(String(data)) as Json;
+    } catch {
+      return liveFail(client, new Error("JSON inválido."));
+    }
+    if (message.type === "ping") {
+      client.send(JSON.stringify({ type: "pong", ts: Date.now() }));
+      return;
+    }
+    if (controllerOf(botId) !== "user")
+      return liveFail(client, new Error("Assuma o controle do navegador antes de interagir."));
+    liveOf(botId)
+      .command(message)
+      .catch((error) => liveFail(client, error));
+  },
+  close(client) {
+    const live = lives.get(String(client.data.botId));
+    if (!live) return;
+    live.clients.delete(client);
+    if (live.clients.size === 0) void live.stopCast();
+  },
+};
 
 export function hasLiveClients(botId: string) {
   return (lives.get(botId)?.clients.size ?? 0) > 0;

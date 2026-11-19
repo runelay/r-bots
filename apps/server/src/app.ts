@@ -1,12 +1,11 @@
-import http from "node:http";
-import type { Duplex } from "node:stream";
+import type { Server } from "bun";
 import { handleAccounts, handleAccountsRefresh } from "./modules/accounts/routes/accounts.routes";
-import { handleRunnerUpgrade, isRunnerUpgrade } from "./modules/accounts/services/mac-runner.service";
+import { isRunnerUpgrade, runnerSocket, runnerUpgradeAllowed } from "./modules/accounts/services/mac-runner.service";
 import { handleBots } from "./modules/bots/routes/bots.routes";
 import { getBot } from "./modules/bots/services/bots.service";
-import { handleDesktopUpgrade, isDesktopUpgrade } from "./modules/browser/services/desktop.service";
-import { handleLiveUpgrade, isLiveUpgrade } from "./modules/browser/services/live-view.service";
-import { handleCodeRoute, handlePreview, handlePreviewUpgrade } from "./modules/code/routes/code.routes";
+import { desktopSocket, isDesktopUpgrade } from "./modules/browser/services/desktop.service";
+import { isLiveUpgrade, liveSocket } from "./modules/browser/services/live-view.service";
+import { handleCodeRoute, handlePreview, previewSocket, previewUpgradeTarget } from "./modules/code/routes/code.routes";
 import { botIsCoding } from "./modules/code/services/bot-code.service";
 import { handleComputerHealth } from "./modules/computer/routes/computer.routes";
 import { handleConnections, handleConnectorActions } from "./modules/connectors/routes/connectors.routes";
@@ -18,7 +17,8 @@ import { handleHealth, handleMeta, handleStatus, handleStatusStream } from "./mo
 import { handleUsageRoute } from "./modules/usage/routes/usage.routes";
 import { handleVaultRoute } from "./modules/vault/routes/vault.routes";
 import { handleVoices } from "./modules/voice/routes/voice.routes";
-import { notFound, type Req, type Res, sendJson } from "./shared/http";
+import { notFound, Req, Res, sendJson } from "./shared/http";
+import type { SocketData, SocketHandler } from "./shared/ws";
 
 async function route(req: Req, res: Res) {
   const url = new URL(req.url ?? "/", "http://gateway.local");
@@ -52,32 +52,82 @@ async function route(req: Req, res: Res) {
   notFound(res);
 }
 
-async function upgrade(req: Req, socket: Duplex, head: Buffer) {
-  const url = new URL(req.url ?? "/", "http://gateway.local");
-  if (isRunnerUpgrade(url.pathname)) return handleRunnerUpgrade(req, socket, head);
-  if (handlePreviewUpgrade(req, socket, head)) return;
-  const botId = decodeURIComponent(url.pathname.split("/")[2] ?? "");
-  const bot = getBot(botId);
-  if (bot?.capabilities.desktop && isDesktopUpgrade(url.pathname))
-    return handleDesktopUpgrade(req, socket, head, botId);
-  const browserAllowed = bot ? bot.capabilities.browser || (await botIsCoding(bot.id).catch(() => false)) : false;
-  if (!isLiveUpgrade(url.pathname) || !bot || !browserAllowed) {
-    socket.end("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n");
-    return;
-  }
-  handleLiveUpgrade(req, socket, head, botId);
-}
+type Handler = (req: Req, res: Res) => unknown;
 
-export function createServer() {
-  const server = http.createServer((req, res) => {
-    route(req, res).catch((error) => {
+function run(request: Request, handler: Handler) {
+  const req = new Req(request);
+  const res = new Res(request.signal);
+  Promise.resolve()
+    .then(() => handler(req, res))
+    .catch((error) => {
       console.error(error);
       if (!res.headersSent) sendJson(res, 500, { ok: false, error: String(error?.message ?? error) });
       else res.end();
     });
+  return res.response;
+}
+
+const sockets: Record<string, SocketHandler> = {
+  runner: runnerSocket,
+  live: liveSocket,
+  desktop: desktopSocket,
+  preview: previewSocket,
+};
+
+async function upgrade(request: Request, server: Server<SocketData>) {
+  const req = new Req(request);
+  const url = new URL(request.url);
+  const accept = (data: SocketData, headers?: Record<string, string>) =>
+    server.upgrade(request, { data, ...(headers ? { headers } : {}) })
+      ? undefined
+      : new Response("Upgrade failed", { status: 400 });
+  if (isRunnerUpgrade(url.pathname)) {
+    if (!runnerUpgradeAllowed(req)) return new Response(null, { status: 401 });
+    return accept({ kind: "runner" });
+  }
+  const preview = previewUpgradeTarget(req);
+  if (preview) {
+    const protocol = preview.protocols[0];
+    return accept({ kind: "preview", ...preview }, protocol ? { "Sec-WebSocket-Protocol": protocol } : undefined);
+  }
+  const botId = decodeURIComponent(url.pathname.split("/")[2] ?? "");
+  const bot = getBot(botId);
+  if (bot?.capabilities.desktop && isDesktopUpgrade(url.pathname)) return accept({ kind: "desktop", botId });
+  const browserAllowed = bot ? bot.capabilities.browser || (await botIsCoding(bot.id).catch(() => false)) : false;
+  if (!isLiveUpgrade(url.pathname) || !bot || !browserAllowed) return new Response(null, { status: 404 });
+  return accept({ kind: "live", botId });
+}
+
+function getOnly(handler: (res: Res, url: URL) => unknown) {
+  return (request: Request) =>
+    run(request, (req, res) => (req.method === "GET" ? handler(res, new URL(request.url)) : route(req, res)));
+}
+
+export function startServer(hostname: string, port: number) {
+  return Bun.serve<SocketData>({
+    hostname,
+    port,
+    idleTimeout: 0,
+    maxRequestBodySize: 128 * 1024 * 1024,
+    routes: {
+      "/health": getOnly((res) => handleHealth(res)),
+      "/meta": getOnly((res) => handleMeta(res)),
+      "/accounts": getOnly((res, url) => handleAccounts(res, url)),
+      "/voice/voices": getOnly((res, url) => handleVoices(res, url)),
+      "/skills": getOnly((res, url) => handleSkills(res, url)),
+      "/computer/health": getOnly((res) => handleComputerHealth(res)),
+    },
+    fetch(request, server) {
+      if (request.headers.get("upgrade")?.toLowerCase() === "websocket") return upgrade(request, server);
+      return run(request, route);
+    },
+    websocket: {
+      maxPayloadLength: 32 * 1024 * 1024,
+      idleTimeout: 960,
+      open: (ws) => sockets[ws.data.kind]?.open(ws),
+      message: (ws, message) => sockets[ws.data.kind]?.message(ws, message),
+      close: (ws, code, reason) => sockets[ws.data.kind]?.close(ws, code, reason),
+      pong: (ws) => sockets[ws.data.kind]?.pong?.(ws),
+    },
   });
-  server.on("upgrade", upgrade);
-  server.requestTimeout = 0;
-  server.headersTimeout = 60_000;
-  return server;
 }

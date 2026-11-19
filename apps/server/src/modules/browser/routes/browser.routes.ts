@@ -1,4 +1,3 @@
-import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { dataDir } from "../../../config/env";
@@ -53,7 +52,7 @@ async function handleScreenshot(res: Res, bot: BotDefinition, name = "latest.png
       "cache-control": "no-store",
       "last-modified": info.mtime.toUTCString(),
     });
-    createReadStream(file).pipe(res);
+    res.end(Bun.file(file));
   } catch {
     sendJson(res, 404, { ok: false, error: "Nenhum print ainda." });
   }
@@ -69,7 +68,7 @@ async function handleDesktopScreenshot(res: Res, bot: BotDefinition) {
       "cache-control": "no-store",
       "last-modified": info.mtime.toUTCString(),
     });
-    createReadStream(file).pipe(res);
+    res.end(Bun.file(file));
   } catch {
     sendJson(res, 404, { ok: false, error: "Nenhum print do computador ainda." });
   }

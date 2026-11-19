@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
-import { createReadStream, createWriteStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import type http from "node:http";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -15,6 +14,7 @@ import {
 import { ulid } from "ulid";
 import { z } from "zod";
 import { botDir, dataDir } from "../../../config/env";
+import type { Req, Res } from "../../../shared/http";
 import {
   macReadFile,
   macRunnerConnected,
@@ -403,7 +403,7 @@ async function register(botId: string, meta: UploadMeta) {
   return meta;
 }
 
-export async function receiveUpload(botId: string, req: http.IncomingMessage) {
+export async function receiveUpload(botId: string, req: Req) {
   const declared = Number(req.headers["content-length"] ?? NaN);
   if (Number.isFinite(declared) && declared > maxUploadBytes) throw new UploadError("O arquivo passa de 100 MB.", 413);
   const rawName = String(req.headers["x-file-name"] ?? "");
@@ -986,13 +986,7 @@ export async function prepareAttachments(botId: string, metas: UploadMeta[], vis
   return { text: lines.length ? `Anexos da pessoa:\n${lines.join("\n")}` : "", images };
 }
 
-export async function serveUpload(
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-  botId: string,
-  uploadId: string,
-  variant: string | undefined,
-) {
+export async function serveUpload(req: Req, res: Res, botId: string, uploadId: string, variant: string | undefined) {
   const meta = await readUpload(botId, uploadId);
   const notFound = () => {
     const payload = JSON.stringify({ ok: false, error: "Anexo não encontrado." });
@@ -1046,11 +1040,11 @@ export async function serveUpload(
       "content-length": String(end - start + 1),
     });
     if (req.method === "HEAD") return res.end();
-    return createReadStream(path, { start, end }).pipe(res);
+    return res.end(Bun.file(path).slice(start, end + 1));
   }
   res.writeHead(200, { ...headers, "content-length": String(size) });
   if (req.method === "HEAD") return res.end();
-  createReadStream(path).pipe(res);
+  res.end(Bun.file(path));
 }
 
 export async function listUploads(botId: string) {

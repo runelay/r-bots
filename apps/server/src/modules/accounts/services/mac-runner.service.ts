@@ -1,8 +1,7 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import type http from "node:http";
-import type { Duplex } from "node:stream";
 import type { AccountProbe, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
-import { type WebSocket, WebSocketServer } from "ws";
+import type { Req } from "../../../shared/http";
+import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 
 export const runnerConnectPath = "/runner/connect";
 
@@ -17,9 +16,9 @@ type TurnStream = {
   finish: () => void;
 };
 
-const wss = new WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024 });
 const runnerToken = process.env.RUNNER_TOKEN ?? "";
-let client: WebSocket | null = null;
+let client: Socket | null = null;
+const heartbeats = new WeakMap<Socket, { alive: boolean; timer: ReturnType<typeof setInterval> }>();
 let hello: Record<string, unknown> = {};
 let connectedAt: string | null = null;
 const pending = new Map<string, Pending>();
@@ -29,14 +28,14 @@ const changeListeners = new Set<(connected: boolean) => void>();
 
 export class MacRunnerUnavailable extends Error {}
 
-function authorized(req: http.IncomingMessage) {
+function authorized(req: Req) {
   const header = req.headers.authorization ?? "";
   const given = Buffer.from(header.startsWith("Bearer ") ? header.slice(7).trim() : "");
   const expected = Buffer.from(runnerToken);
   return runnerToken.length >= 24 && given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-export function macRunnerAuthorized(req: http.IncomingMessage) {
+export function macRunnerAuthorized(req: Req) {
   return authorized(req);
 }
 
@@ -51,7 +50,7 @@ export function isRunnerUpgrade(pathname: string) {
 }
 
 export function macRunnerConnected() {
-  return client !== null && client.readyState === client.OPEN;
+  return client !== null && client.readyState === socketOpen;
 }
 
 export function macRunnerInfo() {
@@ -72,12 +71,12 @@ function notifyChange(connected: boolean) {
 }
 
 function send(message: Record<string, unknown>) {
-  if (!client || client.readyState !== client.OPEN)
+  if (!client || client.readyState !== socketOpen)
     throw new MacRunnerUnavailable("O app runelay bots não está conectado.");
   client.send(JSON.stringify(message));
 }
 
-function dropClient(socket: WebSocket) {
+function dropClient(socket: Socket) {
   if (client !== socket) return;
   client = null;
   connectedAt = null;
@@ -138,52 +137,50 @@ function onMessage(raw: string) {
   }
 }
 
-export function handleRunnerUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer) {
-  if (!authorized(req)) {
-    socket.end("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n");
-    return;
-  }
-  wss.handleUpgrade(req, socket, head, (ws) => {
+export function runnerUpgradeAllowed(req: Req) {
+  return authorized(req);
+}
+
+export const runnerSocket: SocketHandler = {
+  open(ws) {
     const previous = client;
     client = ws;
     hello = {};
     connectedAt = new Date().toISOString();
-    if (previous && previous !== ws) {
-      dropClientSilently(previous);
-      previous.close(4000, "replaced");
-    }
-    let alive = true;
-    ws.on("pong", () => {
-      alive = true;
-    });
-    const heartbeat = setInterval(() => {
-      if (!alive) {
-        ws.terminate();
-        return;
-      }
-      alive = false;
-      try {
-        ws.ping();
-      } catch {}
-    }, 15_000);
-    ws.on("message", (data, isBinary) => {
-      alive = true;
-      if (!isBinary) onMessage(data.toString());
-    });
-    ws.on("close", () => {
-      clearInterval(heartbeat);
-      dropClient(ws);
-    });
-    ws.on("error", () => undefined);
+    if (previous && previous !== ws) previous.close(4000, "replaced");
+    const beat = {
+      alive: true,
+      timer: setInterval(() => {
+        if (!beat.alive) {
+          ws.terminate();
+          return;
+        }
+        beat.alive = false;
+        try {
+          ws.ping();
+        } catch {}
+      }, 15_000),
+    };
+    heartbeats.set(ws, beat);
     console.log(`${new Date().toISOString()} mac runner connected`);
     notifyChange(true);
-  });
-}
-
-function dropClientSilently(socket: WebSocket) {
-  socket.removeAllListeners("close");
-  socket.on("close", () => undefined);
-}
+  },
+  message(ws, message) {
+    const beat = heartbeats.get(ws);
+    if (beat) beat.alive = true;
+    if (typeof message === "string") onMessage(message);
+  },
+  pong(ws) {
+    const beat = heartbeats.get(ws);
+    if (beat) beat.alive = true;
+  },
+  close(ws) {
+    const beat = heartbeats.get(ws);
+    if (beat) clearInterval(beat.timer);
+    heartbeats.delete(ws);
+    dropClient(ws);
+  },
+};
 
 function request(op: string, payload: Record<string, unknown>, timeoutMs: number, signal?: AbortSignal) {
   return new Promise<Record<string, unknown>>((resolve, reject) => {

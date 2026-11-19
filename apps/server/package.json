@@ -14,10 +14,8 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@runelay-bots/protocol": "workspace:*",
     "@runelay-bots/providers": "workspace:*",
-    "@types/ws": "^8.18.2",
     "croner": "^11.0.1",
     "ulid": "^3.0.2",
-    "ws": "^8.23.0",
     "zod": "^4.6.7"
   }
 }

@@ -1,10 +1,10 @@
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import type { Req, Res } from "../../../shared/http";
 import { buildServer, findToolContext } from "../services/mcp-gateway.service";
 
 async function readBody(req: Req) {
   const chunks: Buffer[] = [];
-  for await (const chunk of req) chunks.push(chunk as Buffer);
+  for await (const chunk of req) chunks.push(chunk);
   const text = Buffer.concat(chunks).toString("utf8");
   return text ? (JSON.parse(text) as unknown) : undefined;
 }
@@ -32,11 +32,14 @@ export async function handleMcp(req: Req, res: Res, botId: string, sessionId: st
     return;
   }
   const server = buildServer(context);
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+  const transport = new WebStandardStreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
+    enableJsonResponse: true,
+  });
   res.on("close", () => {
     void transport.close();
     void server.close();
   });
   await server.connect(transport);
-  await transport.handleRequest(req, res, body);
+  res.respond(await transport.handleRequest(req.raw, { parsedBody: body }));
 }

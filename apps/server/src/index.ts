@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { activeMarkers, sweepOrphans } from "@runelay-bots/providers/proc-tree";
-import { createServer } from "./app";
+import { startServer } from "./app";
 import { dataDir, host, model, port } from "./config/env";
 import { refreshAccounts } from "./modules/accounts/services/accounts.service";
 import { loadBots } from "./modules/bots/services/bots.service";
@@ -50,7 +50,6 @@ async function main() {
   void refreshAccounts().then((accounts) =>
     console.log(`accounts: ${accounts.map((item) => `${item.id}=${item.status}`).join(", ")}`),
   );
-  const server = createServer();
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {
       stopAllDesktops();
@@ -59,7 +58,8 @@ async function main() {
       setTimeout(() => process.exit(0), 500).unref();
     });
   }
-  server.listen(port, host, () => console.log(`runelay bots (claude-agent-sdk, ${model}) on http://${host}:${port}`));
+  startServer(host, port);
+  console.log(`runelay bots (claude-agent-sdk, ${model}) on http://${host}:${port}`);
 }
 
 void main();

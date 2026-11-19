@@ -1,6 +1,5 @@
-import http from "node:http";
-import type { Duplex } from "node:stream";
-import { sendJson } from "../../../shared/http";
+import { type Req, type Res, sendJson } from "../../../shared/http";
+import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { type Fact, getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
@@ -23,9 +22,7 @@ import {
   type WorkspaceState,
 } from "../services/workspace.service";
 
-type Res = http.ServerResponse;
-
-async function readBody(req: http.IncomingMessage) {
+async function readBody(req: Req) {
   const chunks: Buffer[] = [];
   for await (const chunk of req) chunks.push(chunk as Buffer);
   const text = Buffer.concat(chunks).toString("utf8").trim();
@@ -44,7 +41,7 @@ function fail(res: Res, error: unknown) {
   });
 }
 
-export async function handleCodeRoute(req: http.IncomingMessage, res: Res, url: URL, method: string, parts: string[]) {
+export async function handleCodeRoute(req: Req, res: Res, url: URL, method: string, parts: string[]) {
   try {
     if (parts[1] === "repos" && method === "GET") {
       const repos = await listRepos(url.searchParams.get("refresh") === "1");
@@ -231,14 +228,7 @@ async function rewind(session: StoredSession, turnId: string) {
   return { turnId, turnIds, filesRestored: Boolean(checkpoint && workspace), ...files };
 }
 
-export async function handleBotCode(
-  req: http.IncomingMessage,
-  res: Res,
-  url: URL,
-  method: string,
-  bot: BotDefinition,
-  rest: string[],
-) {
+export async function handleBotCode(req: Req, res: Res, url: URL, method: string, bot: BotDefinition, rest: string[]) {
   try {
     const tail = rest.join("/");
     const session = await sessionFor(bot, url);
@@ -342,29 +332,32 @@ const apiPrefixes = new Set([
 ]);
 const cookieName = "rb_preview";
 
-function previewCookie(req: http.IncomingMessage) {
+function previewCookie(req: Req) {
   const header = req.headers.cookie ?? "";
   const match = header.match(new RegExp(`(?:^|;\\s*)${cookieName}=([\\w-]+)`));
   return match ? findPreviewByToken(match[1]) : null;
 }
 
-function proxy(req: http.IncomingMessage, res: Res, port: number, path: string) {
-  const upstream = http.request(
-    { host: "localhost", port, method: req.method, path, headers: { ...req.headers, host: `localhost:${port}` } },
-    (answer) => {
-      res.writeHead(answer.statusCode ?? 502, answer.headers);
-      answer.pipe(res);
-    },
-  );
-  upstream.on("error", (error) => {
-    if (!res.headersSent)
-      sendJson(res, 502, { ok: false, error: `O servidor de desenvolvimento não respondeu: ${error.message}` });
-    else res.end();
-  });
-  req.pipe(upstream);
+function proxy(req: Req, res: Res, port: number, path: string) {
+  const headers = new Headers(req.raw.headers);
+  headers.set("host", `localhost:${port}`);
+  headers.set("accept-encoding", "identity");
+  const hasBody = req.method !== "GET" && req.method !== "HEAD";
+  fetch(`http://localhost:${port}${path}`, {
+    method: req.method,
+    headers,
+    body: hasBody ? req.raw.body : undefined,
+    redirect: "manual",
+  })
+    .then((answer) => res.respond(answer))
+    .catch((error: Error) => {
+      if (!res.headersSent)
+        sendJson(res, 502, { ok: false, error: `O servidor de desenvolvimento não respondeu: ${error.message}` });
+      else res.end();
+    });
 }
 
-export function handlePreview(req: http.IncomingMessage, res: Res, url: URL, parts: string[]) {
+export function handlePreview(req: Req, res: Res, url: URL, parts: string[]) {
   if (parts[0] === "preview") {
     const port = Number(parts[2]);
     const target = parts[1] && Number.isInteger(port) ? previewTarget(parts[1], port) : null;
@@ -388,32 +381,52 @@ export function handlePreview(req: http.IncomingMessage, res: Res, url: URL, par
   return true;
 }
 
-export function handlePreviewUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer) {
+export function previewUpgradeTarget(req: Req) {
   const url = new URL(req.url ?? "/", "http://gateway.local");
   const first = url.pathname.split("/").filter(Boolean)[0] ?? "";
-  if (apiPrefixes.has(first)) return false;
+  if (apiPrefixes.has(first)) return null;
   const target = previewCookie(req);
-  if (!target) return false;
-  const upstream = http.request({
-    host: "localhost",
-    port: target.port,
-    method: req.method,
-    path: req.url,
-    headers: { ...req.headers, host: `localhost:${target.port}` },
-  });
-  upstream.on("upgrade", (answer, upstreamSocket, upstreamHead) => {
-    const lines = [`HTTP/1.1 ${answer.statusCode ?? 101} ${answer.statusMessage ?? "Switching Protocols"}`];
-    for (let index = 0; index < answer.rawHeaders.length; index += 2)
-      lines.push(`${answer.rawHeaders[index]}: ${answer.rawHeaders[index + 1]}`);
-    socket.write(`${lines.join("\r\n")}\r\n\r\n`);
-    if (upstreamHead.length > 0) socket.write(upstreamHead);
-    if (head.length > 0) upstreamSocket.write(head);
-    upstreamSocket.pipe(socket).pipe(upstreamSocket);
-    upstreamSocket.on("error", () => socket.destroy());
-    socket.on("error", () => upstreamSocket.destroy());
-  });
-  upstream.on("response", () => socket.end("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"));
-  upstream.on("error", () => socket.end("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n"));
-  upstream.end();
-  return true;
+  if (!target) return null;
+  const protocols = (req.headers["sec-websocket-protocol"] ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return { port: target.port, path: req.url ?? "/", protocols };
 }
+
+type PreviewRelay = { upstream: WebSocket; queue: Array<string | Buffer> };
+const previewRelays = new WeakMap<Socket, PreviewRelay>();
+
+export const previewSocket: SocketHandler = {
+  open(client) {
+    const protocols = (client.data.protocols as string[] | undefined) ?? [];
+    const upstream = new WebSocket(
+      `ws://localhost:${client.data.port}${client.data.path}`,
+      protocols.length > 0 ? protocols : undefined,
+    );
+    upstream.binaryType = "arraybuffer";
+    const relay: PreviewRelay = { upstream, queue: [] };
+    previewRelays.set(client, relay);
+    upstream.addEventListener("open", () => {
+      for (const message of relay.queue) upstream.send(message);
+      relay.queue = [];
+    });
+    upstream.addEventListener("message", (event) => {
+      if (client.readyState !== socketOpen) return;
+      client.send(typeof event.data === "string" ? event.data : new Uint8Array(event.data as ArrayBuffer));
+    });
+    upstream.addEventListener("close", () => client.close());
+    upstream.addEventListener("error", () => client.close());
+  },
+  message(client, message) {
+    const relay = previewRelays.get(client);
+    if (!relay) return;
+    if (relay.upstream.readyState === WebSocket.OPEN) relay.upstream.send(message);
+    else relay.queue.push(message);
+  },
+  close(client) {
+    const relay = previewRelays.get(client);
+    previewRelays.delete(client);
+    if (relay && relay.upstream.readyState <= WebSocket.OPEN) relay.upstream.close();
+  },
+};

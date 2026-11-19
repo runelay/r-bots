@@ -1,8 +1,6 @@
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import type http from "node:http";
-import type { Duplex } from "node:stream";
-import { type WebSocket, WebSocketServer } from "ws";
+import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 import { controllerOf, onControllerChange, waitForBotControl } from "./control.service";
 
 const width = 1280;
@@ -15,7 +13,7 @@ const chromeBinary = process.env.DESKTOP_CHROME ?? "/opt/runelay-chrome/chrome";
 
 type Json = Record<string, unknown>;
 
-const wss = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024 });
+const maxDesktopMessage = 1024 * 1024;
 const desktops = new Map<string, Desktop>();
 
 function asUser(display: number, args: string[]) {
@@ -90,7 +88,7 @@ function withModifiers(key: string, modifiers: number) {
 }
 
 class Desktop {
-  readonly clients = new Set<WebSocket>();
+  readonly clients = new Set<Socket>();
   display = 0;
   private procs: ChildProcess[] = [];
   private streamer: ChildProcess | null = null;
@@ -188,7 +186,7 @@ class Desktop {
 
   private broadcast(message: Json) {
     const payload = JSON.stringify(message);
-    for (const client of this.clients) if (client.readyState === client.OPEN) client.send(payload);
+    for (const client of this.clients) if (client.readyState === socketOpen) client.send(payload);
   }
 
   publishState() {
@@ -430,14 +428,15 @@ export function isDesktopUpgrade(pathname: string) {
   return /^\/bots\/[^/]+\/desktop\/live$/.test(pathname);
 }
 
-export function handleDesktopUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer, botId: string) {
-  wss.handleUpgrade(req, socket, head, (client) => {
-    const desktop = desktopOf(botId);
+function desktopFail(client: Socket, error: unknown) {
+  if (client.readyState === socketOpen)
+    client.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
+}
+
+export const desktopSocket: SocketHandler = {
+  open(client) {
+    const desktop = desktopOf(String(client.data.botId));
     desktop.clients.add(client);
-    const fail = (error: unknown) => {
-      if (client.readyState === client.OPEN)
-        client.send(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : String(error) }));
-    };
     desktop
       .ensure()
       .then(async () => {
@@ -445,30 +444,42 @@ export function handleDesktopUpgrade(req: http.IncomingMessage, socket: Duplex, 
         await desktop.state();
         client.send(JSON.stringify(desktop.stateMessage()));
       })
-      .catch(fail);
-    client.on("message", (data) => {
-      let message: Json;
-      try {
-        message = JSON.parse(String(data)) as Json;
-      } catch {
-        return fail(new Error("JSON inválido."));
-      }
-      if (message.type === "ping") return client.send(JSON.stringify({ type: "pong", ts: Date.now() }));
-      if (controllerOf(botId) !== "user") return fail(new Error("Assuma o controle do computador antes de interagir."));
-      desktop
-        .input(message)
-        .then(() => {
-          if (message.type !== "mouse" || message.event === "up") desktop.publishState();
-        })
-        .catch(fail);
-    });
-    client.on("close", () => {
-      desktop.clients.delete(client);
-      desktop.lastUsed = Date.now();
-      if (desktop.clients.size === 0) desktop.stopStream();
-    });
-  });
-}
+      .catch((error) => desktopFail(client, error));
+  },
+  message(client, data) {
+    const botId = String(client.data.botId);
+    if (data.length > maxDesktopMessage) {
+      client.close(1009, "Message too big");
+      return;
+    }
+    let message: Json;
+    try {
+      message = JSON.parse(String(data)) as Json;
+    } catch {
+      return desktopFail(client, new Error("JSON inválido."));
+    }
+    if (message.type === "ping") {
+      client.send(JSON.stringify({ type: "pong", ts: Date.now() }));
+      return;
+    }
+    if (controllerOf(botId) !== "user")
+      return desktopFail(client, new Error("Assuma o controle do computador antes de interagir."));
+    const desktop = desktopOf(botId);
+    desktop
+      .input(message)
+      .then(() => {
+        if (message.type !== "mouse" || message.event === "up") desktop.publishState();
+      })
+      .catch((error) => desktopFail(client, error));
+  },
+  close(client) {
+    const desktop = desktops.get(String(client.data.botId));
+    if (!desktop) return;
+    desktop.clients.delete(client);
+    desktop.lastUsed = Date.now();
+    if (desktop.clients.size === 0) desktop.stopStream();
+  },
+};
 
 export async function desktopGuard(botId: string, signal?: AbortSignal) {
   await waitForBotControl(botId, signal);
