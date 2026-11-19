@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
 import { copyFile, mkdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { runBytes, run as runProcess } from "@runelay-bots/providers/proc";
 import { botDir } from "../../../config/env";
 import { readJson, writeJson } from "../../../shared/json-file";
 import { waitForBotControl } from "./control.service";
@@ -61,32 +61,29 @@ export function cropPreview(
   const top = Math.max(0, Math.round(box.y - pad));
   const filter = `crop='min(iw,${width})':'min(ih,${height})':'min(${left},iw-min(iw,${width}))':'min(${top},ih-min(ih,${height}))',scale='min(360,iw)':-2`;
   const input = typeof source === "string" ? source : "pipe:0";
-  return new Promise<string | null>((resolve) => {
-    const child = execFile(
-      "ffmpeg",
-      [
-        "-v",
-        "error",
-        "-i",
-        input,
-        "-vf",
-        filter,
-        "-frames:v",
-        "1",
-        "-q:v",
-        "4",
-        "-f",
-        "image2",
-        "-c:v",
-        "mjpeg",
-        "pipe:1",
-      ],
-      { encoding: "buffer", maxBuffer: 8 * 1024 * 1024, timeout: 8000 },
-      (error, stdout) =>
-        resolve(error || !stdout.length ? null : `data:image/jpeg;base64,${stdout.toString("base64")}`),
-    );
-    if (typeof source !== "string") child.stdin?.end(source);
-  });
+  return runBytes(
+    "ffmpeg",
+    [
+      "-v",
+      "error",
+      "-i",
+      input,
+      "-vf",
+      filter,
+      "-frames:v",
+      "1",
+      "-q:v",
+      "4",
+      "-f",
+      "image2",
+      "-c:v",
+      "mjpeg",
+      "pipe:1",
+    ],
+    { timeoutMs: 8000, ...(typeof source === "string" ? {} : { stdin: source }) },
+  ).then(({ code, stdout }) =>
+    code !== 0 || !stdout.length ? null : `data:image/jpeg;base64,${Buffer.from(stdout).toString("base64")}`,
+  );
 }
 
 export async function elementPreview(botId: string, ref: string) {
@@ -135,35 +132,31 @@ export function closeIdleBrowsers(keep: (botId: string) => boolean) {
     if (now - used < browserIdleMs || actionInFlight.has(botId) || liveInFlight.has(botId) || keep(botId)) continue;
     lastUsed.delete(botId);
     viewportReady.delete(botId);
-    execFile("agent-browser", ["--session", `runelay-${botId}`, "close"], { timeout: 15_000 }, (error) => {
-      if (!error) console.log(`browser ${botId} idle, closed`);
-    });
+    void runProcess("agent-browser", ["--session", `runelay-${botId}`, "close"], { timeoutMs: 15_000 }).then(
+      ({ code }) => {
+        if (code === 0) console.log(`browser ${botId} idle, closed`);
+      },
+    );
   }
 }
 
-function run(botId: string, args: string[], signal?: AbortSignal, timeoutMs = 60_000) {
+async function run(botId: string, args: string[], signal?: AbortSignal, timeoutMs = 60_000) {
   lastUsed.set(botId, Date.now());
-  return new Promise<Record<string, unknown>>((resolve, reject) => {
-    execFile(
-      "agent-browser",
-      ["--session", `runelay-${botId}`, "--args", "--no-sandbox", "--json", ...args],
-      { timeout: timeoutMs, maxBuffer: 20 * 1024 * 1024, signal },
-      (error, stdout, stderr) => {
-        const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
-        let parsed: { success?: boolean; data?: Record<string, unknown>; error?: string | null } = {};
-        try {
-          parsed = JSON.parse(line);
-        } catch {
-          parsed = {};
-        }
-        if (error || parsed.success === false) {
-          reject(new Error(parsed.error || stderr.trim() || error?.message || "agent-browser falhou"));
-          return;
-        }
-        resolve(parsed.data ?? {});
-      },
-    );
-  });
+  const { code, stdout, stderr } = await runProcess(
+    "agent-browser",
+    ["--session", `runelay-${botId}`, "--args", "--no-sandbox", "--json", ...args],
+    { timeoutMs, signal },
+  );
+  const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
+  let parsed: { success?: boolean; data?: Record<string, unknown>; error?: string | null } = {};
+  try {
+    parsed = JSON.parse(line);
+  } catch {
+    parsed = {};
+  }
+  if (code !== 0 || parsed.success === false)
+    throw new Error(parsed.error || stderr.trim() || `agent-browser saiu com código ${code}`);
+  return parsed.data ?? {};
 }
 
 export async function captureAfterAction(botId: string, signal?: AbortSignal) {
@@ -258,19 +251,16 @@ export function browserHistory(botId: string, command: "back" | "forward" | "rel
   );
 }
 
-export function browserAlive(botId: string) {
-  return new Promise<boolean>((resolve) => {
-    execFile("agent-browser", ["session", "list", "--json"], { timeout: 5000 }, (error, stdout) => {
-      if (error) return resolve(true);
-      try {
-        const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
-        const sessions = (JSON.parse(line) as { data?: { sessions?: string[] } }).data?.sessions ?? [];
-        resolve(sessions.includes(`runelay-${botId}`));
-      } catch {
-        resolve(true);
-      }
-    });
-  });
+export async function browserAlive(botId: string) {
+  const { code, stdout } = await runProcess("agent-browser", ["session", "list", "--json"], { timeoutMs: 5000 });
+  if (code !== 0) return true;
+  try {
+    const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
+    const sessions = (JSON.parse(line) as { data?: { sessions?: string[] } }).data?.sessions ?? [];
+    return sessions.includes(`runelay-${botId}`);
+  } catch {
+    return true;
+  }
 }
 
 export async function ensureBrowser(botId: string) {
@@ -312,38 +302,29 @@ export function browserClick(botId: string, ref: string, signal?: AbortSignal) {
   });
 }
 
-function runFillStdin(botId: string, ref: string, text: string, signal?: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    const child = execFile(
-      "agent-browser",
-      ["--session", `runelay-${botId}`, "--args", "--no-sandbox", "--json", "batch", "--bail"],
-      { timeout: 60_000, maxBuffer: 4 * 1024 * 1024, signal },
-      (error, stdout) => {
-        let ok = !error;
-        try {
-          const parsed = JSON.parse(stdout.trim().split("\n").filter(Boolean).pop() ?? "null") as unknown;
-          const results = Array.isArray(parsed) ? parsed : [parsed];
-          if (
-            results.some(
-              (item) => item && typeof item === "object" && (item as { success?: boolean }).success === false,
-            )
-          )
-            ok = false;
-        } catch {}
-        if (ok) resolve();
-        else
-          reject(new Error("Não consegui preencher o campo com o segredo. Confira a referência com browser_snapshot."));
-      },
-    );
-    const mask =
-      "(() => { const el = document.activeElement; if (el && 'value' in el) { el.style.setProperty('-webkit-text-security', 'disc'); el.setAttribute('autocomplete', 'off'); } return true; })()";
-    child.stdin?.end(
-      JSON.stringify([
+async function runFillStdin(botId: string, ref: string, text: string, signal?: AbortSignal) {
+  const mask =
+    "(() => { const el = document.activeElement; if (el && 'value' in el) { el.style.setProperty('-webkit-text-security', 'disc'); el.setAttribute('autocomplete', 'off'); } return true; })()";
+  const { code, stdout } = await runProcess(
+    "agent-browser",
+    ["--session", `runelay-${botId}`, "--args", "--no-sandbox", "--json", "batch", "--bail"],
+    {
+      timeoutMs: 60_000,
+      signal,
+      stdin: JSON.stringify([
         ["fill", normalizeRef(ref), text],
         ["eval", mask],
       ]),
-    );
-  });
+    },
+  );
+  let ok = code === 0;
+  try {
+    const parsed = JSON.parse(stdout.trim().split("\n").filter(Boolean).pop() ?? "null") as unknown;
+    const results = Array.isArray(parsed) ? parsed : [parsed];
+    if (results.some((item) => item && typeof item === "object" && (item as { success?: boolean }).success === false))
+      ok = false;
+  } catch {}
+  if (!ok) throw new Error("Não consegui preencher o campo com o segredo. Confira a referência com browser_snapshot.");
 }
 
 export function browserFill(botId: string, ref: string, text: string, signal?: AbortSignal, secret = false) {

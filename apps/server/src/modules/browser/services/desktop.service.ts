@@ -1,5 +1,6 @@
-import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
+import { runBytes, run as runProcess } from "@runelay-bots/providers/proc";
+import type { Subprocess } from "bun";
 import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 import { controllerOf, onControllerChange, waitForBotControl } from "./control.service";
 
@@ -17,25 +18,23 @@ const maxDesktopMessage = 1024 * 1024;
 const desktops = new Map<string, Desktop>();
 
 function asUser(display: number, args: string[]) {
-  return spawn("sudo", ["-n", "-u", desktopUser, "env", `DISPLAY=:${display}`, `HOME=${desktopHome}`, ...args], {
-    stdio: "ignore",
-    detached: true,
+  return Bun.spawn(["sudo", "-n", "-u", desktopUser, "env", `DISPLAY=:${display}`, `HOME=${desktopHome}`, ...args], {
+    stdin: "ignore",
+    stdout: "ignore",
+    stderr: "ignore",
     cwd: "/tmp",
   });
 }
 
-function x(display: number, args: string[], timeoutMs = 10_000) {
-  return new Promise<string>((resolve, reject) => {
-    execFile(
-      "xdotool",
-      args,
-      { env: { ...process.env, DISPLAY: `:${display}` }, timeout: timeoutMs },
-      (error, stdout, stderr) => {
-        if (error) reject(new Error(stderr.trim() || error.message));
-        else resolve(stdout.trim());
-      },
-    );
-  });
+async function x(display: number, args: string[], timeoutMs = 10_000) {
+  const env = Object.fromEntries(
+    Object.entries({ ...process.env, DISPLAY: `:${display}` }).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
+  );
+  const { code, stdout, stderr } = await runProcess("xdotool", args, { env, timeoutMs });
+  if (code !== 0) throw new Error(stderr.trim() || `xdotool saiu com código ${code}`);
+  return stdout.trim();
 }
 
 function sleep(ms: number) {
@@ -90,8 +89,8 @@ function withModifiers(key: string, modifiers: number) {
 class Desktop {
   readonly clients = new Set<Socket>();
   display = 0;
-  private procs: ChildProcess[] = [];
-  private streamer: ChildProcess | null = null;
+  private procs: Subprocess[] = [];
+  private streamer: Subprocess<"ignore", "pipe", "ignore"> | null = null;
   private starting: Promise<void> | null = null;
   private lastFrame: Json | null = null;
   lastUsed = Date.now();
@@ -195,9 +194,9 @@ class Desktop {
 
   startStream() {
     if (this.streamer) return;
-    const ffmpeg = spawn(
-      "ffmpeg",
+    const ffmpeg = Bun.spawn(
       [
+        "ffmpeg",
         "-loglevel",
         "error",
         "-f",
@@ -218,32 +217,36 @@ class Desktop {
         "7",
         "-",
       ],
-      { stdio: ["ignore", "pipe", "ignore"] },
+      { stdin: "ignore", stdout: "pipe", stderr: "ignore" },
     );
     this.streamer = ffmpeg;
-    let buffer = Buffer.alloc(0);
-    ffmpeg.stdout.on("data", (chunk: Buffer) => {
-      buffer = Buffer.concat([buffer, chunk]);
-      while (true) {
-        const start = buffer.indexOf(Buffer.from([0xff, 0xd8]));
-        if (start < 0) {
-          buffer = Buffer.alloc(0);
-          break;
+    const startMarker = Buffer.from([0xff, 0xd8]);
+    const endMarker = Buffer.from([0xff, 0xd9]);
+    void (async () => {
+      let buffer = Buffer.alloc(0);
+      try {
+        for await (const chunk of ffmpeg.stdout) {
+          buffer = Buffer.concat([buffer, chunk]);
+          while (true) {
+            const start = buffer.indexOf(startMarker);
+            if (start < 0) {
+              buffer = Buffer.alloc(0);
+              break;
+            }
+            const end = buffer.indexOf(endMarker, start + 2);
+            if (end < 0) {
+              if (start > 0) buffer = buffer.subarray(start);
+              break;
+            }
+            const frame = buffer.subarray(start, end + 2);
+            buffer = buffer.subarray(end + 2);
+            this.lastFrame = { type: "frame", data: frame.toString("base64"), width, height, ts: Date.now() };
+            this.broadcast(this.lastFrame);
+          }
         }
-        const end = buffer.indexOf(Buffer.from([0xff, 0xd9]), start + 2);
-        if (end < 0) {
-          if (start > 0) buffer = buffer.subarray(start);
-          break;
-        }
-        const frame = buffer.subarray(start, end + 2);
-        buffer = buffer.subarray(end + 2);
-        this.lastFrame = { type: "frame", data: frame.toString("base64"), width, height, ts: Date.now() };
-        this.broadcast(this.lastFrame);
-      }
-    });
-    ffmpeg.on("close", () => {
+      } catch {}
       if (this.streamer === ffmpeg) this.streamer = null;
-    });
+    })();
   }
 
   stopStream() {
@@ -254,30 +257,29 @@ class Desktop {
 
   async screenshot() {
     await this.ensure();
-    return new Promise<Buffer>((resolve, reject) => {
-      execFile(
-        "ffmpeg",
-        [
-          "-loglevel",
-          "error",
-          "-f",
-          "x11grab",
-          "-video_size",
-          `${width}x${height}`,
-          "-i",
-          `:${this.display}`,
-          "-frames:v",
-          "1",
-          "-f",
-          "image2pipe",
-          "-c:v",
-          "png",
-          "-",
-        ],
-        { encoding: "buffer", maxBuffer: 20 * 1024 * 1024, timeout: 15_000 },
-        (error, stdout) => (error ? reject(error) : resolve(stdout)),
-      );
-    });
+    const { code, stdout, stderr } = await runBytes(
+      "ffmpeg",
+      [
+        "-loglevel",
+        "error",
+        "-f",
+        "x11grab",
+        "-video_size",
+        `${width}x${height}`,
+        "-i",
+        `:${this.display}`,
+        "-frames:v",
+        "1",
+        "-f",
+        "image2pipe",
+        "-c:v",
+        "png",
+        "-",
+      ],
+      { timeoutMs: 15_000 },
+    );
+    if (code !== 0) throw new Error(stderr.trim() || `ffmpeg saiu com código ${code}`);
+    return Buffer.from(stdout);
   }
 
   async input(message: Json) {
@@ -382,11 +384,15 @@ class Desktop {
     this.procs = [];
     const display = this.display;
     if (display) {
-      execFile(
-        "sudo",
-        ["-n", "-u", desktopUser, "pkill", "-TERM", "-f", `chrome-${this.botId}|Xvfb :${display} |DISPLAY=:${display}`],
-        () => undefined,
-      );
+      void runProcess("sudo", [
+        "-n",
+        "-u",
+        desktopUser,
+        "pkill",
+        "-TERM",
+        "-f",
+        `chrome-${this.botId}|Xvfb :${display} |DISPLAY=:${display}`,
+      ]);
     }
   }
 }

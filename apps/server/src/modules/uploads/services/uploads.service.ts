@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve, sep } from "node:path";
@@ -11,6 +10,7 @@ import {
   toDocument,
   toMarkdownBytes,
 } from "@firecrawl/anydoc";
+import { runBytes } from "@runelay-bots/providers/proc";
 import { ulid } from "ulid";
 import { z } from "zod";
 import { botDir, dataDir } from "../../../config/env";
@@ -244,18 +244,10 @@ function mimeOf(declared: string | undefined, name: string) {
   return mimeByExt[extname(name).toLowerCase()] ?? "application/octet-stream";
 }
 
-function run(cmd: string, args: string[], options: { encoding?: "buffer"; timeout?: number; maxBuffer?: number } = {}) {
-  return new Promise<{ stdout: Buffer; stderr: string }>((resolvePromise, reject) => {
-    execFile(
-      cmd,
-      args,
-      { encoding: "buffer", timeout: options.timeout ?? 120_000, maxBuffer: options.maxBuffer ?? 64 * 1024 * 1024 },
-      (error, stdout, stderr) => {
-        if (error) reject(new Error(`${cmd} falhou: ${String(stderr ?? "").slice(-300) || error.message}`));
-        else resolvePromise({ stdout: stdout as Buffer, stderr: String(stderr ?? "") });
-      },
-    );
-  });
+async function run(cmd: string, args: string[], options: { timeout?: number } = {}) {
+  const { code, stdout, stderr } = await runBytes(cmd, args, { timeoutMs: options.timeout ?? 120_000 });
+  if (code !== 0) throw new Error(`${cmd} falhou: ${stderr.slice(-300) || `saiu com código ${code}`}`);
+  return { stdout: Buffer.from(stdout), stderr };
 }
 
 async function probe(path: string) {
@@ -285,7 +277,7 @@ async function waveformOf(path: string, bars = 48) {
   const { stdout } = await run(
     "ffmpeg",
     ["-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", "2000", "-f", "s16le", "-"],
-    { timeout: 60_000, maxBuffer: 256 * 1024 * 1024 },
+    { timeout: 60_000 },
   );
   const samples = Math.floor(stdout.length / 2);
   if (samples === 0) return [];

@@ -1,5 +1,4 @@
-import { execFile } from "node:child_process";
-import { childEnv } from "@runelay-bots/providers/proc";
+import { childEnv, run } from "@runelay-bots/providers/proc";
 import { allStoredSessions, type StoredSession } from "../../conversations/services/sessions.service";
 import { isBusy } from "../../engine/services/engine.service";
 import { appWatching } from "../../status/services/viewers.service";
@@ -74,27 +73,8 @@ const nextCheck = new Map<string, number>();
 const inFlight = new Set<string>();
 const ghBin = process.env.CODE_GH_BIN || "gh";
 
-function gh(cwd: string, args: string[], timeoutMs = 30_000) {
-  return new Promise<GhResult>((done) => {
-    execFile(
-      ghBin,
-      args,
-      {
-        cwd,
-        timeout: timeoutMs,
-        maxBuffer: 16 * 1024 * 1024,
-        env: childEnv({ GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }),
-      },
-      (error, stdout, stderr) => {
-        const code = error
-          ? typeof (error as { code?: unknown }).code === "number"
-            ? Number((error as { code?: number }).code)
-            : 1
-          : 0;
-        done({ code, stdout: String(stdout), stderr: String(stderr) });
-      },
-    );
-  });
+function gh(cwd: string, args: string[], timeoutMs = 30_000): Promise<GhResult> {
+  return run(ghBin, args, { cwd, timeoutMs, env: childEnv({ GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }) });
 }
 
 const generatedPatterns = [

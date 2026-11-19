@@ -1,9 +1,8 @@
-import { execFile, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { childEnv, findBinary } from "@runelay-bots/providers/proc";
+import { childEnv, findBinary, run } from "@runelay-bots/providers/proc";
 import { dataDir } from "../../../config/env";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import type { PrSnapshot } from "./pull-request.service";
@@ -74,25 +73,10 @@ export class CodeError extends Error {
 }
 
 export function git(cwd: string, args: string[], timeoutMs = 60_000, extraEnv: Record<string, string> = {}) {
-  return new Promise<{ code: number; stdout: string; stderr: string }>((done) => {
-    execFile(
-      "git",
-      args,
-      {
-        cwd,
-        timeout: timeoutMs,
-        maxBuffer: 64 * 1024 * 1024,
-        env: childEnv({ GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", ...extraEnv }),
-      },
-      (error, stdout, stderr) => {
-        const code = error
-          ? typeof (error as { code?: unknown }).code === "number"
-            ? Number((error as { code?: number }).code)
-            : 1
-          : 0;
-        done({ code, stdout: String(stdout), stderr: String(stderr) });
-      },
-    );
+  return run("git", args, {
+    cwd,
+    timeoutMs,
+    env: childEnv({ GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", ...extraEnv }),
   });
 }
 
@@ -284,21 +268,28 @@ function startInstall(session: StoredSession, workspace: WorkspaceState) {
     await session.save();
     await mkdir(join(codeDataDir, workspace.id), { recursive: true });
     const out = createWriteStream(installLogPath(workspace));
-    const code = await new Promise<number>((done) => {
-      const child = spawn(bin, plan.args, {
-        cwd: workspace.path,
-        env: childEnv({ CI: "1" }),
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      child.stdout.pipe(out, { end: false });
-      child.stderr.pipe(out, { end: false });
-      const timer = setTimeout(() => child.kill("SIGTERM"), 20 * 60_000);
-      child.on("error", () => done(1));
-      child.on("close", (exit) => {
-        clearTimeout(timer);
-        done(exit ?? 1);
-      });
-    });
+    const code = await (async () => {
+      let child: Bun.Subprocess<"ignore", "pipe", "pipe">;
+      try {
+        child = Bun.spawn([bin, ...plan.args], {
+          cwd: workspace.path,
+          env: childEnv({ CI: "1" }),
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+          timeout: 20 * 60_000,
+          killSignal: "SIGTERM",
+        });
+      } catch {
+        return 1;
+      }
+      const pump = async (stream: ReadableStream<Uint8Array>) => {
+        for await (const chunk of stream) out.write(chunk);
+      };
+      await Promise.all([pump(child.stdout), pump(child.stderr)]);
+      const exit = await child.exited;
+      return child.signalCode ? 1 : exit;
+    })();
     out.end();
     let tail = "";
     if (code !== 0)

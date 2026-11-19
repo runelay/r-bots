@@ -1,3 +1,4 @@
+import { run } from "@runelay-bots/providers/proc";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import { recordWorktree, touchWorktree } from "../repositories/code.repository";
 import { stopDevServers } from "./dev-server.service";
@@ -130,36 +131,30 @@ export async function deliverWorkspace(workspace: WorkspaceState, input: Deliver
     } else previousPr = pulls[0] ?? null;
   }
   if (input.action === "pr" && !prExisted && !previousPr) {
-    const { execFile } = await import("node:child_process");
-    prUrl = await new Promise<string>((done, fail) => {
-      execFile(
-        "gh",
-        [
-          "pr",
-          "create",
-          "--base",
-          base,
-          "--head",
-          workspace.branch,
-          "--title",
-          input.title?.trim() || message,
-          "--body",
-          input.body?.trim() || message,
-        ],
-        { cwd: workspace.path, timeout: 120_000 },
-        (error, stdout, stderr) =>
-          error
-            ? fail(
-                new CodeError(
-                  `Não consegui abrir o PR: ${String(stderr || error.message)
-                    .trim()
-                    .slice(-600)}`,
-                  500,
-                ),
-              )
-            : done(String(stdout).trim().split("\n").pop() ?? ""),
+    const created = await run(
+      "gh",
+      [
+        "pr",
+        "create",
+        "--base",
+        base,
+        "--head",
+        workspace.branch,
+        "--title",
+        input.title?.trim() || message,
+        "--body",
+        input.body?.trim() || message,
+      ],
+      { cwd: workspace.path, timeoutMs: 120_000 },
+    );
+    if (created.code !== 0)
+      throw new CodeError(
+        `Não consegui abrir o PR: ${String(created.stderr || `gh saiu com código ${created.code}`)
+          .trim()
+          .slice(-600)}`,
+        500,
       );
-    });
+    prUrl = created.stdout.trim().split("\n").pop() ?? "";
   }
   await touchWorktree(workspace.id, { status: "delivered", ...(prUrl ? { prUrl } : {}) });
   return {
@@ -184,36 +179,29 @@ export interface PullRequestRef {
 }
 
 async function branchPullRequests(workspace: WorkspaceState) {
-  const { execFile } = await import("node:child_process");
-  return new Promise<PullRequestRef[]>((done) => {
-    execFile(
-      "gh",
-      [
-        "pr",
-        "list",
-        "--head",
-        workspace.branch,
-        "--state",
-        "all",
-        "--json",
-        "number,url,state,baseRefName,updatedAt",
-        "--limit",
-        "10",
-      ],
-      { cwd: workspace.path, timeout: 60_000 },
-      (error, stdout) => {
-        if (error) return done([]);
-        try {
-          const list = JSON.parse(String(stdout)) as Array<PullRequestRef & { updatedAt?: string }>;
-          done(
-            [...list]
-              .sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))
-              .map(({ number, url, state, baseRefName }) => ({ number, url, state, baseRefName })),
-          );
-        } catch {
-          done([]);
-        }
-      },
-    );
-  });
+  const { code, stdout } = await run(
+    "gh",
+    [
+      "pr",
+      "list",
+      "--head",
+      workspace.branch,
+      "--state",
+      "all",
+      "--json",
+      "number,url,state,baseRefName,updatedAt",
+      "--limit",
+      "10",
+    ],
+    { cwd: workspace.path, timeoutMs: 60_000 },
+  );
+  if (code !== 0) return [];
+  try {
+    const list = JSON.parse(stdout) as Array<PullRequestRef & { updatedAt?: string }>;
+    return [...list]
+      .sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))
+      .map(({ number, url, state, baseRefName }) => ({ number, url, state, baseRefName }));
+  } catch {
+    return [];
+  }
 }

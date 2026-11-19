@@ -1,10 +1,10 @@
-import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import net from "node:net";
 import { join, resolve } from "node:path";
 import { childEnv } from "@runelay-bots/providers/proc";
+import type { Subprocess } from "bun";
 import { codeDataDir, insideWorkspace, type WorkspaceState, waitForInstall } from "./workspace.service";
 
 export interface DevServer {
@@ -20,7 +20,7 @@ export interface DevServer {
   exitCode: number | null;
   logFile: string;
   previewToken: string;
-  child: ChildProcess | null;
+  child: Subprocess<"ignore", "pipe", "pipe"> | null;
   tail: string[];
 }
 
@@ -137,7 +137,7 @@ export async function startDevServer(
   const logFile = join(logDir, `${port}.log`);
   const out: WriteStream = createWriteStream(logFile, { flags: "a" });
   out.write(`\n$ ${finalCommand}\n`);
-  const child = spawn("bash", ["-lc", finalCommand], {
+  const child = Bun.spawn(["bash", "-lc", finalCommand], {
     cwd,
     env: childEnv({
       PORT: String(port),
@@ -147,7 +147,9 @@ export async function startDevServer(
       CI: "",
       NODE_ENV: "development",
     }),
-    stdio: ["ignore", "pipe", "pipe"],
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
     detached: true,
   });
   const server: DevServer = {
@@ -172,13 +174,16 @@ export async function startDevServer(
     out.write(text);
     pushTail(server, text);
   };
-  child.stdout?.on("data", onData);
-  child.stderr?.on("data", onData);
-  child.on("close", (code) => {
+  const pump = async (stream: ReadableStream<Uint8Array>) => {
+    try {
+      for await (const chunk of stream) onData(Buffer.from(chunk));
+    } catch {}
+  };
+  void Promise.all([pump(child.stdout), pump(child.stderr), child.exited]).then(() => {
     out.end();
     reserved.delete(port);
     if (server.status !== "stopped") server.status = "exited";
-    server.exitCode = code;
+    server.exitCode = child.exitCode;
     server.child = null;
     onExit(publicServer(server));
   });
@@ -195,7 +200,7 @@ export async function startDevServer(
   return { ...publicServer(server), logs: server.tail.slice(-25).join("\n") };
 }
 
-function killGroup(child: ChildProcess, signal: NodeJS.Signals) {
+function killGroup(child: Subprocess, signal: NodeJS.Signals) {
   try {
     if (child.pid) process.kill(-child.pid, signal);
   } catch {
@@ -210,13 +215,7 @@ export async function stopDevServer(server: DevServer) {
   server.status = "stopped";
   const child = server.child;
   killGroup(child, "SIGTERM");
-  const stopped = await new Promise<boolean>((done) => {
-    const timer = setTimeout(() => done(false), 5_000);
-    child.once("close", () => {
-      clearTimeout(timer);
-      done(true);
-    });
-  });
+  const stopped = await Promise.race([child.exited.then(() => true), Bun.sleep(5_000).then(() => false)]);
   if (!stopped) killGroup(child, "SIGKILL");
   return publicServer(server);
 }

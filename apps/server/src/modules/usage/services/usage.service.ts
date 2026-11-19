@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -225,11 +224,18 @@ async function vpsClaudeLimits(): Promise<Omit<LimitAccount, "failover">> {
 
 export function readCodexRateLimits(binary = "codex", timeoutMs = 20_000) {
   return new Promise<RawCodexLimits>((resolve, reject) => {
-    const child = spawn(binary, ["app-server"], {
-      stdio: ["pipe", "pipe", "ignore"],
-      env: { ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "runelay_bots" },
-    });
-    let buffer = "";
+    const env = Object.fromEntries(
+      Object.entries({ ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "runelay_bots" }).filter(
+        (entry): entry is [string, string] => entry[1] !== undefined,
+      ),
+    );
+    let child: Bun.Subprocess<"pipe", "pipe", "ignore">;
+    try {
+      child = Bun.spawn([binary, "app-server"], { stdin: "pipe", stdout: "pipe", stderr: "ignore", env });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
     let settled = false;
     const finish = (error: Error | null, value?: RawCodexLimits) => {
       if (settled) return;
@@ -240,38 +246,49 @@ export function readCodexRateLimits(binary = "codex", timeoutMs = 20_000) {
       else resolve(value ?? {});
     };
     const timer = setTimeout(() => finish(new Error("o Codex não respondeu a tempo")), timeoutMs);
-    child.on("error", (error) => finish(error));
-    child.on("exit", () => finish(new Error("o Codex fechou sem responder")));
-    child.stdout.on("data", (chunk: Buffer) => {
-      buffer += chunk.toString("utf8");
-      let newline = buffer.indexOf("\n");
-      while (newline !== -1) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        newline = buffer.indexOf("\n");
-        let message: { id?: number; result?: Record<string, unknown>; error?: { message?: string } };
-        try {
-          message = JSON.parse(line);
-        } catch {
-          continue;
+    const send = (payload: unknown) => {
+      try {
+        child.stdin.write(`${JSON.stringify(payload)}\n`);
+        child.stdin.flush();
+      } catch {}
+    };
+    void (async () => {
+      const decoder = new TextDecoder();
+      let buffer = "";
+      try {
+        for await (const chunk of child.stdout) {
+          buffer += decoder.decode(chunk, { stream: true });
+          let newline = buffer.indexOf("\n");
+          while (newline !== -1) {
+            const line = buffer.slice(0, newline);
+            buffer = buffer.slice(newline + 1);
+            newline = buffer.indexOf("\n");
+            let message: { id?: number; result?: Record<string, unknown>; error?: { message?: string } };
+            try {
+              message = JSON.parse(line);
+            } catch {
+              continue;
+            }
+            if (message.id === 1) {
+              send({ jsonrpc: "2.0", method: "initialized" });
+              send({ jsonrpc: "2.0", id: 2, method: "account/rateLimits/read", params: null });
+            } else if (message.id === 2) {
+              if (message.error) return finish(new Error(message.error.message ?? "erro do Codex"));
+              const result = message.result ?? {};
+              const byId = result.rateLimitsByLimitId as Record<string, RawCodexLimits> | undefined;
+              return finish(null, byId?.codex ?? (result.rateLimits as RawCodexLimits) ?? {});
+            }
+          }
         }
-        if (message.id === 1) {
-          child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "initialized" })}\n`);
-          child.stdin.write(
-            `${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "account/rateLimits/read", params: null })}\n`,
-          );
-        } else if (message.id === 2) {
-          if (message.error) return finish(new Error(message.error.message ?? "erro do Codex"));
-          const result = message.result ?? {};
-          const byId = result.rateLimitsByLimitId as Record<string, RawCodexLimits> | undefined;
-          finish(null, byId?.codex ?? (result.rateLimits as RawCodexLimits) ?? {});
-        }
-      }
+      } catch {}
+      finish(new Error("o Codex fechou sem responder"));
+    })();
+    send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { clientInfo: { name: "runelay_bots", title: "runelay bots", version: "1.0.0" } },
     });
-    child.stdin.on("error", () => undefined);
-    child.stdin.write(
-      `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: "runelay_bots", title: "runelay bots", version: "1.0.0" } } })}\n`,
-    );
   });
 }
 

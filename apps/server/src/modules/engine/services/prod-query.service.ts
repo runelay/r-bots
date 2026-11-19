@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { run } from "@runelay-bots/providers/proc";
 
 const contyApiDir = process.env.CONTY_API_DIR ?? "/home/anderson/projects/conty-dev/conty-api";
 const maxOutputChars = 20_000;
@@ -33,31 +33,22 @@ export function assertReadOnlySql(sql: string) {
   return sql.trim().replace(/;\s*$/, "");
 }
 
-export function runProdQuery(sql: string, signal?: AbortSignal) {
+export async function runProdQuery(sql: string, signal?: AbortSignal) {
   const statement = assertReadOnlySql(sql);
-  return new Promise<{ rows: unknown; truncated: boolean }>((resolve, reject) => {
-    execFile(
-      "supabase",
-      ["db", "query", "--remote", "--read-only", "--output-format", "json", statement],
-      { cwd: contyApiDir, timeout: 90_000, maxBuffer: 50 * 1024 * 1024, signal },
-      (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(`Falha na consulta: ${(stderr || error.message).slice(0, 2000)}`));
-          return;
-        }
-        const start = stdout.indexOf("{");
-        try {
-          const parsed = JSON.parse(stdout.slice(start)) as { rows?: unknown };
-          const text = JSON.stringify(parsed.rows ?? parsed);
-          if (text.length <= maxOutputChars) {
-            resolve({ rows: parsed.rows ?? parsed, truncated: false });
-            return;
-          }
-          resolve({ rows: text.slice(0, maxOutputChars), truncated: true });
-        } catch {
-          resolve({ rows: stdout.slice(0, maxOutputChars), truncated: stdout.length > maxOutputChars });
-        }
-      },
-    );
-  });
+  const { code, stdout, stderr } = await run(
+    "supabase",
+    ["db", "query", "--remote", "--read-only", "--output-format", "json", statement],
+    { cwd: contyApiDir, timeoutMs: 90_000, signal },
+  );
+  if (code !== 0)
+    throw new Error(`Falha na consulta: ${(stderr || `supabase saiu com código ${code}`).slice(0, 2000)}`);
+  const start = stdout.indexOf("{");
+  try {
+    const parsed = JSON.parse(stdout.slice(start)) as { rows?: unknown };
+    const text = JSON.stringify(parsed.rows ?? parsed);
+    if (text.length <= maxOutputChars) return { rows: parsed.rows ?? parsed, truncated: false };
+    return { rows: text.slice(0, maxOutputChars), truncated: true };
+  } catch {
+    return { rows: stdout.slice(0, maxOutputChars), truncated: stdout.length > maxOutputChars };
+  }
 }
