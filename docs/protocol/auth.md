@@ -6,7 +6,7 @@ Contas, sessões e chaves de API do servidor. Tudo passa pelo [better-auth](http
 
 ### Liga e desliga
 
-- `BOTS_AUTH=on` liga a autenticação. Sem ela (padrão enquanto a fase 2 não termina), o servidor se comporta como antes e as rotas abaixo não existem: `GET /auth/setup` responde 404 e o app entende que o servidor não exige login.
+- `BOTS_AUTH=on` liga a autenticação. Sem ela (padrão enquanto a fase 2 não termina), o servidor se comporta como antes e as rotas abaixo não existem: `GET /auth/setup` responde 404 e o app entende que o servidor não exige login. (Mudou na v36: sem valor é o modo automático.)
 - `BETTER_AUTH_URL`: endereço público do servidor, o mesmo que o app usa (ex.: `https://vps.exemplo.ts.net:10447`). Define a origem confiável, o `rpID` da passkey e o domínio do cookie. Sem ela: `http://GATEWAY_HOST:GATEWAY_PORT`.
 - `BETTER_AUTH_SECRET`: chave das assinaturas. Sem ela, o servidor gera uma no primeiro boot e grava no `.env.local` (modo 600). Se o arquivo for somente leitura (o compose monta assim), grava em `data/auth.secret` (modo 600) e lê de lá nos boots seguintes. O valor nunca aparece em log.
 - `BETTER_AUTH_TRUSTED_ORIGINS`: outras origens aceitas, separadas por vírgula (opcional).
@@ -105,4 +105,97 @@ POST /auth/runner-key -> 201
 
 POST /api/auth/device/code -> 200
 {"device_code":"…","user_code":"EM9ZUKMS","verification_uri":"https://bots.example.ts.net/device","verification_uri_complete":"https://bots.example.ts.net/device?user_code=EM9ZUKMS","expires_in":600,"interval":5}
+```
+
+## v36 (19/11): primeiro acesso pelo app e portão automático
+
+### Modo do portão
+
+`BOTS_AUTH` deixa de ser obrigatório. Três modos:
+
+| `BOTS_AUTH` | Comportamento |
+| --- | --- |
+| sem valor (padrão) | **automático**. O módulo de auth sobe sempre. Sem nenhum usuário, o servidor segue aberto como antes e só responde as rotas de auth (`/auth/*`, `/api/auth/*`, `/device`). Assim que o dono é criado, o portão liga na hora, sem reiniciar, e continua ligado nos boots seguintes |
+| `on` (ou `true`, `1`) | força o portão desde o boot, mesmo sem usuário (todo o resto dá 401 até criar o dono) |
+| `off` (ou `false`, `0`) | desliga o módulo: `GET /auth/setup` dá 404, como num servidor antigo |
+
+No log do boot: `auth waiting for the owner (…)` no modo automático sem usuário, `auth on (…)` com o portão ligado.
+
+### `GET /auth/setup`
+
+Ganhou `required` e `methods`. O app decide o fluxo só por esta resposta:
+
+- `404`: servidor sem login (antigo ou `BOTS_AUTH=off`). O app pula o fluxo de conta.
+- `needsOwner: true`: ninguém criou conta ainda. O app mostra "Configurar este runelay bots".
+- `required: false`: o portão ainda não está ligado (modo automático sem dono). O app oferece "Agora não" e segue sem conta até a próxima abertura.
+- `methods.passwordReset`: `false` enquanto o servidor não tem e-mail configurado. O app só mostra "Esqueci a senha" com `true`.
+
+### Dono e dados existentes
+
+- `POST /auth/setup` continua uma vez só. Ao criar o dono, o servidor grava `auth:owner` na tabela `settings` com `{ userId, claimedAt }`. Bots, conversas, cofre e arquivos que já existiam continuam iguais: nada é filtrado por dono nesta fase, então a instalação inteira passa a ser da conta dona. A fase 2 usa esse registro para preencher `owner_id`.
+- Depois do dono, cadastro só por convite (`POST /auth/invites` → `POST /auth/invites/accept`), sem mudança.
+
+### Tokens internos com o portão ligado
+
+- `Authorization: Bearer <RUNNER_TOKEN>` (o `runner.token` do `data/` ou a variável) vale como credencial interna em qualquer rota e no `WebSocket /runner/connect`. O principal é o dono (`method: "internal"`, `role: "owner"`); sem dono ainda, `userId: "internal"`. Token com menos de 24 caracteres não vale.
+- Continua valendo a chave `rbk_…` gerada por `POST /auth/runner-key`. O app novo usa a chave; o app antigo e o executor do Mac seguem com o `runner.token`.
+
+### Troca de senha e saída
+
+- Trocar a senha: `POST /api/auth/change-password` (rota do better-auth) com `{ currentPassword, newPassword, revokeOtherSessions: true }` e a sessão no Bearer. Volta `{ token, user }` e o header `set-auth-token` com a sessão nova; todas as outras sessões, inclusive a que pediu, deixam de valer. Senha atual errada: 400 `INVALID_PASSWORD`. Limite: 5 por minuto por IP.
+- Sair: `POST /api/auth/sign-out`, sem mudança.
+
+### App
+
+- Fluxo no molde da runelay: boas-vindas e endereço do servidor (só numa instalação nova), conta (dono, entrar ou convite) e "Primeiros passos" em linha do tempo: contas de IA, integrações, permissões do Mac e primeiro bot. Cada passo pode ser pulado e o progresso fica salvo por servidor no Mac.
+- Instalação que já tinha dados e servidor sem dono: abre direto em "Configurar este runelay bots", avisando que os bots e conversas continuam e passam a ser da conta.
+- Sessão no Keychain (`com.runelay.bots.auth`), como na v32. Sair e trocar senha em Ajustes › Conta.
+
+### Verificado
+
+Instância separada (`GATEWAY_PORT=2100`, `BOTS_SCHEDULES=off`, cópia do `data/` de produção com 25 bots e 31 conversas no banco, sem usuário). Tokens trocados por `…`.
+
+```text
+boot: auth waiting for the owner (http://127.0.0.1:2100, secret from data-file)
+
+GET /auth/setup -> 200
+{"ok":true,"needsOwner":true,"required":false,"methods":{"password":true,"passkey":true,"device":true,"invites":true,"passwordReset":false}}
+
+GET /bots (sem credencial, antes do dono) -> 200, 4 bots
+
+POST /auth/setup -> 201
+{"ok":true,"token":"…","user":{"id":"vUvG9KvCRMPwtWrCL6emiewKzmtA6PZJ","name":"Teste Dono","email":"dono@example.com","role":"owner"}}
+
+GET /auth/setup -> 200
+{"ok":true,"needsOwner":false,"required":true,"methods":{"password":true,"passkey":true,"device":true,"invites":true,"passwordReset":false}}
+
+GET /bots (sem credencial) -> 401
+{"ok":false,"error":"Entre de novo para continuar.","code":"unauthorized"}
+
+GET /bots (sessão do dono) -> 200, os mesmos 4 bots
+GET /bots (Bearer RUNNER_TOKEN) -> 200
+
+GET /auth/me (Bearer RUNNER_TOKEN) -> 200
+{"ok":true,"user":{"id":"vUvG9KvCRMPwtWrCL6emiewKzmtA6PZJ","name":"Teste Dono","email":"dono@example.com","role":"owner"},"method":"internal","expiresAt":null}
+
+settings: auth:owner = {"userId":"vUvG9KvCRMPwtWrCL6emiewKzmtA6PZJ","claimedAt":"2026-11-19T23:24:03.821Z"}
+
+POST /auth/setup (de novo) -> 409
+{"ok":false,"error":"O dono já foi criado. Peça um convite.","code":"setup_closed"}
+
+sem credencial / sessão / RUNNER_TOKEN
+/health 200/200/200 · /meta 401/200/200 · /status 401/200/200 · /accounts 401/200/200 · /vault/secrets 401/200/200
+
+WS /runner/connect: sem credencial recusado · RUNNER_TOKEN abre · chave rbk_ abre
+
+POST /api/auth/change-password (senha atual errada) -> 400
+{"message":"Invalid password","code":"INVALID_PASSWORD"}
+
+POST /api/auth/change-password -> 200 (set-auth-token: …)
+{"token":"…","user":{"name":"Teste Dono","email":"dono@example.com",…,"role":"owner",…}}
+depois: sessão antiga 401 · sessão que pediu 401 · sessão nova 200
+
+POST /api/auth/sign-out -> 200 {"success":true}; depois 401
+
+reinício sem variável: auth on (http://127.0.0.1:2100, secret from data-file); GET /bots sem credencial -> 401
 ```
