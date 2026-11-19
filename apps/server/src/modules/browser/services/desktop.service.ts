@@ -1,16 +1,17 @@
 import { existsSync } from "node:fs";
 import { runBytes, run as runProcess } from "@runelay-bots/providers/proc";
 import type { Subprocess } from "bun";
+import { env } from "../../../config/env";
 import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 import { controllerOf, onControllerChange, waitForBotControl } from "./control.service";
 
 const width = 1280;
 const height = 800;
-const fps = Number(process.env.DESKTOP_FPS ?? 8);
+const fps = env.DESKTOP_FPS ?? 8;
 const idleMs = 10 * 60_000;
-const desktopUser = process.env.DESKTOP_USER ?? "runelaybot";
-const desktopHome = process.env.DESKTOP_HOME ?? `/home/${desktopUser}`;
-const chromeBinary = process.env.DESKTOP_CHROME ?? "/opt/runelay-chrome/chrome";
+const desktopUser = env.DESKTOP_USER ?? "runelaybot";
+const desktopHome = env.DESKTOP_HOME ?? `/home/${desktopUser}`;
+const chromeBinary = env.DESKTOP_CHROME ?? "/opt/runelay-chrome/chrome";
 
 type Json = Record<string, unknown>;
 

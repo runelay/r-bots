@@ -10,6 +10,11 @@ services:
     network_mode: host
     init: true
     restart: unless-stopped
+    depends_on:
+      storage:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
     shm_size: 2gb
     mem_limit: ${BOTS_MEM_LIMIT:-6g}
     memswap_limit: ${BOTS_MEM_LIMIT:-6g}
@@ -52,3 +57,58 @@ services:
       options:
         max-size: 20m
         max-file: "5"
+
+  storage-secrets:
+    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine}
+    command: ["bun", "/bootstrap/bootstrap.ts", "secrets"]
+    environment:
+      BOTS_UID: ${BOTS_UID:-1000}
+      BOTS_GID: ${BOTS_GID:-1000}
+    volumes:
+      - ./deploy/garage:/bootstrap:ro
+      - ${BOTS_STORAGE_DIR:-${HOME}/.local/share/runelay-bots/storage}:/var/lib/garage
+    restart: "no"
+
+  storage:
+    image: dxflrs/garage:v2.5.0
+    container_name: ${BOTS_STORAGE_CONTAINER_NAME:-runelay-bots-storage}
+    user: ${BOTS_UID:-1000}:${BOTS_GID:-1000}
+    restart: unless-stopped
+    depends_on:
+      storage-secrets:
+        condition: service_completed_successfully
+    ports:
+      - 127.0.0.1:3900:3900
+    mem_limit: ${BOTS_STORAGE_MEM_LIMIT:-256m}
+    memswap_limit: ${BOTS_STORAGE_MEM_LIMIT:-256m}
+    volumes:
+      - ./deploy/garage/garage.toml:/etc/garage.toml:ro
+      - ${BOTS_STORAGE_DIR:-${HOME}/.local/share/runelay-bots/storage}:/var/lib/garage
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  storage-init:
+    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine}
+    command: ["bun", "/bootstrap/bootstrap.ts", "setup"]
+    user: ${BOTS_UID:-1000}:${BOTS_GID:-1000}
+    depends_on:
+      storage:
+        condition: service_healthy
+    environment:
+      GARAGE_ADMIN_URL: http://storage:3903
+      BOTS_ENV_FILE_PATH: /env/.env.local
+      GARAGE_CAPACITY_GB: ${BOTS_STORAGE_CAPACITY_GB:-100}
+    volumes:
+      - ./deploy/garage:/bootstrap:ro
+      - ${BOTS_STORAGE_DIR:-${HOME}/.local/share/runelay-bots/storage}/secrets:/var/lib/garage/secrets:ro
+      - ${BOTS_ENV_DIR:-.}:/env
+    restart: "no"

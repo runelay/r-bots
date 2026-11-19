@@ -5,6 +5,7 @@ import net from "node:net";
 import { join, resolve } from "node:path";
 import { childEnv } from "@runelay-bots/providers/proc";
 import type { Subprocess } from "bun";
+import { env } from "../../../config/env";
 import { codeDataDir, insideWorkspace, type WorkspaceState, waitForInstall } from "./workspace.service";
 
 export interface DevServer {
@@ -25,7 +26,7 @@ export interface DevServer {
 }
 
 const servers = new Map<string, DevServer>();
-const portBase = Number(process.env.DEV_PORT_BASE ?? 5310);
+const portBase = env.DEV_PORT_BASE;
 const portLimit = portBase + 400;
 const reserved = new Set<number>();
 

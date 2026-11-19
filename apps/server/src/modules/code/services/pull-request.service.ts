@@ -1,4 +1,5 @@
 import { childEnv, run } from "@runelay-bots/providers/proc";
+import { env } from "../../../config/env";
 import { allStoredSessions, type StoredSession } from "../../conversations/services/sessions.service";
 import { isBusy } from "../../engine/services/engine.service";
 import { appWatching } from "../../status/services/viewers.service";
@@ -68,10 +69,10 @@ const pendingDelayMs = 30_000;
 const openDelayMs = 2 * 60_000;
 const closedDelayMs = 10 * 60_000;
 const discoverDelayMs = 2 * 60_000;
-const autoCloseMs = Number(process.env.CODE_PR_AUTOCLOSE_HOURS ?? 24) * 3600_000;
+const autoCloseMs = env.CODE_PR_AUTOCLOSE_HOURS * 3600_000;
 const nextCheck = new Map<string, number>();
 const inFlight = new Set<string>();
-const ghBin = process.env.CODE_GH_BIN || "gh";
+const ghBin = env.CODE_GH_BIN ?? "gh";
 
 function gh(cwd: string, args: string[], timeoutMs = 30_000): Promise<GhResult> {
   return run(ghBin, args, { cwd, timeoutMs, env: childEnv({ GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }) });

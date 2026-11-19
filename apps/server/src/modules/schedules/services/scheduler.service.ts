@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Cron } from "croner";
+import { env } from "../../../config/env";
 import { listBots, onBotsChanged } from "../../bots/services/bots.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
@@ -45,7 +46,7 @@ export function reloadSchedules() {
 }
 
 export function startScheduler() {
-  if (process.env.BOTS_SCHEDULES === "off") return console.log("schedules off");
+  if (env.BOTS_SCHEDULES === "off") return console.log("schedules off");
   reloadSchedules();
   onBotsChanged(reloadSchedules);
 }

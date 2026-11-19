@@ -1,7 +1,7 @@
 import { copyFile, mkdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { runBytes, run as runProcess } from "@runelay-bots/providers/proc";
-import { botDir } from "../../../config/env";
+import { botDir, env } from "../../../config/env";
 import { readJson, writeJson } from "../../../shared/json-file";
 import { waitForBotControl } from "./control.service";
 
@@ -119,7 +119,7 @@ export function elementText(botId: string, ref: string) {
 
 const lastViewed = new Map<string, number>();
 const lastUsed = new Map<string, number>();
-const browserIdleMs = Number(process.env.BROWSER_IDLE_MS ?? 10 * 60_000);
+const browserIdleMs = env.BROWSER_IDLE_MS ?? 10 * 60_000;
 const viewedWindowMs = 20_000;
 
 export function markBrowserViewed(botId: string) {

@@ -1,5 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AccountProbe, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import { env } from "../../../config/env";
 import type { Req } from "../../../shared/http";
 import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 
@@ -16,7 +17,7 @@ type TurnStream = {
   finish: () => void;
 };
 
-const runnerToken = process.env.RUNNER_TOKEN ?? "";
+const runnerToken = env.RUNNER_TOKEN;
 let client: Socket | null = null;
 const heartbeats = new WeakMap<Socket, { alive: boolean; timer: ReturnType<typeof setInterval> }>();
 let hello: Record<string, unknown> = {};

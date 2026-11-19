@@ -1,4 +1,6 @@
-export const maxTurns = Math.max(1, Number(process.env.BOTS_MAX_TURNS ?? 3));
+import { env } from "../../../config/env";
+
+export const maxTurns = Math.max(1, env.BOTS_MAX_TURNS);
 
 export type SlotPriority = "voice" | "delegate" | "chat" | "schedule";
 

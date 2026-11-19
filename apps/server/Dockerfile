@@ -68,5 +68,6 @@ RUN --mount=type=cache,target=/home/anderson/.bun/install/cache,uid=1000,gid=100
 COPY --chown=anderson:anderson packages/ /app/packages/
 COPY --chown=anderson:anderson apps/server/ /app/apps/server/
 
+ENV PATH=/home/anderson/.local/bin:$PATH
 WORKDIR /app/apps/server
-CMD ["./start.sh"]
+CMD ["bun", "src/index.ts"]

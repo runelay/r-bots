@@ -21,8 +21,8 @@ import { loadVault } from "./modules/vault/services/vault.service";
 import { endAllCalls } from "./modules/voice/services/voice.service";
 import { installConsoleRedaction } from "./shared/redact";
 
-delete process.env.ANTHROPIC_API_KEY;
-delete process.env.ANTHROPIC_AUTH_TOKEN;
+for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CURSOR_API_KEY", "XAI_API_KEY"])
+  delete Bun.env[key];
 
 async function main() {
   installConsoleRedaction();

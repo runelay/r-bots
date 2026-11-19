@@ -9,7 +9,7 @@ import {
   type TurnRequest,
 } from "@runelay-bots/protocol";
 import { probe, runTurn } from "@runelay-bots/providers";
-import { dataDir } from "../../../config/env";
+import { dataDir, env } from "../../../config/env";
 import { emitFault, injectedFault } from "./limits.service";
 import { macAccounts, macRunnerConnected, onMacRunnerChange, runMacTurn } from "./mac-runner.service";
 
@@ -28,8 +28,8 @@ export interface Account {
 }
 
 export const runnerIds: RunnerId[] = ["vps", "mac"];
-const runnerToken = process.env.RUNNER_TOKEN ?? "";
-const macUrl = process.env.MAC_RUNNER_URL ?? "http://100.122.172.127:4790";
+const runnerToken = env.RUNNER_TOKEN;
+const macUrl = env.MAC_RUNNER_URL ?? "http://100.122.172.127:4790";
 const runnerLabels: Record<RunnerId, string> = { vps: "VPS", mac: "Mac" };
 const maxAgeMs = 10 * 60_000;
 
@@ -135,8 +135,8 @@ export function isAccountId(value: string) {
 }
 
 export function mcpBaseFor(runner: RunnerId) {
-  if (runner === "mac") return process.env.PUBLIC_MCP_BASE ?? "https://vps.taile89599.ts.net:10447";
-  return `http://127.0.0.1:${process.env.GATEWAY_PORT ?? 2000}`;
+  if (runner === "mac") return env.PUBLIC_MCP_BASE ?? "https://vps.taile89599.ts.net:10447";
+  return `http://127.0.0.1:${env.GATEWAY_PORT}`;
 }
 
 async function runRemote(request: TurnRequest, signal: AbortSignal, emit: (event: ProviderEvent) => void) {
