@@ -234,3 +234,36 @@ Pedido como "v28"; o número já tinha sido usado (uso e limites). Código: `app
 - Mesmo pedido (editar b.ts + commit + `push --force` da branch) nos 4 modos: Somente leitura não fez nada (e, forçado, `git status` rodou e `echo x > c.ts` foi negado pelo hook); Editar pediu card no `git add`, no `git commit` e no push; Padrão rodou direto e pediu card só no push forçado; Acesso total rodou tudo sem card. `git push --force origin HEAD:develop` no Acesso total → negado sem card (conferido também direto no gate, junto com Co-Authored-By e `--base main`).
 - Renomear, ler, arquivar (principal recusada), listar arquivadas, mover para outro bot (a conversa movida continuou respondendo na worktree dela), padrão do bot refletindo em `effectivePermission`.
 - `swift build -c release` no Mac e `make-app.sh`, assinatura "runelay bots Local". Sem print.
+
+## v33 (19/11): conversas no SQLite e busca por texto
+
+As conversas saíram dos `.json`/`.ndjson` e foram para o banco (`conversations` + `conversation_events`, uma linha por evento com `seq` a partir de 1). O contrato existente não muda: `GET …/eve/v1/session/:sid/stream` devolve as mesmas linhas, byte a byte, e `GET …/eve/v1/session/:sid/events?limit&before` continua paginando por índice (`index = seq - 1`), agora lido direto do banco por cursor, sem carregar a conversa inteira.
+
+### `GET /bots/:id/conversations/search?q=…&limit=20&cursor=0` → 200
+
+Busca nas mensagens (texto do usuário e respostas do bot) de todas as conversas do bot, com FTS5. Ignora acento e caixa ("producao" acha "produção"). `q` vai até 200 caracteres; `limit` até 50.
+
+```json
+{
+  "hits": [
+    {
+      "botId": "qa",
+      "sessionId": "wrun_01M7TY8AQPYW37RXP70GH4MASY",
+      "index": 3,
+      "at": "2026-11-19T22:18:53.565Z",
+      "role": "user",
+      "snippet": "Teste de [fumaça]: responda só com a palavra OK."
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+- `index` é o mesmo índice do `events`: para abrir no ponto, peça `events?before=index+1`.
+- `snippet` marca o termo encontrado entre `[` e `]`.
+- `nextCursor` vai em `cursor` na próxima página; `null` quando acabou.
+- Erro: `q` vazio ou longo demais → 400 `{ok:false, error, field:"q"}`.
+
+### Verificado 19/11 (instância :2100, cópia dos dados de produção)
+
+Conversa de 1.361 eventos: stream idêntico ao da produção (mesmo md5) e as 7 páginas de `events` somam 1.361. Busca por "conty-api", "producao" e "fumaça" devolve os trechos certos.

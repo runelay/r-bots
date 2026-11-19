@@ -3,6 +3,7 @@ import { model } from "../../../config/env";
 import { notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { answer, cancel, deliver } from "../../engine/services/engine.service";
+import { lineOf } from "../repositories/sessions.repository";
 import { createStoredSession, getStoredSession, type StoredSession, sessionsOf } from "../services/sessions.service";
 import { peekThread } from "../services/threads.service";
 import {
@@ -97,8 +98,9 @@ function handleStream(req: Req, res: Res, url: URL, session: StoredSession) {
     "x-eve-stream-version": "27",
     "x-eve-session-id": session.meta.sessionId,
   });
-  const lines = session.log.lines;
-  for (let index = startIndex; index < lines.length; index++) res.write(`${lines[index]}\n`);
+  const chunk = 500;
+  for (let index = startIndex; index < session.log.size; index += chunk)
+    for (const line of session.log.slice(index, index + chunk)) res.write(`${line}\n`);
   if (!follow) {
     res.end();
     return;
@@ -119,8 +121,7 @@ function handleStream(req: Req, res: Res, url: URL, session: StoredSession) {
 }
 
 function handleEvents(res: Res, url: URL, session: StoredSession) {
-  const lines = session.log.lines;
-  const total = lines.length;
+  const total = session.log.size;
   const limitRaw = Number(url.searchParams.get("limit") ?? 60);
   const limit = Math.min(200, Math.max(1, Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 60));
   const beforeParam = url.searchParams.get("before");
@@ -130,9 +131,9 @@ function handleEvents(res: Res, url: URL, session: StoredSession) {
   const end = Math.min(total, Math.floor(beforeRaw));
   const start = Math.max(0, end - limit);
   const events = [];
-  for (let index = start; index < end; index++) {
+  for (const row of session.log.rows(start, end)) {
     try {
-      events.push({ index, ...(JSON.parse(lines[index]) as Record<string, unknown>) });
+      events.push({ index: row.seq - 1, ...(JSON.parse(lineOf(row)) as Record<string, unknown>) });
     } catch {}
   }
   sendJson(res, 200, { events, nextBefore: start > 0 ? start : null, total });

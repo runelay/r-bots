@@ -1,11 +1,15 @@
-import { appendFile, mkdir, readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { ulid } from "ulid";
-import { sessionsDir } from "../../../config/env";
-import { readJson, writeJson } from "../../../shared/json-file";
 import { redactDeep } from "../../../shared/redact";
 import type { PermissionMode } from "../../approvals/services/permissions.service";
 import type { Checkpoint, WorkspaceState } from "../../code/services/workspace.service";
+import {
+  appendEventRow,
+  eventRows,
+  lastEventAt,
+  lineOf,
+  loadConversationRows,
+  saveConversationRow,
+} from "../repositories/sessions.repository";
 
 export interface Fact {
   type: string;
@@ -62,35 +66,59 @@ export interface ConversationInfo {
 
 type Listener = (line: string) => void;
 
+const idleEvictMs = 30 * 60_000;
+const logs = new Set<EventLog>();
+
 export class EventLog {
-  readonly lines: string[] = [];
+  private cache: string[] | null = null;
   private listeners = new Set<Listener>();
-  private lastAt = 0;
-  private writes: Promise<unknown> = Promise.resolve();
+  private lastAt: number | null = null;
+  private touchedAt = Date.now();
 
-  constructor(private readonly file: string) {}
-
-  async load() {
-    try {
-      const text = await readFile(this.file, "utf8");
-      for (const line of text.split("\n")) {
-        if (!line.trim()) continue;
-        this.lines.push(line);
-        try {
-          const at = Date.parse(JSON.parse(line).at);
-          if (at > this.lastAt) this.lastAt = at;
-        } catch {}
-      }
-    } catch {}
+  constructor(
+    readonly sessionId: string,
+    private seq = 0,
+  ) {
+    logs.add(this);
   }
 
+  get size() {
+    return this.seq;
+  }
+
+  get lines(): string[] {
+    this.touchedAt = Date.now();
+    if (!this.cache) this.cache = eventRows(this.sessionId, 0, this.seq).map(lineOf);
+    return this.cache;
+  }
+
+  slice(start: number, end = this.seq) {
+    const from = Math.max(0, start);
+    const to = Math.min(this.seq, end);
+    if (to <= from) return [];
+    if (this.cache) return this.cache.slice(from, to);
+    return eventRows(this.sessionId, from, to).map(lineOf);
+  }
+
+  rows(start: number, end: number) {
+    return eventRows(this.sessionId, Math.max(0, start), Math.min(this.seq, end));
+  }
+
+  async load() {}
+
   emit(...facts: Fact[]) {
+    if (this.lastAt === null) {
+      const stored = lastEventAt(this.sessionId);
+      this.lastAt = stored ? Date.parse(stored) || 0 : 0;
+    }
     const now = Math.max(Date.now(), this.lastAt + 1);
     this.lastAt = now;
-    const line = JSON.stringify({ at: new Date(now).toISOString(), facts: redactDeep(facts) });
-    this.lines.push(line);
-    const file = this.file;
-    this.writes = this.writes.then(() => appendFile(file, `${line}\n`)).catch(() => undefined);
+    const at = new Date(now).toISOString();
+    const redacted = redactDeep(facts);
+    const line = JSON.stringify({ at, facts: redacted });
+    appendEventRow(this.sessionId, this.seq + 1, at, redacted);
+    this.seq++;
+    this.cache?.push(line);
     for (const listener of this.listeners) listener(line);
   }
 
@@ -100,9 +128,22 @@ export class EventLog {
   }
 
   subscribe(listener: Listener) {
+    this.touchedAt = Date.now();
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
+
+  evictIfIdle(now = Date.now()) {
+    if (!this.cache || this.listeners.size > 0 || now - this.touchedAt < idleEvictMs) return false;
+    this.cache = null;
+    return true;
+  }
+}
+
+export function evictIdleLogs(now = Date.now()) {
+  let evicted = 0;
+  for (const log of logs) if (log.evictIfIdle(now)) evicted++;
+  return evicted;
 }
 
 export class StoredSession {
@@ -112,7 +153,8 @@ export class StoredSession {
   ) {}
 
   save() {
-    return writeJson(join(sessionsDir, `${this.meta.sessionId}.json`), this.meta);
+    saveConversationRow(this.meta);
+    return Promise.resolve();
   }
 }
 
@@ -123,16 +165,12 @@ export function newSessionId() {
 }
 
 export async function loadSessions() {
-  await mkdir(sessionsDir, { recursive: true });
-  for (const entry of await readdir(sessionsDir)) {
-    if (!entry.endsWith(".json")) continue;
-    const meta = await readJson<SessionMeta | null>(join(sessionsDir, entry), null);
+  for (const { meta, lastSeq } of loadConversationRows()) {
     if (!meta?.sessionId) continue;
     if (meta.sdkSessionId && !meta.providerSessions) meta.providerSessions = { "vps:claude": meta.sdkSessionId };
-    const log = new EventLog(join(sessionsDir, `${meta.sessionId}.ndjson`));
-    await log.load();
-    sessions.set(meta.sessionId, new StoredSession(meta, log));
+    sessions.set(meta.sessionId, new StoredSession(meta, new EventLog(meta.sessionId, lastSeq)));
   }
+  setInterval(() => evictIdleLogs(), 5 * 60_000).unref();
 }
 
 export async function createStoredSession(
@@ -152,7 +190,7 @@ export async function createStoredSession(
     runCount: 0,
     usageTotals: null,
   };
-  const session = new StoredSession(meta, new EventLog(join(sessionsDir, `${sessionId}.ndjson`)));
+  const session = new StoredSession(meta, new EventLog(sessionId));
   sessions.set(sessionId, session);
   await session.save();
   return session;

@@ -492,6 +492,11 @@ function taggedLog(log: EventLog, botId: string): EventLog {
     get lines() {
       return log.lines;
     },
+    get size() {
+      return log.size;
+    },
+    slice: (start: number, end?: number) => log.slice(start, end),
+    rows: (start: number, end: number) => log.rows(start, end),
     emit: (...facts: Fact[]) => log.emit(...facts.map(tag)),
     progress: (fact: Fact) => log.progress(tag(fact)),
     subscribe: (listener: (line: string) => void) => log.subscribe(listener),
