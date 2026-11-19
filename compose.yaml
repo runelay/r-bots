@@ -25,7 +25,8 @@ services:
     environment:
       GATEWAY_HOST: 127.0.0.1
       GATEWAY_PORT: ${GATEWAY_PORT:-2000}
-      BOTS_DATA_DIR: ${BOTS_DATA_DIR:-/home/anderson/projects/runelay-bots/data}
+      BOTS_DATA_DIR: /data
+      BOTS_BACKUP_DIR: /backups
       BOTS_SCHEDULES: ${BOTS_SCHEDULES:-on}
       BOTS_MAX_TURNS: ${BOTS_MAX_TURNS:-3}
       VOICE_MAX_WARM: ${VOICE_MAX_WARM:-3}
@@ -36,7 +37,8 @@ services:
     volumes:
       - /home/anderson/projects:/home/anderson/projects
       - /home/anderson/projects/worktrees:/home/anderson/projects/worktrees
-      - ${BOTS_DATA_DIR:-/home/anderson/projects/runelay-bots/data}:${BOTS_DATA_DIR:-/home/anderson/projects/runelay-bots/data}
+      - ${BOTS_DATA_DIR:-${HOME}/.local/share/runelay-bots}:/data
+      - ${BOTS_BACKUP_DIR:-${HOME}/.local/share/runelay-bots-backups}:/backups
       - ${BOTS_ENV_FILE:-/home/anderson/projects/runelay-bots/.env.local}:/app/apps/server/.env.local:ro
       - /home/anderson/.claude:/home/anderson/.claude
       - /home/anderson/.claude.json:/home/anderson/.claude.json

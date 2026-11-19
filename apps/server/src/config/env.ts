@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 
@@ -58,7 +59,7 @@ export const env = load();
 
 export const rootDir = env.BOTS_APP_DIR ?? resolve(import.meta.dirname, "..", "..");
 export const repoDir = resolve(rootDir, "..", "..");
-export const dataDir = env.BOTS_DATA_DIR ?? join(repoDir, "data");
+export const dataDir = env.BOTS_DATA_DIR ?? join(homedir(), ".local", "share", "runelay-bots");
 export const host = env.GATEWAY_HOST;
 export const port = env.GATEWAY_PORT;
 export const model = env.BOTS_MODEL;

@@ -3,6 +3,7 @@ import { activeMarkers, sweepOrphans } from "@runelay-bots/providers/proc-tree";
 import { startServer } from "./app";
 import { dataDir, host, model, port } from "./config/env";
 import { refreshAccounts } from "./modules/accounts/services/accounts.service";
+import { closeDb, getDb } from "./db";
 import { initAuth } from "./modules/auth/gate";
 import { loadBots } from "./modules/bots/services/bots.service";
 import { closeIdleBrowsers } from "./modules/browser/services/browser.service";
@@ -17,6 +18,7 @@ import { botStatuses } from "./modules/engine/services/engine.service";
 import { loadGroups } from "./modules/groups/services/groups.service";
 import { startScheduler } from "./modules/schedules/services/scheduler.service";
 import { loadSections } from "./modules/sections/services/sections.service";
+import { startBackupSchedule } from "./modules/storage/services/backup.service";
 import { warmUsage } from "./modules/usage/services/usage.service";
 import { loadVault } from "./modules/vault/services/vault.service";
 import { endAllCalls } from "./modules/voice/services/voice.service";
@@ -28,6 +30,7 @@ for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY"
 async function main() {
   installConsoleRedaction();
   await mkdir(dataDir, { recursive: true });
+  getDb();
   await loadVault();
   await loadBots();
   void listConnections(true).catch(() => undefined);
@@ -38,6 +41,7 @@ async function main() {
   await loadSections();
   await loadGroups();
   startScheduler();
+  startBackupSchedule();
   warmUsage();
   startCodeHousekeeping();
   const startupOrphans = sweepOrphans();
@@ -56,7 +60,10 @@ async function main() {
       stopAllDesktops();
       stopAllDevServers();
       endAllCalls();
-      setTimeout(() => process.exit(0), 500).unref();
+      setTimeout(() => {
+        closeDb();
+        process.exit(0);
+      }, 500).unref();
     });
   }
   await initAuth();
