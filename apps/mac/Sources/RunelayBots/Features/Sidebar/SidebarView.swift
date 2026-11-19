@@ -276,6 +276,11 @@ struct BotChatList: View {
         ) {
             model.selectBot(bot.id)
         }
+        .onHover { hovering in
+            if hovering {
+                model.ensureThread(for: bot.id)
+            }
+        }
         .contextMenu {
             menu(for: bot)
         }

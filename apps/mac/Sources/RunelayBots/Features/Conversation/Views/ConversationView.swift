@@ -204,29 +204,43 @@ struct ConversationView: View {
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var hoveredItemID: String?
     @State private var isDropTargeted = false
-    @State private var isFarFromBottom = false
     @State private var showsJumpButton = false
     @State private var unseenCount = 0
     @State private var lastEntryID: String?
     @State private var userScrolled = false
-    @State private var scrollAnimating = false
+    @State private var revealed = false
+    @State private var revealToken = 0
+    @State private var bottomDistance: CGFloat = .infinity
+    @State private var hiddenSince = Date()
+    @State private var hiddenPass = 0
+    @State private var footerHeight: CGFloat = 0
 
     private static let bottomID = "transcript-bottom"
+    private static let fadeHeight: CGFloat = 40
+
+    private var topInset: CGFloat {
+        store.codeState?.workspace != nil && !bot.isGroup ? 40 : 0
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            transcript
-                .safeAreaPadding(.top, store.codeState?.workspace != nil && !bot.isGroup ? 40 : 0)
-                .overlay(alignment: .top) {
-                    if let workspace = store.codeState?.workspace, !bot.isGroup {
-                        CodeStrip(store: store, workspace: workspace, running: store.phase == .working) {
-                            model.activeSheet = .changes(bot.id)
-                        }
-                        .transition(.opacity.combined(with: .offset(y: -6)))
+        transcript
+            .safeAreaPadding(.top, topInset)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                footer
+                    .onGeometryChange(for: CGFloat.self) { proxy in
+                        proxy.size.height
+                    } action: { height in
+                        footerHeight = height
                     }
+            }
+            .overlay(alignment: .top) {
+                if let workspace = store.codeState?.workspace, !bot.isGroup {
+                    CodeStrip(store: store, workspace: workspace, running: store.phase == .working) {
+                        model.activeSheet = .changes(bot.id)
+                    }
+                    .transition(.opacity.combined(with: .offset(y: -6)))
                 }
-            footer
-        }
+            }
         .springAnimation(value: store.codeState?.workspace?.id)
         .background(Theme.background)
         .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
@@ -242,6 +256,9 @@ struct ConversationView: View {
         .springAnimation(value: isDropTargeted)
         .overlay(alignment: .top) {
             CallOverlay(bot: bot)
+        }
+        .onDisappear {
+            revealToken &+= 1
         }
     }
 
@@ -322,13 +339,12 @@ struct ConversationView: View {
                                 .transition(.opacity)
                         }
                         Spacer(minLength: 0)
-                            .frame(height: 1)
+                            .frame(height: Self.fadeHeight + (hiddenPass.isMultiple(of: 2) ? 0 : 0.5))
                             .id(Self.bottomID)
                     }
                     .frame(maxWidth: Metrics.transcriptWidth, alignment: .leading)
                     .padding(.horizontal, Spacing.xxl)
-                    .padding(.top, Spacing.s)
-                    .padding(.bottom, Spacing.m)
+                    .padding(.top, Spacing.l + Spacing.s)
                     .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .bottom)
                     .id(ObjectIdentifier(store))
                     .transition(Motion.clear(reduceMotion: reduceMotion))
@@ -337,15 +353,15 @@ struct ConversationView: View {
                     .springAnimation(value: store.showsThinking)
                 }
                 .defaultScrollAnchor(.bottom)
-                .defaultScrollAnchor(isFarFromBottom ? .top : .bottom, for: .sizeChanges)
+                .defaultScrollAnchor(showsJumpButton ? .top : .bottom, for: .sizeChanges)
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y < 120 || geometry.contentSize.height <= geometry.containerSize.height + 1
                 } action: { _, nearTop in
-                    guard nearTop, store.historySettled, store.hasOlder, !store.isLoadingOlder else { return }
+                    guard nearTop, revealed, store.historySettled, store.hasOlder, !store.isLoadingOlder else { return }
                     store.loadOlder()
                 }
                 .onScrollGeometryChange(for: Int.self) { geometry in
-                    let distance = geometry.contentSize.height - geometry.visibleRect.maxY
+                    let distance = geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY
                     return distance > 200 ? 2 : distance > 24 ? 1 : 0
                 } action: { _, zone in
                     if zone == 2, !showsJumpButton {
@@ -355,57 +371,47 @@ struct ConversationView: View {
                         unseenCount = 0
                     }
                 }
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentSize.height - geometry.visibleRect.maxY > geometry.containerSize.height
-                } action: { _, far in
-                    guard far != isFarFromBottom else { return }
-                    isFarFromBottom = far
-                    if !far {
-                        unseenCount = 0
-                    }
-                }
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentSize.height - geometry.visibleRect.maxY
-                } action: { _, _ in
-                    pinToBottom(proxy)
+                    geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY
+                } action: { _, distance in
+                    guard !revealed else { return }
+                    bottomDistance = distance
+                    positionHidden(proxy)
                 }
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.visibleRect.minY >= geometry.contentSize.height
-                } action: { _, blank in
-                    if blank {
-                        pinToBottom(proxy, force: true)
-                    }
+                .mask {
+                    transcriptMask
                 }
                 .overlay(alignment: .bottom) {
                     if showsJumpButton && userScrolled && store.historySettled {
                         JumpToBottomButton(count: unseenCount, accent: Theme.accent(bot.accent)) {
                             scrollToEnd(proxy)
                         }
-                        .padding(.bottom, Spacing.s)
+                        .padding(.bottom, (Self.fadeHeight - 32) / 2)
                         .transition(Motion.insertion(reduceMotion: reduceMotion))
                     }
                 }
                 .springAnimation(value: showsJumpButton)
-                .onScrollPhaseChange { old, phase in
+                .onScrollPhaseChange { _, phase in
                     if phase != .idle, hoveredItemID != nil {
                         hoveredItemID = nil
                     }
                     if phase == .interacting || phase == .tracking {
                         userScrolled = true
                     }
-                    scrollAnimating = phase == .animating
-                    if old == .animating, phase == .idle {
-                        pinToBottom(proxy)
+                }
+                .overlay {
+                    if !revealed {
+                        Theme.background
+                            .transition(.opacity)
                     }
                 }
-                .opacity(store.historySettled ? 1 : 0)
                 .onChange(of: store.entries.count) {
                     let previous = lastEntryID
                     lastEntryID = store.entries.last?.id
-                    guard store.historySettled, store.prependAnchorID == nil || !store.isLoadingOlder else { return }
+                    guard revealed, store.historySettled, store.prependAnchorID == nil || !store.isLoadingOlder else { return }
                     guard previous != lastEntryID else { return }
                     let sentByMe = store.entries.last.map { $0.kind == .user && store.userMessages[$0.id]?.fromBotID == nil } ?? false
-                    if isFarFromBottom && !sentByMe {
+                    if showsJumpButton && !sentByMe {
                         let added = previous.flatMap { id in store.entries.lastIndex { $0.id == id } }.map { store.entries.count - 1 - $0 } ?? 1
                         unseenCount += max(1, added)
                         return
@@ -413,21 +419,25 @@ struct ConversationView: View {
                     scrollToEnd(proxy)
                 }
                 .onChange(of: store.historySettled) {
+                    hiddenSince = Date()
                     jumpToBottom(proxy)
                     fillIfShort()
+                    positionHidden(proxy)
                 }
                 .onChange(of: store.isLoadingOlder) {
                     if !store.isLoadingOlder {
                         fillIfShort()
+                        positionHidden(proxy)
                     }
                 }
                 .onChange(of: bot.id, initial: true) {
-                    userScrolled = false
-                    guard store.historySettled else { return }
-                    jumpToBottom(proxy)
+                    startHidden(proxy)
+                }
+                .onChange(of: ObjectIdentifier(store)) {
+                    startHidden(proxy)
                 }
                 .onChange(of: store.prependToken) {
-                    guard let anchor = store.prependAnchorID else { return }
+                    guard revealed, let anchor = store.prependAnchorID else { return }
                     var transaction = Transaction()
                     transaction.disablesAnimations = true
                     withTransaction(transaction) {
@@ -435,7 +445,7 @@ struct ConversationView: View {
                     }
                 }
                 .onChange(of: store.showsThinking) {
-                    guard store.historySettled, !isFarFromBottom else { return }
+                    guard revealed, store.historySettled, !showsJumpButton else { return }
                     withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
@@ -455,6 +465,18 @@ struct ConversationView: View {
         .springAnimation(value: ObjectIdentifier(store))
     }
 
+    private var transcriptMask: some View {
+        VStack(spacing: 0) {
+            LinearGradient(colors: [Color.clear, Color.black], startPoint: .top, endPoint: .bottom)
+                .frame(height: topInset + Spacing.l + Spacing.s)
+            Color.black
+            LinearGradient(colors: [Color.black, Color.black.opacity(0.2)], startPoint: .top, endPoint: .bottom)
+                .frame(height: Self.fadeHeight)
+            Color.black.opacity(0.2)
+                .frame(height: footerHeight)
+        }
+    }
+
     private func scrollToEnd(_ proxy: ScrollViewProxy) {
         unseenCount = 0
         if reduceMotion {
@@ -470,15 +492,53 @@ struct ConversationView: View {
         }
     }
 
-    private func pinToBottom(_ proxy: ScrollViewProxy, force: Bool = false) {
-        guard store.historySettled, force || (!userScrolled && !scrollAnimating) else { return }
-        DispatchQueue.main.async {
-            guard force || (!userScrolled && !scrollAnimating) else { return }
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                proxy.scrollTo(Self.bottomID, anchor: .bottom)
+    private func startHidden(_ proxy: ScrollViewProxy) {
+        revealed = false
+        userScrolled = false
+        showsJumpButton = false
+        bottomDistance = .infinity
+        hiddenSince = Date()
+        guard store.historySettled else { return }
+        jumpToBottom(proxy)
+        positionHidden(proxy)
+    }
+
+    private func positionHidden(_ proxy: ScrollViewProxy) {
+        guard !revealed, store.historySettled else { return }
+        revealToken += 1
+        let token = revealToken
+        if store.transcriptSnapshot(now: Date()).items.isEmpty && !store.isLoadingOlder {
+            reveal()
+            return
+        }
+        let overdue = Date().timeIntervalSince(hiddenSince) > 2.5
+        let ready = (-4...24).contains(bottomDistance) && !store.isLoadingOlder
+        if !ready {
+            DispatchQueue.main.async {
+                guard token == revealToken, !revealed else { return }
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
+                }
+                DispatchQueue.main.async {
+                    hiddenPass &+= 1
+                }
             }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + (ready ? 0.05 : overdue ? 0.03 : 0.4)) {
+            guard token == revealToken, !revealed else { return }
+            if ready || overdue {
+                reveal()
+            } else {
+                positionHidden(proxy)
+            }
+        }
+    }
+
+    private func reveal() {
+        withAnimation(.easeOut(duration: 0.12)) {
+            revealed = true
         }
     }
 
