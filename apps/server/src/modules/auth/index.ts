@@ -1,8 +1,11 @@
+import type { BlobStore } from "../storage/services/blob-store";
+import { getBlobStore } from "../storage/services/storage.service";
 import { createAuthRoutes } from "./routes/auth.routes";
 import { createAccessService, type IssuedSession } from "./services/accounts-access.service";
 import { createAuthenticator, type Principal } from "./services/auth.middleware";
 import { type AuthDatabase, createAuth, ownerRole } from "./services/auth.service";
 import { resolveAuthSecret } from "./services/auth-secret.service";
+import { createAvatarService } from "./services/avatar.service";
 
 export type { AuthOutcome, Principal } from "./services/auth.middleware";
 export { isPublicRoute, unauthorized } from "./services/auth.middleware";
@@ -18,6 +21,7 @@ export interface AuthModuleOptions {
   required?: () => boolean;
   internalToken?: () => string;
   onOwnerCreated?: (owner: IssuedSession["user"]) => void | Promise<void>;
+  blobs?: () => BlobStore;
 }
 
 export function authBaseURL(env: Record<string, string | undefined>, host: string, port: number) {
@@ -53,8 +57,9 @@ export function createAuthModule(options: AuthModuleOptions) {
       }
     : undefined;
   const authenticate = createAuthenticator(auth, { trustedOrigins: [baseURL, ...extraOrigins], internal });
-  const routes = createAuthRoutes({ auth, access, secret: resolved.secret, required: options.required });
-  return { auth, access, authenticate, handle: routes.handle, baseURL, secretSource: resolved.source };
+  const avatars = createAvatarService(auth, options.blobs ?? getBlobStore);
+  const routes = createAuthRoutes({ auth, access, avatars, secret: resolved.secret, required: options.required });
+  return { auth, access, avatars, authenticate, handle: routes.handle, baseURL, secretSource: resolved.source };
 }
 
 export type AuthModule = ReturnType<typeof createAuthModule>;

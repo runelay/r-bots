@@ -7,11 +7,13 @@ import {
 } from "../services/accounts-access.service";
 import type { Principal } from "../services/auth.middleware";
 import { type Auth, authBasePath, devicePagePath, ownerRole } from "../services/auth.service";
+import { AvatarNotFoundError, type AvatarService, avatarBasePath, avatarMaxBytes } from "../services/avatar.service";
 import { devicePage } from "./device-page";
 
 export interface AuthRouteDeps {
   auth: Auth;
   access: AccessService;
+  avatars?: AvatarService;
   secret: string;
   required?: () => boolean;
   now?: () => number;
@@ -43,12 +45,39 @@ async function readJson(request: Request) {
 function failure(error: unknown) {
   if (error instanceof ValidationError) return json({ ok: false, error: error.message, field: error.field }, 400);
   if (error instanceof SetupClosedError) return json({ ok: false, error: error.message, code: "setup_closed" }, 409);
+  if (error instanceof AvatarNotFoundError) return json({ ok: false, error: error.message, code: "not_found" }, 404);
   if (error instanceof InviteInvalidError)
     return json({ ok: false, error: error.message, code: "invite_invalid" }, 400);
   const status = (error as { statusCode?: number }).statusCode;
   if (typeof status === "number" && status >= 400 && status < 500)
     return json({ ok: false, error: (error as Error).message || "Pedido inválido." }, status);
   throw error;
+}
+
+async function avatar(avatars: AvatarService, request: Request, principal: Principal) {
+  if (request.method === "DELETE") return json({ ok: true, ...(await avatars.remove(principal.userId)) });
+  if (request.method !== "PUT" && request.method !== "POST") return null;
+  const bytes = new Uint8Array(await request.arrayBuffer());
+  if (bytes.byteLength > avatarMaxBytes)
+    return json({ ok: false, error: "A imagem passa de 2 MB.", field: "image", code: "too_large" }, 413);
+  return json({
+    ok: true,
+    ...(await avatars.save(principal.userId, request.headers.get("content-type") ?? "", bytes)),
+  });
+}
+
+async function serveAvatar(avatars: AvatarService, path: string) {
+  const [userId = "", file = ""] = path.slice(avatarBasePath.length + 1).split("/");
+  const found = await avatars.read(decodeURIComponent(userId), file);
+  if (!found) return json({ ok: false, error: "Foto não encontrada.", code: "not_found" }, 404);
+  return new Response(found.stream, {
+    headers: {
+      "content-type": found.mime,
+      "content-length": String(found.size),
+      "cache-control": "private, max-age=31536000, immutable",
+      "x-content-type-options": "nosniff",
+    },
+  });
 }
 
 export function createAuthRoutes(deps: AuthRouteDeps) {
@@ -75,7 +104,13 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
   async function me(principal: Principal, request: Request) {
     const body: Record<string, unknown> = {
       ok: true,
-      user: { id: principal.userId, name: principal.name, email: principal.email, role: principal.role },
+      user: {
+        id: principal.userId,
+        name: principal.name,
+        email: principal.email,
+        role: principal.role,
+        image: (await deps.avatars?.imageOf(principal.userId)) ?? null,
+      },
       method: principal.method,
       expiresAt: principal.expiresAt ?? null,
     };
@@ -127,6 +162,9 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
           return json({ ok: false, error: "Use a sessão do app para gerar a chave.", code: "forbidden" }, 403);
         return json({ ok: true, ...(await deps.access.issueRunnerKey(request.headers, principal.userId)) }, 201);
       }
+      if (deps.avatars && path === "/auth/me/avatar") return await avatar(deps.avatars, request, principal);
+      if (deps.avatars && path.startsWith(`${avatarBasePath}/`) && method === "GET")
+        return await serveAvatar(deps.avatars, path);
       if (path === "/auth/invites" || path.startsWith("/auth/invites/")) {
         if (principal.role !== ownerRole)
           return json({ ok: false, error: "Só o dono pode convidar.", code: "forbidden" }, 403);
