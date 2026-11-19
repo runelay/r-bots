@@ -130,6 +130,10 @@ struct CodeEditorApp: Identifiable {
 
     @MainActor
     func open(absolutePath: String) {
+        guard !CodeActions.editorHost.isEmpty else {
+            CodeActions.copy(absolutePath)
+            return
+        }
         if id == "dev.zed.Zed" {
             if CodeActions.openInZed(absolutePath: absolutePath) { return }
             if let url = URL(string: "ssh://\(CodeActions.editorHost)\(absolutePath)") {

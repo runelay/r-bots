@@ -65,7 +65,7 @@ final class BlockCenter {
     @ObservationIgnored private var statusTask: Task<Void, Never>?
 
     var client: any BlocksClient {
-        if UserDefaults.standard.string(forKey: "blocksSource") == "server", let botsClient {
+        if UserDefaults.standard.string(forKey: "blocksSource") != "fixture", let botsClient {
             return RemoteBlocksClient(client: botsClient)
         }
         return FixtureBlocksClient.shared

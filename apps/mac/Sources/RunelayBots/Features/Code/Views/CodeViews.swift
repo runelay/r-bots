@@ -47,11 +47,12 @@ enum CodeActions {
     }
 
     static var editorHost: String {
-        UserDefaults.standard.string(forKey: editorHostKey) ?? "anderson@vps.taile89599.ts.net"
+        UserDefaults.standard.string(forKey: editorHostKey)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     @discardableResult
     static func openInZed(absolutePath: String) -> Bool {
+        guard !editorHost.isEmpty else { return false }
         for candidate in ["/usr/local/bin/zed", "/opt/homebrew/bin/zed", "\(NSHomeDirectory())/.local/bin/zed"] where FileManager.default.isExecutableFile(atPath: candidate) {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: candidate)
@@ -65,7 +66,8 @@ enum CodeActions {
 
     @discardableResult
     static func openInVSCode(absolutePath: String) -> Bool {
-        guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.VSCode") != nil,
+        guard !editorHost.isEmpty,
+              NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.VSCode") != nil,
               let url = URL(string: "vscode://vscode-remote/ssh-remote+\(editorHost)\(absolutePath)") else { return false }
         return NSWorkspace.shared.open(url)
     }

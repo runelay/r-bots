@@ -2,7 +2,7 @@ import Foundation
 
 enum ServerConfig {
     static let storageKey = "serverURL"
-    static let defaultURL = "https://vps.taile89599.ts.net:10447"
+    static let defaultURL = "http://127.0.0.1:2000"
 
     static func currentURL() -> URL {
         let stored = UserDefaults.standard.string(forKey: storageKey)?

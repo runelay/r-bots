@@ -6,7 +6,7 @@ let scenario = args.count > 1 ? args[1] : "turno"
 let firstWav = args.count > 2 ? args[2] : "/tmp/rbv/longa.wav"
 let secondWav = args.count > 3 ? args[3] : ""
 let botID = args.count > 4 ? args[4] : "boss"
-let server = args.count > 5 ? args[5] : "https://vps.taile89599.ts.net:10447"
+let server = args.count > 5 ? args[5] : ProcessInfo.processInfo.environment["RUNELAY_BOTS_SERVER"] ?? "http://127.0.0.1:2000"
 let t0 = Date()
 
 func say(_ line: String) {

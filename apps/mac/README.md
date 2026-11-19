@@ -26,16 +26,22 @@ No Xcode, escolha o esquema `RunelayBots` e o destino `My Mac`, depois `⌘R`.
 
 ## Apontar para outro servidor
 
-O endereço padrão é `https://vps.taile89599.ts.net:10447`.
+O endereço padrão é `http://127.0.0.1:2000`.
 
 - Pelo app: `runelay bots` › `Ajustes…` (`⌘,`), troque o endereço e clique em **Conectar**.
 - Pelo terminal (antes de abrir o app):
 
 ```bash
-defaults write RunelayBots serverURL "http://127.0.0.1:2000"
+defaults write com.runelay.bots serverURL "https://<servidor>:10447"
 ```
 
 Quando rodar pelo Xcode o domínio do `defaults` pode ser outro; nesse caso use a tela de Ajustes.
+
+"Abrir no editor" abre o worktree no Zed ou no VS Code por SSH. Sem host configurado, só copia o caminho:
+
+```bash
+defaults write com.runelay.bots codeEditorHost "<seu-usuário>@<servidor>"
+```
 
 ## Atalhos
 
