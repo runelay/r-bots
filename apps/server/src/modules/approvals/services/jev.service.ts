@@ -1,3 +1,5 @@
+import { integrationSecret } from "../../integrations/services/integration-store.service";
+
 export const jevModel = process.env.JEV_MODEL ?? "jev-1.14.0";
 const jevUrl = process.env.JEV_URL ?? "https://api.typesafe.ai/v1/systemone";
 const timeoutMs = Number(process.env.JEV_TIMEOUT_MS ?? 1500);
@@ -33,12 +35,12 @@ export interface JevResult {
 }
 
 export function jevEnabled() {
-  return Boolean(process.env.JEV_API_KEY);
+  return Boolean(integrationSecret("jev"));
 }
 
 export async function askJev(state: unknown, questions: Record<string, JevQuestion>): Promise<JevResult> {
-  const key = process.env.JEV_API_KEY;
-  if (!key) throw new Error("JEV_API_KEY ausente.");
+  const key = integrationSecret("jev");
+  if (!key) throw new Error("Jev não está configurado.");
   const started = Date.now();
   const response = await fetch(jevUrl, {
     method: "POST",

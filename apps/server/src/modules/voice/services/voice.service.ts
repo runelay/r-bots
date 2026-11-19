@@ -16,6 +16,7 @@ import type { Fact, StoredSession } from "../../conversations/services/sessions.
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
 import { deliver } from "../../engine/services/engine.service";
+import { integrationSecret, onIntegrationChange } from "../../integrations/services/integration-store.service";
 
 const apiBase = "https://api.elevenlabs.io";
 const wsBase = "wss://api.elevenlabs.io";
@@ -41,13 +42,13 @@ export class VoiceError extends Error {
 }
 
 function apiKey() {
-  const key = process.env.ELEVENLABS_API_KEY;
-  if (!key) throw new VoiceError("ElevenLabs não está configurado no servidor.", 503);
+  const key = integrationSecret("elevenlabs");
+  if (!key) throw new VoiceError("Conecte o ElevenLabs em Configurações › Integrações para usar a voz.", 503);
   return key;
 }
 
 export function voiceEnabled() {
-  return Boolean(process.env.ELEVENLABS_API_KEY);
+  return Boolean(integrationSecret("elevenlabs"));
 }
 
 export async function mintToken(type: "realtime_scribe" | "tts_websocket") {
@@ -74,6 +75,9 @@ export interface VoiceOption {
 }
 
 let voicesCache: { at: number; items: VoiceOption[] } | null = null;
+onIntegrationChange((id) => {
+  if (id === "elevenlabs") voicesCache = null;
+});
 
 export async function listVoices(refresh = false) {
   if (!refresh && voicesCache && Date.now() - voicesCache.at < 10 * 60_000) return voicesCache.items;

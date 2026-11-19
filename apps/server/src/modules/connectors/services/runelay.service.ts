@@ -1,16 +1,22 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { setKnownConnectors } from "../../bots/services/bots.service";
+import {
+  integrationSecret,
+  integrationSource,
+  integrationUrl,
+  onIntegrationChange,
+} from "../../integrations/services/integration-store.service";
 
-const url = process.env.RUNELAY_MCP_URL ?? "";
-const token = process.env.RUNELAY_MCP_TOKEN ?? "";
+const url = () => integrationUrl("runelay") ?? "";
+const token = () => integrationSecret("runelay") ?? "";
 const reconnectUrl = process.env.RUNELAY_RECONNECT_URL ?? null;
 
 let client: Client | null = null;
 let connecting: Promise<Client> | null = null;
 
 export function runelayEnabled() {
-  return Boolean(url && token);
+  return Boolean(url() && token());
 }
 
 async function connect() {
@@ -18,8 +24,8 @@ async function connect() {
   if (connecting) return connecting;
   connecting = (async () => {
     const next = new Client({ name: "runelay-bots", version: "1.0.0" });
-    const transport = new StreamableHTTPClientTransport(new URL(url), {
-      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    const transport = new StreamableHTTPClientTransport(new URL(url()), {
+      requestInit: { headers: { Authorization: `Bearer ${token()}` } },
     });
     await next.connect(transport);
     next.onclose = () => {
@@ -100,6 +106,16 @@ function labelOf(name: string) {
 }
 
 let cache: { at: number; list: Connection[] } | null = null;
+
+onIntegrationChange((id) => {
+  if (id !== "runelay") return;
+  const previous = client;
+  client = null;
+  cache = null;
+  void previous?.close().catch(() => undefined);
+  if (runelayEnabled()) void listConnections(true).catch(() => undefined);
+  else setKnownConnectors([]);
+});
 
 export async function listConnections(force = false): Promise<Connection[]> {
   if (!force && cache && Date.now() - cache.at < 60_000) return cache.list;
@@ -205,7 +221,11 @@ export function classifyTool(qualified: string, args: Record<string, unknown> = 
   return "write";
 }
 
-const apiBase = process.env.RUNELAY_API_URL ?? (url ? new URL(url).origin : "");
+function apiBase() {
+  const origin = url() ? new URL(url()).origin : "";
+  if (integrationSource("runelay") === "app") return origin;
+  return process.env.RUNELAY_API_URL ?? origin;
+}
 
 export class RunelayApiError extends Error {
   constructor(
@@ -220,10 +240,10 @@ export async function runelayApi<T>(method: string, path: string, body?: unknown
   if (!runelayEnabled()) throw new RunelayApiError(503, "runelay não está configurado no servidor.");
   let response: Response;
   try {
-    response = await fetch(`${apiBase}/v1${path}`, {
+    response = await fetch(`${apiBase()}/v1${path}`, {
       method,
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${token()}`,
         Accept: "application/json",
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },

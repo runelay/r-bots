@@ -4,6 +4,7 @@ import { accents, capabilityCatalog, efforts } from "../../bots/services/bots.se
 import { onConversation } from "../../conversations/services/conversations.service";
 import { botStatuses, onStatus, sessionStatuses } from "../../engine/services/engine.service";
 import { slotStats } from "../../engine/services/turn-slots.service";
+import { integrationFlags } from "../../integrations/services/integrations.service";
 import { warmVoiceLayers } from "../../voice/services/voice.service";
 import { appWatching, watchApp } from "../services/viewers.service";
 
@@ -12,7 +13,14 @@ export function handleHealth(res: Res) {
 }
 
 export function handleMeta(res: Res) {
-  return sendJson(res, 200, { accents, capabilities: capabilityCatalog, engine: "multi-provider", model, efforts });
+  return sendJson(res, 200, {
+    accents,
+    capabilities: capabilityCatalog,
+    engine: "multi-provider",
+    model,
+    efforts,
+    integrations: integrationFlags(),
+  });
 }
 
 export function handleStatus(res: Res) {

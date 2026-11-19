@@ -23,6 +23,7 @@ import {
 } from "../../accounts/services/mac-runner.service";
 import { fileRoots } from "../../code/services/repos.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
+import { integrationSecret } from "../../integrations/services/integration-store.service";
 import { blobKeys, blobToFile, putBlob } from "../../storage/services/storage.service";
 import {
   listUploadRows,
@@ -579,7 +580,7 @@ function retryAfterMs(header: string | null) {
 const sleep = (ms: number) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 
 async function scribe(path: string) {
-  const key = process.env.ELEVENLABS_API_KEY;
+  const key = integrationSecret("elevenlabs");
   if (!key) throw new Error("ElevenLabs não está configurado no servidor.");
   const bytes = await readFile(path);
   let lastError = "";

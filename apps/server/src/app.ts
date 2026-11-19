@@ -17,6 +17,7 @@ import { botIsCoding } from "./modules/code/services/bot-code.service";
 import { handleComputerHealth } from "./modules/computer/routes/computer.routes";
 import { handleConnections, handleConnectorActions } from "./modules/connectors/routes/connectors.routes";
 import { handleMcp } from "./modules/engine/routes/mcp.routes";
+import { handleIntegrations } from "./modules/integrations/routes/integrations.routes";
 import { handleGroups } from "./modules/groups/routes/groups.routes";
 import { handleSections } from "./modules/sections/routes/sections.routes";
 import { handleSkills } from "./modules/skills/routes/skills.routes";
@@ -38,6 +39,7 @@ async function route(req: Req, res: Res) {
   if (method === "GET" && url.pathname === "/meta") return handleMeta(res);
   if (parts[0] === "mcp" && parts.length === 3) return handleMcp(req, res, parts[1], parts[2]);
   if (parts[0] === "vault") return handleVaultRoute(req, res, url, method, parts);
+  if (parts[0] === "integrations") return handleIntegrations(req, res, method, parts);
   if (method === "GET" && url.pathname === "/accounts") return handleAccounts(res, url);
   if (method === "POST" && url.pathname === "/accounts/refresh") return handleAccountsRefresh(req, res);
   if (method === "GET" && parts[0] === "usage") return handleUsageRoute(res, url);
