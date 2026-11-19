@@ -1,5 +1,6 @@
 import { createWriteStream } from "node:fs";
 import { copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -484,7 +485,7 @@ export async function receiveUpload(botId: string, req: Req) {
 }
 
 const sendRoots = () =>
-  [dataDir, process.env.CODE_WORKTREES_DIR ?? "/home/anderson/projects/worktrees", "/home/runelaybot", "/tmp"].map(
+  [dataDir, process.env.CODE_WORKTREES_DIR ?? join(homedir(), "projects", "worktrees"), "/home/runelaybot", "/tmp"].map(
     (root) => resolve(root),
   );
 const protectedFile = /(^|\/)(\.env[^/]*|\.git|\.ssh|\.claude)(\/|$)/;

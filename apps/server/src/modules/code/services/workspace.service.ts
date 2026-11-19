@@ -1,17 +1,18 @@
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { childEnv, findBinary, run } from "@runelay-bots/providers/proc";
 import { dataDir } from "../../../config/env";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import type { PrSnapshot } from "./pull-request.service";
 
-export const repoRoots = (process.env.CODE_REPO_ROOTS ?? "/home/anderson/projects/conty-dev,/home/anderson/projects")
+export const repoRoots = (process.env.CODE_REPO_ROOTS ?? join(homedir(), "projects"))
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
-export const worktreesRoot = process.env.CODE_WORKTREES_DIR ?? "/home/anderson/projects/worktrees";
+export const worktreesRoot = process.env.CODE_WORKTREES_DIR ?? join(homedir(), "projects", "worktrees");
 export const codeDataDir = join(dataDir, "code");
 
 export interface InstallState {
@@ -147,7 +148,7 @@ export async function resolveRepo(input: string) {
   const value = input.trim().replace(/^@/, "");
   if (!value) throw new CodeError("Diga qual repositório.");
   if (isAbsolute(value) || value.startsWith("~/")) {
-    const path = resolve(value.replace(/^~\//, `${process.env.HOME ?? "/home/anderson"}/`));
+    const path = resolve(value.replace(/^~\//, `${homedir()}/`));
     if (!(await isDir(join(path, ".git")))) throw new CodeError(`${path} não é um repositório git.`);
     return { name: basename(path), path };
   }

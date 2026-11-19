@@ -1,6 +1,6 @@
 import { run } from "@runelay-bots/providers/proc";
 
-const contyApiDir = process.env.CONTY_API_DIR ?? "/home/anderson/projects/conty-dev/conty-api";
+const contyApiDir = process.env.CONTY_API_DIR?.trim();
 const maxOutputChars = 20_000;
 
 function stripSqlNoise(sql: string) {
@@ -34,6 +34,8 @@ export function assertReadOnlySql(sql: string) {
 }
 
 export async function runProdQuery(sql: string, signal?: AbortSignal) {
+  if (!contyApiDir)
+    throw new Error("Consulta em produção desligada: defina CONTY_API_DIR com o projeto do supabase CLI.");
   const statement = assertReadOnlySql(sql);
   const { code, stdout, stderr } = await run(
     "supabase",

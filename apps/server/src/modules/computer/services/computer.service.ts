@@ -6,7 +6,8 @@ import {
   watchMacComputerEvents,
 } from "../../accounts/services/mac-runner.service";
 
-const macUrl = process.env.MAC_RUNNER_URL ?? "http://100.122.172.127:4790";
+const macUrl = process.env.MAC_RUNNER_URL?.trim();
+const macUrlMissing = "Mac não conectado e MAC_RUNNER_URL não definida.";
 const runnerToken = process.env.RUNNER_TOKEN ?? "";
 
 export class ComputerError extends Error {
@@ -39,6 +40,7 @@ export async function computerHealth() {
       };
     }
   }
+  if (!macUrl) return { ok: false, code: "COMPUTER_UNAVAILABLE", error: macUrlMissing };
   try {
     const response = await fetch(`${macUrl}/computer/health`, {
       headers: { authorization: `Bearer ${runnerToken}` },
@@ -82,6 +84,7 @@ export async function callComputer(
   signal?: AbortSignal,
 ) {
   if (macRunnerConnected()) return callComputerSocket(tool, args, context, signal);
+  if (!macUrl) throw new ComputerError("COMPUTER_UNAVAILABLE", macUrlMissing);
   let response: Response;
   try {
     response = await fetch(`${macUrl}/computer/${encodeURIComponent(tool)}`, {
@@ -113,7 +116,7 @@ export function watchComputerEvents(onStop: (event: { type: string; botId?: stri
   const stopSocket = watchMacComputerEvents((event) => {
     if (event.type === "stop" || event.type === "user_took_over") onStop(event);
   });
-  if (macRunnerConnected()) return stopSocket;
+  if (macRunnerConnected() || !macUrl) return stopSocket;
   const controller = new AbortController();
   void (async () => {
     try {

@@ -29,7 +29,8 @@ export interface Account {
 
 export const runnerIds: RunnerId[] = ["vps", "mac"];
 const runnerToken = env.RUNNER_TOKEN;
-const macUrl = env.MAC_RUNNER_URL ?? "http://100.122.172.127:4790";
+const macUrl = env.MAC_RUNNER_URL;
+const macUrlMissing = "Mac não conectado e MAC_RUNNER_URL não definida.";
 const runnerLabels: Record<RunnerId, string> = { vps: "VPS", mac: "Mac" };
 const maxAgeMs = 10 * 60_000;
 
@@ -54,6 +55,7 @@ function toAccount(
 }
 
 async function probeMacHttp() {
+  if (!macUrl) throw new Error(macUrlMissing);
   const response = await fetch(`${macUrl}/accounts`, {
     headers: { authorization: `Bearer ${runnerToken}` },
     signal: AbortSignal.timeout(90_000),
@@ -135,11 +137,15 @@ export function isAccountId(value: string) {
 }
 
 export function mcpBaseFor(runner: RunnerId) {
-  if (runner === "mac") return env.PUBLIC_MCP_BASE ?? "https://vps.taile89599.ts.net:10447";
+  if (runner === "mac" && env.PUBLIC_MCP_BASE) return env.PUBLIC_MCP_BASE;
   return `http://127.0.0.1:${env.GATEWAY_PORT}`;
 }
 
 async function runRemote(request: TurnRequest, signal: AbortSignal, emit: (event: ProviderEvent) => void) {
+  if (!macUrl) {
+    emit({ type: "done", ok: false, message: macUrlMissing });
+    return;
+  }
   const controller = new AbortController();
   const onAbort = () => {
     void fetch(`${macUrl}/turns/${encodeURIComponent(request.turnId)}/cancel`, {
