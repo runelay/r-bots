@@ -52,7 +52,7 @@ ENV HOME=/home/anderson \
     DESKTOP_CHROME=/opt/runelay-chrome/chrome
 
 WORKDIR /app
-COPY --chown=anderson:anderson package.json package-lock.json /app/
+COPY --chown=anderson:anderson package.json package-lock.json tsconfig.base.json /app/
 COPY --chown=anderson:anderson apps/server/package.json /app/apps/server/
 COPY --chown=anderson:anderson packages/protocol/package.json /app/packages/protocol/
 COPY --chown=anderson:anderson packages/providers/package.json /app/packages/providers/

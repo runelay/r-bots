@@ -10,4 +10,4 @@ if [ -f .env.local ]; then
 fi
 export PATH="$HOME/.local/bin:$PATH"
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN OPENAI_API_KEY CURSOR_API_KEY XAI_API_KEY
-exec node --import tsx src/main.ts
+exec node --import tsx src/index.ts
