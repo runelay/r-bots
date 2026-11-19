@@ -182,7 +182,7 @@ private struct IntegrationRow: View {
             let origin = item.source == "env" ? " · do arquivo do servidor" : ""
             return "\(item.unlocks)\(ending)\(origin)"
         }
-        return item.description
+        return item.id == "jev" ? "por TypeSafe · \(item.description)" : item.description
     }
 
     var body: some View {
@@ -333,6 +333,14 @@ struct IntegrationLogo: View {
             RunelayMark(size: 18)
                 .frame(width: 36, height: 36)
                 .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
+                .accessibilityHidden(true)
+        } else if id == "jev", let image = BrandAssets.connector("typesafe") {
+            Image(nsImage: image)
+                .resizable()
+                .interpolation(.high)
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 36, height: 36)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
                 .accessibilityHidden(true)
         } else {
             CatalogConnectorIcon(name: name, icon: id == "elevenlabs" ? "elevenlabs" : nil, size: .medium)
