@@ -656,7 +656,9 @@ function inspect(
     };
   }
   if (command === "git") {
-    const gitArgs = args.filter((arg, index) => !(index > 0 && (args[index - 1] === "-C" || args[index - 1] === "-c")));
+    const gitArgs = args.filter(
+      (_arg, index) => !(index > 0 && (args[index - 1] === "-C" || args[index - 1] === "-c")),
+    );
     const gitSub = gitArgs.filter((arg) => !arg.startsWith("-"))[0] ?? "";
     const refs = gitArgs.filter((arg) => !arg.startsWith("-")).slice(1);
     const onProtected = protectedBranch.test(branch);
@@ -1067,9 +1069,6 @@ export function gateCommand(command: string, workspace: WorkspaceState, asked: D
     };
   }
   let cwd = workspace.path;
-  const unknownKeys: string[] = [];
-  let softGate: Extract<Gate, { kind: "human" }> | null = null;
-  let askedGate: Extract<Gate, { kind: "asked" }> | null = null;
   for (const segment of segments) {
     const tokens = stripPrefix(segment.words);
     for (const redirect of segment.redirects) {
@@ -1100,33 +1099,12 @@ export function gateCommand(command: string, workspace: WorkspaceState, asked: D
     ) {
       const inner = gateCommand(tokens[2], workspace, asked);
       if (inner.kind === "allow") continue;
-      if (inner.kind === "asked") {
-        askedGate = askedGate ?? inner;
-        continue;
-      }
-      if (inner.kind === "jev") {
-        unknownKeys.push(inner.grantKey ?? "bash -c");
-        continue;
-      }
       return inner;
     }
     const verdict = inspect(segment, tokens, cwd, workspace, asked);
-    if ("kind" in verdict && verdict.kind === "asked") {
-      askedGate = askedGate ?? verdict;
-      continue;
-    }
-    if ("kind" in verdict) {
-      if (verdict.kind === "deny" || verdict.hard) return verdict;
-      softGate = softGate ?? verdict;
-      continue;
-    }
-    if (verdict.level === "unknown") unknownKeys.push(verdict.key);
+    if ("kind" in verdict) return verdict;
   }
-  if (softGate)
-    return unknownKeys.length > 0
-      ? { ...softGate, grantKey: [softGate.grantKey, ...unknownKeys].join(" && ") }
-      : softGate;
-  return askedGate ?? { kind: "allow" };
+  return { kind: "allow" };
 }
 
 export function commandIsReadOnly(command: string, workspace: WorkspaceState) {
@@ -1189,7 +1167,9 @@ export function fixedRuleViolation(command: string, workspace: WorkspaceState): 
     }
     if (tokens[0] !== "git") continue;
     const args = tokens.slice(1);
-    const gitArgs = args.filter((arg, index) => !(index > 0 && (args[index - 1] === "-C" || args[index - 1] === "-c")));
+    const gitArgs = args.filter(
+      (_arg, index) => !(index > 0 && (args[index - 1] === "-C" || args[index - 1] === "-c")),
+    );
     const words = gitArgs.filter((arg) => !arg.startsWith("-"));
     if (words[0] !== "push") continue;
     const refs = words.slice(1);
