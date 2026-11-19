@@ -1,6 +1,10 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+import { dataDir } from "../../../config/env";
 import { forgetSecretValue, redactDeep, rememberSecretValue } from "../../../shared/redact";
+import { MacRunnerUnavailable, macRunnerSupports, macSecretResolve } from "../../accounts/services/mac-runner.service";
 import {
   addAudit,
   loadSecretMetas,
@@ -9,9 +13,13 @@ import {
   saveSecretMetas,
   writeSealed,
 } from "../repositories/vault.repository";
-import { MacRunnerUnavailable, macRunnerSupports, macSecretResolve } from "../../accounts/services/mac-runner.service";
 
-const keyFile = process.env.VAULT_KEY_FILE ?? "/run/runelay-bots/vault.key";
+const keyFile = process.env.VAULT_KEY_FILE ?? join(dataDir, "vault.key");
+const legacyKeyFiles = [
+  join(process.env.HOST_HOME?.trim() || homedir(), ".config", "runelay-bots", "vault.key"),
+  join(homedir(), ".config", "runelay-bots", "vault.key"),
+  "/run/runelay-bots/vault.key",
+];
 
 export const secretNamePattern = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 export const secretRefPattern = /segredo:([a-z0-9][a-z0-9_-]{0,63})/g;
@@ -72,9 +80,32 @@ export function registerSecretSource(source: SecretSource) {
 let index: Record<string, SecretMeta> = {};
 let loaded = false;
 
+function ensureKeyFile() {
+  if (existsSync(keyFile)) return;
+  mkdirSync(dirname(keyFile), { recursive: true });
+  const legacy = legacyKeyFiles.find((file) => file !== keyFile && existsSync(file));
+  if (legacy) {
+    copyFileSync(legacy, keyFile);
+    chmodSync(keyFile, 0o600);
+    console.log(`vault key copied from ${legacy}`);
+    return;
+  }
+  if (Object.keys(index).length > 0) {
+    console.warn("vault key missing and secrets exist: not generating a new one");
+    return;
+  }
+  writeFileSync(keyFile, `${randomBytes(32).toString("hex")}\n`, { mode: 0o600 });
+  console.log("vault key created");
+}
+
 export async function loadVault() {
   index = loadSecretMetas();
   loaded = true;
+  try {
+    ensureKeyFile();
+  } catch (error) {
+    console.warn(`vault key setup failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 async function saveIndex() {
