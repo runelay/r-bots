@@ -2,24 +2,21 @@ import Foundation
 
 struct BotCapabilitySet: Hashable, Sendable, Decodable {
     var browser: Bool
-    var prodQuery: Bool
     var delegate: [String]
     var desktop = false
 
-    init(browser: Bool, prodQuery: Bool, delegate: [String]) {
+    init(browser: Bool, delegate: [String]) {
         self.browser = browser
-        self.prodQuery = prodQuery
         self.delegate = delegate
     }
 
     private enum CodingKeys: String, CodingKey {
-        case browser, prodQuery, delegate, desktop
+        case browser, delegate, desktop
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         browser = (try? container.decodeIfPresent(Bool.self, forKey: .browser)) ?? false
-        prodQuery = (try? container.decodeIfPresent(Bool.self, forKey: .prodQuery)) ?? false
         delegate = (try? container.decodeIfPresent([String].self, forKey: .delegate)) ?? []
         desktop = (try? container.decodeIfPresent(Bool.self, forKey: .desktop)) ?? false
     }
@@ -27,7 +24,6 @@ struct BotCapabilitySet: Hashable, Sendable, Decodable {
     var json: JSONValue {
         .object([
             "browser": .bool(browser),
-            "prodQuery": .bool(prodQuery),
             "delegate": .array(delegate.map { .string($0) })
         ])
     }
@@ -481,7 +477,6 @@ struct ServerMeta: Sendable, Decodable {
         accents: ["electric", "teal", "violet", "royal", "sky", "indigo"],
         capabilities: [
             MetaCapability(id: "browser", label: "Navegador", description: "Abre páginas, clica, preenche e tira print."),
-            MetaCapability(id: "prodQuery", label: "Consulta em produção", description: "Roda SELECT no banco de produção, só leitura."),
             MetaCapability(id: "delegate", label: "Delegar", description: "Passa partes do trabalho para outros bots do time.")
         ]
     )

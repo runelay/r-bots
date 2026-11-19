@@ -1784,7 +1784,7 @@ final class AppModel {
             accent: draft.accent,
             schedules: [],
             instructions: "",
-            capabilities: BotCapabilitySet(browser: true, prodQuery: false, delegate: []),
+            capabilities: BotCapabilitySet(browser: true, delegate: []),
             isPending: true
         )
         pending.glyph = draft.glyph
