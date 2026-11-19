@@ -35,6 +35,7 @@ import {
   runelayEnabled,
   searchTools,
   type ToolKind,
+  touchesDatabase,
 } from "../../connectors/services/runelay.service";
 import { registerThreadTools } from "../../conversations/services/handoff-tools.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
@@ -91,7 +92,7 @@ export interface ToolContext {
   permission?: PermissionMode;
 }
 
-const gatedTools = new Set(["browser_click", "browser_fill", "prod_query", "desktop_click", "desktop_open"]);
+const gatedTools = new Set(["browser_click", "browser_fill", "desktop_click", "desktop_open"]);
 const alwaysHuman = new Set(["desktop_type", "desktop_key"]);
 
 function brief(value: unknown, max = 160) {
@@ -203,12 +204,7 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
         return textResult("Ninguém está aqui para aprovar ações agora. Não tente de novo nesta rotina.", true);
       }
       const details = tool.details ? await tool.details(input).catch(() => undefined) : undefined;
-      const { choice, interactionId } = await context.requestApproval(
-        approvalPrompt,
-        callId,
-        context.origin,
-        details,
-      );
+      const { choice, interactionId } = await context.requestApproval(approvalPrompt, callId, context.origin, details);
       if (choice !== "approve") {
         log.emit({
           type: "call.settled",
@@ -283,7 +279,11 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
       const blockEvent = blockEventOf(output);
       if (blockEvent) {
         const { blockEvent: _block, ...rest } = output as Record<string, unknown>;
-        log.emit({ type: "call.settled", data: { callId, outcome: "completed", output: rest }, scope: scopeOf(context) });
+        log.emit({
+          type: "call.settled",
+          data: { callId, outcome: "completed", output: rest },
+          scope: scopeOf(context),
+        });
         const data = { ...blockEvent.data, botId: context.botId, callId };
         log.emit({ type: blockEvent.type, data, scope: scopeOf(context) });
         const main = await mainThreadLog(context.botId);
@@ -490,6 +490,7 @@ interface RemoteSpec {
   kind: ToolKind | "free";
   prompt: string;
   connector?: string;
+  alwaysHuman?: boolean;
 }
 
 function clipOutput(value: unknown) {
@@ -533,7 +534,8 @@ async function runRemote(context: ToolContext, spec: RemoteSpec, work: () => Pro
       return textResult(text, true);
     };
     const mode = context.permission ?? "default";
-    const verdict = remotePermission(mode, spec.kind);
+    const permitted = remotePermission(mode, spec.kind);
+    const verdict = spec.alwaysHuman && permitted !== "deny" ? "card" : permitted;
     if (verdict === "deny") {
       context.emitDecision({
         kind: "approval",
@@ -562,7 +564,7 @@ async function runRemote(context: ToolContext, spec: RemoteSpec, work: () => Pro
         latencyMs: 0,
         model: null,
         reason:
-          spec.kind === "outbound"
+          spec.kind === "outbound" || spec.alwaysHuman
             ? "Lista dura (mensagem para fora, dinheiro, deploy, merge, apagar ou banco): sempre passa por uma pessoa."
             : "Modo Editar: escrita em conector pede sua confirmação.",
         tool: spec.capability,
@@ -576,7 +578,7 @@ async function runRemote(context: ToolContext, spec: RemoteSpec, work: () => Pro
       if (choice !== "approve") return reject(interactionId, "A pessoa negou essa ação.");
       cleared = { interactionId };
     }
-    if (!cleared && mode === "full" && spec.kind === "outbound") cleared = { permission: mode };
+    if (!cleared && mode === "full" && spec.kind === "outbound" && !spec.alwaysHuman) cleared = { permission: mode };
     log.emit({
       type: "call.started",
       data: { callId, ...(cleared ? { clearedBy: cleared } : {}) },
@@ -1062,6 +1064,7 @@ function registerConnectorTools(server: McpServer, context: ToolContext) {
             input: toolArgs,
             kind,
             connector: connection,
+            alwaysHuman: kind !== "read" && touchesDatabase(tool),
             prompt: `Posso rodar ${label} ${short}? ${brief(toolArgs, 160)}`,
           },
           () => runelayCall("call_tool", { name: tool, args: toolArgs }),
@@ -1527,12 +1530,12 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
     "request_capability",
     {
       description:
-        "Pede uma capacidade nova à pessoa: browser (navegador) ou prodQuery (consulta somente leitura no banco de produção). Sempre pede aprovação.",
-      inputSchema: { name: z.enum(["browser", "prodQuery"]), reason: z.string().min(1).max(300) },
+        "Pede uma capacidade nova à pessoa: browser (navegador). Consulta em banco vai pelo conector Supabase (connector_call). Sempre pede aprovação.",
+      inputSchema: { name: z.enum(["browser"]), reason: z.string().min(1).max(300) },
     },
     (args: Record<string, unknown>) => {
       const capability = String(args.name);
-      const label = capability === "prodQuery" ? "consulta no banco de produção" : "navegador";
+      const label = "navegador";
       return runConfigTool(
         context,
         "request_capability",
@@ -1541,7 +1544,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
         "human",
         `Posso ganhar acesso a ${label}? Motivo: ${String(args.reason)}`,
         (bot) => {
-          if (bot.capabilities[capability as "browser" | "prodQuery"]) throw new Error(`Já tenho ${label}.`);
+          if (bot.capabilities[capability as "browser"]) throw new Error(`Já tenho ${label}.`);
           return { body: { capabilities: { [capability]: true } }, summary: `Capacidade ${label} liberada.` };
         },
       );

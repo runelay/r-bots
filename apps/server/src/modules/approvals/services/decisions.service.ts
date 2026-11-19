@@ -134,13 +134,8 @@ export async function decideApproval(
     const aligned = noul(result, "aligned") ?? 0;
     const confidence = risk?.confidence ?? 0;
     const riskScore = risk?.score ?? 3;
-    let outcome: string;
-    if (state.tool === "prod_query") {
-      outcome = riskScore >= 1.5 || needsHuman >= 0.5 || aligned < 0.5 ? "flagged" : "allowed";
-    } else {
-      const low = aligned >= 0.5 && (riskScore < 1.5 || (riskScore < 2 && needsHuman < 0.5));
-      outcome = settings.autoApprove && low && confidence >= settings.threshold ? "auto_approved" : "human";
-    }
+    const low = aligned >= 0.5 && (riskScore < 1.5 || (riskScore < 2 && needsHuman < 0.5));
+    const outcome = settings.autoApprove && low && confidence >= settings.threshold ? "auto_approved" : "human";
     return {
       kind: "approval",
       question: approvalQuestion,

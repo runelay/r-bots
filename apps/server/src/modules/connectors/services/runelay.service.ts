@@ -167,8 +167,38 @@ const reads =
 
 export type ToolKind = "read" | "write" | "outbound";
 
+function stripSqlNoise(sql: string) {
+  return sql
+    .replace(/--[^\n]*/g, " ")
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .replace(/'(?:[^']|'')*'/g, "''")
+    .replace(/"(?:[^"]|"")*"/g, '""')
+    .replace(/\$([A-Za-z_]*)\$[\s\S]*?\$\1\$/g, "''");
+}
+
+const sqlSideEffect =
+  /\b(insert|update|delete|merge|upsert|truncate|drop|alter|create|grant|revoke|vacuum|reindex|cluster|copy|call|lock|refresh|reset|begin|commit|rollback|savepoint|prepare|execute|deallocate|listen|notify|unlisten|discard|into)\b|\bfor\s+(update|share|no\s+key|key)\b|\bpg_(terminate|cancel|reload|rotate|sleep|advisory|read_file|write|ls_dir|stat_file)|\b(lo_\w+|dblink\w*|set_config|nextval|setval)\s*\(/i;
+
+export function isReadOnlySql(sql: string) {
+  const cleaned = stripSqlNoise(sql).trim().replace(/;\s*$/, "").trim();
+  if (!cleaned || cleaned.includes(";")) return false;
+  if (!/^(select|with|explain\s+select)\b/i.test(cleaned)) return false;
+  return !sqlSideEffect.test(cleaned);
+}
+
+export function touchesDatabase(qualified: string) {
+  return /sql|query|migration|postgres|supabase\.|database/i.test(qualified);
+}
+
+function sqlOf(args: Record<string, unknown>) {
+  const value = args.query ?? args.sql ?? args.statement;
+  return typeof value === "string" ? value : null;
+}
+
 export function classifyTool(qualified: string, args: Record<string, unknown> = {}): ToolKind {
   const tool = qualified.split(".").slice(1).join(".") || qualified;
+  const sql = /sql|query/i.test(tool) ? sqlOf(args) : null;
+  if (sql !== null) return isReadOnlySql(sql) ? "read" : "outbound";
   if (outbound.test(tool) && !reads.test(tool)) return "outbound";
   if (/sql|query/i.test(tool) && writeSql.test(JSON.stringify(args))) return "outbound";
   if (reads.test(tool) && !writes.test(tool.replace(reads, ""))) return "read";

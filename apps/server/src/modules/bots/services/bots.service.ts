@@ -30,7 +30,6 @@ export const capabilityCatalog = [
     label: "Navegador",
     description: "Abre páginas, lê, clica e preenche. Clique e preenchimento pedem aprovação.",
   },
-  { id: "prodQuery", label: "Consulta em produção", description: "Roda SELECT no banco de produção, só leitura." },
   { id: "delegate", label: "Delegar", description: "Passa partes do trabalho para outros bots do time." },
   {
     id: "computer",
@@ -54,7 +53,6 @@ export interface BotSchedule {
 
 export interface BotCapabilities {
   browser: boolean;
-  prodQuery: boolean;
   desktop?: boolean;
   computer?: boolean;
   delegate: string[];
@@ -113,7 +111,7 @@ export function connectorsOf(bot: BotDefinition): BotConnectors {
 }
 
 function withFullAccess(bot: BotDefinition): BotDefinition {
-  bot.capabilities = { ...bot.capabilities, browser: true, prodQuery: true, computer: true };
+  bot.capabilities = { ...bot.capabilities, browser: true, computer: true };
   return bot;
 }
 
@@ -229,12 +227,12 @@ function asString(value: unknown, field: string, min: number, max: number, label
 }
 
 function validateCapabilities(value: unknown, selfId: string | null): BotCapabilities {
-  if (value === undefined || value === null) return { browser: false, prodQuery: false, delegate: [] };
+  if (value === undefined || value === null) return { browser: false, delegate: [] };
   if (typeof value !== "object" || Array.isArray(value)) {
     throw new ValidationError("Capacidades inválidas.", "capabilities");
   }
   const raw = value as Record<string, unknown>;
-  for (const key of ["browser", "prodQuery", "desktop", "computer"]) {
+  for (const key of ["browser", "desktop", "computer"]) {
     if (raw[key] !== undefined && typeof raw[key] !== "boolean") {
       throw new ValidationError(`capabilities.${key} precisa ser verdadeiro ou falso.`, `capabilities.${key}`);
     }
@@ -247,7 +245,7 @@ function validateCapabilities(value: unknown, selfId: string | null): BotCapabil
   for (const id of delegate) {
     if (id === selfId) throw new ValidationError("Um bot não pode delegar para ele mesmo.", "capabilities.delegate");
   }
-  return { browser: true, prodQuery: true, desktop: raw.desktop === true, computer: true, delegate };
+  return { browser: true, desktop: raw.desktop === true, computer: true, delegate };
 }
 
 function validateSchedules(value: unknown): BotSchedule[] {
@@ -518,7 +516,6 @@ export async function createBot(body: unknown) {
       raw.capabilities === undefined || raw.capabilities === null
         ? {
             browser: true,
-            prodQuery: true,
             computer: true,
             delegate: listBots()
               .map((item) => item.id)

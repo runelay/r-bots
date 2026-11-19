@@ -21,7 +21,6 @@ import { waitForBotControl } from "../../browser/services/control.service";
 import { getDesktop } from "../../browser/services/desktop.service";
 import { canvasTools } from "../../canvas/services/canvas.service";
 import { uploadTools } from "../../uploads/services/uploads.service";
-import { runProdQuery } from "./prod-query.service";
 
 export interface BotTool {
   name: string;
@@ -79,17 +78,6 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
       ...reasonOf(input),
     };
   };
-  if (bot.capabilities.prodQuery) {
-    tools.push({
-      name: "prod_query",
-      description:
-        "Roda uma consulta SQL somente leitura no banco de produção (Postgres). Aceita uma única instrução SELECT ou WITH. Use information_schema e pg_catalog para descobrir tabelas e colunas antes de consultar dados. Prefira LIMIT e agregações.",
-      shape: { sql: z.string().min(1).describe("Uma única instrução SELECT ou WITH") },
-      approval: null,
-      label: (input) => `Consulta: ${text(input.sql).replace(/\s+/g, " ").slice(0, 80)}`,
-      run: (input, signal) => runProdQuery(text(input.sql), signal),
-    });
-  }
   if (bot.capabilities.browser) {
     tools.push(
       {
