@@ -1,6 +1,6 @@
 # Protocolo do runelay bots
 
-Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v30, todas de 19/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
+Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v31, todas de 19/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
 
 ## Arquivos
 
@@ -19,6 +19,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 - [memory-skills.md](memory-skills.md): memória inteligente e skills no composer.
 - [connectors.md](connectors.md): conectores via runelay, catálogo e instalação.
 - [schedules-groups-sections.md](schedules-groups-sections.md): rotinas na thread, seções e grupos.
+- [blocks.md](blocks.md): blocos do bot (notas, planilhas, agenda), eventos `block.*`, rotas, ferramentas e exportação.
 - [usage-status-limits.md](usage-status-limits.md): uso e limites do Claude e do Codex, fila global de turnos, processos e limites do container.
 
 ## Versão → arquivo
@@ -57,6 +58,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v28 | uso e limites | [usage-status-limits](usage-status-limits.md) |
 | v29 | várias conversas + modo de permissão | [conversations](conversations.md) (conversas, app, verificado), [approvals](approvals.md) (modo de permissão) |
 | v30 | fila de turnos, processos, mudanças em lote | [usage-status-limits](usage-status-limits.md) (fila, processos, container), [code](code.md) (mudanças em lote) |
+| v31 | blocos: notas, planilhas, agenda e exportação (contrato antes do servidor) | [blocks](blocks.md) |
 
 ## Contrato
 
