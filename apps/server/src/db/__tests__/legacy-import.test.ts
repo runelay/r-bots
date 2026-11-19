@@ -205,7 +205,6 @@ function seed() {
   write("bots/boss/browser/state.json", "{}");
   write("bots/boss/browser/SingletonLock", "lock");
   write("work/boss/memory/a.md", "m");
-  write("code/worktrees.json", "[]");
   write("code/tmp/install.log", "log");
   write("auth.secret", "s");
 }
@@ -275,6 +274,27 @@ describe("legacy import", () => {
       .all()
       .find((row) => row.name === "login");
     expect(secret?.ciphertext?.byteLength).toBe(3);
+    const workspaces = db.select().from(tables.codeWorkspaces).all();
+    expect(workspaces.find((row) => row.id === "w1")).toMatchObject({
+      sessionId: "wrun_1",
+      repoName: "r",
+      base: "main",
+      baseCommit: "c",
+      pinned: true,
+      extra: { note: 1 },
+      lastAccessedAt: "2026-11-19T10:00:00.000Z",
+    });
+    expect(workspaces.find((row) => row.id === "w2")).toMatchObject({
+      sessionId: null,
+      repoName: "",
+      branch: "",
+      base: null,
+      pinned: false,
+      status: "active",
+      prUrl: null,
+      lastAccessedAt: null,
+    });
+    expect(first.after.codeWorkspaces).toBe(2);
     db.$client.close();
   });
 

@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { eq } from "drizzle-orm";
 
 const dir = mkdtempSync(join(tmpdir(), "rb-db-"));
-process.env.BOTS_DB_FILE = join(dir, "shared.db");
 const { openDatabase, runMigrations, tables, writeTransaction, getDb, closeDb } = await import("..");
+const { dbFile } = await import("../../config/storage");
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 function seedConversation(db: ReturnType<typeof openDatabase>) {
@@ -105,7 +105,7 @@ describe("shared instance", () => {
   test("opens lazily and closes", () => {
     const first = getDb();
     expect(getDb()).toBe(first);
-    expect(first.$client.filename).toBe(join(dir, "shared.db"));
+    expect(first.$client.filename).toBe(dbFile);
     expect(writeTransaction(() => 1)).toBe(1);
     closeDb();
     closeDb();
@@ -126,5 +126,19 @@ describe("schema", () => {
         expect(reference.foreignColumns.length).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe("auth schema", () => {
+  test("ownerId builds a required owner column that follows the user on delete", async () => {
+    const { getTableConfig, sqliteTable } = await import("drizzle-orm/sqlite-core");
+    const { ownerId, user } = await import("../schema/auth");
+    const config = getTableConfig(sqliteTable("owned", { ownerId: ownerId() }));
+    expect(config.columns.map((column) => [column.name, column.notNull])).toEqual([["owner_id", true]]);
+    const [key] = config.foreignKeys;
+    const reference = key.reference();
+    expect(reference.foreignTable).toBe(user);
+    expect(reference.foreignColumns.map((column) => column.name)).toEqual(["id"]);
+    expect(key.onDelete).toBe("cascade");
   });
 });

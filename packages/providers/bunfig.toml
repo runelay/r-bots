@@ -1,0 +1,5 @@
+[test]
+preload = ["./src/__tests__/fakes.ts"]
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["src/__tests__/**", "../protocol/**"]
+coverageThreshold = { lines = 0.99, functions = 0.99 }

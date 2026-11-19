@@ -8,6 +8,7 @@
   "files": {
     "includes": [
       "apps/server/src/**",
+      "apps/server/test/**",
       "packages/*/src/**",
       "apps/server/*.json",
       "packages/*/*.json",
