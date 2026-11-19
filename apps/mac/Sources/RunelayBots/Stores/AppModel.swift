@@ -90,7 +90,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case vault
     case usage
 
-    static let railCases: [AppSection] = [.conversations, .routines, .connectors, .accounts, .vault]
+    static let railCases: [AppSection] = [.conversations, .routines, .accounts, .vault]
 
     var id: String { rawValue }
 

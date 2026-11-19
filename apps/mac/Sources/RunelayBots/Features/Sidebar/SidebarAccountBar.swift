@@ -5,7 +5,6 @@ struct SidebarAccountBar: View {
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var isHovering = false
     private let identity = UserIdentity.shared
-    private let session = AuthSession.shared
 
     var body: some View {
         HStack(spacing: Spacing.m) {
@@ -27,39 +26,10 @@ struct SidebarAccountBar: View {
             .help("Abrir a conta")
             .accessibilityLabel("Conta de \(identity.displayName)")
 
-            Menu {
-                Button {
-                    open(.account)
-                } label: {
-                    Label("Conta", systemImage: "person.crop.circle")
-                }
-                Button {
-                    open(.integrations)
-                } label: {
-                    Label("Integrações", systemImage: "key.horizontal")
-                }
-                Button {
-                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                        model.closeSettings()
-                        model.section = .connectors
-                    }
-                } label: {
-                    Label("Conectores", systemImage: "puzzlepiece.extension")
-                }
-                Button {
-                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                        model.openSettings()
-                    }
-                } label: {
-                    Label("Configurações", systemImage: "gearshape")
-                }
-                if session.user != nil {
-                    Divider()
-                    Button(role: .destructive) {
-                        Task { await session.signOut() }
-                    } label: {
-                        Label("Sair", systemImage: "rectangle.portrait.and.arrow.right")
-                    }
+            Button {
+                withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                    model.closeSettings()
+                    model.section = .connectors
                 }
             } label: {
                 GridPlusIcon()
@@ -68,14 +38,12 @@ struct SidebarAccountBar: View {
                     .glassSurface(Circle(), interactive: true, fallback: Theme.surface)
                     .contentShape(Circle())
             }
-            .menuStyle(.button)
-            .menuIndicator(.hidden)
             .buttonStyle(.plain)
-            .fixedSize()
+            .clickable()
             .onHover { isHovering = $0 }
             .springAnimation(value: isHovering)
-            .help("Atalhos da conta")
-            .accessibilityLabel("Atalhos da conta")
+            .help("Catálogo")
+            .accessibilityLabel("Catálogo")
         }
         .padding(.horizontal, Spacing.l)
         .padding(.vertical, Spacing.m)
