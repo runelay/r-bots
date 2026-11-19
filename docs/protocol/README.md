@@ -1,6 +1,6 @@
 # Protocolo do runelay bots
 
-Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v34, todas de 19/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
+Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v35, todas de 19/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
 
 ## Arquivos
 
@@ -21,6 +21,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 - [schedules-groups-sections.md](schedules-groups-sections.md): rotinas na thread, seções e grupos.
 - [blocks.md](blocks.md): blocos do bot (notas, planilhas, agenda), eventos `block.*`, rotas, ferramentas e exportação.
 - [usage-status-limits.md](usage-status-limits.md): uso e limites do Claude e do Codex, fila global de turnos, processos e limites do container.
+- [integrations.md](integrations.md): ElevenLabs, Jev e runelay configurados pelo app (chave cifrada, validação, fallback sem cada uma) e tokens internos gerados no primeiro boot.
 - [auth.md](auth.md): autenticação (better-auth): primeiro dono, convites, login por senha e Touch ID, chaves de API do runner e rotas livres.
 
 ## Versão → arquivo
@@ -63,6 +64,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v32 | autenticação: contas, sessões, passkey, chaves de API, primeiro dono e convites | [auth](auth.md) |
 | v33 | conversas no SQLite, busca por texto (FTS5) | [conversations](conversations.md) |
 | v34 | repositórios liberados (`workspace_add`), sem `prod_query`, instalação sem variáveis | [code](code.md) |
+| v35 | integrações pelo app (sem `.env.local`), `GET /meta.integrations`, tokens internos no `data/` | [integrations](integrations.md) |
 
 ## Contrato
 

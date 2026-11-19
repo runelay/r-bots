@@ -37,7 +37,7 @@ docker compose down
 systemctl --user enable --now runelay-bots
 ```
 
-Env: `GATEWAY_PORT` (2000), `GATEWAY_HOST` (127.0.0.1), `BOTS_MODEL` (`claude-sonnet-5-5`; aliases `sonnet`, `opus`, `haiku` also work), `BOTS_DATA_DIR` (`<repo>/data`), `BOTS_SCHEDULES` (`on`), `BOTS_MAX_TURNS` (3), `VOICE_MAX_WARM` (3), `VAULT_KEY_FILE` (default `<data>/vault.key`). Secrets in `.env.local` (chmod 600): `RUNNER_TOKEN`, `MAC_RUNNER_URL`, `PUBLIC_MCP_BASE`, `JEV_API_KEY`, `RUNELAY_MCP_URL`, `RUNELAY_MCP_TOKEN`, `ELEVENLABS_API_KEY`.
+Env: `GATEWAY_PORT` (2000), `GATEWAY_HOST` (127.0.0.1), `BOTS_MODEL` (`claude-sonnet-5-5`; aliases `sonnet`, `opus`, `haiku` also work), `BOTS_DATA_DIR` (`<repo>/data`), `BOTS_SCHEDULES` (`on`), `BOTS_MAX_TURNS` (3), `VOICE_MAX_WARM` (3), `VAULT_KEY_FILE` (default `<data>/vault.key`). Service keys (ElevenLabs, Jev, runelay) are set in the app, Settings › Integrations, and kept encrypted in SQLite ([integrations](../../docs/protocol/integrations.md)); `JEV_API_KEY`, `ELEVENLABS_API_KEY`, `RUNELAY_MCP_URL` and `RUNELAY_MCP_TOKEN` in `.env.local` still work as a fallback. `RUNNER_TOKEN` is generated into `<data>/runner.token` when unset. Optional in `.env.local`: `MAC_RUNNER_URL`, `PUBLIC_MCP_BASE`.
 
 ## Layout
 

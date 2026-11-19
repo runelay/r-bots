@@ -83,11 +83,11 @@ docker compose up -d
 
 No `.env` and no variable to set: data in `~/.local/share/runelay-bots`, backups in `~/.local/share/runelay-bots-backups`, your Claude Code, Codex, gh and supabase logins mounted from `$HOME`, the vault key created in the data dir. The container adapts to the uid of your HOME. Bots only touch repositories you allow: when you ask for work in a new repo, the bot asks with a card (`workspace_add`) and remembers what the repo is.
 
-That builds `apps/server/Dockerfile`, starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `~/.local/share/runelay-bots`, outside the code. Secrets go in `.env.local` at the root (chmod 600), mounted read only into the container. `tailscale serve` exposes the port on the tailnet at `:10447`.
+That builds `apps/server/Dockerfile`, starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `~/.local/share/runelay-bots`, outside the code. Service keys are not files: ElevenLabs (voice), Jev (automatic approvals) and runelay (connectors, memory, skills) are pasted in the app under **Settings › Integrations**, validated on the spot and stored encrypted on the server. All three are optional; without one, that part turns off and everything else works. The runner token and the session secret are generated on first boot into the data dir. `tailscale serve` exposes the port on the tailnet at `:10447`.
 
 ```sh
 docker compose logs -f --tail 200   # logs
-docker compose restart              # picks up .env.local, not code
+docker compose restart              # restarts the server, not a rebuild
 curl -s 127.0.0.1:2000/status       # never restart with a bot working
 ```
 
@@ -147,7 +147,7 @@ compose.yaml   production container
 ## 🔒 Security
 
 - **Nothing on the internet.** The server listens on `127.0.0.1:2000`; only `tailscale serve` reaches it, on the tailnet.
-- **Accounts, not an open port.** With `BOTS_AUTH=on`, every route, stream and WebSocket (including the Mac runner and voice) needs a session or an API key; only `/health` and the auth routes are open. Auth is [better-auth](https://better-auth.com): email and password, passkeys (Touch ID through the browser), revocable sessions, bearer tokens for the app and `rbk_` API keys for the runner. The first person to open a fresh server creates the owner, once; after that new people join only by an invite from the owner. Tokens live in the Mac keychain, are compared in constant time and never reach the logs, and logins are rate limited. `BETTER_AUTH_SECRET` is generated on first boot into `.env.local` (mode 600) when missing. Details: [docs/protocol/auth.md](docs/protocol/auth.md).
+- **Accounts, not an open port.** With `BOTS_AUTH=on`, every route, stream and WebSocket (including the Mac runner and voice) needs a session or an API key; only `/health` and the auth routes are open. Auth is [better-auth](https://better-auth.com): email and password, passkeys (Touch ID through the browser), revocable sessions, bearer tokens for the app and `rbk_` API keys for the runner. The first person to open a fresh server creates the owner, once; after that new people join only by an invite from the owner. Tokens live in the Mac keychain, are compared in constant time and never reach the logs, and logins are rate limited. `BETTER_AUTH_SECRET` is generated on first boot into `<data>/auth.secret` (mode 600) when missing. Details: [docs/protocol/auth.md](docs/protocol/auth.md).
 - **Secrets stay out of the model.** The vault keeps values in the Mac keychain, with an optional AES-256-GCM copy on the server whose key lives outside the repo. Tools receive aliases, logs are redacted.
 - **Permission modes and approvals.** Every conversation runs read only, edit, default or full. Writes outside the worktree, messages to the outside world and protected paths (`.env*`, `.ssh`, `data/`, agent configs) are denied or wait for you.
 - **Your subscription, no API keys.** `ANTHROPIC_API_KEY` and friends are unset at boot; turns use the local Claude Code login.
