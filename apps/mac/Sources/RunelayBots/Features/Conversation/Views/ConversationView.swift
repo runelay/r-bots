@@ -205,6 +205,7 @@ struct ConversationView: View {
     @State private var hoveredItemID: String?
     @State private var isDropTargeted = false
     @State private var isFarFromBottom = false
+    @State private var showsJumpButton = false
     @State private var unseenCount = 0
     @State private var lastEntryID: String?
     @State private var userScrolled = false
@@ -343,6 +344,17 @@ struct ConversationView: View {
                     guard nearTop, store.historySettled, store.hasOlder, !store.isLoadingOlder else { return }
                     store.loadOlder()
                 }
+                .onScrollGeometryChange(for: Int.self) { geometry in
+                    let distance = geometry.contentSize.height - geometry.visibleRect.maxY
+                    return distance > 200 ? 2 : distance > 24 ? 1 : 0
+                } action: { _, zone in
+                    if zone == 2, !showsJumpButton {
+                        showsJumpButton = true
+                    } else if zone == 0, showsJumpButton {
+                        showsJumpButton = false
+                        unseenCount = 0
+                    }
+                }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentSize.height - geometry.visibleRect.maxY > geometry.containerSize.height
                 } action: { _, far in
@@ -365,7 +377,7 @@ struct ConversationView: View {
                     }
                 }
                 .overlay(alignment: .bottom) {
-                    if isFarFromBottom && store.historySettled {
+                    if showsJumpButton && userScrolled && store.historySettled {
                         JumpToBottomButton(count: unseenCount, accent: Theme.accent(bot.accent)) {
                             scrollToEnd(proxy)
                         }
@@ -373,7 +385,7 @@ struct ConversationView: View {
                         .transition(Motion.insertion(reduceMotion: reduceMotion))
                     }
                 }
-                .springAnimation(value: isFarFromBottom)
+                .springAnimation(value: showsJumpButton)
                 .onScrollPhaseChange { old, phase in
                     if phase != .idle, hoveredItemID != nil {
                         hoveredItemID = nil
