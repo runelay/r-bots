@@ -413,14 +413,16 @@ export function getDesktop(botId: string) {
 
 onControllerChange((botId) => desktops.get(botId)?.publishState());
 
-setInterval(() => {
+export function stopIdleDesktops() {
   for (const desktop of desktops.values()) {
     if (desktop.running && desktop.clients.size === 0 && Date.now() - desktop.lastUsed > idleMs) {
       console.log(`desktop ${desktop.botId} idle, stopping`);
       desktop.stop();
     }
   }
-}, 60_000).unref();
+}
+
+setInterval(stopIdleDesktops, 60_000).unref();
 
 export function stopDesktop(botId: string) {
   const desktop = desktops.get(botId);

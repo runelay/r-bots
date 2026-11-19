@@ -85,12 +85,11 @@ const locks = new Map<string, Promise<unknown>>();
 function locked<T>(key: string, task: () => Promise<T>): Promise<T> {
   const previous = locks.get(key) ?? Promise.resolve();
   const next = previous.catch(() => undefined).then(task);
-  locks.set(
-    key,
-    next.finally(() => {
-      if (locks.get(key) === next) locks.delete(key);
-    }),
-  );
+  const tail = next.finally(() => {
+    if (locks.get(key) === next) locks.delete(key);
+  });
+  tail.catch(() => undefined);
+  locks.set(key, tail);
   return next;
 }
 

@@ -18,7 +18,9 @@ import { ensureThread } from "../../conversations/services/threads.service";
 import { deliver } from "../../engine/services/engine.service";
 import { integrationSecret, onIntegrationChange } from "../../integrations/services/integration-store.service";
 
-const apiBase = "https://api.elevenlabs.io";
+function apiBase() {
+  return process.env.ELEVENLABS_API_URL ?? "https://api.elevenlabs.io";
+}
 const wsBase = "wss://api.elevenlabs.io";
 export const fastModel = process.env.VOICE_FAST_MODEL ?? "claude-haiku-5-5";
 const sttModel = process.env.VOICE_STT_MODEL ?? "scribe_v2_realtime";
@@ -52,7 +54,7 @@ export function voiceEnabled() {
 }
 
 export async function mintToken(type: "realtime_scribe" | "tts_websocket") {
-  const response = await fetch(`${apiBase}/v1/single-use-token/${type}`, {
+  const response = await fetch(`${apiBase()}/v1/single-use-token/${type}`, {
     method: "POST",
     headers: { "xi-api-key": apiKey() },
     signal: AbortSignal.timeout(8_000),
@@ -84,7 +86,7 @@ export async function listVoices(refresh = false) {
   const items: VoiceOption[] = [];
   let token: string | null = null;
   for (let page = 0; page < 5; page++) {
-    const url = new URL(`${apiBase}/v2/voices`);
+    const url = new URL(`${apiBase()}/v2/voices`);
     url.searchParams.set("page_size", "100");
     if (token) url.searchParams.set("next_page_token", token);
     const response = await fetch(url, { headers: { "xi-api-key": apiKey() }, signal: AbortSignal.timeout(10_000) });
@@ -193,6 +195,8 @@ interface Job {
   resolve: (text: string | null) => void;
 }
 
+const noop = () => undefined;
+
 const maxWarmLayers = Math.max(1, Number(process.env.VOICE_MAX_WARM ?? 3));
 const warmIdleMs = Number(process.env.VOICE_WARM_IDLE_MS ?? 5 * 60_000);
 const warmLayers = new Set<FastLayer>();
@@ -275,9 +279,9 @@ class FastLayer {
     } catch {}
   }
 
-  ask(prompt: string, speak: boolean, onDelta: (text: string) => void = () => undefined) {
-    const job: Job = { id: randomUUID(), prompt, speak, text: "", cancelled: false, onDelta, resolve: () => undefined };
-    const done = new Promise<string | null>((resolve) => (job.resolve = resolve));
+  ask(prompt: string, speak: boolean, onDelta: (text: string) => void = noop) {
+    const { promise: done, resolve } = Promise.withResolvers<string | null>();
+    const job: Job = { id: randomUUID(), prompt, speak, text: "", cancelled: false, onDelta, resolve };
     if (this.closed) job.resolve(null);
     else {
       this.open();
@@ -751,7 +755,7 @@ export async function startCall(bot: BotDefinition) {
     turnStarts: new Map(),
     lastUtteranceAt: 0,
     idleTimer: null,
-    unsubscribe: () => undefined,
+    unsubscribe: noop,
     ended: false,
     startedAt: Date.now(),
     spoken: 0,
