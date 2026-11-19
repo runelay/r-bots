@@ -686,6 +686,13 @@ final class ConversationStore {
                 }
                 ArtifactCenter.shared.noteChange(ref, byUser: byUser)
             }
+        case "block.created", "block.updated", "block.deleted":
+            if let event = BlockEvent(type: fact.type, data: data, fallbackBotID: bot.id) {
+                if event.author == .bot, event.action != "deleted" {
+                    append(TranscriptEntry(id: "block-\(fact.key)", kind: .artifact(event.ref)), date: currentLineDate)
+                }
+                BlockCenter.shared.handle(event, client: client)
+            }
         case "voice.call.rated":
             if let callID = data["callId"]?.stringValue {
                 voiceRatings[callID] = data["rating"]?.stringValue

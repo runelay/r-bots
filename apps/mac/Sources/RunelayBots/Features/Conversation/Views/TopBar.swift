@@ -17,6 +17,19 @@ struct ConversationTopBar: View {
                 ModelPicker(bot: bot)
                 PermissionPill(bot: bot)
             }
+            if let bot, !bot.isPending, !bot.isGroup {
+                HeaderIconButton(
+                    systemImage: "square.stack",
+                    help: "Arquivos do bot: notas, planilhas e agenda",
+                    isActive: ArtifactCenter.shared.current?.kind == BlockKind.filesKind && ArtifactCenter.shared.current?.botID == bot.id
+                ) {
+                    if ArtifactCenter.shared.current?.kind == BlockKind.filesKind {
+                        ArtifactCenter.shared.close()
+                    } else {
+                        ArtifactCenter.shared.openFiles(botID: bot.id, client: model.client)
+                    }
+                }
+            }
             if let bot, bot.hasComputer {
                 HeaderIconButton(
                     systemImage: bot.hasBrowser ? "globe" : "desktopcomputer",

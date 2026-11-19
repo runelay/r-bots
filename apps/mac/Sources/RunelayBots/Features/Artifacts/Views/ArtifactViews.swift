@@ -127,6 +127,18 @@ struct ArtifactThumbnail: View {
 }
 
 struct ArtifactCard: View {
+    let ref: ArtifactRef
+
+    var body: some View {
+        if BlockKind.isBlockKind(ref.kind) {
+            BlockCard(ref: ref)
+        } else {
+            ArtifactPageCard(ref: ref)
+        }
+    }
+}
+
+struct ArtifactPageCard: View {
     @Environment(AppModel.self) private var model
     let ref: ArtifactRef
 
@@ -188,7 +200,10 @@ struct ArtifactViewerLayer: View {
 
     var body: some View {
         ZStack {
-            if let ref = center.current, let url = center.currentURL {
+            if let ref = center.current, center.isBlock {
+                BlockDock(ref: ref)
+                    .transition(Motion.panel(reduceMotion: reduceMotion))
+            } else if let ref = center.current, let url = center.currentURL {
                 GeometryReader { geometry in
                     let presenting = center.presenting
                     ZStack {

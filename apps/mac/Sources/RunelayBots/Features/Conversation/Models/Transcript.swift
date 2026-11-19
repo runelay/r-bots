@@ -259,6 +259,10 @@ struct ToolCall: Identifiable, Equatable {
             return "globe"
         }
         if lowered.contains("query") || lowered.contains("sql") { return "cylinder.split.1x2" }
+        if lowered.hasPrefix("note_") { return "doc.text" }
+        if lowered.hasPrefix("sheet_") { return "tablecells" }
+        if lowered.hasPrefix("agenda_") { return "calendar" }
+        if lowered.hasPrefix("export_") { return "arrow.down.doc" }
         switch name {
         case "Read": return "doc.text"
         case "Edit", "MultiEdit", "NotebookEdit": return "pencil"

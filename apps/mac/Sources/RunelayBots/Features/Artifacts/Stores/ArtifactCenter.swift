@@ -90,9 +90,23 @@ final class ArtifactCenter {
         try? client.request(path: "/bots/\(botID)/artifacts/\(id)/v/\(version).html").url
     }
 
+    var isBlock: Bool {
+        current.map { BlockKind.isBlockKind($0.kind) } ?? false
+    }
+
     func open(_ ref: ArtifactRef, client: BotsClient) {
         self.client = client
         canvas?.flush()
+        if BlockKind.isBlockKind(ref.kind) {
+            canvas = nil
+            presenting = false
+            status = nil
+            versions = []
+            current = ref
+            BlockCenter.shared.open(ref, client: client)
+            return
+        }
+        BlockCenter.shared.close()
         current = ref
         selectedVersion = ref.version
         versions = []
@@ -115,8 +129,20 @@ final class ArtifactCenter {
         presenting = false
         canvas?.flush()
         canvas = nil
+        if isBlock {
+            BlockCenter.shared.close()
+        }
         current = nil
         status = nil
+    }
+
+    func openFiles(botID: String, client: BotsClient) {
+        open(ArtifactRef(botID: botID, id: BlockKind.filesKind, title: "Arquivos do bot", kind: BlockKind.filesKind, version: 1), client: client)
+    }
+
+    func retitle(_ ref: ArtifactRef) {
+        guard isBlock else { return }
+        current = ref
     }
 
     func select(version: Int) {
@@ -136,7 +162,7 @@ final class ArtifactCenter {
 
     func noteChange(_ ref: ArtifactRef, byUser: Bool = false) {
         revision += 1
-        guard current?.id == ref.id, !byUser else { return }
+        guard current?.id == ref.id, !byUser, !isBlock else { return }
         canvas?.reloadIfClean(version: ref.version)
         current?.title = ref.title
         if ref.version > selectedVersion {
