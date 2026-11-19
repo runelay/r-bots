@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { botDir } from "../../../config/env";
 import { artifactTools } from "../../artifacts/services/artifacts.service";
+import { blockTools } from "../../blocks/services/block-tools.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import {
   type ApprovalTarget,
@@ -26,7 +27,7 @@ export interface BotTool {
   name: string;
   description: string;
   shape: z.ZodRawShape;
-  approval: ((input: Record<string, unknown>) => string) | null;
+  approval: ((input: Record<string, unknown>) => string | null) | null;
   label: (input: Record<string, unknown>) => string;
   run: (input: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
   details?: (input: Record<string, unknown>) => Promise<ApprovalDetails>;
@@ -263,5 +264,6 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
   tools.push(...artifactTools(bot.id));
   tools.push(...canvasTools(bot.id));
   tools.push(...uploadTools(bot.id));
+  tools.push(...blockTools(bot.id));
   return tools;
 }

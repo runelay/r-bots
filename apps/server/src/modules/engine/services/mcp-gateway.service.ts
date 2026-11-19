@@ -11,6 +11,7 @@ import {
   remotePermission,
 } from "../../approvals/services/permissions.service";
 import { artifactEventOf } from "../../artifacts/services/artifacts.service";
+import { blockEventOf, mainThreadLog } from "../../blocks/services/blocks.shared";
 import {
   type BotDefinition,
   connectorsOf,
@@ -170,17 +171,18 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
       }
       context.emitDecision(decision);
     }
-    if (tool.approval && vaultOnly) {
+    const approvalPrompt = tool.approval ? tool.approval(input) : null;
+    if (approvalPrompt && vaultOnly) {
       log.emit({ type: "call.started", data: { callId, clearedBy: { vault: true } }, scope: scopeOf(context) });
-    } else if (tool.approval && fullAccess) {
+    } else if (approvalPrompt && fullAccess) {
       log.emit({ type: "call.started", data: { callId, clearedBy: { permission: "full" } }, scope: scopeOf(context) });
-    } else if (tool.approval && decision?.outcome === "auto_approved") {
+    } else if (approvalPrompt && decision?.outcome === "auto_approved") {
       log.emit({
         type: "call.started",
         data: { callId, clearedBy: { decision: "jev", model: decision.model } },
         scope: scopeOf(context),
       });
-    } else if (tool.approval) {
+    } else if (approvalPrompt) {
       const deniedOutput = (interactionId: string | null) => ({
         approval: { interactionId, status: "denied" },
         code: "TOOL_EXECUTION_DENIED",
@@ -202,7 +204,7 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
       }
       const details = tool.details ? await tool.details(input).catch(() => undefined) : undefined;
       const { choice, interactionId } = await context.requestApproval(
-        tool.approval(input),
+        approvalPrompt,
         callId,
         context.origin,
         details,
@@ -276,6 +278,17 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
           scope: scopeOf(context),
         });
         context.onCallSettled(`${tool.name}(${artifactEvent.data.title}) → v${artifactEvent.data.version}`);
+        return textResult(rest);
+      }
+      const blockEvent = blockEventOf(output);
+      if (blockEvent) {
+        const { blockEvent: _block, ...rest } = output as Record<string, unknown>;
+        log.emit({ type: "call.settled", data: { callId, outcome: "completed", output: rest }, scope: scopeOf(context) });
+        const data = { ...blockEvent.data, botId: context.botId, callId };
+        log.emit({ type: blockEvent.type, data, scope: scopeOf(context) });
+        const main = await mainThreadLog(context.botId);
+        if (main && main !== log) main.emit({ type: blockEvent.type, data });
+        context.onCallSettled(`${tool.name}(${blockEvent.data.title}) → v${blockEvent.data.version}`);
         return textResult(rest);
       }
       log.emit({ type: "call.settled", data: { callId, outcome: "completed", output }, scope: scopeOf(context) });

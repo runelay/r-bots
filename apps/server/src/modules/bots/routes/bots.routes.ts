@@ -1,5 +1,6 @@
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
 import { handleBotArtifacts } from "../../artifacts/routes/artifacts.routes";
+import { blockRoots, handleBotBlocks } from "../../blocks/routes/blocks.routes";
 import { handleBotBrowser } from "../../browser/routes/browser.routes";
 import { stopDesktop } from "../../browser/services/desktop.service";
 import { handleBotCode } from "../../code/routes/code.routes";
@@ -98,6 +99,7 @@ export async function handleBots(req: Req, res: Res, url: URL, method: string, p
   if (rest[0] === "schedules") return handleBotSchedules(req, res, method, bot, rest.slice(1));
   if (rest[0] === "browser" || rest[0] === "desktop") return handleBotBrowser(req, res, method, bot, tail);
   if (rest[0] === "artifacts") return handleBotArtifacts(req, res, method, bot, rest.slice(1));
+  if (blockRoots.has(rest[0] ?? "")) return handleBotBlocks(req, res, url, method, bot, rest);
   if (tail === "sessions" && method === "GET") return handleSessions(res, bot);
   if (rest[0] === "conversations") return handleConversations(req, res, url, method, bot, rest.slice(1));
   notFound(res);
