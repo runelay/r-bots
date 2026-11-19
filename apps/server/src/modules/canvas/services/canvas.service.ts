@@ -1,15 +1,14 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { z } from "zod";
 import {
   type ArtifactEvent,
   type ArtifactMeta,
-  artifactDir,
   eventOf,
   listArtifacts,
   readArtifact,
-  writeAtomic,
+  readArtifactContent,
+  saveArtifactMeta,
+  writeArtifactContent,
 } from "../../artifacts/services/artifacts.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
 
@@ -557,14 +556,11 @@ function placeNew(doc: CanvasDoc, pending: Set<string>) {
   }
 }
 
-function docFile(botId: string, artifactId: string, version: number) {
-  return join(artifactDir(botId, artifactId), `v${version}.json`);
-}
-
 export async function readCanvasDoc(botId: string, artifactId: string, version: number): Promise<CanvasDoc | null> {
   if (!Number.isInteger(version) || version < 1) return null;
   try {
-    return JSON.parse(await readFile(docFile(botId, artifactId, version), "utf8")) as CanvasDoc;
+    const text = await readArtifactContent({ botId, id: artifactId, kind: "canvas" }, version);
+    return text === null ? null : (JSON.parse(text) as CanvasDoc);
   } catch {
     return null;
   }
@@ -588,7 +584,7 @@ async function persist(meta: ArtifactMeta, doc: CanvasDoc, author: "bot" | "user
   const now = new Date().toISOString();
   const last = meta.versions[meta.versions.length - 1];
   const n = replaceLatest && last ? last.n : (last?.n ?? 0) + 1;
-  await writeAtomic(docFile(meta.botId, meta.id, n), body);
+  await writeArtifactContent(meta, n, body);
   const entry = { n, createdAt: now, size: Buffer.byteLength(body), author };
   const versions = replaceLatest && last ? [...meta.versions.slice(0, -1), entry] : [...meta.versions, entry];
   const seen = author === "bot" ? n : (meta.canvas?.seen ?? 0);
@@ -598,7 +594,7 @@ async function persist(meta: ArtifactMeta, doc: CanvasDoc, author: "bot" | "user
     versions,
     canvas: { seen, notified: Math.max(meta.canvas?.notified ?? 0, seen) },
   };
-  await writeAtomic(join(artifactDir(meta.botId, meta.id), "meta.json"), JSON.stringify(next, null, 2));
+  await saveArtifactMeta(next);
   return next;
 }
 
@@ -619,7 +615,6 @@ export async function createCanvas(
   if (!positioned) layoutDoc(doc);
   const id = `art_${randomBytes(9).toString("base64url")}`;
   const now = new Date().toISOString();
-  await mkdir(artifactDir(botId, id), { recursive: true });
   const meta: ArtifactMeta = { id, botId, title, kind: "canvas", createdAt: now, updatedAt: now, versions: [] };
   return { meta: await persist(meta, doc, "bot", false), doc };
 }
@@ -902,7 +897,7 @@ export async function readCanvasForBot(botId: string, artifactId: string) {
     const userEdits = latest > seen ? describeChanges(await readCanvasDoc(botId, artifactId, seen), doc) : "";
     if (latest !== seen || meta.canvas?.notified !== latest) {
       const next: ArtifactMeta = { ...meta, canvas: { seen: latest, notified: latest } };
-      await writeAtomic(join(artifactDir(botId, artifactId), "meta.json"), JSON.stringify(next, null, 2));
+      await saveArtifactMeta(next);
     }
     return { meta, doc, userEdits, version: latest };
   });
@@ -950,10 +945,7 @@ export async function canvasEditNote(botId: string) {
     await locked(`${botId}/${meta.id}`, async () => {
       const fresh = await readArtifact(botId, meta.id);
       if (!fresh) return;
-      await writeAtomic(
-        join(artifactDir(botId, meta.id), "meta.json"),
-        JSON.stringify({ ...fresh, canvas: { seen: fresh.canvas?.seen ?? seen, notified: last.n } }, null, 2),
-      );
+      await saveArtifactMeta({ ...fresh, canvas: { seen: fresh.canvas?.seen ?? seen, notified: last.n } });
     });
   }
   if (!lines.length) return "";

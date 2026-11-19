@@ -1,5 +1,9 @@
+import { mkdir, rename, rm } from "node:fs/promises";
+import { dirname } from "node:path";
 import { blobDriver, blobsDir, s3Settings } from "../../../config/storage";
-import type { BlobStore } from "./blob-store";
+import { type Db, getDb } from "../../../db";
+import { blobs } from "../../../db/tables";
+import type { BlobBody, BlobStore } from "./blob-store";
 import { FsBlobStore } from "./fs-blob-store";
 import { S3BlobStore } from "./s3-blob-store";
 
@@ -35,4 +39,55 @@ export function safeName(name: string) {
     .replace(/^\.+/, "_")
     .trim();
   return cleaned.slice(0, 200) || "file";
+}
+
+export interface StoredBlob {
+  key: string;
+  size: number;
+  mime: string;
+  sha256: string;
+}
+
+export async function putBlob(
+  key: string,
+  body: BlobBody,
+  options: { mime?: string; botId?: string | null; sessionId?: string | null } = {},
+  store: BlobStore = getBlobStore(),
+  db: Db = getDb(),
+): Promise<StoredBlob> {
+  const info = await store.put(key, body, options.mime ? { mime: options.mime } : {});
+  const row = {
+    key,
+    mime: info.mime,
+    size: info.size,
+    sha256: info.sha256,
+    botId: options.botId ?? null,
+    sessionId: options.sessionId ?? null,
+    createdAt: new Date().toISOString(),
+  };
+  db.insert(blobs)
+    .values(row)
+    .onConflictDoUpdate({ target: blobs.key, set: { mime: row.mime, size: row.size, sha256: row.sha256 } })
+    .run();
+  return info;
+}
+
+export async function blobText(key: string, store: BlobStore = getBlobStore()) {
+  const stream = await store.get(key);
+  return stream ? new Response(stream).text() : null;
+}
+
+export async function blobToFile(key: string, path: string, store: BlobStore = getBlobStore()) {
+  const stream = await store.get(key);
+  if (!stream) return false;
+  await mkdir(dirname(path), { recursive: true });
+  const temp = `${path}.${process.pid}.${Date.now()}.part`;
+  try {
+    await Bun.write(temp, new Response(stream));
+    await rename(temp, path);
+  } catch (error) {
+    await rm(temp, { force: true });
+    throw error;
+  }
+  return true;
 }

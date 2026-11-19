@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -22,6 +22,14 @@ import {
   macTranscribeFile,
 } from "../../accounts/services/mac-runner.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
+import { blobKeys, blobToFile, putBlob } from "../../storage/services/storage.service";
+import {
+  listUploadRows,
+  readUploadRow,
+  saveUploadRow,
+  updateUploadMeta,
+  uploadFromRow,
+} from "../repositories/uploads.repository";
 
 export type UploadKind = "image" | "video" | "audio" | "file";
 
@@ -204,10 +212,6 @@ function uploadsDir(botId: string) {
   return join(botDir(botId), "uploads");
 }
 
-function metaPath(botId: string, uploadId: string) {
-  return join(uploadsDir(botId), ".meta", `${uploadId}.json`);
-}
-
 function derivedDir(botId: string, uploadId: string) {
   return join(uploadsDir(botId), ".derived", uploadId);
 }
@@ -352,20 +356,50 @@ async function analyze(botId: string, meta: UploadMeta) {
   }
 }
 
-export async function readUpload(botId: string, uploadId: string): Promise<UploadMeta | null> {
-  if (!idPattern.test(uploadId)) return null;
-  try {
-    const meta = JSON.parse(await readFile(metaPath(botId, uploadId), "utf8")) as UploadMeta;
-    rememberLabel(meta);
-    return meta;
-  } catch {
-    return null;
+async function materialize(botId: string, meta: UploadMeta, blobKey: string, thumbKey: string | null) {
+  const local = uploadPath(botId, meta);
+  if (!(await Bun.file(local).exists())) await blobToFile(blobKey, local);
+  if (thumbKey) {
+    const thumb = join(derivedDir(botId, meta.uploadId), "thumb.jpg");
+    if (!(await Bun.file(thumb).exists())) await blobToFile(thumbKey, thumb);
   }
 }
 
+export async function readUpload(botId: string, uploadId: string): Promise<UploadMeta | null> {
+  if (!idPattern.test(uploadId)) return null;
+  const row = readUploadRow(botId, uploadId);
+  if (!row) return null;
+  const meta = uploadFromRow(row);
+  try {
+    await materialize(botId, meta, row.blobKey, row.thumbKey);
+  } catch (error) {
+    console.warn(`upload ${uploadId} could not be fetched from storage`, error);
+    return null;
+  }
+  rememberLabel(meta);
+  return meta;
+}
+
 async function writeMeta(botId: string, meta: UploadMeta) {
-  await mkdir(join(uploadsDir(botId), ".meta"), { recursive: true });
-  await writeFile(metaPath(botId, meta.uploadId), JSON.stringify(meta, null, 2));
+  updateUploadMeta(botId, meta);
+}
+
+async function storeUpload(botId: string, meta: UploadMeta) {
+  const keys = blobKeys(botId);
+  const original = await putBlob(keys.upload(meta.uploadId, meta.name), Bun.file(uploadPath(botId, meta)).stream(), {
+    mime: meta.mime,
+    botId,
+  });
+  const thumbPath = join(derivedDir(botId, meta.uploadId), "thumb.jpg");
+  const thumb =
+    meta.thumb && (await Bun.file(thumbPath).exists())
+      ? await putBlob(keys.derived(meta.uploadId, "thumb.jpg"), Bun.file(thumbPath).stream(), {
+          mime: "image/jpeg",
+          botId,
+        })
+      : null;
+  if (meta.thumb && !thumb) delete meta.thumb;
+  saveUploadRow(botId, meta, { blobKey: original.key, sha256: original.sha256, thumbKey: thumb?.key ?? null });
 }
 
 export function publicUpload(botId: string, meta: UploadMeta) {
@@ -389,7 +423,13 @@ export type PublicUpload = ReturnType<typeof publicUpload>;
 
 async function register(botId: string, meta: UploadMeta) {
   await analyze(botId, meta).catch((error) => console.warn("upload analyze failed", error));
-  await writeMeta(botId, meta);
+  try {
+    await storeUpload(botId, meta);
+  } catch (error) {
+    console.error("upload storage failed", error);
+    await rm(uploadPath(botId, meta), { force: true });
+    throw new UploadError("Não consegui guardar o arquivo agora. Tente de novo.", 503);
+  }
   rememberLabel(meta);
   void preparedOf(botId, meta);
   return meta;
@@ -1040,14 +1080,11 @@ export async function serveUpload(req: Req, res: Res, botId: string, uploadId: s
 }
 
 export async function listUploads(botId: string) {
-  const dir = join(uploadsDir(botId), ".meta");
-  const names = await readdir(dir).catch(() => [] as string[]);
-  const metas = await Promise.all(
-    names.filter((name) => name.endsWith(".json")).map((name) => readUpload(botId, name.slice(0, -5))),
-  );
-  return metas
-    .filter((meta): meta is UploadMeta => Boolean(meta))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return listUploadRows(botId).map((row) => {
+    const meta = uploadFromRow(row);
+    rememberLabel(meta);
+    return meta;
+  });
 }
 
 export interface FileEvent {

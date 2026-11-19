@@ -1,9 +1,14 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { z } from "zod";
-import { botDir } from "../../../config/env";
 import type { BotTool } from "../../engine/services/bot-tools.service";
+import { blobText, putBlob } from "../../storage/services/storage.service";
+import {
+  artifactContentKey,
+  hasArtifactVersion,
+  listArtifactRows,
+  readArtifactRow,
+  saveArtifactRow,
+} from "../repositories/artifacts.repository";
 
 export type ArtifactKind = "slides" | "dashboard" | "page" | "canvas";
 
@@ -56,53 +61,40 @@ const kindLabel: Record<ArtifactKind, string> = {
   canvas: "canvas",
 };
 
-function artifactsDir(botId: string) {
-  return join(botDir(botId), "artifacts");
-}
-
-export function artifactDir(botId: string, artifactId: string) {
-  return join(artifactsDir(botId), artifactId);
-}
-
 export function isArtifactId(value: string) {
   return idPattern.test(value);
 }
 
-export async function writeAtomic(file: string, content: string) {
-  const temp = `${file}.${randomBytes(4).toString("hex")}.tmp`;
-  await writeFile(temp, content, "utf8");
-  await rename(temp, file);
+export async function writeArtifactContent(meta: Pick<ArtifactMeta, "botId" | "id" | "kind">, version: number, content: string) {
+  await putBlob(artifactContentKey(meta.botId, meta.id, version, meta.kind), content, {
+    mime: meta.kind === "canvas" ? "application/json" : "text/html; charset=utf-8",
+    botId: meta.botId,
+  });
+}
+
+export async function readArtifactContent(meta: Pick<ArtifactMeta, "botId" | "id" | "kind">, version: number) {
+  if (!Number.isInteger(version) || version < 1 || !hasArtifactVersion(meta.id, version)) return null;
+  return blobText(artifactContentKey(meta.botId, meta.id, version, meta.kind));
+}
+
+export async function saveArtifactMeta(meta: ArtifactMeta) {
+  saveArtifactRow(meta);
 }
 
 export async function readArtifact(botId: string, artifactId: string): Promise<ArtifactMeta | null> {
   if (!isArtifactId(artifactId)) return null;
-  try {
-    return JSON.parse(await readFile(join(artifactDir(botId, artifactId), "meta.json"), "utf8")) as ArtifactMeta;
-  } catch {
-    return null;
-  }
+  return readArtifactRow(botId, artifactId);
 }
 
 export async function listArtifacts(botId: string): Promise<ArtifactMeta[]> {
-  let names: string[] = [];
-  try {
-    names = await readdir(artifactsDir(botId));
-  } catch {
-    return [];
-  }
-  const items = await Promise.all(names.filter(isArtifactId).map((name) => readArtifact(botId, name)));
-  return items
-    .filter((item): item is ArtifactMeta => item !== null)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return listArtifactRows(botId);
 }
 
 export async function readArtifactHtml(botId: string, artifactId: string, version: number) {
-  if (!isArtifactId(artifactId) || !Number.isInteger(version) || version < 1) return null;
-  try {
-    return await readFile(join(artifactDir(botId, artifactId), `v${version}.html`), "utf8");
-  } catch {
-    return null;
-  }
+  if (!isArtifactId(artifactId)) return null;
+  const meta = readArtifactRow(botId, artifactId);
+  if (!meta) return null;
+  return readArtifactContent(meta, version);
 }
 
 export function publicArtifact(meta: ArtifactMeta) {
@@ -135,9 +127,6 @@ export async function createArtifact(botId: string, title: string, kind: Artifac
   checkHtml(html);
   const id = `art_${randomBytes(9).toString("base64url")}`;
   const now = new Date().toISOString();
-  const dir = artifactDir(botId, id);
-  await mkdir(dir, { recursive: true });
-  await writeAtomic(join(dir, "v1.html"), html);
   const meta: ArtifactMeta = {
     id,
     botId,
@@ -147,7 +136,8 @@ export async function createArtifact(botId: string, title: string, kind: Artifac
     updatedAt: now,
     versions: [{ n: 1, createdAt: now, size: Buffer.byteLength(html) }],
   };
-  await writeAtomic(join(dir, "meta.json"), JSON.stringify(meta, null, 2));
+  await writeArtifactContent(meta, 1, html);
+  await saveArtifactMeta(meta);
   return meta;
 }
 
@@ -175,14 +165,14 @@ export async function updateArtifact(
   checkHtml(html);
   const n = latest + 1;
   const now = new Date().toISOString();
-  await writeAtomic(join(artifactDir(botId, artifactId), `v${n}.html`), html);
+  await writeArtifactContent(meta, n, html);
   const next: ArtifactMeta = {
     ...meta,
     title: change.title?.trim() || meta.title,
     updatedAt: now,
     versions: [...meta.versions, { n, createdAt: now, size: Buffer.byteLength(html) }],
   };
-  await writeAtomic(join(artifactDir(botId, artifactId), "meta.json"), JSON.stringify(next, null, 2));
+  await saveArtifactMeta(next);
   return next;
 }
 
