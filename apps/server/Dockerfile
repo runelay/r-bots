@@ -1,4 +1,6 @@
 # syntax=docker/dockerfile:1.7
+FROM oven/bun:1.4.4-debian AS bun
+
 FROM node:24-bookworm
 
 ARG CLAUDE_CODE_VERSION=2.1.328
@@ -35,8 +37,10 @@ RUN --mount=type=cache,target=/root/.npm \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
       "@openai/codex@${CODEX_VERSION}" \
       "agent-browser@${AGENT_BROWSER_VERSION}" \
-      "pnpm@${PNPM_VERSION}" \
-      bun
+      "pnpm@${PNPM_VERSION}"
+
+COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 
 RUN HOME=/home/anderson agent-browser install --with-deps \
  && chrome_dir="$(ls -d /home/anderson/.agent-browser/browsers/chrome-* | sort | tail -1)" \
@@ -53,13 +57,13 @@ ENV HOME=/home/anderson \
 
 WORKDIR /app
 RUN chown anderson:anderson /app
-COPY --chown=anderson:anderson package.json package-lock.json tsconfig.base.json /app/
+COPY --chown=anderson:anderson package.json bun.lock tsconfig.base.json /app/
 COPY --chown=anderson:anderson apps/server/package.json /app/apps/server/
 COPY --chown=anderson:anderson packages/protocol/package.json /app/packages/protocol/
 COPY --chown=anderson:anderson packages/providers/package.json /app/packages/providers/
 USER anderson
-RUN --mount=type=cache,target=/home/anderson/.npm,uid=1000,gid=1000 \
-    npm ci --omit=dev --no-audit --no-fund
+RUN --mount=type=cache,target=/home/anderson/.bun/install/cache,uid=1000,gid=1000 \
+    bun install --frozen-lockfile --production
 
 COPY --chown=anderson:anderson packages/ /app/packages/
 COPY --chown=anderson:anderson apps/server/ /app/apps/server/
