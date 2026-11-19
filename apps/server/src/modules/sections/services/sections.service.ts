@@ -1,8 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
-import { dataDir } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
-import { readJson, writeJson } from "../../../shared/json-file";
+import { loadSectionRows, saveSectionRow } from "../repositories/sections.repository";
 
 export interface Section {
   id: string;
@@ -12,15 +10,14 @@ export interface Section {
   archivedAt: string | null;
 }
 
-const file = join(dataDir, "sections.json");
 let sections: Section[] = [];
 
 export async function loadSections() {
-  sections = await readJson<Section[]>(file, []);
+  sections = loadSectionRows();
 }
 
-function save() {
-  return writeJson(file, sections);
+function save(section: Section) {
+  saveSectionRow(section);
 }
 
 export function publicSection(section: Section) {
@@ -67,7 +64,7 @@ export async function createSection(input: unknown) {
     archivedAt: null,
   };
   sections.push(section);
-  await save();
+  save(section);
   return section;
 }
 
@@ -80,7 +77,7 @@ export async function updateSection(id: string, input: unknown) {
   }
   if (raw.name !== undefined) section.name = validName(raw.name);
   if (raw.order !== undefined) section.order = validOrder(raw.order);
-  await save();
+  save(section);
   return section;
 }
 
@@ -88,6 +85,6 @@ export async function archiveSection(id: string) {
   const section = sections.find((item) => item.id === id && !item.archivedAt);
   if (!section) return null;
   section.archivedAt = new Date().toISOString();
-  await save();
+  save(section);
   return section;
 }

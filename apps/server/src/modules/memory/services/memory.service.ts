@@ -1,11 +1,9 @@
-import { appendFile, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { dataDir } from "../../../config/env";
 import { type Account, runOnRunner } from "../../accounts/services/accounts.service";
 import { askJev, jevEnabled, noul } from "../../approvals/services/jev.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { runelayCall, runelayEnabled } from "../../connectors/services/runelay.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
+import { addTeamEntry, recentTeamEntries } from "../repositories/team-memory.repository";
 
 export interface RecallItem {
   slug: string;
@@ -13,7 +11,6 @@ export interface RecallItem {
   description: string;
 }
 
-const teamLogFile = join(dataDir, "team-log.ndjson");
 const recallCharCap = 6000;
 
 function clean(text: string) {
@@ -57,37 +54,14 @@ export function recallBlock(items: RecallItem[]) {
 }
 
 export async function teamLogBlock(botId: string) {
-  let text = "";
-  try {
-    text = await readFile(teamLogFile, "utf8");
-  } catch {
-    return "";
-  }
   const today = new Date().toISOString().slice(0, 10);
-  const lines = text
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line) as { at: string; botId: string; botName: string; summary: string };
-      } catch {
-        return null;
-      }
-    })
-    .filter(
-      (item): item is { at: string; botId: string; botName: string; summary: string } =>
-        item !== null && item.botId !== botId && item.at.startsWith(today),
-    )
-    .slice(-5);
+  const lines = recentTeamEntries(botId, today, 5);
   if (lines.length === 0) return "";
   return `## O que o time fez hoje\n${lines.map((item) => `- ${item.at.slice(11, 16)} ${item.botName}: ${item.summary}`).join("\n")}`;
 }
 
 async function appendTeamLog(bot: BotDefinition, summary: string) {
-  await appendFile(
-    teamLogFile,
-    `${JSON.stringify({ at: new Date().toISOString(), botId: bot.id, botName: bot.name, summary: summary.slice(0, 240) })}\n`,
-  );
+  addTeamEntry({ at: new Date().toISOString(), botId: bot.id, botName: bot.name, summary: summary.slice(0, 240) });
 }
 
 const secretPatterns = [

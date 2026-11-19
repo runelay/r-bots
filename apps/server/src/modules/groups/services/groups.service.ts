@@ -1,9 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
-import { dataDir } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
-import { readJson, writeJson } from "../../../shared/json-file";
 import { getBot, isActive } from "../../bots/services/bots.service";
+import { loadGroupRows, saveGroupRow } from "../repositories/groups.repository";
 
 export interface Group {
   id: string;
@@ -14,15 +12,14 @@ export interface Group {
   archivedAt: string | null;
 }
 
-const file = join(dataDir, "groups.json");
 let groups: Group[] = [];
 
 export async function loadGroups() {
-  groups = await readJson<Group[]>(file, []);
+  groups = loadGroupRows();
 }
 
-function save() {
-  return writeJson(file, groups);
+function save(group: Group) {
+  saveGroupRow(group);
 }
 
 export function getGroup(id: string) {
@@ -77,7 +74,7 @@ export async function createGroup(input: unknown) {
     archivedAt: null,
   };
   groups.push(group);
-  await save();
+  save(group);
   return group;
 }
 
@@ -91,7 +88,7 @@ export async function updateGroup(id: string, input: unknown) {
   if (raw.name !== undefined) group.name = validName(raw.name);
   if (raw.members !== undefined) group.members = validMembers(raw.members);
   group.updatedAt = new Date().toISOString();
-  await save();
+  save(group);
   return group;
 }
 
@@ -100,7 +97,7 @@ export async function setGroupArchived(id: string, archived: boolean) {
   if (!group) return null;
   group.archivedAt = archived ? (group.archivedAt ?? new Date().toISOString()) : null;
   group.updatedAt = new Date().toISOString();
-  await save();
+  save(group);
   return group;
 }
 

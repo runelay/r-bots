@@ -1,14 +1,16 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { appendFile, chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { dataDir } from "../../../config/env";
 import { forgetSecretValue, redactDeep, rememberSecretValue } from "../../../shared/redact";
+import {
+  addAudit,
+  loadSecretMetas,
+  readAuditRows,
+  readSealed,
+  saveSecretMetas,
+  writeSealed,
+} from "../repositories/vault.repository";
 import { MacRunnerUnavailable, macRunnerSupports, macSecretResolve } from "../../accounts/services/mac-runner.service";
 
-export const vaultDir = join(dataDir, "vault");
-const indexFile = join(vaultDir, "index.json");
-const auditFile = join(vaultDir, "audit.ndjson");
 const keyFile = process.env.VAULT_KEY_FILE ?? "/run/runelay-bots/vault.key";
 
 export const secretNamePattern = /^[a-z0-9][a-z0-9_-]{0,63}$/;
@@ -70,26 +72,13 @@ export function registerSecretSource(source: SecretSource) {
 let index: Record<string, SecretMeta> = {};
 let loaded = false;
 
-async function ensureDir() {
-  await mkdir(vaultDir, { recursive: true, mode: 0o700 });
-  await chmod(vaultDir, 0o700).catch(() => undefined);
-}
-
 export async function loadVault() {
-  await ensureDir();
-  try {
-    index = JSON.parse(await readFile(indexFile, "utf8")) as Record<string, SecretMeta>;
-  } catch {
-    index = {};
-  }
+  index = loadSecretMetas();
   loaded = true;
 }
 
 async function saveIndex() {
-  await ensureDir();
-  const tmp = `${indexFile}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(index, null, 2), { mode: 0o600 });
-  await rename(tmp, indexFile);
+  saveSecretMetas(index);
 }
 
 export function envNameOf(name: string) {
@@ -122,10 +111,6 @@ export function serverStorageAvailable() {
   return loadKey() !== null;
 }
 
-function encFile(name: string) {
-  return join(vaultDir, `${name}.enc`);
-}
-
 function aad(name: string) {
   return Buffer.from(`runelay-bots:vault:v1:${name}`, "utf8");
 }
@@ -140,21 +125,8 @@ async function writeServerCopy(name: string, value: string) {
   const ct = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   key.fill(0);
-  await ensureDir();
-  const file = encFile(name);
-  const tmp = `${file}.${process.pid}.tmp`;
-  await writeFile(
-    tmp,
-    JSON.stringify({
-      v: 1,
-      alg: "aes-256-gcm",
-      iv: iv.toString("base64"),
-      tag: tag.toString("base64"),
-      ct: ct.toString("base64"),
-    }),
-    { mode: 0o600 },
-  );
-  await rename(tmp, file);
+  saveSecretMetas(index);
+  writeSealed(name, { iv, tag, ct });
 }
 
 async function readServerCopy(name: string) {
@@ -162,11 +134,12 @@ async function readServerCopy(name: string) {
   if (!key)
     throw new VaultError("no_key", "O servidor perdeu a chave do cofre e não consegue abrir a cópia guardada aqui.");
   try {
-    const payload = JSON.parse(await readFile(encFile(name), "utf8")) as { iv: string; tag: string; ct: string };
-    const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(payload.iv, "base64"));
+    const sealed = readSealed(name);
+    if (!sealed) throw new Error("missing");
+    const decipher = createDecipheriv("aes-256-gcm", key, sealed.iv);
     decipher.setAAD(aad(name));
-    decipher.setAuthTag(Buffer.from(payload.tag, "base64"));
-    return Buffer.concat([decipher.update(Buffer.from(payload.ct, "base64")), decipher.final()]).toString("utf8");
+    decipher.setAuthTag(sealed.tag);
+    return Buffer.concat([decipher.update(sealed.ct), decipher.final()]).toString("utf8");
   } catch {
     throw new VaultError(
       "server_copy_broken",
@@ -178,27 +151,11 @@ async function readServerCopy(name: string) {
 }
 
 export async function audit(entry: Record<string, unknown>) {
-  await ensureDir();
-  const line = JSON.stringify(redactDeep({ at: new Date().toISOString(), ...entry }));
-  await appendFile(auditFile, `${line}\n`, { mode: 0o600 });
+  addAudit(redactDeep({ at: new Date().toISOString(), ...entry }) as Record<string, unknown>);
 }
 
-export async function readAudit(name: string | null, limit: number) {
-  let text = "";
-  try {
-    text = await readFile(auditFile, "utf8");
-  } catch {
-    return [];
-  }
-  const rows: Record<string, unknown>[] = [];
-  const lines = text.split("\n").filter(Boolean);
-  for (let i = lines.length - 1; i >= 0 && rows.length < limit; i--) {
-    try {
-      const row = JSON.parse(lines[i]) as Record<string, unknown>;
-      if (!name || row.name === name) rows.push(row);
-    } catch {}
-  }
-  return rows;
+export async function readAudit(name: string | null, limit: number): Promise<Record<string, unknown>[]> {
+  return readAuditRows(name, limit);
 }
 
 export function normalizeHost(value: string | null | undefined) {
@@ -461,7 +418,7 @@ export async function saveSecretMeta(name: string, body: Record<string, unknown>
   index[name] = meta;
   await saveIndex();
   if (body.rotated === true && meta.storage === "mac+server") {
-    await rm(encFile(name), { force: true });
+    writeSealed(name, null);
     meta.storage = "mac";
     await saveIndex();
   }
@@ -474,7 +431,7 @@ export async function deleteSecret(name: string) {
   const existed = Boolean(index[name]);
   delete index[name];
   await saveIndex();
-  await rm(encFile(name), { force: true });
+  writeSealed(name, null);
   forgetSecretValue(name);
   if (existed) await audit({ name, outcome: "deleted", by: "person" });
   return existed;
@@ -484,7 +441,7 @@ export async function setServerCopy(name: string, value: string | null) {
   const meta = index[name];
   if (!meta) throw new VaultError("not_found", "Esse segredo não existe no cofre.");
   if (value === null) {
-    await rm(encFile(name), { force: true });
+    writeSealed(name, null);
     meta.storage = "mac";
   } else {
     await writeServerCopy(name, value);

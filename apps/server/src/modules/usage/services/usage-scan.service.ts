@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { createReadStream, type Dirent, type Stats } from "node:fs";
-import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { emptyChanges, loadUsageIndex, saveUsageChanges } from "../repositories/usage.repository";
 
 export type UsageProvider = "claude" | "codex";
 
@@ -110,9 +111,9 @@ export class UsageScanner {
   private running: Promise<UsageSnapshot> | null = null;
   private last: UsageSnapshot | null = null;
   private lastAt = 0;
+  private changes = emptyChanges();
 
   constructor(
-    private readonly indexPath: string,
     private readonly claudeRoot = join(homedir(), ".claude", "projects"),
     private readonly codexRoot = join(homedir(), ".codex", "sessions"),
   ) {}
@@ -128,14 +129,9 @@ export class UsageScanner {
 
   private async load() {
     if (this.index) return this.index;
-    try {
-      const parsed = JSON.parse(await readFile(this.indexPath, "utf8")) as ScanIndex;
-      if (parsed.version === indexVersion) {
-        this.index = parsed;
-        return parsed;
-      }
-    } catch {}
-    this.index = { version: indexVersion, files: {}, buckets: {}, sessions: {}, seen: {} };
+    const stored = loadUsageIndex() as unknown as ScanIndex;
+    this.index =
+      stored.version === indexVersion ? stored : { version: indexVersion, files: {}, buckets: {}, sessions: {}, seen: {} };
     return this.index;
   }
 
@@ -144,13 +140,17 @@ export class UsageScanner {
     const bucket = index.buckets[key] ?? emptyCounters();
     for (let i = 0; i < values.length; i++) bucket[i] += values[i];
     index.buckets[key] = bucket;
+    this.changes.buckets.add(key);
   }
 
   private session(index: ScanIndex, provider: UsageProvider, id: string, hour: number, model: string) {
     if (!id) return;
     const key = `${provider}:${id}`;
     const current = index.sessions[key];
-    if (!current || hour < current[0]) index.sessions[key] = [hour, model];
+    if (!current || hour < current[0]) {
+      index.sessions[key] = [hour, model];
+      this.changes.sessions.add(key);
+    }
   }
 
   private claudeLine(index: ScanIndex, line: string) {
@@ -174,6 +174,7 @@ export class UsageScanner {
       .slice(0, 12);
     if (index.seen[dedupe] !== undefined) return;
     index.seen[dedupe] = hour;
+    this.changes.seen.add(dedupe);
     const creation = usage.cache_creation as Record<string, unknown> | undefined;
     const write = num(usage.cache_creation_input_tokens);
     const write1h = Math.min(write, num(creation?.ephemeral_1h_input_tokens));
@@ -273,6 +274,7 @@ export class UsageScanner {
       });
       cursor.size = info.size;
       index.files[path] = cursor;
+      this.changes.files.add(path);
       changed = true;
     };
     for (const path of claudeFiles) await visit(path, "claude");
@@ -288,16 +290,27 @@ export class UsageScanner {
 
   private prune(index: ScanIndex) {
     const floor = Math.floor(Date.now() / 1000) - keepSeconds;
-    for (const [key, hour] of Object.entries(index.seen)) if (hour < floor) delete index.seen[key];
-    for (const key of Object.keys(index.buckets)) if (Number(key.split("|")[0]) < floor) delete index.buckets[key];
-    for (const [key, value] of Object.entries(index.sessions)) if (value[0] < floor) delete index.sessions[key];
+    for (const [key, hour] of Object.entries(index.seen))
+      if (hour < floor) {
+        delete index.seen[key];
+        this.changes.seen.add(key);
+      }
+    for (const key of Object.keys(index.buckets))
+      if (Number(key.split("|")[0]) < floor) {
+        delete index.buckets[key];
+        this.changes.buckets.add(key);
+      }
+    for (const [key, value] of Object.entries(index.sessions))
+      if (value[0] < floor) {
+        delete index.sessions[key];
+        this.changes.sessions.add(key);
+      }
   }
 
   private async save(index: ScanIndex) {
-    await mkdir(dirname(this.indexPath), { recursive: true });
-    const tmp = `${this.indexPath}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify(index));
-    await rename(tmp, this.indexPath);
+    const changes = this.changes;
+    this.changes = emptyChanges();
+    saveUsageChanges(index as unknown as Parameters<typeof saveUsageChanges>[0], changes);
   }
 
   private toSnapshot(index: ScanIndex, files: number): UsageSnapshot {

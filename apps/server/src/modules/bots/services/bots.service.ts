@@ -1,15 +1,13 @@
-import { readdir } from "node:fs/promises";
-import { join } from "node:path";
 import type { Provider } from "@runelay-bots/protocol";
 import { defaultModels } from "@runelay-bots/providers";
 import { Cron } from "croner";
-import { botFile, botsDir, model as defaultClaudeModel } from "../../../config/env";
+import { model as defaultClaudeModel } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
-import { readJson, writeJson } from "../../../shared/json-file";
 import { type DecisionSettings, defaultDecisions } from "../../approvals/services/decisions.service";
 import { isPermissionMode, type PermissionMode } from "../../approvals/services/permissions.service";
 import { defaultMemory } from "../../memory/constants/memory.constants";
 import type { MemorySettings } from "../../memory/types/memory.types";
+import { loadBotRows, saveBotRow } from "../repositories/bots.repository";
 
 export const accents = [
   "white",
@@ -190,17 +188,7 @@ export function listBots(includeArchived = false, options: { deleted?: boolean; 
 }
 
 export async function loadBots() {
-  let entries: string[] = [];
-  try {
-    entries = await readdir(botsDir);
-  } catch {
-    entries = [];
-  }
-  for (const entry of entries) {
-    if (!entry.endsWith(".json")) continue;
-    const bot = await readJson<BotDefinition | null>(join(botsDir, entry), null);
-    if (bot?.id) bots.set(bot.id, withFullAccess(bot));
-  }
+  for (const bot of loadBotRows()) if (bot.id) bots.set(bot.id, withFullAccess(bot));
 }
 
 function slugify(name: string) {
@@ -553,7 +541,7 @@ export async function createBot(body: unknown) {
   };
   if (!bot.role) bot.role = deriveRole(bot.instructions) || "Novo no time";
   bots.set(id, bot);
-  await writeJson(botFile(id), bot);
+  saveBotRow(bot);
   changed();
   return bot;
 }
@@ -588,7 +576,7 @@ export async function updateBot(id: string, body: unknown) {
   if (raw.permission !== undefined) next.permission = validatePermission(raw.permission);
   next.updatedAt = new Date().toISOString();
   bots.set(id, next);
-  await writeJson(botFile(id), next);
+  saveBotRow(next);
   changed();
   return next;
 }
@@ -616,7 +604,7 @@ export async function updateSidebar(id: string, body: unknown, sectionExists: (s
   }
   const updated = { ...bot, sidebar: next };
   bots.set(id, updated);
-  await writeJson(botFile(id), updated);
+  saveBotRow(updated);
   return updated;
 }
 
@@ -625,7 +613,7 @@ export async function clearSection(sectionId: string) {
     if (sidebarOf(bot).sectionId !== sectionId) continue;
     const updated = { ...bot, sidebar: { ...sidebarOf(bot), sectionId: null } };
     bots.set(bot.id, updated);
-    await writeJson(botFile(bot.id), updated);
+    saveBotRow(updated);
   }
 }
 
@@ -638,7 +626,7 @@ export async function setDeleted(id: string, deleted: boolean) {
     updatedAt: new Date().toISOString(),
   };
   bots.set(id, next);
-  await writeJson(botFile(id), next);
+  saveBotRow(next);
   changed();
   return next;
 }
@@ -652,7 +640,7 @@ export async function setArchived(id: string, archived: boolean) {
     updatedAt: new Date().toISOString(),
   };
   bots.set(id, next);
-  await writeJson(botFile(id), next);
+  saveBotRow(next);
   changed();
   return next;
 }

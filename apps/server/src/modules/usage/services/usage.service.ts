@@ -1,8 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { dataDir } from "../../../config/env";
-import { readJson, writeJson } from "../../../shared/json-file";
+import { readSetting, writeSetting } from "../../../db/settings";
 import {
   macRunnerConnected,
   macRunnerSupports,
@@ -60,8 +59,8 @@ interface RawCodexLimits {
 }
 
 const zone = "America/Sao_Paulo";
-const scanner = new UsageScanner(join(dataDir, "usage", "vps-index.json"));
-const pricesPath = join(dataDir, "usage", "prices.json");
+const scanner = new UsageScanner();
+const pricesKey = "usage.prices";
 const pricesUrl = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 const providerLabels: Record<UsageProvider, string> = { claude: "Claude", codex: "Codex" };
 
@@ -423,7 +422,7 @@ async function priceTable() {
   if (prices && Date.now() - prices.at < 24 * 3_600_000) return prices.table;
   if (pricesPending) return pricesPending;
   pricesPending = (async () => {
-    const stored = await readJson<{ at: number; table: Record<string, PriceEntry> } | null>(pricesPath, null);
+    const stored = readSetting<{ at: number; table: Record<string, PriceEntry> } | null>(pricesKey, null);
     if (stored && Date.now() - stored.at < 24 * 3_600_000) {
       prices = stored;
       return stored.table;
@@ -438,7 +437,9 @@ async function priceTable() {
         if (/claude|gpt|codex|^o\d|grok/.test(key)) table[key] = value;
       }
       prices = { at: Date.now(), table };
-      await writeJson(pricesPath, prices).catch(() => undefined);
+      try {
+        writeSetting(pricesKey, prices);
+      } catch {}
       return table;
     } catch {
       prices = { at: Date.now() - 23 * 3_600_000, table: stored?.table ?? {} };

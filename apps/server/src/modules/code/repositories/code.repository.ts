@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
-import { join } from "node:path";
-import { readJson, writeJson } from "../../../shared/json-file";
-import { codeDataDir, git, type WorkspaceState } from "../services/workspace.service";
+import { readSetting, writeSetting } from "../../../db/settings";
+import { git, type WorkspaceState } from "../services/workspace.service";
+import { loadWorktreeRows, saveWorktreeRows } from "./worktrees.repository";
 
 export interface Grant {
   key: string;
@@ -27,27 +27,35 @@ export interface WorktreeRecord {
   prUrl?: string | null;
 }
 
-const grantsFile = join(codeDataDir, "grants.json");
-const registryFile = join(codeDataDir, "worktrees.json");
+const grantsKey = "code.grants";
 const ttlDays = Number(process.env.CODE_WORKTREE_TTL_DAYS ?? 14);
 
 let grants: Record<string, Grant[]> | null = null;
 let registry: WorktreeRecord[] | null = null;
-let writes: Promise<unknown> = Promise.resolve();
-
 async function loadGrants() {
-  if (!grants) grants = await readJson<Record<string, Grant[]>>(grantsFile, {});
+  if (!grants) grants = readSetting<Record<string, Grant[]>>(grantsKey, {});
   return grants;
 }
 
 async function loadRegistry() {
-  if (!registry) registry = await readJson<WorktreeRecord[]>(registryFile, []);
+  if (!registry) registry = loadWorktreeRows();
   return registry;
 }
 
-function persist(file: string, value: unknown) {
-  writes = writes.then(() => writeJson(file, value)).catch((error) => console.warn("code store write failed", error));
-  return writes;
+function persistGrants(value: Record<string, Grant[]> | null) {
+  try {
+    writeSetting(grantsKey, value ?? {});
+  } catch (error) {
+    console.warn("code store write failed", error);
+  }
+}
+
+function persistRegistry(list: WorktreeRecord[]) {
+  try {
+    saveWorktreeRows(list);
+  } catch (error) {
+    console.warn("code store write failed", error);
+  }
 }
 
 export async function hasGrant(repo: string, key: string) {
@@ -56,7 +64,7 @@ export async function hasGrant(repo: string, key: string) {
   if (!grant) return false;
   grant.uses++;
   grant.lastUsedAt = new Date().toISOString();
-  void persist(grantsFile, grants);
+  persistGrants(grants);
   return true;
 }
 
@@ -66,7 +74,7 @@ export async function addGrant(repo: string, key: string) {
   if (!list.some((item) => item.key === key))
     list.push({ key, createdAt: new Date().toISOString(), uses: 0, lastUsedAt: null });
   all[repo] = list;
-  await persist(grantsFile, all);
+  persistGrants(all);
 }
 
 export async function listGrants() {
@@ -79,7 +87,7 @@ export async function removeGrant(repo: string, key: string) {
   const before = all[repo]?.length ?? 0;
   all[repo] = (all[repo] ?? []).filter((item) => item.key !== key);
   if (all[repo].length === 0) delete all[repo];
-  await persist(grantsFile, all);
+  persistGrants(all);
   return before !== (all[repo]?.length ?? 0);
 }
 
@@ -112,7 +120,7 @@ export async function recordWorktree(
       pinned: false,
     });
   }
-  await persist(registryFile, list);
+  persistRegistry(list);
 }
 
 export async function touchWorktree(id: string, patch: Partial<WorktreeRecord> = {}) {
@@ -120,7 +128,7 @@ export async function touchWorktree(id: string, patch: Partial<WorktreeRecord> =
   const current = list.find((item) => item.id === id);
   if (!current) return null;
   Object.assign(current, patch, { lastAccessedAt: new Date().toISOString() });
-  await persist(registryFile, list);
+  persistRegistry(list);
   return current;
 }
 
@@ -161,7 +169,7 @@ export async function collectWorktrees(isActive: (record: WorktreeRecord) => boo
       removed.push(record.id);
     } else record.status = "stale";
   }
-  await persist(registryFile, list);
+  persistRegistry(list);
   return removed;
 }
 

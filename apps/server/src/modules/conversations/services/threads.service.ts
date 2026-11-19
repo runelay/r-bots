@@ -1,8 +1,12 @@
-import { rm } from "node:fs/promises";
-import { join } from "node:path";
 import { ulid } from "ulid";
-import { model, threadsDir } from "../../../config/env";
-import { readJson, writeJson } from "../../../shared/json-file";
+import { model } from "../../../config/env";
+import {
+  deleteThreadRow,
+  readArchivedThread,
+  readLiveThread,
+  saveArchivedThread,
+  saveLiveThread,
+} from "../repositories/threads.repository";
 import { notifyConversation, recordConversationMessage, titleMainFromMessage } from "./conversations.service";
 import { createStoredSession, getStoredSession } from "./sessions.service";
 
@@ -23,24 +27,10 @@ export interface ThreadState {
 const states = new Map<string, ThreadState>();
 const creating = new Map<string, Promise<ThreadState>>();
 
-function threadFile(botId: string) {
-  return join(threadsDir, `${botId}.json`);
-}
-
-function archiveFile(botId: string, archiveId: string) {
-  return join(threadsDir, "archive", botId, `${archiveId}.json`);
-}
-
-interface ArchivedThread {
-  archiveId: string;
-  archivedAt: string;
-  state: ThreadState;
-}
-
 async function load(botId: string) {
   const cached = states.get(botId);
   if (cached) return cached;
-  const stored = await readJson<ThreadState | null>(threadFile(botId), null);
+  const stored = readLiveThread(botId);
   if (stored && getStoredSession(stored.sessionId)) {
     states.set(botId, stored);
     return stored;
@@ -61,7 +51,7 @@ async function startThread(botId: string, kind: "thread" | "group") {
   });
   const state: ThreadState = { sessionId: session.meta.sessionId, lastMessage: null, unread: 0, readAt: null };
   states.set(botId, state);
-  await writeJson(threadFile(botId), state);
+  saveLiveThread(botId, state);
   return state;
 }
 
@@ -86,14 +76,14 @@ export async function peekThread(botId: string) {
 export function publicThread(state: ThreadState | null) {
   if (!state) return { sessionId: null, lastMessage: null, unread: 0, total: 0 };
   const { sessionId, lastMessage, unread } = state;
-  return { sessionId, lastMessage, unread, total: getStoredSession(sessionId)?.log.lines.length ?? 0 };
+  return { sessionId, lastMessage, unread, total: getStoredSession(sessionId)?.log.size ?? 0 };
 }
 
 async function mutate(botId: string, sessionId: string, update: (state: ThreadState) => void) {
   const state = await load(botId);
   if (!state || state.sessionId !== sessionId) return;
   update(state);
-  await writeJson(threadFile(botId), state);
+  saveLiveThread(botId, state);
 }
 
 export async function recordThreadMessage(botId: string, sessionId: string, message: ThreadMessage, quiet = false) {
@@ -114,7 +104,7 @@ export async function markThreadRead(botId: string) {
   const state = await ensureThread(botId, botId.startsWith("grp_") ? "group" : "thread");
   state.unread = 0;
   state.readAt = new Date().toISOString();
-  await writeJson(threadFile(botId), state);
+  saveLiveThread(botId, state);
   void notifyConversation(state.sessionId);
   return state;
 }
@@ -122,20 +112,19 @@ export async function markThreadRead(botId: string) {
 export async function markThreadUnread(botId: string) {
   const state = await ensureThread(botId, botId.startsWith("grp_") ? "group" : "thread");
   state.unread = Math.max(1, state.unread);
-  await writeJson(threadFile(botId), state);
+  saveLiveThread(botId, state);
   void notifyConversation(state.sessionId);
   return state;
 }
 
 async function archiveState(botId: string, state: ThreadState) {
   const archiveId = `tha_${ulid()}`;
-  const archived: ArchivedThread = { archiveId, archivedAt: new Date().toISOString(), state };
-  await writeJson(archiveFile(botId, archiveId), archived);
+  saveArchivedThread(botId, archiveId, new Date().toISOString(), { ...state });
   return archiveId;
 }
 
 function hasMessages(state: ThreadState) {
-  return (getStoredSession(state.sessionId)?.log.lines.length ?? 0) > 1;
+  return (getStoredSession(state.sessionId)?.log.size ?? 0) > 1;
 }
 
 export async function resetThread(botId: string) {
@@ -152,8 +141,7 @@ export async function resetThread(botId: string) {
 }
 
 export async function restoreThread(botId: string, archiveId: string) {
-  const file = archiveFile(botId, archiveId);
-  const archived = await readJson<ArchivedThread | null>(file, null);
+  const archived = readArchivedThread(botId, archiveId);
   if (!archived || !getStoredSession(archived.state.sessionId)) return null;
   const current = await load(botId);
   const replacedArchiveId = current && hasMessages(current) ? await archiveState(botId, current) : null;
@@ -164,7 +152,7 @@ export async function restoreThread(botId: string, archiveId: string) {
     await restored.save();
   }
   states.set(botId, archived.state);
-  await writeJson(threadFile(botId), archived.state);
-  await rm(file, { force: true });
+  saveLiveThread(botId, archived.state);
+  deleteThreadRow(archiveId);
   return { state: archived.state, replacedArchiveId };
 }
