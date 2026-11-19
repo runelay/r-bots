@@ -233,6 +233,17 @@ export async function macComputerCall(tool: string, body: Record<string, unknown
   };
 }
 
+export async function macReadFile(path: string, maxBytes: number, signal?: AbortSignal) {
+  const response = await request("file.read", { body: { path, maxBytes } }, 120_000, signal);
+  if (response.ok === false) throw new Error(String(response.error ?? "O Mac não enviou o arquivo."));
+  const result = (response.result ?? {}) as { path?: unknown; name?: unknown; base64?: unknown };
+  return {
+    path: String(result.path ?? path),
+    name: String(result.name ?? ""),
+    bytes: Buffer.from(String(result.base64 ?? ""), "base64"),
+  };
+}
+
 export async function macTranscribeFile(audioBase64: string, name: string, signal?: AbortSignal) {
   const response = await request("transcribe_file", { body: { audioBase64, name, locale: "pt-BR" } }, 240_000, signal);
   if (response.ok === false) throw new Error(String(response.error ?? "O Mac não transcreveu."));

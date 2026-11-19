@@ -15,7 +15,12 @@ import {
 import { ulid } from "ulid";
 import { z } from "zod";
 import { botDir, dataDir } from "../../../config/env";
-import { macRunnerConnected, macTranscribeFile } from "../../accounts/services/mac-runner.service";
+import {
+  macReadFile,
+  macRunnerConnected,
+  macRunnerSupports,
+  macTranscribeFile,
+} from "../../accounts/services/mac-runner.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
 
 export type UploadKind = "image" | "video" | "audio" | "file";
@@ -447,21 +452,52 @@ export async function receiveUpload(botId: string, req: http.IncomingMessage) {
 }
 
 const sendRoots = () =>
-  [dataDir, "/home/anderson/projects/worktrees", "/home/runelaybot", "/tmp"].map((root) => resolve(root));
+  [dataDir, process.env.CODE_WORKTREES_DIR ?? "/home/anderson/projects/worktrees", "/home/runelaybot", "/tmp"].map(
+    (root) => resolve(root),
+  );
+const protectedFile = /(^|\/)(\.env[^/]*|\.git|\.ssh|\.claude)(\/|$)/;
+const maxMacFileBytes = 20 * 1024 * 1024;
+
+async function importMacFile(botId: string, rawPath: string, name?: string) {
+  if (protectedFile.test(rawPath)) throw new Error("Esse arquivo é protegido.");
+  const fetched = await macReadFile(rawPath, maxMacFileBytes);
+  const finalName = safeName(name?.trim() || fetched.name || basename(fetched.path));
+  const mime = mimeOf(undefined, finalName);
+  const uploadId = ulid();
+  const file = `${uploadId}-${finalName}`;
+  await mkdir(uploadsDir(botId), { recursive: true });
+  await writeFile(join(uploadsDir(botId), file), fetched.bytes);
+  const meta: UploadMeta = {
+    uploadId,
+    name: finalName,
+    mime,
+    size: fetched.bytes.length,
+    kind: kindOf(mime, finalName),
+    file,
+    createdAt: new Date().toISOString(),
+    source: "bot",
+  };
+  return register(botId, meta);
+}
 
 export async function importBotFile(botId: string, rawPath: string, name?: string) {
   let real: string;
   try {
     real = await realpath(resolve(rawPath));
   } catch {
-    throw new Error("Não achei esse arquivo.");
+    if (macRunnerSupports("files")) return importMacFile(botId, rawPath, name);
+    throw new Error(
+      macRunnerConnected()
+        ? `Não achei ${rawPath} no servidor, e o app do Mac ainda não sabe enviar arquivos (atualize o runelay bots).`
+        : `Não achei ${rawPath} no servidor, e o Mac está desconectado.`,
+    );
   }
   if (!sendRoots().some((root) => real === root || real.startsWith(root + sep))) {
     throw new Error(
-      "Só dá para enviar arquivos da pasta de dados do bot, de uma worktree, do computador do bot ou de /tmp.",
+      `${real} está fora das pastas que posso enviar: dados do bot, worktrees, computador do bot ou /tmp do servidor.`,
     );
   }
-  if (/(^|\/)(\.env[^/]*|\.git|\.ssh|\.claude)(\/|$)/.test(real)) throw new Error("Esse arquivo é protegido.");
+  if (protectedFile.test(real)) throw new Error("Esse arquivo é protegido.");
   const info = await stat(real);
   if (!info.isFile()) throw new Error("Isso não é um arquivo.");
   if (info.size > maxUploadBytes) throw new Error("O arquivo passa de 100 MB.");
@@ -1043,7 +1079,7 @@ export function uploadTools(botId: string): BotTool[] {
     {
       name: "send_file",
       description:
-        "Anexa na sua resposta um arquivo que você gerou ou baixou no servidor (imagem, PDF, planilha, vídeo, áudio…). A pessoa vê como miniatura ou card na conversa. path é absoluto (pasta de dados do bot, worktree, computador do bot ou /tmp).",
+        "Anexa na sua resposta um arquivo que você gerou ou baixou (imagem, PDF, planilha, vídeo, áudio…). A pessoa vê como miniatura ou card na conversa. path é absoluto: no servidor (pasta de dados do bot, worktree, computador do bot ou /tmp) ou, quando você roda no Mac, na pasta pessoal ou /tmp do Mac (até 20 MB).",
       shape: { path: z.string().min(1).max(1000), name: z.string().min(1).max(120).optional() },
       approval: null,
       label: (input) => `Enviar ${basename(String(input.name ?? input.path ?? "arquivo"))}`,
