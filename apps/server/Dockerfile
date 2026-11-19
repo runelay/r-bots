@@ -41,13 +41,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
  && curl -fsSL -o /tmp/supabase.deb "https://github.com/supabase/cli/releases/download/v${SUPABASE_VERSION}/supabase_${SUPABASE_VERSION}_linux_amd64.deb" \
  && dpkg -i /tmp/supabase.deb && rm /tmp/supabase.deb
 
-ARG APP_UID=1000
-ARG APP_GID=1000
-
 RUN userdel -r node \
  && (groupdel node 2>/dev/null || true) \
- && groupadd -g "${APP_GID}" app \
- && useradd -m -u "${APP_UID}" -g "${APP_GID}" -s /bin/bash app \
+ && groupadd -g 1000 app \
+ && useradd -m -u 1000 -g 1000 -s /bin/bash app \
  && groupadd -g 1501 runelaybot \
  && useradd -m -u 1501 -g 1501 -s /bin/bash runelaybot \
  && chmod 750 /home/runelaybot \
@@ -81,9 +78,10 @@ ENV HOME=/home/app \
 WORKDIR /app/apps/server
 RUN chown -R app:app /app
 COPY --from=build --chown=app:app /out/ /app/apps/server/
+COPY --chmod=0755 apps/server/docker-entrypoint.sh /usr/local/bin/runelay-entrypoint
 ENV PATH=/home/app/.local/bin:$PATH \
     BOTS_APP_DIR=/app/apps/server \
     CLAUDE_CODE_EXECUTABLE=/app/apps/server/claude-agent \
     NAPI_RS_NATIVE_LIBRARY_PATH=/app/apps/server/native/anydoc.linux-x64-gnu.node
-USER app
+ENTRYPOINT ["/usr/local/bin/runelay-entrypoint"]
 CMD ["./runelay-bots-server"]
