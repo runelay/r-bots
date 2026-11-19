@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import { basename, isAbsolute, relative, resolve } from "node:path";
+import { dataDir } from "../../../config/env";
 import { type DeliveryAsk, noDeliveryAsk } from "../../approvals/services/delivery-intent.service";
+import { hostHome, insideAllowedArea, insideHome } from "./repos.service";
 import type { WorkspaceState } from "./workspace.service";
 
 export type Gate =
@@ -11,26 +13,33 @@ export type Gate =
   | { kind: "asked"; reason: string };
 
 const home = homedir();
-const projectsRoot = resolve(home, "projects");
-const botsRoot = resolve(projectsRoot, "runelay-bots");
 const sensitivePath =
   /(^|\/)(\.env(\.[\w-]+)?|\.dev\.vars|\.ssh|id_(rsa|ed25519|ecdsa)[\w.-]*|\.netrc|\.npmrc|\.pypirc|[\w-]*\.pw|credentials?(\.json)?|secrets?(\.[\w-]+)?|\.aws|\.gnupg|\.config\/gh|\.credentials\.json|\.runelay-signing|vault\.key|[\w-]+\.enc)($|\/)/i;
 const protectedBranch = /^(origin\/)?(main|master|develop)$/;
 const messagingHosts =
   /(^|\.)(slack\.com|hooks\.slack\.com|api\.whatsapp\.com|graph\.facebook\.com|api\.telegram\.org|api\.twilio\.com|api\.sendgrid\.com|api\.resend\.com|api\.mailgun\.net|api\.postmarkapp\.com|discord\.com|api\.asaas\.com|api\.stripe\.com)$/i;
 const localHosts = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"]);
-const protectedRoots = [
-  resolve(botsRoot, "data"),
-  resolve(botsRoot, ".env.local"),
-  resolve(botsRoot, "server", ".data"),
-  resolve(home, ".claude"),
-  resolve(home, ".claude-2"),
-  resolve(home, ".codex"),
-  resolve(home, ".grok"),
-  resolve(home, ".config", "systemd"),
-  resolve(home, ".ssh"),
-  resolve(home, ".config", "runelay-bots"),
+const serverRoots = [
+  resolve(dataDir),
+  resolve(hostHome, ".local", "share", "runelay-bots"),
+  resolve(hostHome, ".local", "share", "runelay-bots-backups"),
+  "/backups",
   "/run/runelay-bots",
+];
+const protectedRoots = [
+  ...serverRoots,
+  ...[...new Set([home, hostHome])].flatMap((root) => [
+    resolve(root, ".claude"),
+    resolve(root, ".claude-2"),
+    resolve(root, ".claude.json"),
+    resolve(root, ".codex"),
+    resolve(root, ".grok"),
+    resolve(root, ".config", "systemd"),
+    resolve(root, ".config", "gh"),
+    resolve(root, ".supabase"),
+    resolve(root, ".ssh"),
+    resolve(root, ".config", "runelay-bots"),
+  ]),
   "/proc",
 ];
 
@@ -50,6 +59,18 @@ function short(text: string, max = 90) {
 
 function shownPath(workspace: WorkspaceState, path: string) {
   return within(workspace.path, path) ? relative(workspace.path, path) : path.replace(home, "~");
+}
+
+function outsideRepos(workspace: WorkspaceState, path: string) {
+  if (serverRoots.some((root) => within(root, path))) return true;
+  return insideHome(path) && !insideAllowedArea(path, [workspace.path, "/tmp"]);
+}
+
+function outsideDeny(workspace: WorkspaceState, path: string): Gate {
+  return {
+    kind: "deny",
+    message: `${shownPath(workspace, path)} fica fora dos repositórios liberados. Siga sem ele; se for mesmo preciso, peça para liberar o repositório com workspace_add(path, reason).`,
+  };
 }
 
 export function protectedPath(path: string) {
@@ -72,6 +93,7 @@ function readGate(workspace: WorkspaceState, raw: unknown): Gate {
   if (typeof raw !== "string" || !raw) return { kind: "allow" };
   const path = resolve(workspace.path, expand(raw));
   if (within(workspace.path, path) && !sensitivePath.test(relative(workspace.path, path))) return { kind: "allow" };
+  if (outsideRepos(workspace, path)) return outsideDeny(workspace, path);
   if (sensitivePath.test(path))
     return {
       kind: "human",
@@ -87,6 +109,7 @@ function writeGate(workspace: WorkspaceState, raw: unknown): Gate {
   const path = resolve(workspace.path, expand(raw));
   if (protectedPath(path)) return protectedDeny(workspace, path);
   if (within(workspace.path, path)) return { kind: "allow" };
+  if (outsideRepos(workspace, path)) return outsideDeny(workspace, path);
   return {
     kind: "human",
     prompt: `Editar ${shownPath(workspace, path)}, fora da tarefa?`,
@@ -585,6 +608,7 @@ function pathVerdict(workspace: WorkspaceState, cwd: string, target: string, ver
   const path = resolve(cwd, expand(target));
   if (protectedPath(path)) return protectedDeny(workspace, path) as Verdict;
   if (within(workspace.path, path) || within("/tmp", path)) return null;
+  if (outsideRepos(workspace, path)) return outsideDeny(workspace, path) as Verdict;
   return hard(`${verb} ${shownPath(workspace, path)}, fora da tarefa?`, "Fora da worktree.");
 }
 
@@ -1058,8 +1082,16 @@ export function gateCommand(command: string, workspace: WorkspaceState, asked: D
       if (target.includes("$SUB") || target.startsWith("$"))
         return { kind: "human", prompt: `Rodar ${short(trimmed, 160)}?`, reason: "Pasta montada na hora.", hard: true };
       cwd = resolve(cwd, expand(target));
+      if (outsideRepos(workspace, cwd)) return outsideDeny(workspace, cwd);
       continue;
     }
+    const stray = tokens
+      .slice(1)
+      .map((arg) => arg.replace(/^--?[\w-]+=/, ""))
+      .filter((arg) => /^(\/|~|\.\.)/.test(arg) && !arg.includes("$"))
+      .map((arg) => resolve(cwd, expand(arg)))
+      .find((path) => outsideRepos(workspace, path));
+    if (stray) return outsideDeny(workspace, stray);
     if (
       (tokens[0] === "bash" || tokens[0] === "sh" || tokens[0] === "zsh" || tokens[0] === "dash") &&
       (tokens[1] === "-c" || tokens[1] === "-lc") &&

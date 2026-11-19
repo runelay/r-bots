@@ -146,6 +146,7 @@ export async function beginCall(
     gate: Gate;
     target?: { label: string; role: string };
     workspace?: WorkspaceState | null;
+    alwaysHuman?: boolean;
   },
 ): Promise<CallStart> {
   const callId = spec.callId || `call_${randomBytes(9).toString("base64url")}`;
@@ -179,7 +180,7 @@ export async function beginCall(
   };
   const mode = context.permission ?? "default";
   let gate = spec.gate;
-  if (mode !== "default") {
+  if (mode !== "default" && !spec.alwaysHuman) {
     const command =
       spec.name === "Bash"
         ? String(spec.input.command ?? "")

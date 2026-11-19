@@ -30,6 +30,7 @@ import {
   permissionGuide,
 } from "../../approvals/services/permissions.service";
 import { artifactGuide } from "../../artifacts/services/artifacts.service";
+import { blocksEditNote, blocksGuide } from "../../blocks/services/block-tools.service";
 import {
   type BotDefinition,
   connectorsOf,
@@ -42,7 +43,6 @@ import {
   suggestedFallback,
 } from "../../bots/services/bots.service";
 import { startLiveView } from "../../browser/services/browser.service";
-import { blocksEditNote, blocksGuide } from "../../blocks/services/block-tools.service";
 import { canvasEditNote, canvasGuide } from "../../canvas/services/canvas.service";
 import { touchWorktree } from "../../code/repositories/code.repository";
 import { mentionedRepo, openTaskWorkspace } from "../../code/services/actions.service";
@@ -220,8 +220,9 @@ function codeGuide() {
   const repos = cachedRepoNames();
   return [
     "## Código",
-    'Você pode codar nos repositórios da pessoa, na VPS. Quando o pedido envolver código de um repositório ("muda o botão na whitelabel" → conty-whitelabel), chame `workspace_open` com o repositório e uma frase curta da tarefa: isso cria uma worktree e uma branch feat/<tarefa> só desta conversa e liga as ferramentas de código. Se não for óbvio qual repositório, pergunte antes.',
-    repos.length > 0 ? `Repositórios: ${repos.join(", ")}.` : "",
+    "Você pode codar nos repositórios que a pessoa liberou, na VPS. Quando o pedido envolver código de um repositório, chame `workspace_open` com o repositório e uma frase curta da tarefa: isso cria uma worktree e uma branch feat/<tarefa> só desta conversa e liga as ferramentas de código. Se não for óbvio qual repositório, procure na memória o que cada um é e, na dúvida, pergunte antes.",
+    repos.length > 0 ? `Repositórios liberados: ${repos.join(", ")}.` : "Nenhum repositório liberado ainda.",
+    "Se a pessoa pedir para trabalhar num repositório fora dessa lista, pergunte o caminho se precisar e chame `workspace_add(path, reason)`: abre um card para ela liberar. Fora dos repositórios liberados, as ferramentas de código e arquivo recusam. Ao conhecer um repositório, grave com `memory_write` o que ele é (o que faz, stack, quando usar), se a memória ainda não disser.",
     "Você tem autonomia: não peça permissão para commit, push, PR, testes, build, instalar dependência ou tarefas no Linear. Faça direto. Só pede aprovação a lista dura: push --force, push ou merge direto em main/master/develop, gh pr merge, deploy, migration ou escrita em banco de produção, apagar dados fora da worktree, dinheiro (pagamento, estorno) e mensagem para pessoas de fora (e-mail, Slack, WhatsApp). Se a pessoa pedir push, dê push; se já houver PR, o push atualiza o PR. Nunca diga que não pode dar push ou abrir PR. Uma negação antiga não vale para o próximo pedido.",
   ]
     .filter(Boolean)

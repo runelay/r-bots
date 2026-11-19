@@ -5,9 +5,17 @@ import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import { closeTaskWorkspace, deliverProblem, deliverWorkspace, openTaskWorkspace } from "./actions.service";
 import { devServerLogs, devServersOf, startDevServer, stopDevServers } from "./dev-server.service";
 import { beginCall, endCall } from "./hooks.service";
-import { type Gate, gateCommand } from "./policy.service";
+import { type Gate, gateCommand, protectedPath } from "./policy.service";
 import { kickPr } from "./pull-request.service";
-import { activeWorkspace, CodeError, changedFiles, publicWorkspace, type WorkspaceState } from "./workspace.service";
+import { addAllowedRepo, allowedRepoFor, gitRepoAt } from "./repos.service";
+import {
+  activeWorkspace,
+  CodeError,
+  changedFiles,
+  forgetRepoCache,
+  publicWorkspace,
+  type WorkspaceState,
+} from "./workspace.service";
 
 function text(value: unknown, isError = false) {
   return {
@@ -32,10 +40,51 @@ export function codeModeSupported(provider: string, runner: string) {
 export function registerCodeTools(server: McpServer, context: ToolContext, runnerOf: () => string) {
   const session = () => getStoredSession(context.sessionId);
   server.registerTool(
+    "workspace_add",
+    {
+      description:
+        "Pede à pessoa para liberar um repositório para os bots trabalharem nele. Use quando a pessoa disser para trabalhar num repositório que ainda não está liberado (workspace_open responde que não está na lista). path é o caminho absoluto do repositório git (ou ~/...). reason diz em uma frase por que precisa dele. Sempre abre um card de aprovação para a pessoa. Depois de liberado, abra com workspace_open e, se a memória ainda não disser, grave com memory_write o que esse repositório é (o que faz, stack, quando usar).",
+      inputSchema: { path: z.string().min(1).max(500), reason: z.string().min(1).max(300) },
+    },
+    async (args: Record<string, unknown>) => {
+      const reason = String(args.reason);
+      const repoPath = await gitRepoAt(String(args.path));
+      const known = repoPath ? allowedRepoFor(repoPath) : null;
+      const gate: Gate = !repoPath
+        ? { kind: "deny", message: `${String(args.path)} não é um repositório git (não achei a pasta .git).` }
+        : protectedPath(repoPath)
+          ? { kind: "deny", message: `${repoPath} é um caminho protegido e não pode ser liberado.` }
+          : known?.path === repoPath
+            ? { kind: "allow" }
+            : {
+                kind: "human",
+                prompt: `Liberar o repositório ${repoPath} para os bots? Motivo: ${reason}`,
+                reason: "Liberar repositório sempre passa por você.",
+                hard: true,
+              };
+      const start = await beginCall(context, {
+        name: "workspace_add",
+        label: `Liberar ${repoPath ?? String(args.path)}`,
+        input: { path: String(args.path), reason },
+        gate,
+        target: { label: repoPath ?? String(args.path), role: "repo" },
+        alwaysHuman: true,
+      });
+      if (!start.allowed || !repoPath) return text(start.message ?? "Negado.", true);
+      const repo = addAllowedRepo(repoPath, reason, context.botId);
+      forgetRepoCache();
+      const output = { path: repo.path, name: repo.name, alreadyAllowed: known?.path === repoPath };
+      endCall(context, start.callId, "workspace_add", { path: repoPath, reason }, { ok: true, output });
+      return text(
+        `${output.alreadyAllowed ? "Já estava liberado" : "Liberado"}: ${repo.name} (${repo.path}). Abra com workspace_open usando "${repo.name}".`,
+      );
+    },
+  );
+  server.registerTool(
     "workspace_open",
     {
       description:
-        "Abre um repositório para trabalhar em código nesta conversa: cria uma worktree e uma branch feat/<tarefa> só desta conversa e liga as ferramentas de código (ler, editar, rodar comandos). Use quando o pedido envolver código de um repositório. repo é o nome (ex.: conty-whitelabel) ou o caminho. task é uma frase curta da tarefa, vira o nome da branch.",
+        "Abre um repositório liberado para trabalhar em código nesta conversa: cria uma worktree e uma branch feat/<tarefa> só desta conversa e liga as ferramentas de código (ler, editar, rodar comandos). Use quando o pedido envolver código de um repositório. repo é o nome ou o caminho de um repositório liberado; se não estiver liberado, peça com workspace_add. task é uma frase curta da tarefa, vira o nome da branch.",
       inputSchema: { repo: z.string().min(1).max(300), task: z.string().min(1).max(300) },
     },
     async (args: Record<string, unknown>) => {

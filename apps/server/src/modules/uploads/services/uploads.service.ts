@@ -1,6 +1,5 @@
 import { createWriteStream } from "node:fs";
 import { copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -22,6 +21,7 @@ import {
   macRunnerSupports,
   macTranscribeFile,
 } from "../../accounts/services/mac-runner.service";
+import { fileRoots } from "../../code/services/repos.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
 import { blobKeys, blobToFile, putBlob } from "../../storage/services/storage.service";
 import {
@@ -484,10 +484,7 @@ export async function receiveUpload(botId: string, req: Req) {
   return register(botId, meta);
 }
 
-const sendRoots = () =>
-  [dataDir, process.env.CODE_WORKTREES_DIR ?? join(homedir(), "projects", "worktrees"), "/home/runelaybot", "/tmp"].map(
-    (root) => resolve(root),
-  );
+const sendRoots = () => [dataDir, ...fileRoots(), "/home/runelaybot", "/tmp"].map((root) => resolve(root));
 const protectedFile = /(^|\/)(\.env[^/]*|\.git|\.ssh|\.claude)(\/|$)/;
 const maxMacFileBytes = 20 * 1024 * 1024;
 

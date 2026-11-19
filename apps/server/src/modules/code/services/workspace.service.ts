@@ -1,18 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { childEnv, findBinary, run } from "@runelay-bots/providers/proc";
 import { dataDir } from "../../../config/env";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import type { PrSnapshot } from "./pull-request.service";
+import { allowedRepos, expandHome, worktreesRoot } from "./repos.service";
 
-export const repoRoots = (process.env.CODE_REPO_ROOTS ?? join(homedir(), "projects"))
-  .split(",")
-  .map((item) => item.trim())
-  .filter(Boolean);
-export const worktreesRoot = process.env.CODE_WORKTREES_DIR ?? join(homedir(), "projects", "worktrees");
+export { worktreesRoot };
 export const codeDataDir = join(dataDir, "code");
 
 export interface InstallState {
@@ -106,34 +102,23 @@ export function cachedRepoNames() {
 
 export async function listRepos(refresh = false): Promise<RepoInfo[]> {
   if (!refresh && repoCache && Date.now() - repoCache.at < 30_000) return repoCache.repos;
-  const seen = new Set<string>();
   const repos: RepoInfo[] = [];
-  for (const root of repoRoots) {
-    let entries: string[] = [];
-    try {
-      entries = await readdir(root);
-    } catch {
-      continue;
-    }
-    for (const entry of entries.sort()) {
-      if (entry.startsWith(".") || entry === "worktrees") continue;
-      const path = join(root, entry);
-      if (resolve(path) === resolve(worktreesRoot)) continue;
-      if (!(await isDir(join(path, ".git")))) continue;
-      try {
-        const info = await stat(path);
-        const key = `${info.dev}:${info.ino}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-      } catch {
-        continue;
-      }
-      repos.push({ name: entry, path, location: basename(root), branch: await headBranch(path) });
-    }
+  for (const repo of allowedRepos()) {
+    if (!(await isDir(join(repo.path, ".git")))) continue;
+    repos.push({
+      name: repo.name,
+      path: repo.path,
+      location: basename(dirname(repo.path)),
+      branch: await headBranch(repo.path),
+    });
   }
   repos.sort((a, b) => a.name.localeCompare(b.name));
   repoCache = { at: Date.now(), repos };
   return repos;
+}
+
+export function forgetRepoCache() {
+  repoCache = null;
 }
 
 function loose(text: string) {
@@ -147,12 +132,19 @@ function loose(text: string) {
 export async function resolveRepo(input: string) {
   const value = input.trim().replace(/^@/, "");
   if (!value) throw new CodeError("Diga qual repositório.");
-  if (isAbsolute(value) || value.startsWith("~/")) {
-    const path = resolve(value.replace(/^~\//, `${homedir()}/`));
-    if (!(await isDir(join(path, ".git")))) throw new CodeError(`${path} não é um repositório git.`);
-    return { name: basename(path), path };
-  }
   const repos = await listRepos();
+  if (isAbsolute(value) || value.startsWith("~/")) {
+    const path = resolve(expandHome(value));
+    const found = repos.find((repo) => repo.path === path);
+    if (found) return found;
+    throw new CodeError(
+      `${path} não está na lista de repositórios liberados. Peça para liberar com workspace_add(path, reason).`,
+    );
+  }
+  if (repos.length === 0)
+    throw new CodeError(
+      "Nenhum repositório liberado ainda. Pergunte o caminho à pessoa e peça para liberar com workspace_add(path, reason).",
+    );
   const exact = repos.filter((repo) => repo.name === value);
   if (exact.length >= 1) return exact[0];
   const folded = repos.filter((repo) => repo.name.toLowerCase() === value.toLowerCase());
@@ -167,7 +159,9 @@ export async function resolveRepo(input: string) {
     .slice(0, 30)
     .join(", ");
   if (partial.length > 1) throw new CodeError(`Achei mais de um repositório para "${value}": ${options}. Qual deles?`);
-  throw new CodeError(`Não achei o repositório "${value}". Os que existem: ${options}.`);
+  throw new CodeError(
+    `Não achei "${value}" nos repositórios liberados (${options}). Se for outro, peça para liberar com workspace_add(path, reason).`,
+  );
 }
 
 export function slugify(text: string, max = 40) {
@@ -357,13 +351,14 @@ export async function openWorkspace(session: StoredSession, botId: string, repoI
   const botSlug = slugify(botId, 20);
   let id = `${repo.name}-${botSlug}-${slug}`.replace(/[^\w.-]/g, "-");
   let branch = `feat/${slug}`;
-  for (let attempt = 2; (await exists(join(worktreesRoot, id))) || (await branchExists(repo.path, branch)); attempt++) {
+  const root = join(worktreesRoot, repo.name);
+  for (let attempt = 2; (await exists(join(root, id))) || (await branchExists(repo.path, branch)); attempt++) {
     const suffix = attempt < 6 ? String(attempt) : randomBytes(2).toString("hex");
     id = `${repo.name}-${botSlug}-${slug}-${suffix}`.replace(/[^\w.-]/g, "-");
     branch = `feat/${slug}-${suffix}`;
   }
-  const path = join(worktreesRoot, id);
-  await mkdir(worktreesRoot, { recursive: true });
+  const path = join(root, id);
+  await mkdir(root, { recursive: true });
   const added = await git(repo.path, ["worktree", "add", "-b", branch, path, commit], 180_000);
   if (added.code !== 0)
     throw new CodeError(`Não consegui criar a worktree: ${(added.stderr || added.stdout).trim().slice(0, 400)}`, 500);

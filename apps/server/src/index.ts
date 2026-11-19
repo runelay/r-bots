@@ -11,6 +11,7 @@ import { stopAllDesktops } from "./modules/browser/services/desktop.service";
 import { hasLiveClients } from "./modules/browser/services/live-view.service";
 import { stopAllDevServers } from "./modules/code/services/dev-server.service";
 import { startCodeHousekeeping } from "./modules/code/services/housekeeping.service";
+import { seedAllowedRepos } from "./modules/code/services/repos.service";
 import { listConnections } from "./modules/connectors/services/runelay.service";
 import { loadSessions } from "./modules/conversations/services/sessions.service";
 import { settleOrphanTurns } from "./modules/conversations/services/turn-repair.service";
@@ -31,6 +32,7 @@ async function main() {
   installConsoleRedaction();
   await mkdir(dataDir, { recursive: true });
   getDb();
+  console.log(`allowed repos: ${seedAllowedRepos()}`);
   await loadVault();
   await loadBots();
   void listConnections(true).catch(() => undefined);

@@ -24,3 +24,11 @@ export const codeWorkspaces = sqliteTable(
     index("code_workspaces_session_idx").on(table.sessionId),
   ],
 );
+
+export const codeRepos = sqliteTable("code_repos", {
+  path: text("path").primaryKey(),
+  name: text("name").notNull(),
+  reason: text("reason"),
+  addedBy: text("added_by"),
+  addedAt: text("added_at").notNull(),
+});
