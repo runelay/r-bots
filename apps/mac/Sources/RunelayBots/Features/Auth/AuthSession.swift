@@ -5,7 +5,8 @@ import WebKit
 
 enum AuthState: Equatable {
     case checking
-    case disabled
+    case outdated
+    case unreachable
     case signedOut(needsOwner: Bool)
     case signedIn(AuthUser)
 }
@@ -31,31 +32,15 @@ final class AuthSession: NSObject {
         return nil
     }
 
-    var blocksApp: Bool {
-        switch state {
-        case .signedOut, .checking: return true
-        case .disabled, .signedIn: return false
-        }
-    }
-
     var needsOwner: Bool {
         if case .signedOut(let needsOwner) = state { return needsOwner }
         return false
-    }
-
-    var canSkipAccount: Bool {
-        needsOwner && status?.required == false
-    }
-
-    var serverSupportsLogin: Bool {
-        status != nil
     }
 
     private var server: URL { ServerConfig.currentURL() }
     private var client: AuthClient { AuthClient(baseURL: server) }
 
     private var cachedUserKey: String { "auth.user.\(AuthStore.origin(of: server) ?? "")" }
-    private var supportKey: String { "auth.required.\(AuthStore.origin(of: server) ?? "")" }
 
     func onSignIn(_ action: @escaping () -> Void) {
         onSignedIn = action
@@ -65,22 +50,18 @@ final class AuthSession: NSObject {
         let origin = AuthStore.origin(of: server)
         guard force || bootedServer != origin else { return }
         bootedServer = origin
+        if state == .outdated || state == .unreachable { state = .checking }
         let client = client
         let fetched: SetupStatus?
         do {
             fetched = try await client.setupStatus()
         } catch {
-            if AuthStore.read(.session) != nil {
-                state = cachedSignedIn()
-            } else {
-                state = UserDefaults.standard.bool(forKey: supportKey) ? .signedOut(needsOwner: false) : .disabled
-            }
+            state = AuthStore.read(.session) != nil ? cachedSignedIn() : .unreachable
             return
         }
         status = fetched
-        UserDefaults.standard.set(fetched?.required == true, forKey: supportKey)
         guard let fetched else {
-            state = .disabled
+            state = .outdated
             return
         }
         if fetched.needsOwner {
@@ -88,7 +69,7 @@ final class AuthSession: NSObject {
             return
         }
         guard let token = AuthStore.read(.session) else {
-            state = fetched.required ? .signedOut(needsOwner: false) : .disabled
+            state = .signedOut(needsOwner: false)
             return
         }
         do {
@@ -133,11 +114,6 @@ final class AuthSession: NSObject {
             password: password
         )
         try await finish(token: token)
-    }
-
-    func continueWithoutAccount() {
-        guard canSkipAccount else { return }
-        state = .disabled
     }
 
     func changePassword(current: String, new: String) async throws {

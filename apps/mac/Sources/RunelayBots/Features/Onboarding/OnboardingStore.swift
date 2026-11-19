@@ -5,6 +5,8 @@ enum OnboardingStage: Equatable {
     case checking
     case welcome
     case server
+    case outdated
+    case unreachable
     case account
     case setup
 }
@@ -116,9 +118,13 @@ final class OnboardingStore {
         switch session.state {
         case .checking:
             return .checking
+        case .outdated:
+            return .outdated
+        case .unreachable:
+            return .unreachable
         case .signedOut:
             return .account
-        case .signedIn, .disabled:
+        case .signedIn:
             return current.pending && !current.finished ? .setup : nil
         }
     }
@@ -152,10 +158,6 @@ final class OnboardingStore {
         startSetupIfNeeded()
     }
 
-    func skippedAccount() {
-        startSetupIfNeeded()
-    }
-
     private func startSetupIfNeeded() {
         guard !current.finished, !current.pending else { return }
         current.pending = true
@@ -174,9 +176,5 @@ final class OnboardingStore {
         next.pending = false
         next.active = nil
         current = next
-    }
-
-    func restart() {
-        current = ServerProgress(pending: true)
     }
 }

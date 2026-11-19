@@ -20,6 +20,10 @@ struct OnboardingView: View {
                     WelcomeStep()
                 case .server:
                     ServerStep()
+                case .outdated:
+                    ServerStep(problem: .outdated)
+                case .unreachable:
+                    ServerStep(problem: .unreachable)
                 case .account:
                     AccountStep()
                 case .setup:
@@ -50,7 +54,7 @@ struct OnboardingView: View {
             return { store.backToWelcome() }
         case .account:
             return session.pendingUserCode == nil ? { store.backToServer() } : nil
-        case .checking, .welcome, .setup:
+        case .checking, .welcome, .outdated, .unreachable, .setup:
             return nil
         }
     }
@@ -103,11 +107,32 @@ private struct WelcomeLine: View {
 private enum ServerCheck: Equatable {
     case idle
     case testing
-    case ok(latency: Int, login: Bool)
+    case ok(latency: Int)
     case failed(String)
 }
 
+private enum ServerProblem {
+    case outdated
+    case unreachable
+
+    var title: String {
+        switch self {
+        case .outdated: "Este servidor está desatualizado"
+        case .unreachable: "Não deu para falar com o servidor"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .outdated: "Ele não pede login, e o app só entra com conta. Atualize o servidor ou use outro endereço."
+        case .unreachable: "Confira se o servidor está ligado e se o endereço está certo."
+        }
+    }
+}
+
 private struct ServerStep: View {
+    var problem: ServerProblem?
+
     @Environment(AppModel.self) private var model
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var address = ServerConfig.currentURL().absoluteString
@@ -130,8 +155,9 @@ private struct ServerStep: View {
     var body: some View {
         VStack(spacing: Spacing.xxl) {
             OnboardingHeader(
-                title: "Conecte ao seu servidor",
-                description: "O runelay bots roda num servidor seu. Instalou com o padrão neste Mac? Deixe como está."
+                title: problem?.title ?? "Conecte ao seu servidor",
+                description: problem?.description
+                    ?? "O runelay bots roda num servidor seu. Instalou com o padrão neste Mac? Deixe como está."
             )
             VStack(alignment: .leading, spacing: Spacing.m) {
                 OnboardingField(label: "Endereço do servidor") {
@@ -178,11 +204,8 @@ private struct ServerStep: View {
             Text("Procurando o servidor…")
                 .font(TypeScale.caption)
                 .foregroundStyle(Theme.textSecondary)
-        case .ok(let latency, let login):
-            Label(
-                login ? "Conectado em \(latency) ms" : "Conectado em \(latency) ms · este servidor ainda não pede login",
-                systemImage: "checkmark.circle.fill"
-            )
+        case .ok(let latency):
+            Label("Conectado em \(latency) ms", systemImage: "checkmark.circle.fill")
             .font(TypeScale.caption)
             .foregroundStyle(Theme.success)
             .transition(.opacity)
@@ -210,8 +233,11 @@ private struct ServerStep: View {
                 try await client.health()
                 let latency = started.duration(to: clock.now).components
                 let ms = Int(latency.seconds) * 1000 + Int(latency.attoseconds / 1_000_000_000_000_000)
-                let status = try? await client.setupStatus()
-                check = .ok(latency: max(ms, 1), login: status != nil)
+                guard try await client.setupStatus() != nil else {
+                    check = .failed("Este servidor está desatualizado: ele não pede login. Atualize o servidor ou use outro endereço.")
+                    return
+                }
+                check = .ok(latency: max(ms, 1))
             } catch {
                 check = .failed("Não respondeu. Confira o endereço e se o servidor está ligado.")
             }
@@ -224,6 +250,8 @@ private struct ServerStep: View {
             UserDefaults.standard.set(value, forKey: ServerConfig.storageKey)
             model.serverURLChanged()
             Task { await model.reloadAfterSignIn() }
+        } else if problem != nil {
+            Task { await AuthSession.shared.bootstrap(force: true) }
         }
         store.serverChosen()
     }
@@ -278,7 +306,6 @@ private struct AccountStep: View {
     @State private var error: String?
     @FocusState private var focus: Field?
     private let session = AuthSession.shared
-    private let store = OnboardingStore.shared
 
     private var variant: AccountVariant {
         if session.needsOwner { return .setup }
@@ -406,15 +433,7 @@ private struct AccountStep: View {
 
     @ViewBuilder
     private var footer: some View {
-        if variant == .setup {
-            if session.canSkipAccount {
-                Button("Agora não") {
-                    session.continueWithoutAccount()
-                    store.skippedAccount()
-                }
-                .buttonStyle(OnboardingGhostButtonStyle())
-            }
-        } else {
+        if variant != .setup {
             HStack(spacing: Spacing.xs) {
                 Text(variant == .signin ? "Primeira vez?" : "Já tem conta?")
                     .font(TypeScale.rowSubtitle)

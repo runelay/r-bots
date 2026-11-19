@@ -53,13 +53,11 @@ struct SidebarAccountBar: View {
                 } label: {
                     Label("Configurações", systemImage: "gearshape")
                 }
-                if session.user != nil {
-                    Divider()
-                    Button(role: .destructive) {
-                        Task { await session.signOut() }
-                    } label: {
-                        Label("Sair", systemImage: "rectangle.portrait.and.arrow.right")
-                    }
+                Divider()
+                Button(role: .destructive) {
+                    Task { await session.signOut() }
+                } label: {
+                    Label("Sair", systemImage: "rectangle.portrait.and.arrow.right")
                 }
             } label: {
                 GridPlusIcon()

@@ -11,39 +11,7 @@ struct AccountSettings: View {
                 PhotoGroup(hasPhoto: user.image != nil)
                 ProfileGroup(user: user)
                 PasswordGroup()
-            } else {
-                SystemIdentityGroup()
-                Text(session.serverSupportsLogin
-                    ? "Você está usando este servidor sem conta. Crie a conta dona para proteger os bots e as conversas."
-                    : "Este servidor ainda não pede login. Quando ele for atualizado, o app pede para criar a conta dona.")
-                    .font(TypeScale.rowSubtitle)
-                    .foregroundStyle(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
-            OnboardingGroup()
-        }
-    }
-}
-
-private struct SystemIdentityGroup: View {
-    private let identity = UserIdentity.shared
-
-    var body: some View {
-        SettingsGroup(caption: "Neste Mac") {
-            HStack(spacing: Spacing.m) {
-                UserAvatar(size: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(identity.displayName)
-                        .font(TypeScale.rowTitle)
-                        .foregroundStyle(Theme.textPrimary)
-                    Text("Nome e foto da sua conta do macOS.")
-                        .font(TypeScale.caption)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, Spacing.l)
-            .padding(.vertical, Spacing.m)
         }
     }
 }
@@ -288,30 +256,6 @@ private struct PasswordGroup: View {
                 feedback = (error.localizedDescription, true)
             }
             busy = false
-        }
-    }
-}
-
-private struct OnboardingGroup: View {
-    @Environment(AppModel.self) private var model
-
-    var body: some View {
-        SettingsGroup(caption: "Primeiros passos") {
-            SettingsRow(title: "Refazer os primeiros passos", detail: "Contas de IA, integrações, permissões do Mac e o primeiro bot.") {
-                Button {
-                    OnboardingStore.shared.restart()
-                    model.closeSettings()
-                } label: {
-                    HStack(spacing: Spacing.xs + 2) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 12, weight: .semibold))
-                        Text("Abrir")
-                            .lineLimit(1)
-                            .fixedSize()
-                    }
-                }
-                .buttonStyle(.brandSecondary)
-            }
         }
     }
 }

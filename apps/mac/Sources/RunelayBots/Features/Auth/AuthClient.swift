@@ -23,7 +23,6 @@ struct AuthProfile: Sendable {
 
 struct SetupStatus: Equatable, Sendable {
     let needsOwner: Bool
-    let required: Bool
     let passwordReset: Bool
     let passkey: Bool
 }
@@ -136,7 +135,6 @@ struct AuthClient: Sendable {
         let methods = body["methods"] as? [String: Any] ?? [:]
         return SetupStatus(
             needsOwner: body["needsOwner"] as? Bool ?? false,
-            required: body["required"] as? Bool ?? true,
             passwordReset: methods["passwordReset"] as? Bool ?? false,
             passkey: methods["passkey"] as? Bool ?? true
         )
