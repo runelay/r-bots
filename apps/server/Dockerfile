@@ -1,7 +1,24 @@
 # syntax=docker/dockerfile:1.7
 FROM oven/bun:1.4.4-debian AS bun
 
-FROM node:24-bookworm
+FROM oven/bun:1.4.4-debian AS build
+WORKDIR /src
+COPY package.json bun.lock bunfig.toml tsconfig.base.json ./
+COPY apps/server/package.json apps/server/
+COPY packages/protocol/package.json packages/protocol/
+COPY packages/providers/package.json packages/providers/
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
+COPY packages/ packages/
+COPY apps/server/ apps/server/
+RUN cd apps/server \
+ && bun build --compile --minify --sourcemap --bytecode --target=bun-linux-x64 src/index.ts --outfile /out/runelay-bots-server \
+ && cp -r bin /out/bin \
+ && cp "$(ls -d /src/node_modules/.bun/@anthropic-ai+claude-agent-sdk-linux-x64@*/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64 | tail -1)/claude" /out/claude-agent \
+ && mkdir -p /out/native \
+ && cp "$(ls -d /src/node_modules/.bun/@firecrawl+anydoc-linux-x64-gnu@*/node_modules/@firecrawl/anydoc-linux-x64-gnu | tail -1)/anydoc.linux-x64-gnu.node" /out/native/
+
+FROM node:24-bookworm-slim
 
 ARG CLAUDE_CODE_VERSION=2.1.328
 ARG CODEX_VERSION=0.170.0
@@ -14,7 +31,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl git jq ripgrep procps sudo less unzip \
+      ca-certificates curl wget git openssh-client jq ripgrep procps sudo less unzip xz-utils file \
+      build-essential python3 \
       ffmpeg poppler-utils xvfb xdotool openbox xterm x11-utils fonts-liberation fonts-noto-color-emoji \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli.gpg \
@@ -55,19 +73,12 @@ ENV HOME=/home/anderson \
     DISABLE_AUTOUPDATER=1 \
     DESKTOP_CHROME=/opt/runelay-chrome/chrome
 
-WORKDIR /app
-RUN chown anderson:anderson /app
-COPY --chown=anderson:anderson package.json bun.lock tsconfig.base.json /app/
-COPY --chown=anderson:anderson apps/server/package.json /app/apps/server/
-COPY --chown=anderson:anderson packages/protocol/package.json /app/packages/protocol/
-COPY --chown=anderson:anderson packages/providers/package.json /app/packages/providers/
-USER anderson
-RUN --mount=type=cache,target=/home/anderson/.bun/install/cache,uid=1000,gid=1000 \
-    bun install --frozen-lockfile --production
-
-COPY --chown=anderson:anderson packages/ /app/packages/
-COPY --chown=anderson:anderson apps/server/ /app/apps/server/
-
-ENV PATH=/home/anderson/.local/bin:$PATH
 WORKDIR /app/apps/server
-CMD ["bun", "src/index.ts"]
+RUN chown -R anderson:anderson /app
+COPY --from=build --chown=anderson:anderson /out/ /app/apps/server/
+ENV PATH=/home/anderson/.local/bin:$PATH \
+    BOTS_APP_DIR=/app/apps/server \
+    CLAUDE_CODE_EXECUTABLE=/app/apps/server/claude-agent \
+    NAPI_RS_NATIVE_LIBRARY_PATH=/app/apps/server/native/anydoc.linux-x64-gnu.node
+USER anderson
+CMD ["./runelay-bots-server"]

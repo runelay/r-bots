@@ -132,6 +132,7 @@ export async function runClaude(
       includePartialMessages: true,
       abortController,
       env,
+      ...(Bun.env.CLAUDE_CODE_EXECUTABLE ? { pathToClaudeCodeExecutable: Bun.env.CLAUDE_CODE_EXECUTABLE } : {}),
       ...(process.platform === "linux"
         ? {
             spawnClaudeCodeProcess: (spawnOptions: SpawnOptions) =>

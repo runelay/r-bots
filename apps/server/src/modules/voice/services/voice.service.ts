@@ -229,6 +229,7 @@ class FastLayer {
         includePartialMessages: true,
         cwd: this.workDir,
         env: childEnv({ CLAUDE_AGENT_SDK_CLIENT_APP: "runelay-bots-voice/1.0.0" }),
+        ...(Bun.env.CLAUDE_CODE_EXECUTABLE ? { pathToClaudeCodeExecutable: Bun.env.CLAUDE_CODE_EXECUTABLE } : {}),
         ...(process.platform === "linux"
           ? {
               spawnClaudeCodeProcess: (options: SpawnOptions) =>
