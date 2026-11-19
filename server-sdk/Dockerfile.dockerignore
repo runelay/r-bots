@@ -1,0 +1,9 @@
+**/node_modules
+**/.env*
+server-sdk/data
+server-sdk/docker-compose*.yml
+server-sdk/Dockerfile*
+mac
+runner
+server
+research

@@ -1,0 +1,12 @@
+/data/
+server-sdk/data/
+runner/data/
+node_modules/
+.build/
+.swiftpm/
+dist/
+.env*
+*.local
+.DS_Store
+core
+*.log

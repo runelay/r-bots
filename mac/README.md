@@ -1,0 +1,73 @@
+# runelay bots (Mac)
+
+App nativo de macOS para conversar com o time de bots do runelay (Boss, Davi, Lia), ver o que cada um está fazendo e aprovar ações.
+
+## Requisitos
+
+- macOS 15 (Sequoia) ou mais novo
+- Xcode 16 ou mais novo (Swift 6)
+
+## Rodar pelo terminal
+
+```bash
+cd mac
+swift run
+```
+
+O pacote não tem dependências externas: só SwiftUI, AppKit, CoreText e Foundation.
+
+## Abrir no Xcode
+
+```bash
+open Package.swift
+```
+
+No Xcode, escolha o esquema `RunelayBots` e o destino `My Mac`, depois `⌘R`.
+
+## Apontar para outro servidor
+
+O endereço padrão é `https://vps.taile89599.ts.net:10447`.
+
+- Pelo app: `runelay bots` › `Ajustes…` (`⌘,`), troque o endereço e clique em **Conectar**.
+- Pelo terminal (antes de abrir o app):
+
+```bash
+defaults write RunelayBots serverURL "http://127.0.0.1:2000"
+```
+
+Quando rodar pelo Xcode o domínio do `defaults` pode ser outro; nesse caso use a tela de Ajustes.
+
+## Atalhos
+
+| Atalho | Ação |
+|---|---|
+| `⌘N` | Nova conversa com o bot selecionado |
+| `⌘↩` | Enviar mensagem |
+| `Esc` | Limpar o campo de mensagem |
+| `⌥⌘I` | Mostrar ou ocultar o inspetor |
+| `⌘,` | Ajustes |
+
+## Estrutura
+
+```
+Sources/RunelayBots/
+  App/            entrada do app, comandos de menu
+  Design/         tokens de cor, tipografia, espaçamento e o spring único
+  Models/         Bot, sessão, transcript e JSONValue tolerante
+  Networking/     BotsClient (REST) e SessionStream (NDJSON com reconexão)
+  Stores/         AppModel, ConversationStore e BrowserStore (@Observable, @MainActor)
+  Support/        cron, formatação, mensagens de erro
+  Views/          barra lateral, conversas, transcript, inspetor e ajustes
+  Resources/      fontes (Anton, DM Sans, JetBrains Mono, licença OFL) e o logo oficial da Conty em SVG
+```
+
+As fontes vão junto no pacote e são registradas ao abrir o app. Se o registro falhar, o app usa a fonte do sistema.
+
+## Empacotar como app
+
+```bash
+cd mac
+./scripts/make-app.sh
+```
+
+Compila em release, monta `RunelayBots.app` com o ícone (`Packaging/AppIcon.svg` vira `AppIcon.icns`), assina ad-hoc, instala em `~/Applications` e abre.

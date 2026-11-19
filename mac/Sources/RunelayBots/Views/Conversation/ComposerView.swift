@@ -1,0 +1,501 @@
+import SwiftUI
+
+struct ComposerView: View {
+    @Bindable var store: ConversationStore
+    let bot: Bot
+    let focusToken: Int
+    var mentionables: [Bot] = []
+    @FocusState private var isFocused: Bool
+    @Namespace private var glassSpace
+    @Environment(\.appReduceMotion) private var reduceMotion
+    @Environment(AppModel.self) private var model
+    @State private var slashSelection = 0
+    @State private var dismissedSlashDraft: String?
+    @State private var slashChosenAt: Date?
+    @State private var pasteMonitor: Any?
+    private let voice = VoiceInput.shared
+    private let skillCatalog = SkillCatalog.shared
+
+    var body: some View {
+        GlassGroup(spacing: Spacing.s) {
+        VStack(alignment: .leading, spacing: 0) {
+        if !store.composerAttachments.isEmpty {
+            ComposerAttachmentStrip(store: store)
+                .padding(.top, Spacing.m)
+                .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
+        }
+        HStack(alignment: .bottom, spacing: Spacing.s) {
+            Menu {
+                if !bot.isGroup {
+                    Button {
+                        model.activeSheet = .repoPicker(bot.id)
+                    } label: {
+                        Label("Trabalhar num repositório…", systemImage: "arrow.triangle.branch")
+                    }
+                    if store.codeState?.workspace != nil {
+                        Button {
+                            model.activeSheet = .changes(bot.id)
+                        } label: {
+                            Label("Ver mudanças", systemImage: "plusminus")
+                        }
+                    }
+                    Divider()
+                }
+                if !bot.isGroup {
+                    Button {
+                        AttachmentPicker.choose(for: store)
+                    } label: {
+                        Label("Anexar arquivo…", systemImage: "paperclip")
+                    }
+                    Divider()
+                }
+                Button {
+                    store.onOpenProfile?()
+                } label: {
+                    Label("Perfil de \(bot.name)", systemImage: "person.crop.circle")
+                }
+                Button {
+                    store.clearDraft()
+                } label: {
+                    Label("Limpar campo", systemImage: "eraser")
+                }
+                .disabled(store.draft.isEmpty && store.composerAttachments.isEmpty)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 34, height: 34)
+                    .glassSurface(Circle(), interactive: true, fallback: Theme.surfaceRaised)
+                    .contentShape(Circle())
+            }
+            .menuStyle(.button)
+            .buttonStyle(PressableButtonStyle())
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .clickable()
+            .help("Mais ações")
+
+            VStack(alignment: .leading, spacing: 0) {
+            if !store.attachedSkills.isEmpty {
+                SkillChipRow(skills: store.attachedSkills) { skill in
+                    store.detachSkill(skill)
+                    isFocused = true
+                }
+                .padding(.top, Spacing.s)
+                .transition(.opacity.combined(with: .offset(y: 4)))
+            }
+            TextField(placeholder, text: $store.draft, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(TypeScale.body)
+                .lineLimit(1...8)
+                .focused($isFocused)
+                .onSubmit {
+                    if let chosen = slashChosenAt, Date().timeIntervalSince(chosen) < 0.6 {
+                        slashChosenAt = nil
+                        return
+                    }
+                    send()
+                }
+                .onKeyPress(.upArrow) {
+                    guard !slashItems.isEmpty else { return .ignored }
+                    slashSelection = max(0, slashSelection - 1)
+                    return .handled
+                }
+                .onKeyPress(.downArrow) {
+                    guard !slashItems.isEmpty else { return .ignored }
+                    slashSelection = min(slashItems.count - 1, slashSelection + 1)
+                    return .handled
+                }
+                .onKeyPress(.return, phases: .down) { press in
+                    if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
+                        NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+                        return .handled
+                    }
+                    guard slashQuery != nil else { return .ignored }
+                    guard slashItems.indices.contains(slashSelection) else { return .handled }
+                    chooseSlash(slashItems[slashSelection])
+                    return .handled
+                }
+                .onKeyPress(.delete) {
+                    guard store.draft.isEmpty, let last = store.attachedSkills.last else { return .ignored }
+                    store.detachSkill(last)
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    if slashQuery != nil {
+                        dismissedSlashDraft = store.draft
+                        return .handled
+                    }
+                    if isListening {
+                        voice.stop()
+                        return .handled
+                    }
+                    guard !store.draft.isEmpty else { return .ignored }
+                    store.clearDraft()
+                    return .handled
+                }
+                .onKeyPress(.tab) {
+                    if slashQuery != nil {
+                        if slashItems.indices.contains(slashSelection) {
+                            chooseSlash(slashItems[slashSelection])
+                        }
+                        return .handled
+                    }
+                    guard let first = suggestions.first else { return .ignored }
+                    insertMention(first)
+                    return .handled
+                }
+                .padding(.vertical, Spacing.s)
+                .overlay(alignment: .leading) {
+                    if isListening && store.draft.isEmpty {
+                        listeningIndicator
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                    }
+                }
+            }
+            .springAnimation(value: store.attachedSkills.map(\.slug))
+
+            if isListening && !store.draft.isEmpty && !reduceMotion {
+                VoiceWaveform(voice: voice, barCount: 8, height: 14)
+                    .transition(.opacity)
+            }
+
+            if store.canStop && !store.canSend && !isListening {
+                Button {
+                    store.cancelTurn()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .frame(width: 34, height: 34)
+                        .glassSurface(Circle(), interactive: true, fallback: Theme.surfaceRaised)
+                        .glassMorphID("turnStop", in: glassSpace)
+                }
+                .buttonStyle(PressableButtonStyle())
+                .help("Parar este turno")
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
+            }
+
+            if isListening {
+                VoiceStopButton {
+                    voice.stop()
+                }
+                .glassMorphID("action", in: glassSpace)
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
+            } else {
+                Button {
+                    voice.toggle(for: store)
+                } label: {
+                    Image(systemName: "mic")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(width: 34, height: 34)
+                        .glassSurface(Circle(), interactive: true, fallback: Theme.surfaceRaised)
+                        .glassMorphID("mic", in: glassSpace)
+                }
+                .buttonStyle(PressableButtonStyle())
+                .disabled(voice.phase != .idle || VoiceCall.shared.isActive(for: bot.id))
+                .help("Ditar (ou segure ⌥Espaço)")
+                .accessibilityLabel("Ditar")
+                .transition(.scale(scale: 0.6).combined(with: .opacity))
+
+                if store.canSend {
+                    Button {
+                        send()
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.onAccent)
+                            .frame(width: 34, height: 34)
+                            .glassSurface(Circle(), interactive: true, tint: Theme.brandAccent, fallback: Theme.brandAccent)
+                            .glassMorphID("action", in: glassSpace)
+                    }
+                    .buttonStyle(PressableButtonStyle())
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .help("Enviar (⌘↩)")
+                    .accessibilityLabel("Enviar")
+                    .transition(.scale(scale: 0.6).combined(with: .opacity))
+                } else if !bot.isGroup && !bot.isPending {
+                    CallStartButton(store: store, bot: bot)
+                        .glassMorphID("action", in: glassSpace)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
+            }
+        }
+        .padding(.leading, Spacing.s)
+        .padding(.trailing, Spacing.s)
+        .padding(.vertical, Spacing.s)
+        }
+        .springAnimation(value: store.composerAttachments.isEmpty)
+        .glassSurface(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous), fallback: Theme.surface)
+        }
+        .offset(y: isFocused && !reduceMotion ? -1 : 0)
+        .springAnimation(value: isFocused)
+        .springAnimation(value: store.canSend)
+        .springAnimation(value: store.canStop)
+        .springAnimation(value: isListening)
+        .overlay(alignment: .top) {
+            if voice.showsNotice(for: store) {
+                VoiceNoticeLine(voice: voice)
+                    .alignmentGuide(.top) { dimensions in dimensions[.bottom] + Spacing.s }
+                    .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+        }
+        .springAnimation(value: voice.showsNotice(for: store))
+        .overlay(alignment: .topLeading) {
+            if !suggestions.isEmpty {
+                MentionList(members: suggestions) { member in
+                    insertMention(member)
+                }
+                .alignmentGuide(.top) { dimensions in dimensions[.bottom] + Spacing.s }
+                .padding(.leading, Spacing.xl)
+                .transition(.opacity.combined(with: .offset(y: 6)))
+            }
+        }
+        .springAnimation(value: suggestions.map(\.id))
+        .overlay(alignment: .topLeading) {
+            if slashQuery != nil {
+                SlashMenu(
+                    commands: slashCommands,
+                    skills: skillCatalog.results,
+                    isLoading: skillCatalog.isLoading,
+                    failed: skillCatalog.failed,
+                    selection: slashSelection,
+                    hover: { index in slashSelection = index },
+                    select: { item in chooseSlash(item) },
+                    retry: { skillCatalog.retry(client: model.client) }
+                )
+                .frame(maxWidth: 520, alignment: .leading)
+                .padding(.bottom, Spacing.s)
+                .frame(height: 0, alignment: .bottomLeading)
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .asymmetric(
+                            insertion: .opacity
+                                .combined(with: .scale(scale: 0.86, anchor: .bottomLeading))
+                                .combined(with: .offset(y: 6)),
+                            removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .bottomLeading))
+                        )
+                )
+            }
+        }
+        .animation(reduceMotion ? Motion.reduced : .spring(response: 0.32, dampingFraction: 0.78), value: slashQuery != nil)
+        .onChange(of: slashQuery) {
+            slashSelection = 0
+            if let query = slashQuery {
+                skillCatalog.search(query, client: model.client)
+            } else {
+                skillCatalog.close()
+            }
+        }
+        .onAppear {
+            isFocused = true
+            installPasteMonitor()
+            voice.focusedStore = store
+            skillCatalog.prefetch(client: model.client)
+        }
+        .onDisappear {
+            voice.release(store)
+            if let pasteMonitor {
+                NSEvent.removeMonitor(pasteMonitor)
+            }
+            pasteMonitor = nil
+        }
+        .onChange(of: isFocused) {
+            if isFocused {
+                voice.focusedStore = store
+            }
+        }
+        .onChange(of: focusToken) {
+            isFocused = true
+        }
+    }
+
+    private func installPasteMonitor() {
+        guard pasteMonitor == nil, !bot.isGroup else { return }
+        let store = store
+        pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            guard modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "v" else { return event }
+            let consumed = MainActor.assumeIsolated { () -> Bool in
+                guard isFocused, event.window?.isKeyWindow == true else { return false }
+                let pasteboard = NSPasteboard.general
+                let files = AttachmentPasteboard.fileURLs(from: pasteboard)
+                if !files.isEmpty {
+                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                        store.attachFiles(files)
+                    }
+                    return true
+                }
+                if AttachmentPasteboard.hasImage(pasteboard), let image = AttachmentPasteboard.imageFile(from: pasteboard) {
+                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                        store.attachFiles([image], ownsFiles: true)
+                    }
+                    return true
+                }
+                return false
+            }
+            return consumed ? nil : event
+        }
+    }
+
+    private var isListening: Bool {
+        voice.isActive(for: store)
+    }
+
+    private var placeholder: String {
+        if isListening {
+            return ""
+        }
+        if store.isWaitingForUploads {
+            return "Enviando os anexos…"
+        }
+        return store.hasOpenQuestion ? "Digite sua resposta" : "Mensagem para \(bot.name)"
+    }
+
+    @ViewBuilder
+    private var listeningIndicator: some View {
+        if voice.phase == .preparing {
+            Text("Preparando a voz…")
+                .font(TypeScale.body)
+                .foregroundStyle(Theme.textTertiary)
+        } else {
+            HStack(spacing: Spacing.m) {
+                VoiceWaveform(voice: voice, height: 20)
+                VoiceElapsed(since: voice.listeningSince)
+            }
+        }
+    }
+
+    private var slashQuery: String? {
+        guard !isListening, store.draft != dismissedSlashDraft else { return nil }
+        let draft = store.draft
+        let start = draft.lastIndex(where: { $0 == " " || $0 == "\n" }).map { draft.index(after: $0) } ?? draft.startIndex
+        let token = draft[start...]
+        guard token.hasPrefix("/") else { return nil }
+        return String(token.dropFirst()).lowercased()
+    }
+
+    private var slashCommands: [SlashCommand] {
+        guard let query = slashQuery else { return [] }
+        let target = bot
+        let all = [
+            SlashCommand(id: "limpar", title: "/limpar", subtitle: "Começar a conversa do zero (⌘K)", systemImage: "eraser") {
+                if model.canClearConversation(target) {
+                    model.clearConversation(target)
+                } else if target.isGroup {
+                    model.showNotice("Conversa de grupo não dá para limpar.")
+                } else {
+                    model.showNotice("Essa conversa já está limpa.")
+                }
+            },
+            SlashCommand(id: "novo-bot", title: "/novo-bot", subtitle: "Criar um bot novo", systemImage: "person.badge.plus") {
+                model.openEditor(for: nil)
+            },
+            SlashCommand(id: "repo", title: "/repo", subtitle: "Trabalhar num repositório", systemImage: "arrow.triangle.branch") {
+                if !target.isGroup {
+                    model.activeSheet = .repoPicker(target.id)
+                }
+            },
+        ]
+        return all.filter { query.isEmpty || $0.id.contains(query) || $0.subtitle.lowercased().contains(query) }
+    }
+
+    private var slashItems: [SlashItem] {
+        guard slashQuery != nil else { return [] }
+        return slashCommands.map(SlashItem.command) + skillCatalog.results.map(SlashItem.skill)
+    }
+
+    private func removeSlashToken() {
+        let draft = store.draft
+        let start = draft.lastIndex(where: { $0 == " " || $0 == "\n" }).map { draft.index(after: $0) } ?? draft.startIndex
+        store.draft = String(draft[..<start])
+    }
+
+    private func chooseSlash(_ item: SlashItem) {
+        removeSlashToken()
+        dismissedSlashDraft = nil
+        slashChosenAt = Date()
+        switch item {
+        case .command(let command):
+            command.action()
+        case .skill(let skill):
+            store.attachSkill(skill)
+            isFocused = true
+        }
+    }
+
+    private var mentionQuery: String? {
+        guard !mentionables.isEmpty else { return nil }
+        let last = store.draft.split(separator: " ", omittingEmptySubsequences: false).last.map(String.init) ?? ""
+        guard last.hasPrefix("@") else { return nil }
+        return String(last.dropFirst()).lowercased()
+    }
+
+    private var suggestions: [Bot] {
+        guard let query = mentionQuery else { return [] }
+        return mentionables.filter { query.isEmpty || $0.name.lowercased().hasPrefix(query) || $0.id.hasPrefix(query) }
+    }
+
+    private func insertMention(_ member: Bot) {
+        var parts = store.draft.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        if !parts.isEmpty {
+            parts.removeLast()
+        }
+        parts.append("@\(member.name) ")
+        store.draft = parts.joined(separator: " ")
+        isFocused = true
+    }
+
+    private func send() {
+        if isListening {
+            voice.stop(send: true)
+            return
+        }
+        guard store.canSend, !voice.isBusy(for: store) else { return }
+        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+            store.send()
+        }
+        isFocused = true
+    }
+}
+
+struct MentionList: View {
+    let members: [Bot]
+    let select: (Bot) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(members) { member in
+                Button {
+                    select(member)
+                } label: {
+                    HStack(spacing: Spacing.s) {
+                        BotCharacter(bot: member, mood: .idle, size: 20)
+                        Text(member.name)
+                            .font(TypeScale.rowTitle)
+                            .foregroundStyle(Theme.textPrimary)
+                        if !member.role.isEmpty {
+                            Text(member.role)
+                                .font(TypeScale.caption)
+                                .foregroundStyle(Theme.textTertiary)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, Spacing.s)
+                    .frame(height: 32)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .clickable()
+            }
+        }
+        .padding(Spacing.xs + 2)
+        .frame(width: 260)
+        .background(Theme.inspectorBackground, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+        .softElevation(lifted: true)
+    }
+}
