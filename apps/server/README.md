@@ -1,54 +1,63 @@
-# runelay bots: server-sdk
+# runelay bots: server
 
-Backend v2 of runelay bots. It replaces the eve stack in `../server` (kept on disk as the fallback) with the Claude Agent SDK, logged in through the Claude subscription of the local Claude Code (`~/.claude/.credentials.json`). No `ANTHROPIC_API_KEY`: `start.sh` and `src/main.ts` unset it, so the SDK reports `apiKeySource: "none"` (OAuth login).
-
-One Node process on `127.0.0.1:2000` serves every route (v1, v2, `/meta`, the eve-compatible session API). `tailscale serve` on 10447 already points at it.
+The bots gateway: one Node 24 process (tsx, raw `node:http`, no database) on `127.0.0.1:2000` that serves every route of the contract in [docs/protocol](../../docs/protocol/README.md). It runs each turn on the Claude Agent SDK logged in through the Claude subscription of the local Claude Code (`~/.claude/.credentials.json`), or on Codex, Grok and Cursor through `@runelay-bots/providers`. No `ANTHROPIC_API_KEY`: `start.sh` and `src/index.ts` unset it. `tailscale serve` on 10447 (tailnet only) points at it.
 
 ## Run
 
-Since 19/11/2026 it runs on the VPS in Docker (`Dockerfile` + `docker-compose.yml` in this folder, container `runelay-bots`, `network_mode: host`, `restart: unless-stopped`, healthcheck on `GET /bots`). Run everything from `server-sdk/`:
+Production runs in Docker from the repo root (`compose.yaml`, image built from `apps/server/Dockerfile`, container `runelay-bots`, `network_mode: host`, `restart: unless-stopped`, healthcheck on `GET /bots`):
 
 ```bash
+cd /home/anderson/projects/runelay-bots
+docker compose up -d --build           # rebuild after changing apps/server or packages
 docker compose restart                 # restart (picks up .env.local changes, not code changes)
-docker compose logs -f --tail 200      # logs (data/server.log is no longer written)
-docker compose up -d --build           # rebuild after changing src/ or shared/ (npm ci is cached in its own layer)
+docker compose logs -f --tail 200      # logs
 docker compose ps                      # status + health
-./start.sh                             # foreground on the host, only for debugging (stop the container first)
 ```
 
-What the image carries: Node 24, git, gh, supabase CLI, ffmpeg, agent-browser + its Chrome, Claude Code and Codex CLIs (versions pinned as build args), pnpm, bun, and the virtual desktop (Xvfb, openbox, xterm, xdotool, user `runelaybot` uid 1501 with sudo from `anderson`, Chrome copied to `/opt/runelay-chrome`). It runs as `anderson` (uid/gid 1000), so files it writes in repos stay yours.
+Never restart with a bot working: check `GET /status` first.
 
-Mounts, all at the same absolute path inside and outside: `/home/anderson/projects` (repos, `worktrees/`, and this folder, so `data/` sits at its host path), `~/.claude`, `~/.claude.json`, `~/.codex` (read-write, tokens refresh), `~/.config/gh`, `~/.supabase`, `~/.gitconfig` (ro), `/home/runelaybot` (desktop Chrome profiles). `.env.local` is mounted read-only at `/app/server-sdk/.env.local` and `start.sh` sources it.
+Development on the host (Node 24 at `~/.local/node24/bin`), with its own port and data so production is untouched:
 
-Test a second instance without touching production: copy `data/` somewhere, write an env file without `RUNELAY_MCP_*`, and an override file with `BOTS_CONTAINER_NAME=runelay-bots-test`, `GATEWAY_PORT=2100`, `BOTS_DATA_DIR=<copy>`, `BOTS_SCHEDULES=off`, `BOTS_ENV_FILE=<env>`; then `docker compose -p runelay-bots-test --env-file <override> up -d` (and `down` with the same flags).
+```bash
+npm ci                                  # once, at the repo root
+cd apps/server
+env -u CLAUDE_CONFIG_DIR GATEWAY_PORT=2100 BOTS_DATA_DIR=/path/to/data-copy BOTS_SCHEDULES=off \
+  node --import tsx src/index.ts
+```
 
-Roll back to systemd (the unit is kept at `~/.config/systemd/user/runelay-bots.service`):
+What the image carries: Node 24, git, gh, supabase CLI, ffmpeg, agent-browser + its Chrome, Claude Code and Codex CLIs (versions pinned as build args), pnpm, bun, and the virtual desktop (Xvfb, openbox, xterm, xdotool, user `runelaybot` uid 1501 with sudo from `anderson`, Chrome copied to `/opt/runelay-chrome`). It runs as `anderson` (uid/gid 1000), so files it writes in repos stay yours. Dependencies come from the root `package-lock.json` (npm workspaces, `npm ci --omit=dev`).
+
+Mounts, all at the same absolute path inside and outside: `/home/anderson/projects` (repos and `worktrees/`), the data dir (`/home/anderson/projects/runelay-bots/data` by default), `~/.claude`, `~/.claude.json`, `~/.codex` (read-write, tokens refresh), `~/.config/gh`, `~/.supabase`, `~/.gitconfig` (ro), `/home/runelaybot` (desktop Chrome profiles). The root `.env.local` is mounted read-only at `/app/apps/server/.env.local` and `start.sh` sources it (on the host it reads `../../.env.local`).
+
+Test a second instance without touching production: copy `data/` somewhere, write an env file without `RUNELAY_MCP_*`, and an override file with `BOTS_CONTAINER_NAME=runelay-bots-test`, `GATEWAY_PORT=2100`, `BOTS_DATA_DIR=<copy>`, `BOTS_SCHEDULES=off`, `BOTS_ENV_FILE=<env>`, `BOTS_IMAGE=runelay-bots-server:test`; then `docker compose -p runelay-bots-test --env-file <override> up -d --build` (and `down` with the same flags).
+
+Roll back to systemd (the unit at `~/.config/systemd/user/runelay-bots.service` runs `apps/server/start.sh`):
 
 ```bash
 docker compose down
 systemctl --user enable --now runelay-bots
 ```
 
-Env: `GATEWAY_PORT` (2000), `GATEWAY_HOST` (127.0.0.1), `BOTS_MODEL` (`claude-sonnet-5-5`; aliases `sonnet`, `opus`, `haiku` also work), `BOTS_DATA_DIR` (`./data`), `CONTY_API_DIR` (supabase link for `prod_query`).
-
-Stop: `docker compose stop` (or `kill -- -<pgid>` of `node --import tsx src/main.ts` when running `./start.sh` on the host).
-
-To roll back to eve: stop this process and run `../server/dev.sh` with `SKIP_BUILD=1`.
+Env: `GATEWAY_PORT` (2000), `GATEWAY_HOST` (127.0.0.1), `BOTS_MODEL` (`claude-sonnet-5-5`; aliases `sonnet`, `opus`, `haiku` also work), `BOTS_DATA_DIR` (`<repo>/data`), `BOTS_SCHEDULES` (`on`), `BOTS_MAX_TURNS` (3), `VOICE_MAX_WARM` (3), `CODE_REPO_ROOTS`, `CODE_WORKTREES_DIR`, `CONTY_API_DIR` (supabase link for `prod_query`), `VAULT_KEY_FILE`. Secrets in `.env.local` (chmod 600): `RUNNER_TOKEN`, `MAC_RUNNER_URL`, `PUBLIC_MCP_BASE`, `JEV_API_KEY`, `RUNELAY_MCP_URL`, `RUNELAY_MCP_TOKEN`, `ELEVENLABS_API_KEY`.
 
 ## Layout
 
 ```
-src/main.ts       HTTP routes (v1 + v2 + eve session API)
-src/bots.ts       bot store (data/bots/<id>.json), validation (no built-in bots: the store starts empty)
-src/engine.ts     one turn = one query() call; SDK messages -> eve-shaped events; approvals; cancel
-src/tools.ts      in-process MCP servers per bot: prod_query, browser_*
-src/sessions.ts   session metadata + NDJSON event log (data/sessions/<id>.json|.ndjson)
-src/threads.ts    one main thread per bot (data/threads/<botId>.json), unread
-src/scheduler.ts  croner jobs, timezone-aware, reloaded when a bot changes
-src/browser.ts    agent-browser wrapper (session runelay-<botId>), print + state after every action
-src/prod-query.ts SELECT-only guard + `supabase db query --remote --read-only`
-data/             bots, sessions, threads, browser prints, per-bot empty workspaces, server.log
+src/index.ts        boot: load data, timers, signals, listen
+src/app.ts          central router (path → module route) and WebSocket upgrades
+src/config/env.ts   ports, data dir and paths
+src/shared/         http helpers, ValidationError, JSON file store, secret redaction
+src/modules/<domain>/
+  routes/           HTTP handlers of the domain
+  services/         domain logic (stores live here too)
+  repositories/     persistence that is not a plain service store (code worktrees and grants)
+  types/ constants/ only where a domain needed them
+bin/rb-secret-run.mjs   Bash helper that injects vault secrets
 ```
+
+Domains: `accounts` (accounts, rate limits, Mac runner WebSocket), `approvals` (decisions, Jev, permission modes, delivery intent), `artifacts`, `canvas`, `bots`, `browser` (browser, desktop, live view, control), `code` (workspace, policy, hooks, live diff, PR/CI, dev servers, actions), `computer`, `connectors` (runelay), `conversations` (threads, sessions, conversations, handoff, turn repair), `engine` (turn orchestration, bot tools, MCP gateway, turn slots, `prod_query`), `groups`, `memory`, `schedules`, `sections`, `skills`, `status`, `uploads`, `usage`, `vault`, `voice`.
+
+Data (`<repo>/data`, outside the code and git-ignored): bots, sessions, threads, conversations, code state, uploads, artifacts, vault, usage index.
 
 ## Engine
 
@@ -69,19 +78,9 @@ Messages that arrive while a turn runs are queued and run as the next turn (eve 
 
 Schedule turns post into the bot's main thread but run in a fresh SDK session (no resume): system prompt + schedule prompt + a one-paragraph summary of that schedule's previous reply. Chat turns resume only the chat SDK session and get a short note of the schedule replies since the last chat message. Past ~120k input tokens of context (`BOTS_CONTEXT_LIMIT`), the next chat turn starts a new SDK session seeded with the recent exchanges, keeping the thread id. Approvals inside a schedule turn are denied automatically, since nobody is there to answer. `POST /bots/:id/schedules/:name/run` triggers a schedule by hand.
 
-## v3: accounts and runners
+## Accounts and runners
 
-Each bot has `engine: {account, model, effort}`; `account` is `vps|mac:claude|codex|grok|cursor`. Provider adapters live in `../shared/providers` (used in-process here and by `../runner` on the Mac). Bot tools are served to every provider by the gateway MCP endpoint `/mcp/:botId/:sessionId` (per-turn bearer token); approvals happen in the MCP handler (`src/mcp.ts`). `src/accounts.ts` detects accounts (VPS probes + `GET /accounts` on the Mac runner) and routes turns. Secrets: `RUNNER_TOKEN`, `MAC_RUNNER_URL`, `PUBLIC_MCP_BASE` in `.env.local` (chmod 600, read by `start.sh`).
-
-Mac runner deploy:
-
-```bash
-rsync -a --delete --exclude node_modules --exclude data --exclude .env --exclude runner.log -e "ssh -i ~/.ssh/id_ed25519_mac_qa" ../runner/ andersonbrdev@100.122.172.127:runelay-bots/runner/
-rsync -a --delete --exclude node_modules -e "ssh -i ~/.ssh/id_ed25519_mac_qa" ../shared/ andersonbrdev@100.122.172.127:runelay-bots/shared/
-ssh -i ~/.ssh/id_ed25519_mac_qa andersonbrdev@100.122.172.127 'launchctl kickstart -k gui/$(id -u)/com.runelay.bots.runner'
-```
-
-The runner runs `/opt/homebrew/bin/node` (v26) from `start.sh`, sources `~/runelay-bots/runner/.env` (chmod 600) and logs to `~/runelay-bots/runner/runner.log`. It must run in the GUI launchd domain: over plain ssh the login keychain is locked and cursor-agent/grok cannot read their logins.
+Each bot has `engine: {account, model, effort}`; `account` is `vps|mac:claude|codex|grok|cursor`. Provider adapters live in `packages/providers`. Bot tools are served to every provider by the gateway MCP endpoint `/mcp/:botId/:sessionId` (per-turn bearer token; `src/modules/engine`). `src/modules/accounts` detects accounts and routes turns. Since v21 the Mac runs turns inside the app, which connects to `wss://…:10447/runner/connect`; without the app, `mac:*` is offline. The old Node runner is archived in `~/projects/runelay-bots-archive/runner`.
 
 ## Limites de recurso (19/11)
 
@@ -91,4 +90,4 @@ The runner runs `/opt/homebrew/bin/node` (v26) from `start.sh`, sources `~/runel
 - Voz: no máximo 3 processos quentes, fecham após 5 min parados.
 - Chrome dos bots fecha após 10 min sem uso.
 - Processos de turno levam `RUNELAY_TURN` no ambiente; turno encerrado ou cancelado mata a árvore inteira, e uma varredura por minuto mata órfãos.
-- Detalhes do contrato em PROTOCOL.md (v30).
+- Detalhes do contrato em [docs/protocol](../../docs/protocol/README.md) (v30).

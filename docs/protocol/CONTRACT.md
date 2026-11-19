@@ -1,6 +1,6 @@
 # runelay bots: backend ↔ Mac app contract
 
-Backend: v2 runs `server-sdk/` (Claude Agent SDK); v1 was eve in `server/` (kept as fallback).
+Backend: v2 runs `apps/server/` (Claude Agent SDK); v1 was eve in `server/` (kept as fallback).
 Mac app: SwiftUI in `mac/` (Swift Package, macOS 15+).
 
 Base URL seen by the Mac: `https://vps.taile89599.ts.net:10445` (tailscale serve → 127.0.0.1:2000). Configurable in the app settings.
@@ -33,7 +33,7 @@ If eve cannot host several root agents on one server, `sessionBasePath` may poin
   - `interaction.opened` → approval card with Approve / Deny, answered via the documented answer body; `interaction.settled` closes it
   - `turn.started` / `turn.settled` → bot status (working / idle)
   - `usage.recorded` → token counter
-  The exact field names come from the eve docs; the backend writes the real request/response bodies it verified into `PROTOCOL.md`.
+  The exact field names come from the eve docs; the backend writes the real request/response bodies it verified into `docs/protocol/`.
 
 ### `GET /bots/:id/browser`
 `{ "url": "...", "title": "...", "updatedAt": "ISO", "screenshotPath": "/bots/lia/browser/latest.png" }` or 404 when the bot never opened a page.
@@ -48,7 +48,7 @@ Last screenshot taken by that bot's browser tools (taken automatically after eve
 
 # v2 (19/11): Claude Agent SDK engine + bots created by the user
 
-The eve server in `server/` is replaced by `server-sdk/` (Claude Agent SDK, logged in with the user's Claude subscription via the local Claude Code credentials). The gateway stays on 127.0.0.1:2000 / https://vps.taile89599.ts.net:10447 and keeps every v1 route and the eve-compatible session API and NDJSON event shapes already documented in PROTOCOL.md, so the Mac keeps working unchanged.
+The eve server in `server/` is replaced by `apps/server/` (Claude Agent SDK, logged in with the user's Claude subscription via the local Claude Code credentials). The gateway stays on 127.0.0.1:2000 / https://vps.taile89599.ts.net:10447 and keeps every v1 route and the eve-compatible session API and NDJSON event shapes already documented in `docs/protocol/`, so the Mac keeps working unchanged.
 
 ## Bot definition (stored as data, one JSON per bot)
 ```json
@@ -74,7 +74,7 @@ Each bot picks an **account + model**; the server routes the turn to that accoun
 
 ## Runners
 - A runner is a small Node service (`runner/`) that runs on a machine, detects installed+logged-in CLIs, and executes turns headless, streaming normalized events back.
-- `vps` runner: in-process in server-sdk (claude via Agent SDK, codex).
+- `vps` runner: in-process in apps/server (claude via Agent SDK, codex).
 - `mac` runner: on the user's Mac (`~/runelay-bots/runner`, launchd agent, port 4790 on the tailnet IP 100.122.172.127 only, bearer token shared with the server via `RUNNER_TOKEN`). Has claude, codex, grok, cursor-agent.
 - Providers: `claude` (Claude Code / Agent SDK, Claude subscription), `codex` (Codex CLI, ChatGPT subscription), `grok` (Grok CLI), `cursor` (cursor-agent, Cursor subscription).
 
