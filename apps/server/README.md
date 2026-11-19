@@ -7,7 +7,6 @@ The bots gateway: one Node 24 process (tsx, raw `node:http`, no database) on `12
 Production runs in Docker from the repo root (`compose.yaml`, image built from `apps/server/Dockerfile`, container `runelay-bots`, `network_mode: host`, `restart: unless-stopped`, healthcheck on `GET /bots`):
 
 ```bash
-cp .env.example .env                   # once: paths, uid/gid and optional features
 docker compose up -d --build           # rebuild after changing apps/server or packages
 docker compose restart                 # restart (picks up .env.local changes, not code changes)
 docker compose logs -f --tail 200      # logs
@@ -25,11 +24,11 @@ env -u CLAUDE_CONFIG_DIR GATEWAY_PORT=2100 BOTS_DATA_DIR=/path/to/data-copy BOTS
   node --import tsx src/index.ts
 ```
 
-What the image carries: Node 24, git, gh, supabase CLI, ffmpeg, agent-browser + its Chrome, Claude Code and Codex CLIs (versions pinned as build args), pnpm, bun, and the virtual desktop (Xvfb, openbox, xterm, xdotool, user `runelaybot` uid 1501 with sudo from `app`, Chrome copied to `/opt/runelay-chrome`). It runs as `app` with `HOME=/home/app`; its uid/gid come from the build args `APP_UID`/`APP_GID` (compose passes `BOTS_UID`/`BOTS_GID`, default 1000), so files it writes in repos stay yours. Dependencies come from the root `package-lock.json` (npm workspaces, `npm ci --omit=dev`).
+What the image carries: Node 24, git, gh, supabase CLI, ffmpeg, agent-browser + its Chrome, Claude Code and Codex CLIs (versions pinned as build args), pnpm, bun, and the virtual desktop (Xvfb, openbox, xterm, xdotool, user `runelaybot` uid 1501 with sudo from `app`, Chrome copied to `/opt/runelay-chrome`). It runs as `app` (1000:1000, `HOME=/home/app`); the entrypoint starts as root, copies the uid/gid of the mounted HOME (or `/data`) onto `app` when they differ, and drops to `app` with `setpriv`, so files it writes in repos stay yours. Dependencies come from the root `package-lock.json` (npm workspaces, `npm ci --omit=dev`).
 
-Mounts, every path from `.env` (see `.env.example`): `PROJECTS_DIR` and `CODE_WORKTREES_DIR` at the same absolute path inside and outside (worktrees store absolute paths), the data dir at `/data` (`BOTS_DATA_DIR`, default `~/.local/share/runelay-bots`), from `HOST_HOME` into `/home/app`: `.claude`, `.claude.json`, `.codex` (read-write, tokens refresh), `.config/gh`, `.supabase`, `.gitconfig` (ro), and `DESKTOP_HOME_DIR` at `/home/runelaybot` (desktop Chrome profiles; empty uses the `desktop-home` volume). Optional features stay off without their variable: `CONTY_API_DIR` (prod_query), `MAC_RUNNER_URL` and `PUBLIC_MCP_BASE` (Mac runner over HTTP, in `.env.local`). The root `.env.local` is mounted read-only at `/app/apps/server/.env.local` and `start.sh` sources it (on the host it reads `../../.env.local`).
+Mounts, fixed (no `.env`): `$HOME` at the same absolute path (worktrees store absolute paths; access is limited to the repositories the person allowed with `workspace_add`), `~/.local/share/runelay-bots` at `/data`, `~/.local/share/runelay-bots-backups` at `/backups`, from `$HOME` into `/home/app`: `.claude`, `.claude.json`, `.codex` (read-write, tokens refresh), `.config/gh`, `.supabase`, `.gitconfig` (ro), and the `desktop-home` volume at `/home/runelaybot` (desktop Chrome profiles). The vault key lives in the data dir (`vault.key`, created on first boot). Mac runner over HTTP stays off without `MAC_RUNNER_URL` and `PUBLIC_MCP_BASE` in `.env.local`.
 
-Test a second instance without touching production: copy `data/` somewhere, write an env file without `RUNELAY_MCP_*`, and an override file with `BOTS_CONTAINER_NAME=runelay-bots-test`, `GATEWAY_PORT=2100`, `BOTS_DATA_DIR=<copy>`, `BOTS_SCHEDULES=off`, `BOTS_ENV_FILE=<env>`, `BOTS_IMAGE=runelay-bots-server:test`; then `docker compose -p runelay-bots-test --env-file .env --env-file <override> up -d --build` (and `down` with the same flags).
+Test a second instance without touching production: copy the data dir somewhere and write an override compose file that replaces the server's `/data` mount with the copy (`volumes: !override`) and sets `container_name: runelay-bots-test`, `GATEWAY_PORT=2100`, `BOTS_SCHEDULES=off`; then `docker compose -p runelay-bots-test -f compose.yaml -f <override.yaml> up -d --no-deps server` (and `down` with the same flags).
 
 Roll back to systemd (the unit at `~/.config/systemd/user/runelay-bots.service` runs `apps/server/start.sh`):
 
@@ -38,7 +37,7 @@ docker compose down
 systemctl --user enable --now runelay-bots
 ```
 
-Env: `GATEWAY_PORT` (2000), `GATEWAY_HOST` (127.0.0.1), `BOTS_MODEL` (`claude-sonnet-5-5`; aliases `sonnet`, `opus`, `haiku` also work), `BOTS_DATA_DIR` (`<repo>/data`), `BOTS_SCHEDULES` (`on`), `BOTS_MAX_TURNS` (3), `VOICE_MAX_WARM` (3), `CODE_REPO_ROOTS`, `CODE_WORKTREES_DIR`, `CONTY_API_DIR` (supabase link for `prod_query`), `VAULT_KEY_FILE`. Secrets in `.env.local` (chmod 600): `RUNNER_TOKEN`, `MAC_RUNNER_URL`, `PUBLIC_MCP_BASE`, `JEV_API_KEY`, `RUNELAY_MCP_URL`, `RUNELAY_MCP_TOKEN`, `ELEVENLABS_API_KEY`.
+Env: `GATEWAY_PORT` (2000), `GATEWAY_HOST` (127.0.0.1), `BOTS_MODEL` (`claude-sonnet-5-5`; aliases `sonnet`, `opus`, `haiku` also work), `BOTS_DATA_DIR` (`<repo>/data`), `BOTS_SCHEDULES` (`on`), `BOTS_MAX_TURNS` (3), `VOICE_MAX_WARM` (3), `VAULT_KEY_FILE` (default `<data>/vault.key`). Secrets in `.env.local` (chmod 600): `RUNNER_TOKEN`, `MAC_RUNNER_URL`, `PUBLIC_MCP_BASE`, `JEV_API_KEY`, `RUNELAY_MCP_URL`, `RUNELAY_MCP_TOKEN`, `ELEVENLABS_API_KEY`.
 
 ## Layout
 
@@ -55,7 +54,7 @@ src/modules/<domain>/
 bin/rb-secret-run.mjs   Bash helper that injects vault secrets
 ```
 
-Domains: `accounts` (accounts, rate limits, Mac runner WebSocket), `approvals` (decisions, Jev, permission modes, delivery intent), `artifacts`, `canvas`, `bots`, `browser` (browser, desktop, live view, control), `code` (workspace, policy, hooks, live diff, PR/CI, dev servers, actions), `computer`, `connectors` (runelay), `conversations` (threads, sessions, conversations, handoff, turn repair), `engine` (turn orchestration, bot tools, MCP gateway, turn slots, `prod_query`), `groups`, `memory`, `schedules`, `sections`, `skills`, `status`, `uploads`, `usage`, `vault`, `voice`.
+Domains: `accounts` (accounts, rate limits, Mac runner WebSocket), `approvals` (decisions, Jev, permission modes, delivery intent), `artifacts`, `canvas`, `bots`, `browser` (browser, desktop, live view, control), `code` (workspace, policy, hooks, live diff, PR/CI, dev servers, actions), `computer`, `connectors` (runelay), `conversations` (threads, sessions, conversations, handoff, turn repair), `engine` (turn orchestration, bot tools, MCP gateway, turn slots), `groups`, `memory`, `schedules`, `sections`, `skills`, `status`, `uploads`, `usage`, `vault`, `voice`.
 
 Data (`<repo>/data`, outside the code and git-ignored): bots, sessions, threads, conversations, code state, uploads, artifacts, vault, usage index.
 

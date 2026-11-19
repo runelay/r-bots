@@ -1,6 +1,6 @@
 # Protocolo do runelay bots
 
-Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v33, todas de 19/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
+Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v34, todas de 19/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
 
 ## Arquivos
 
@@ -62,6 +62,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v31 | blocos: notas, planilhas, agenda e exportação (contrato antes do servidor) | [blocks](blocks.md) |
 | v32 | autenticação: contas, sessões, passkey, chaves de API, primeiro dono e convites | [auth](auth.md) |
 | v33 | conversas no SQLite, busca por texto (FTS5) | [conversations](conversations.md) |
+| v34 | repositórios liberados (`workspace_add`), sem `prod_query`, instalação sem variáveis | [code](code.md) |
 
 ## Contrato
 

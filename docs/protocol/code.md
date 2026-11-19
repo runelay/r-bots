@@ -6,7 +6,7 @@ Code belongs to the conversation, not to the bot. There is no `capabilities.code
 
 ### Repositories
 
-`GET /code/repos?query=&refresh=1` → 200, sorted by name. Scans `CODE_REPO_ROOTS` (default `~/projects`) for folders with a `.git` directory, skipping `worktrees/` and bind-mounted duplicates (same dev+inode). Cached 30 s.
+`GET /code/repos?query=&refresh=1` → 200, sorted by name. Since v34: the repositories the person allowed (`code_repos` in SQLite) that still have a `.git` directory. Cached 30 s.
 ```json
 [{"name":"my-api","path":"/home/<seu-usuário>/projects/acme/my-api","location":"acme","branch":"feat/overlays-compartilhaveis"}]
 ```
@@ -21,7 +21,7 @@ Three ways, same result:
 
 What happens:
 - `git fetch origin` (45 s, errors ignored), base = first of `origin/develop`, `origin/main`, `origin/master`, `develop`, `main`, `master`, `HEAD`.
-- `git worktree add -b feat/<slug> <CODE_WORKTREES_DIR>/<repo>-<bot>-<slug> <baseCommit>` (default dir `~/projects/worktrees`). Slug from the task (≤ 40 chars); `-2`, `-3`… when the folder or branch exists.
+- `git worktree add -b feat/<slug> ~/.local/share/runelay-bots-worktrees/<repo>/<repo>-<bot>-<slug> <baseCommit>` (fixed since v34; `~` is the host HOME). Slug from the task (≤ 40 chars); `-2`, `-3`… when the folder or branch exists.
 - Dependencies: never a symlink. The lockfile decides (`bun install --frozen-lockfile`, `pnpm install --frozen-lockfile`, `yarn install --frozen-lockfile`, `npm ci`), in the background, log in `data/code/<id>/install.log`. `dev_server_start` waits for it.
 - The same repo again in the same conversation reuses the worktree (`reopened`).
 - Mid-turn switch: when `workspace_open` succeeds, the server ends the current provider run itself (~300 ms after the tool result) and continues **the same turn** in a fresh provider session with cwd = worktree, a summary of the conversation and the original request. Leaving it to the model failed: it read "end your answer" and called `workspace_close`.
@@ -206,3 +206,29 @@ Pedido como "v26"; o número já estava em uso (handoff de contas), então ficou
 
 ### Mudanças em lote
 - Quando uma varredura acha mais de `CODE_LIVE_BULK_LIMIT` (25) arquivos mudados, sai um só `code.bulk` no lugar dos `code.edit`: `{"callId":"…","workspaceId":"…","files":616,"added":14109,"removed":31960,"paths":["…12 primeiros"],"source":"tool","key":"turn_4:bulk:toolu_…"}`. O app mostra uma linha "616 arquivos mudaram de uma vez" com atalho para o visualizador.
+
+## v34 (19/11): repositórios liberados, sem configuração
+
+Nada de variável para repositório. O compose monta o HOME do host no mesmo caminho dentro do container (worktrees guardam caminho absoluto) e passa `HOST_HOME`; o limite de segurança é a lista de repositórios liberados, guardada no SQLite (tabela `code_repos`: `path`, `name`, `reason`, `added_by`, `added_at`). Saíram `CODE_REPO_ROOTS`, `CODE_WORKTREES_DIR` e `PROJECTS_DIR`.
+
+### `workspace_add`
+- Ferramenta de todo bot: `workspace_add {path, reason}`. `path` absoluto ou `~/…` (HOME do host). Precisa ter uma pasta `.git`; caminho protegido é negado.
+- Sempre card humano (`call.requested` → card → `call.started` com `clearedBy.interactionId`). Não passa pelo Jev, ignora o modo de permissão (inclusive Acesso total) e numa rotina é negado ("Ninguém está aqui para aprovar…"). Repositório já liberado responde sem card.
+- Aprovado: grava na lista e responde "Liberado: <nome> (<caminho>). Abra com workspace_open usando "<nome>"." O prompt pede ao bot para gravar com `memory_write` o que o repositório é (o que faz, stack, quando usar); isso é memória da runelay, não configuração.
+
+### O que checa a lista
+- `workspace_open`, menção `@repo` e `GET /code/repos` só enxergam repositórios liberados. Fora da lista: "<caminho> não está na lista de repositórios liberados. Peça para liberar com workspace_add(path, reason)." Lista vazia: "Nenhum repositório liberado ainda…".
+- Portão do modo código (Read, Glob, Grep, Edit, Write e Bash): caminho dentro do HOME (do host ou do container) e fora de repositório liberado, da worktree da tarefa, da pasta de worktrees ou de `/tmp` é negado sem card ("… fica fora dos repositórios liberados…"). No Bash vale para `cd` (inclusive `cd` sem argumento), argumentos que começam com `/`, `~` ou `..` e alvos de escrita. Os dados do servidor (`/data`, `~/.local/share/runelay-bots`, backups, `/run/runelay-bots`) e as credenciais (`.claude`, `.claude.json`, `.codex`, `.config/gh`, `.supabase`, `.ssh`, `.config/runelay-bots`) ficam sempre protegidos.
+- `send_file` aceita a pasta de dados, os repositórios liberados, a pasta de worktrees, worktrees já registradas, `/home/runelaybot` e `/tmp`.
+
+### Migração
+- No boot, `seedAllowedRepos()` grava na lista (sem duplicar) todo repositório que já tem worktree em `code_workspaces`, então nada para. Log: `allowed repos: <n>`.
+- Worktrees antigas continuam onde estão (o caminho absoluto existe dentro do container pelo HOME montado).
+
+### Consulta em produção
+- Saíram `prod_query`, `capabilities.prodQuery`, `CONTY_API_DIR` e `request_capability {name:"prodQuery"}` (agora só `browser`). Campo `prodQuery` vindo do app é ignorado.
+- Consulta em banco vai pelo conector (ex.: Supabase) com `connector_call`. Ferramenta com `sql`/`query` no nome e argumento `query`/`sql`/`statement`: uma única instrução `SELECT`/`WITH`/`EXPLAIN SELECT` sem efeito colateral é leitura e roda direto; qualquer outra coisa é "outbound". Escrita que toca banco (`sql`, `query`, `migration`, `postgres`, `supabase.`, `database` no nome) sempre pede card, em qualquer modo menos Somente leitura (que nega). Qual projeto é produção fica na memória.
+
+### Instalação
+`git clone` + `docker compose up -d`. Sem `.env`: dados em `~/.local/share/runelay-bots`, backups em `~/.local/share/runelay-bots-backups`, segredos em `./.env.local`, chave do cofre em `<dados>/vault.key` (copiada de `~/.config/runelay-bots/vault.key` se existir, senão criada com modo 600 quando ainda não há segredo), HOME do desktop virtual no volume `desktop-home`. A imagem roda como `app` 1000:1000; o entrypoint lê o dono do HOME montado (ou de `/data`), ajusta o uid/gid do `app` se for outro, faz `chown` só do HOME interno e baixa o privilégio com `setpriv`. Garage roda como 1000:1000 e o `storage-secrets` faz `chown` só da pasta dele; o `storage-init` grava o `.env.local` com o dono da pasta do repositório.
+

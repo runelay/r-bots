@@ -77,11 +77,13 @@ flowchart LR
 The server runs in Docker on the VPS, from the repo root:
 
 ```sh
-cp .env.example .env       # paths, uid/gid and optional features
-docker compose up -d --build
+git clone https://github.com/<you>/runelay-bots.git && cd runelay-bots
+docker compose up -d
 ```
 
-That builds `apps/server/Dockerfile`, starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `data/`, outside the code. Secrets go in `.env.local` at the root (chmod 600), mounted read only into the container. `tailscale serve` exposes the port on the tailnet at `:10447`.
+No `.env` and no variable to set: data in `~/.local/share/runelay-bots`, backups in `~/.local/share/runelay-bots-backups`, your Claude Code, Codex, gh and supabase logins mounted from `$HOME`, the vault key created in the data dir. The container adapts to the uid of your HOME. Bots only touch repositories you allow: when you ask for work in a new repo, the bot asks with a card (`workspace_add`) and remembers what the repo is.
+
+That builds `apps/server/Dockerfile`, starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `~/.local/share/runelay-bots`, outside the code. Secrets go in `.env.local` at the root (chmod 600), mounted read only into the container. `tailscale serve` exposes the port on the tailnet at `:10447`.
 
 ```sh
 docker compose logs -f --tail 200   # logs
