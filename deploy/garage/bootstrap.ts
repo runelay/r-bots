@@ -1,5 +1,5 @@
-import { chmod, chown, mkdir, rename } from "node:fs/promises";
-import { join } from "node:path";
+import { chmod, chown, mkdir, rename, stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 const root = process.env.GARAGE_ROOT ?? "/var/lib/garage";
 const secretsDir = join(root, "secrets");
@@ -8,8 +8,8 @@ const envFile = process.env.BOTS_ENV_FILE_PATH ?? "/repo/.env.local";
 const bucketName = process.env.S3_BUCKET ?? "runelay-bots";
 const keyName = process.env.GARAGE_KEY_NAME ?? "runelay-bots-server";
 const capacity = Number(process.env.GARAGE_CAPACITY_GB ?? 100) * 1_000_000_000;
-const uid = Number(process.env.BOTS_UID ?? 1000);
-const gid = Number(process.env.BOTS_GID ?? 1000);
+const uid = 1000;
+const gid = 1000;
 
 function randomHex(bytes: number) {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(bytes))).toString("hex");
@@ -154,6 +154,8 @@ async function setup() {
     S3_SECRET_ACCESS_KEY: key.secretAccessKey ?? "",
   });
   await chmod(envFile, 0o600);
+  const owner = await stat(dirname(envFile));
+  await chown(envFile, owner.uid, owner.gid);
   console.log(`env file: ${changed ? "updated" : "kept"}`);
 }
 

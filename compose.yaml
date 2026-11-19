@@ -5,9 +5,6 @@ services:
     build:
       context: .
       dockerfile: apps/server/Dockerfile
-      args:
-        APP_UID: ${BOTS_UID:-1000}
-        APP_GID: ${BOTS_GID:-1000}
     image: ${BOTS_IMAGE:-runelay-bots-server:latest}
     container_name: ${BOTS_CONTAINER_NAME:-runelay-bots}
     network_mode: host
@@ -33,24 +30,19 @@ services:
       BOTS_SCHEDULES: ${BOTS_SCHEDULES:-on}
       BOTS_MAX_TURNS: ${BOTS_MAX_TURNS:-3}
       VOICE_MAX_WARM: ${VOICE_MAX_WARM:-3}
-      CODE_REPO_ROOTS: ${CODE_REPO_ROOTS:-${PROJECTS_DIR:-${HOME}/projects}}
-      CODE_WORKTREES_DIR: ${CODE_WORKTREES_DIR:-${PROJECTS_DIR:-${HOME}/projects}/worktrees}
-      CONTY_API_DIR: ${CONTY_API_DIR:-}
-      VAULT_KEY_FILE: /run/runelay-bots/vault.key
+      HOST_HOME: ${HOME}
     volumes:
-      - ${PROJECTS_DIR:-${HOME}/projects}:${PROJECTS_DIR:-${HOME}/projects}
-      - ${CODE_WORKTREES_DIR:-${PROJECTS_DIR:-${HOME}/projects}/worktrees}:${CODE_WORKTREES_DIR:-${PROJECTS_DIR:-${HOME}/projects}/worktrees}
-      - ${BOTS_DATA_DIR:-${HOME}/.local/share/runelay-bots}:/data
-      - ${BOTS_BACKUP_DIR:-${HOME}/.local/share/runelay-bots-backups}:/backups
-      - ${BOTS_ENV_FILE:-./.env.local}:/app/apps/server/.env.local:ro
-      - ${HOST_HOME:-${HOME}}/.claude:/home/app/.claude
-      - ${HOST_HOME:-${HOME}}/.claude.json:/home/app/.claude.json
-      - ${HOST_HOME:-${HOME}}/.codex:/home/app/.codex
-      - ${HOST_HOME:-${HOME}}/.config/gh:/home/app/.config/gh
-      - ${HOST_HOME:-${HOME}}/.supabase:/home/app/.supabase
-      - ${HOST_HOME:-${HOME}}/.gitconfig:/home/app/.gitconfig:ro
-      - ${DESKTOP_HOME_DIR:-desktop-home}:/home/runelaybot
-      - ${VAULT_KEY_HOST_FILE:-${HOST_HOME:-${HOME}}/.config/runelay-bots/vault.key}:/run/runelay-bots/vault.key:ro
+      - ${HOME}:${HOME}
+      - ${HOME}/.local/share/runelay-bots:/data
+      - ${HOME}/.local/share/runelay-bots-backups:/backups
+      - ./.env.local:/app/apps/server/.env.local:ro
+      - ${HOME}/.claude:/home/app/.claude
+      - ${HOME}/.claude.json:/home/app/.claude.json
+      - ${HOME}/.codex:/home/app/.codex
+      - ${HOME}/.config/gh:/home/app/.config/gh
+      - ${HOME}/.supabase:/home/app/.supabase
+      - ${HOME}/.gitconfig:/home/app/.gitconfig:ro
+      - desktop-home:/home/runelaybot
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:$${GATEWAY_PORT}/bots || exit 1"]
       interval: 30s
@@ -66,18 +58,15 @@ services:
   storage-secrets:
     image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine}
     command: ["bun", "/bootstrap/bootstrap.ts", "secrets"]
-    environment:
-      BOTS_UID: ${BOTS_UID:-1000}
-      BOTS_GID: ${BOTS_GID:-1000}
     volumes:
       - ./deploy/garage:/bootstrap:ro
-      - ${BOTS_STORAGE_DIR:-${HOME}/.local/share/runelay-bots/storage}:/var/lib/garage
+      - ${HOME}/.local/share/runelay-bots/storage:/var/lib/garage
     restart: "no"
 
   storage:
     image: dxflrs/garage:v2.5.0
     container_name: ${BOTS_STORAGE_CONTAINER_NAME:-runelay-bots-storage}
-    user: ${BOTS_UID:-1000}:${BOTS_GID:-1000}
+    user: "1000:1000"
     restart: unless-stopped
     depends_on:
       storage-secrets:
@@ -88,7 +77,7 @@ services:
     memswap_limit: ${BOTS_STORAGE_MEM_LIMIT:-256m}
     volumes:
       - ./deploy/garage/garage.toml:/etc/garage.toml:ro
-      - ${BOTS_STORAGE_DIR:-${HOME}/.local/share/runelay-bots/storage}:/var/lib/garage
+      - ${HOME}/.local/share/runelay-bots/storage:/var/lib/garage
     healthcheck:
       test: ["CMD", "/garage", "status"]
       interval: 10s
@@ -104,7 +93,6 @@ services:
   storage-init:
     image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine}
     command: ["bun", "/bootstrap/bootstrap.ts", "setup"]
-    user: ${BOTS_UID:-1000}:${BOTS_GID:-1000}
     depends_on:
       storage:
         condition: service_healthy
@@ -114,8 +102,8 @@ services:
       GARAGE_CAPACITY_GB: ${BOTS_STORAGE_CAPACITY_GB:-100}
     volumes:
       - ./deploy/garage:/bootstrap:ro
-      - ${BOTS_STORAGE_DIR:-${HOME}/.local/share/runelay-bots/storage}/secrets:/var/lib/garage/secrets:ro
-      - ${BOTS_ENV_DIR:-.}:/env
+      - ${HOME}/.local/share/runelay-bots/storage/secrets:/var/lib/garage/secrets:ro
+      - .:/env
     restart: "no"
 
 volumes:
