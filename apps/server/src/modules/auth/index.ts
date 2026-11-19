@@ -1,9 +1,8 @@
-import { join } from "node:path";
 import { createAuthRoutes } from "./routes/auth.routes";
 import { createAccessService } from "./services/accounts-access.service";
-import { resolveAuthSecret } from "./services/auth-secret.service";
 import { createAuthenticator } from "./services/auth.middleware";
 import { type AuthDatabase, createAuth } from "./services/auth.service";
+import { resolveAuthSecret } from "./services/auth-secret.service";
 
 export type { AuthOutcome, Principal } from "./services/auth.middleware";
 export { isPublicRoute, unauthorized } from "./services/auth.middleware";
@@ -25,7 +24,6 @@ export function authBaseURL(env: Record<string, string | undefined>, host: strin
 export function createAuthModule(options: AuthModuleOptions) {
   const resolved = resolveAuthSecret({
     env: options.env,
-    envFiles: [join(options.serverDir, ".env.local"), join(options.repoDir, ".env.local")],
     dataDir: options.dataDir,
   });
   const baseURL = authBaseURL(options.env, options.host, options.port);

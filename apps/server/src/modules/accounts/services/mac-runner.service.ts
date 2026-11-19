@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AccountProbe, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
-import { env } from "../../../config/env";
+import { runnerToken } from "../../../config/runtime-secrets";
 import type { Req } from "../../../shared/http";
 import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 import { authActive, principalOf } from "../../auth/gate";
@@ -18,7 +18,6 @@ type TurnStream = {
   finish: () => void;
 };
 
-const runnerToken = env.RUNNER_TOKEN;
 let client: Socket | null = null;
 const heartbeats = new WeakMap<Socket, { alive: boolean; timer: ReturnType<typeof setInterval> }>();
 let hello: Record<string, unknown> = {};
@@ -34,8 +33,8 @@ function authorized(req: Req) {
   if (authActive()) return principalOf(req.raw) !== null;
   const header = req.headers.authorization ?? "";
   const given = Buffer.from(header.startsWith("Bearer ") ? header.slice(7).trim() : "");
-  const expected = Buffer.from(runnerToken);
-  return runnerToken.length >= 24 && given.length === expected.length && timingSafeEqual(given, expected);
+  const expected = Buffer.from(runnerToken());
+  return runnerToken().length >= 24 && given.length === expected.length && timingSafeEqual(given, expected);
 }
 
 export function macRunnerAuthorized(req: Req) {

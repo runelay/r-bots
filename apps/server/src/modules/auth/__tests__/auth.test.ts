@@ -1,14 +1,14 @@
 import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { drizzle } from "drizzle-orm/bun-sqlite";
 import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/api";
+import { drizzle } from "drizzle-orm/bun-sqlite";
 import * as schema from "../../../db/schema/auth";
 import { type AuthModule, createAuthModule, isPublicRoute } from "..";
-import { resolveAuthSecret } from "../services/auth-secret.service";
 import { safeEqual, signSessionCookie } from "../services/accounts-access.service";
+import { resolveAuthSecret } from "../services/auth-secret.service";
 
 const base = "http://127.0.0.1:2999";
 let dir: string;
@@ -58,26 +58,16 @@ beforeAll(async () => {
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("secret", () => {
-  test("generates once, writes the env file with mode 600 and reuses env", () => {
-    const envFile = join(dir, "secret-env", ".env.local");
-    const first = resolveAuthSecret({ env: {}, envFiles: [envFile], dataDir: join(dir, "secret-data") });
+  test("generates once into the data dir with mode 600 and prefers env", () => {
+    const dataDir = join(dir, "secret-data");
+    const first = resolveAuthSecret({ env: {}, dataDir });
     expect(first.generated).toBe(true);
-    expect(first.source).toBe("env-file");
-    expect(statSync(envFile).mode & 0o777).toBe(0o600);
-    expect(readFileSync(envFile, "utf8")).toContain("BETTER_AUTH_SECRET=");
-    const again = resolveAuthSecret({ env: { BETTER_AUTH_SECRET: first.secret }, envFiles: [envFile], dataDir: dir });
-    expect(again).toEqual({ secret: first.secret, source: "env", generated: false });
-  });
-
-  test("falls back to a data file when the env file cannot be written", () => {
-    const blocked = join(dir, "blocked");
-    writeFileSync(blocked, "");
-    const dataDir = join(dir, "fallback-data");
-    const first = resolveAuthSecret({ env: {}, envFiles: [join(blocked, ".env.local")], dataDir });
     expect(first.source).toBe("data-file");
     expect(statSync(join(dataDir, "auth.secret")).mode & 0o777).toBe(0o600);
-    const again = resolveAuthSecret({ env: {}, envFiles: [], dataDir });
+    const again = resolveAuthSecret({ env: {}, dataDir });
     expect(again).toEqual({ secret: first.secret, source: "data-file", generated: false });
+    const fromEnv = resolveAuthSecret({ env: { BETTER_AUTH_SECRET: first.secret }, dataDir: dir });
+    expect(fromEnv).toEqual({ secret: first.secret, source: "env", generated: false });
   });
 });
 

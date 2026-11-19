@@ -10,6 +10,7 @@ import {
 } from "@runelay-bots/protocol";
 import { probe, runTurn } from "@runelay-bots/providers";
 import { dataDir, env } from "../../../config/env";
+import { runnerToken } from "../../../config/runtime-secrets";
 import { emitFault, injectedFault } from "./limits.service";
 import { macAccounts, macRunnerConnected, onMacRunnerChange, runMacTurn } from "./mac-runner.service";
 
@@ -28,7 +29,6 @@ export interface Account {
 }
 
 export const runnerIds: RunnerId[] = ["vps", "mac"];
-const runnerToken = env.RUNNER_TOKEN;
 const macUrl = env.MAC_RUNNER_URL;
 const macUrlMissing = "Mac não conectado e MAC_RUNNER_URL não definida.";
 const runnerLabels: Record<RunnerId, string> = { vps: "VPS", mac: "Mac" };
@@ -57,7 +57,7 @@ function toAccount(
 async function probeMacHttp() {
   if (!macUrl) throw new Error(macUrlMissing);
   const response = await fetch(`${macUrl}/accounts`, {
-    headers: { authorization: `Bearer ${runnerToken}` },
+    headers: { authorization: `Bearer ${runnerToken()}` },
     signal: AbortSignal.timeout(90_000),
   });
   if (!response.ok) throw new Error(`runner respondeu ${response.status}`);
@@ -150,7 +150,7 @@ async function runRemote(request: TurnRequest, signal: AbortSignal, emit: (event
   const onAbort = () => {
     void fetch(`${macUrl}/turns/${encodeURIComponent(request.turnId)}/cancel`, {
       method: "POST",
-      headers: { authorization: `Bearer ${runnerToken}` },
+      headers: { authorization: `Bearer ${runnerToken()}` },
       signal: AbortSignal.timeout(5000),
     }).catch(() => undefined);
     setTimeout(() => controller.abort(), 5000).unref();
@@ -160,7 +160,7 @@ async function runRemote(request: TurnRequest, signal: AbortSignal, emit: (event
   try {
     const response = await fetch(`${macUrl}/turns`, {
       method: "POST",
-      headers: { authorization: `Bearer ${runnerToken}`, "content-type": "application/json" },
+      headers: { authorization: `Bearer ${runnerToken()}`, "content-type": "application/json" },
       body: JSON.stringify(request),
       signal: controller.signal,
     });

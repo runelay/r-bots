@@ -1,3 +1,4 @@
+import { runnerToken } from "../../../config/runtime-secrets";
 import {
   MacRunnerUnavailable,
   macComputerCall,
@@ -8,7 +9,6 @@ import {
 
 const macUrl = process.env.MAC_RUNNER_URL?.trim();
 const macUrlMissing = "Mac não conectado e MAC_RUNNER_URL não definida.";
-const runnerToken = process.env.RUNNER_TOKEN ?? "";
 
 export class ComputerError extends Error {
   constructor(
@@ -43,7 +43,7 @@ export async function computerHealth() {
   if (!macUrl) return { ok: false, code: "COMPUTER_UNAVAILABLE", error: macUrlMissing };
   try {
     const response = await fetch(`${macUrl}/computer/health`, {
-      headers: { authorization: `Bearer ${runnerToken}` },
+      headers: { authorization: `Bearer ${runnerToken()}` },
       signal: AbortSignal.timeout(5000),
     });
     return (await response.json()) as Record<string, unknown>;
@@ -89,7 +89,7 @@ export async function callComputer(
   try {
     response = await fetch(`${macUrl}/computer/${encodeURIComponent(tool)}`, {
       method: "POST",
-      headers: { authorization: `Bearer ${runnerToken}`, "content-type": "application/json" },
+      headers: { authorization: `Bearer ${runnerToken()}`, "content-type": "application/json" },
       body: JSON.stringify({ args, context }),
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(180_000)]) : AbortSignal.timeout(180_000),
     });
@@ -121,7 +121,7 @@ export function watchComputerEvents(onStop: (event: { type: string; botId?: stri
   void (async () => {
     try {
       const response = await fetch(`${macUrl}/computer/events`, {
-        headers: { authorization: `Bearer ${runnerToken}` },
+        headers: { authorization: `Bearer ${runnerToken()}` },
         signal: controller.signal,
       });
       if (!response.ok || !response.body) return;
