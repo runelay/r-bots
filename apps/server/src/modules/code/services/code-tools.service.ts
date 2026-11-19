@@ -268,15 +268,22 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
         if (owner && result.prUrl) kickPr(owner, result.prUrl);
         endCall(context, start.callId, "workspace_deliver", args, { ok: true, output: result });
         const committed = result.commit ? `Commit ${result.commit}` : "Nada novo para commitar";
+        const previous = result.previousPr
+          ? ` A branch já teve o PR #${result.previousPr.number} (${result.previousPr.state === "MERGED" ? "mergeado" : "fechado sem merge"}, base ${result.previousPr.baseRefName}): ${result.previousPr.url}.`
+          : "";
         if (input.action === "push")
           return text(
-            `${committed}; push da branch ${result.branch} feito.${result.prUrl ? ` O PR ${result.prUrl} foi atualizado.` : " A branch ainda não tem PR aberto."}`,
+            `${committed}; push da branch ${result.branch} feito.${result.prUrl ? ` O PR ${result.prUrl} foi atualizado.` : previous || " A branch ainda não tem PR."}`,
+          );
+        if (input.action === "pr" && result.previousPr)
+          return text(
+            `${committed}; push da branch ${result.branch} feito.${previous} Não abri outro PR. Diga isso à pessoa; se ela quiser um PR novo com as mudanças desta branch, abra com \`gh pr create --base ${result.base} --head ${result.branch}\`.`,
           );
         return text(
           result.prUrl
             ? result.prExisted
               ? `${committed}; push feito. O PR já existia e foi atualizado: ${result.prUrl}`
-              : `PR aberto: ${result.prUrl}`
+              : `PR aberto para ${result.base}: ${result.prUrl}`
             : `${committed} na branch ${result.branch}.`,
         );
       } catch (error) {

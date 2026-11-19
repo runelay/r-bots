@@ -252,7 +252,7 @@ function workspaceGuide(code: CodePrompt) {
     "- Para subir o app, use `dev_server_start` (nunca & no Bash) e teste no seu navegador com `browser_open` na url que ele devolver; confira com `browser_screenshot` e clique quando precisar.",
     "- Rode só os testes, lint ou build da parte que mudou.",
     "- .git, .claude, .env* e a configuração dos bots são protegidos: não tente escrever neles.",
-    '- Commits por módulo ou feature no Bash (`git add <arquivos>` + `git commit -m`), em conventional commits em inglês, curtos e sem assinatura de IA (nada de Co-Authored-By). `workspace_deliver` faz um commit só com tudo o que estiver pendente: use para um único módulo ou com action pr para push e PR depois dos commits. Base do PR: a que a pessoa pedir; se ela não disser, a base de onde a branch saiu (develop quando existe). PR para a main é permitido quando a branch saiu da main ou a pessoa pede (hotfix); só o merge passa por ela. Se a pessoa pedir push, dê push (`git push -u origin <branch da tarefa>` ou workspace_deliver action push); se a branch já tem PR, o push atualiza o PR e você nunca abre outro. "Só push" nunca vira PR novo. Nunca diga que não pode dar push. Uma negação antiga não vale para o próximo pedido.',
+    '- Commits por módulo ou feature no Bash (`git add <arquivos>` + `git commit -m`), em conventional commits em inglês, curtos e sem assinatura de IA (nada de Co-Authored-By). `workspace_deliver` faz um commit só com tudo o que estiver pendente: use para um único módulo ou com action pr para push e PR depois dos commits. Base do PR: a que a pessoa pedir; se ela não disser, a base de onde a branch saiu de verdade (compare `git rev-list --left-right --count HEAD...origin/main` e `HEAD...origin/develop` e fique com a mais próxima), nunca develop por padrão. PR para a main é permitido; só o merge passa pela pessoa. Se a pessoa pedir push, dê push (`git push -u origin <branch da tarefa>` ou workspace_deliver action push); se a branch já tem PR, o push atualiza o PR e você nunca abre outro. "Só push" nunca vira PR novo. Nunca diga que não pode dar push. Uma negação antiga não vale para o próximo pedido.',
     "- No fim, diga em uma ou duas linhas o que mudou e como conferir.",
   ]
     .filter(Boolean)
@@ -372,7 +372,7 @@ function deliveryNote(delivery: Delivery) {
   ];
   if (asked.pr)
     parts.push(
-      "PR: `git push -u origin <branch>` e, se a branch ainda não tem PR aberto (`gh pr view`), `gh pr create --base <base da tarefa> --title ... --body ...` (ou workspace_deliver action pr, que já reaproveita o PR existente). Título e corpo sem assinatura de IA.",
+      "PR: `git push -u origin <branch>` e confira os PRs da branch com `gh pr list --head <branch> --state all`. Se houver PR aberto, o push já o atualiza. Se houver PR mergeado ou fechado, diga isso à pessoa (número, estado e link) em vez de dizer que não há PR. Sem nenhum PR, `gh pr create --base <base> --title ... --body ...` (ou workspace_deliver action pr), com a base que a pessoa pediu ou a de onde a branch saiu. Título e corpo sem assinatura de IA.",
     );
   return parts.filter(Boolean).join("\n");
 }

@@ -115,6 +115,6 @@ Agora (`apps/server/src/modules/engine/services/engine.service.ts`): mensagem de
   - **Somente leitura**: leitura segue o gate normal; edição, comando e entrega são negados sem card (`TOOL_POLICY`). Codex roda com `-s read-only`.
   - **Editar**: leitura e edição seguem o gate normal; todo comando e entrega viram card (soft), inclusive commit e push da branch da tarefa.
   - **Padrão**: igual à v25.
-  - **Acesso total**: nenhum card (`clearedBy: {permission: "full"}`), também nas ferramentas de navegador/computador, de autoconfiguração e nos conectores. Continua negado sem card: assinatura de IA em commit/PR, PR para main quando a base é develop e `push --force` em main/master/develop (`fixedRuleViolation`, inclusive `HEAD:develop` e `+ref`). As outras negações técnicas (caminho protegido, `git config`, `&`) continuam.
+  - **Acesso total**: nenhum card (`clearedBy: {permission: "full"}`), também nas ferramentas de navegador/computador, de autoconfiguração e nos conectores. Continua negado sem card: assinatura de IA em commit/PR e `push --force` em main/master/develop (`fixedRuleViolation`, inclusive `HEAD:develop` e `+ref`). As outras negações técnicas (caminho protegido, `git config`, `&`) continuam.
 - Conectores (`runRemote`): leitura passa em todos; escrita comum e mensagem para fora → negadas no Somente leitura, card no Editar, só mensagem para fora pede card no Padrão, nada pede no Acesso total.
 - Limite conhecido: Codex não tem gate por chamada, então no Editar ele roda comandos como no Padrão.

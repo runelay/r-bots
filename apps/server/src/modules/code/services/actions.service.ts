@@ -54,7 +54,21 @@ export interface DeliverInput {
 }
 
 function baseBranch(workspace: WorkspaceState) {
-  return workspace.base.replace(/^origin\//, "") || "develop";
+  return workspace.base.replace(/^origin\//, "");
+}
+
+export async function resolvePrBase(workspace: WorkspaceState, requested?: string) {
+  const asked = requested?.trim().replace(/^origin\//, "");
+  if (asked) return asked;
+  let best: { name: string; ahead: number; behind: number } | null = null;
+  for (const name of ["main", "develop", "master"]) {
+    const counts = await git(workspace.path, ["rev-list", "--left-right", "--count", `HEAD...origin/${name}`]);
+    if (counts.code !== 0) continue;
+    const [ahead, behind] = counts.stdout.trim().split(/\s+/).map(Number);
+    if (!Number.isFinite(ahead) || !Number.isFinite(behind)) continue;
+    if (!best || ahead < best.ahead || (ahead === best.ahead && behind < best.behind)) best = { name, ahead, behind };
+  }
+  return best?.name ?? baseBranch(workspace);
 }
 
 export function deliverPrompt(workspace: WorkspaceState, input: DeliverInput, files: number) {
@@ -63,7 +77,7 @@ export function deliverPrompt(workspace: WorkspaceState, input: DeliverInput, fi
       ? `Fazer commit de ${files} arquivo${files === 1 ? "" : "s"} e push da branch ${workspace.branch}? Mensagem: “${input.message}”`
       : `Fazer push da branch ${workspace.branch}?`;
   if (input.action === "pr")
-    return `Fazer commit de ${files} arquivo${files === 1 ? "" : "s"}, push da branch ${workspace.branch} e abrir PR para ${baseBranch(workspace)}? Mensagem: “${input.message}”`;
+    return `Fazer commit de ${files} arquivo${files === 1 ? "" : "s"}, push da branch ${workspace.branch} e abrir PR para ${input.base?.trim() || baseBranch(workspace)}? Mensagem: “${input.message}”`;
   return `Fazer commit de ${files} arquivo${files === 1 ? "" : "s"} na branch ${workspace.branch}? Mensagem: “${input.message}”`;
 }
 
@@ -100,19 +114,22 @@ export async function deliverWorkspace(workspace: WorkspaceState, input: Deliver
   invalidateStatus(workspace);
   let prUrl: string | null = null;
   let prExisted = false;
+  let previousPr: PullRequestRef | null = null;
+  const base = await resolvePrBase(workspace, input.base);
   if (input.action === "pr" || input.action === "push") {
     if (protectedBranches.has(workspace.branch))
       throw new CodeError(`A branch ${workspace.branch} é protegida: push direto só pela pessoa.`);
     const pushed = await git(workspace.path, ["push", "-u", "origin", workspace.branch], 300_000);
     if (pushed.code !== 0)
       throw new CodeError(`O push falhou: ${(pushed.stderr || pushed.stdout).trim().slice(-600)}`, 500);
-    const existing = await openPullRequest(workspace);
-    if (existing) {
-      prUrl = existing;
+    const pulls = await branchPullRequests(workspace);
+    const open = pulls.find((pull) => pull.state === "OPEN");
+    if (open) {
+      prUrl = open.url;
       prExisted = true;
-    }
+    } else previousPr = pulls[0] ?? null;
   }
-  if (input.action === "pr" && !prExisted) {
+  if (input.action === "pr" && !prExisted && !previousPr) {
     const { execFile } = await import("node:child_process");
     prUrl = await new Promise<string>((done, fail) => {
       execFile(
@@ -121,7 +138,7 @@ export async function deliverWorkspace(workspace: WorkspaceState, input: Deliver
           "pr",
           "create",
           "--base",
-          input.base?.trim() || baseBranch(workspace),
+          base,
           "--head",
           workspace.branch,
           "--title",
@@ -150,28 +167,51 @@ export async function deliverWorkspace(workspace: WorkspaceState, input: Deliver
     commit,
     prUrl,
     prExisted,
+    previousPr,
     files: files.length,
     branch: workspace.branch,
-    base: baseBranch(workspace),
+    base,
   };
 }
 
 const protectedBranches = new Set(["main", "master", "develop"]);
 
-async function openPullRequest(workspace: WorkspaceState) {
+export interface PullRequestRef {
+  number: number;
+  url: string;
+  state: "OPEN" | "MERGED" | "CLOSED";
+  baseRefName: string;
+}
+
+async function branchPullRequests(workspace: WorkspaceState) {
   const { execFile } = await import("node:child_process");
-  return new Promise<string | null>((done) => {
+  return new Promise<PullRequestRef[]>((done) => {
     execFile(
       "gh",
-      ["pr", "view", workspace.branch, "--json", "url,state"],
+      [
+        "pr",
+        "list",
+        "--head",
+        workspace.branch,
+        "--state",
+        "all",
+        "--json",
+        "number,url,state,baseRefName,updatedAt",
+        "--limit",
+        "10",
+      ],
       { cwd: workspace.path, timeout: 60_000 },
       (error, stdout) => {
-        if (error) return done(null);
+        if (error) return done([]);
         try {
-          const data = JSON.parse(String(stdout)) as { url?: string; state?: string };
-          done(data.state === "OPEN" && data.url ? data.url : null);
+          const list = JSON.parse(String(stdout)) as Array<PullRequestRef & { updatedAt?: string }>;
+          done(
+            [...list]
+              .sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))
+              .map(({ number, url, state, baseRefName }) => ({ number, url, state, baseRefName })),
+          );
         } catch {
-          done(null);
+          done([]);
         }
       },
     );
