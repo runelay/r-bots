@@ -142,7 +142,7 @@ final class RunnerConnection {
             "type": .string("hello"),
             "app": .string("runelay bots"),
             "version": .string(AppInfo.version),
-            "capabilities": .array([.string("turns"), .string("accounts"), .string("computer"), .string("transcribe"), .string("vault"), .string("usage")]),
+            "capabilities": .array([.string("turns"), .string("accounts"), .string("computer"), .string("transcribe"), .string("vault"), .string("usage"), .string("files")]),
         ])
         return String(decoding: (try? JSONEncoder().encode(hello)) ?? Data(), as: UTF8.self)
     }
@@ -231,6 +231,16 @@ final class RunnerConnection {
             Task.detached(priority: .utility) {
                 let result = await LocalUsageScanner.shared.buckets(since: since)
                 sender.send(["type": .string("response"), "id": .string(id), "ok": .bool(true), "result": result])
+            }
+        case "file.read":
+            let body = message["body"] ?? .object([:])
+            let path = body["path"]?.stringValue ?? ""
+            let maxBytes = body["maxBytes"]?.intValue ?? 20 * 1_048_576
+            Task.detached(priority: .userInitiated) {
+                var reply = RunnerFiles.read(path: path, maxBytes: maxBytes)
+                reply["type"] = .string("response")
+                reply["id"] = .string(id)
+                sender.send(reply)
             }
         case "transcribe_file":
             let body = message["body"] ?? .object([:])
