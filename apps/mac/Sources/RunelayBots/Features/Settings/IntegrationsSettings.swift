@@ -329,12 +329,7 @@ struct IntegrationLogo: View {
     let name: String
 
     var body: some View {
-        if id == "runelay" {
-            RunelayMark(size: 18)
-                .frame(width: 36, height: 36)
-                .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-                .accessibilityHidden(true)
-        } else if id == "jev", let image = BrandAssets.connector("typesafe") {
+        if let key = id == "runelay" ? "runelay" : id == "jev" ? "typesafe" : nil, let image = BrandAssets.connector(key) {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
