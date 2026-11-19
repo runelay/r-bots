@@ -470,9 +470,9 @@ struct ConversationView: View {
             LinearGradient(colors: [Color.clear, Color.black], startPoint: .top, endPoint: .bottom)
                 .frame(height: topInset + Spacing.l + Spacing.s)
             Color.black
-            LinearGradient(colors: [Color.black, Color.black.opacity(0.2)], startPoint: .top, endPoint: .bottom)
+            Color.black
                 .frame(height: Self.fadeHeight)
-            Color.black.opacity(0.2)
+            Color.black
                 .frame(height: footerHeight)
         }
     }
