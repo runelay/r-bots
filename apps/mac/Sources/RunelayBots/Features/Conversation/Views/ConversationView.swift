@@ -207,6 +207,8 @@ struct ConversationView: View {
     @State private var isFarFromBottom = false
     @State private var unseenCount = 0
     @State private var lastEntryID: String?
+    @State private var userScrolled = false
+    @State private var scrollAnimating = false
 
     private static let bottomID = "transcript-bottom"
 
@@ -350,6 +352,18 @@ struct ConversationView: View {
                         unseenCount = 0
                     }
                 }
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentSize.height - geometry.visibleRect.maxY
+                } action: { _, _ in
+                    pinToBottom(proxy)
+                }
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.visibleRect.minY >= geometry.contentSize.height
+                } action: { _, blank in
+                    if blank {
+                        pinToBottom(proxy, force: true)
+                    }
+                }
                 .overlay(alignment: .bottom) {
                     if isFarFromBottom && store.historySettled {
                         JumpToBottomButton(count: unseenCount, accent: Theme.accent(bot.accent)) {
@@ -360,9 +374,16 @@ struct ConversationView: View {
                     }
                 }
                 .springAnimation(value: isFarFromBottom)
-                .onScrollPhaseChange { _, phase in
+                .onScrollPhaseChange { old, phase in
                     if phase != .idle, hoveredItemID != nil {
                         hoveredItemID = nil
+                    }
+                    if phase == .interacting || phase == .tracking {
+                        userScrolled = true
+                    }
+                    scrollAnimating = phase == .animating
+                    if old == .animating, phase == .idle {
+                        pinToBottom(proxy)
                     }
                 }
                 .opacity(store.historySettled ? 1 : 0)
@@ -389,6 +410,7 @@ struct ConversationView: View {
                     }
                 }
                 .onChange(of: bot.id, initial: true) {
+                    userScrolled = false
                     guard store.historySettled else { return }
                     jumpToBottom(proxy)
                 }
@@ -436,8 +458,21 @@ struct ConversationView: View {
         }
     }
 
+    private func pinToBottom(_ proxy: ScrollViewProxy, force: Bool = false) {
+        guard store.historySettled, force || (!userScrolled && !scrollAnimating) else { return }
+        DispatchQueue.main.async {
+            guard force || (!userScrolled && !scrollAnimating) else { return }
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(Self.bottomID, anchor: .bottom)
+            }
+        }
+    }
+
     private func fillIfShort() {
-        guard store.historySettled, store.hasOlder, !store.isLoadingOlder, store.entries.count < 20 else { return }
+        guard store.historySettled, store.hasOlder, !store.isLoadingOlder,
+              store.entries.count < 20 || store.transcriptSnapshot(now: Date()).items.isEmpty else { return }
         store.loadOlder()
     }
 

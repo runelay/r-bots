@@ -234,7 +234,24 @@ struct DiffCard: View, Equatable {
                 .clickable()
             }
         }
+        .frame(height: model.selectedBot == nil ? nil : Self.height(blocks: limited.blocks, hidden: limited.hidden), alignment: .top)
         .frame(maxWidth: Metrics.transcriptWidth, alignment: .leading)
+    }
+
+    static func height(blocks: [DiffBlock], hidden: Int) -> CGFloat? {
+        guard !blocks.isEmpty else { return nil }
+        var total: CGFloat = 24
+        for block in blocks {
+            guard case .hunk(_, _, _, let rows) = block else { return nil }
+            for row in rows {
+                guard case .line = row else { return nil }
+            }
+            total += Spacing.s + 24 + CGFloat(rows.count) * 19 + Spacing.xs
+        }
+        if hidden > 0 {
+            total += Spacing.s + 15 + Spacing.xs * 2
+        }
+        return total
     }
 }
 

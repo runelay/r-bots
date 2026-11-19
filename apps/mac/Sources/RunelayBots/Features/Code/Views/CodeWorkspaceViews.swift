@@ -30,12 +30,12 @@ struct CodeStrip: View {
                     .font(TypeScale.captionStrong)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
-                if workspace.files > 0 {
+                if let counts {
                     HStack(spacing: Spacing.xs) {
-                        Text("\(workspace.files)")
+                        Text("\(counts.files)")
                             .foregroundStyle(Theme.textSecondary)
                         Text("·").foregroundStyle(Theme.textTertiary)
-                        ChangeCount(added: workspace.added, removed: workspace.removed)
+                        ChangeCount(added: counts.added, removed: counts.removed)
                     }
                     .font(TypeScale.counter)
                     .contentTransition(.numericText())
@@ -61,7 +61,7 @@ struct CodeStrip: View {
         .buttonStyle(PressableButtonStyle())
         .clickable()
         .onHover { hovering = $0 }
-        .help("\(workspace.repoName) · \(workspace.branch)\(workspace.files > 0 ? " · \(workspace.files) arquivo\(workspace.files == 1 ? "" : "s") alterado\(workspace.files == 1 ? "" : "s")" : "")\(workspace.pr.map { " · " + PullRequestPillBadge(pr: $0).helpText } ?? "")")
+        .help("\(workspace.repoName) · \(workspace.branch)\(counts.map { " · \($0.files) arquivo\($0.files == 1 ? "" : "s") alterado\($0.files == 1 ? "" : "s")" } ?? "")\(workspace.pr.map { " · " + PullRequestPillBadge(pr: $0).helpText } ?? "")")
         .popover(isPresented: $showsPopover, arrowEdge: .bottom) {
             CodeWorkspacePopover(store: store, workspace: workspace) {
                 showsPopover = false
@@ -76,6 +76,13 @@ struct CodeStrip: View {
         .springAnimation(value: running)
         .frame(maxWidth: .infinity)
         .padding(.top, Spacing.s)
+    }
+
+    private var counts: (files: Int, added: Int, removed: Int)? {
+        if let pr = workspace.pr, pr.status == .merged || pr.status == .closed {
+            return pr.files > 0 ? (pr.files, pr.additions, pr.deletions) : nil
+        }
+        return workspace.files > 0 ? (workspace.files, workspace.added, workspace.removed) : nil
     }
 }
 
