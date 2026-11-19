@@ -41,12 +41,17 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
  && curl -fsSL -o /tmp/supabase.deb "https://github.com/supabase/cli/releases/download/v${SUPABASE_VERSION}/supabase_${SUPABASE_VERSION}_linux_amd64.deb" \
  && dpkg -i /tmp/supabase.deb && rm /tmp/supabase.deb
 
-RUN usermod -l anderson -d /home/anderson -m node \
- && groupmod -n anderson node \
+ARG APP_UID=1000
+ARG APP_GID=1000
+
+RUN userdel -r node \
+ && (groupdel node 2>/dev/null || true) \
+ && groupadd -g "${APP_GID}" app \
+ && useradd -m -u "${APP_UID}" -g "${APP_GID}" -s /bin/bash app \
  && groupadd -g 1501 runelaybot \
  && useradd -m -u 1501 -g 1501 -s /bin/bash runelaybot \
  && chmod 750 /home/runelaybot \
- && echo "anderson ALL=(runelaybot) NOPASSWD: ALL" > /etc/sudoers.d/runelaybot \
+ && echo "app ALL=(runelaybot) NOPASSWD: ALL" > /etc/sudoers.d/runelaybot \
  && chmod 440 /etc/sudoers.d/runelaybot \
  && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
@@ -60,25 +65,25 @@ RUN --mount=type=cache,target=/root/.npm \
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 
-RUN HOME=/home/anderson agent-browser install --with-deps \
- && chrome_dir="$(ls -d /home/anderson/.agent-browser/browsers/chrome-* | sort | tail -1)" \
+RUN HOME=/home/app agent-browser install --with-deps \
+ && chrome_dir="$(ls -d /home/app/.agent-browser/browsers/chrome-* | sort | tail -1)" \
  && cp -a "$chrome_dir" /opt/runelay-chrome \
  && chmod -R a+rX /opt/runelay-chrome \
- && mkdir -p /home/anderson/.config/gh /home/anderson/.cache /home/anderson/.local/share /home/anderson/.supabase /home/anderson/.claude /home/anderson/.codex \
- && chown -R anderson:anderson /home/anderson
+ && mkdir -p /home/app/.config/gh /home/app/.cache /home/app/.local/share /home/app/.supabase /home/app/.claude /home/app/.codex \
+ && chown -R app:app /home/app
 
-ENV HOME=/home/anderson \
-    USER=anderson \
+ENV HOME=/home/app \
+    USER=app \
     LANG=C.UTF-8 \
     DISABLE_AUTOUPDATER=1 \
     DESKTOP_CHROME=/opt/runelay-chrome/chrome
 
 WORKDIR /app/apps/server
-RUN chown -R anderson:anderson /app
-COPY --from=build --chown=anderson:anderson /out/ /app/apps/server/
-ENV PATH=/home/anderson/.local/bin:$PATH \
+RUN chown -R app:app /app
+COPY --from=build --chown=app:app /out/ /app/apps/server/
+ENV PATH=/home/app/.local/bin:$PATH \
     BOTS_APP_DIR=/app/apps/server \
     CLAUDE_CODE_EXECUTABLE=/app/apps/server/claude-agent \
     NAPI_RS_NATIVE_LIBRARY_PATH=/app/apps/server/native/anydoc.linux-x64-gnu.node
-USER anderson
+USER app
 CMD ["./runelay-bots-server"]
