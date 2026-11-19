@@ -5,6 +5,7 @@ struct AuthUser: Codable, Equatable, Sendable {
     let name: String
     let email: String
     let role: String
+    var image: String?
 
     var isOwner: Bool { role == "owner" }
 }
@@ -228,10 +229,47 @@ struct AuthClient: Sendable {
         }
         let expiresAt = (body["expiresAt"] as? String).flatMap { ISO8601DateFormatter.withFraction.date(from: $0) }
         return AuthProfile(
-            user: AuthUser(id: id, name: user["name"] as? String ?? email, email: email, role: user["role"] as? String ?? "member"),
+            user: AuthUser(
+                id: id,
+                name: user["name"] as? String ?? email,
+                email: email,
+                role: user["role"] as? String ?? "member",
+                image: user["image"] as? String
+            ),
             expiresAt: expiresAt,
             cookie: cookie
         )
+    }
+
+    func uploadAvatar(token: String, data: Data, mime: String) async throws -> String? {
+        var request = URLRequest(url: try url("/auth/me/avatar"))
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(mime, forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        if let origin = AuthStore.origin(of: baseURL) {
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+        }
+        let (received, response): (Data, URLResponse)
+        do {
+            (received, response) = try await Self.session.upload(for: request, from: data)
+        } catch {
+            throw AuthFailure.unreachable
+        }
+        guard let http = response as? HTTPURLResponse else { throw AuthFailure.unreachable }
+        try Self.ensure(received, http)
+        return Self.object(received)["image"] as? String
+    }
+
+    func removeAvatar(token: String) async throws {
+        let (data, response) = try await send("DELETE", "/auth/me/avatar", token: token)
+        try Self.ensure(data, response)
+    }
+
+    func avatar(path: String, token: String) async throws -> Data {
+        let (data, response) = try await send("GET", path, token: token)
+        try Self.ensure(data, response)
+        return data
     }
 
     func runnerKey(token: String) async throws -> String {

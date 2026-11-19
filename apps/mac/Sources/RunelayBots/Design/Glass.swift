@@ -91,8 +91,38 @@ struct TopBarAttachment<Bar: View>: ViewModifier {
     }
 }
 
+struct BottomBarAttachment<Bar: View>: ViewModifier {
+    let bar: Bar
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .safeAreaBar(edge: .bottom) {
+                    bar
+                }
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
+        } else {
+            content.safeAreaInset(edge: .bottom, spacing: 0) {
+                bar
+                    .frame(maxWidth: .infinity)
+                    .background {
+                        Rectangle()
+                            .fill(.regularMaterial)
+                            .mask {
+                                LinearGradient(colors: [Theme.maskHidden, Theme.maskVisible, Theme.maskVisible], startPoint: .top, endPoint: .bottom)
+                            }
+                    }
+            }
+        }
+    }
+}
+
 extension View {
     func topBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
         modifier(TopBarAttachment(bar: bar()))
+    }
+
+    func bottomBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
+        modifier(BottomBarAttachment(bar: bar()))
     }
 }

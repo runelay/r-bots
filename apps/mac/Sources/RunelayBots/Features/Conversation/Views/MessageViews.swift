@@ -45,20 +45,25 @@ struct UserBubble: View {
     @Environment(\.conversationFontSize) private var fontSize
     let message: UserMessage
     let meta: BubbleMeta
+    var showsAvatar = false
     let retry: () -> Void
+
+    private var avatarInset: CGFloat { showsAvatar ? 20 + Spacing.s : 0 }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: Spacing.xs) {
             if !message.skills.isEmpty {
                 SkillChipRow(skills: message.skills, compact: true)
                     .opacity(message.state == .sending ? 0.8 : 1)
+                    .padding(.trailing, avatarInset)
             }
             if !message.attachments.isEmpty {
                 MessageAttachments(attachments: message.attachments, trailing: true)
                     .opacity(message.state == .sending ? 0.8 : 1)
+                    .padding(.trailing, avatarInset)
             }
             if !message.isSkillOnly && !message.text.isEmpty {
-            HStack(spacing: 0) {
+            HStack(alignment: .bottom, spacing: Spacing.s) {
                 Spacer(minLength: 0)
                 Text(message.text)
                     .font(BrandFonts.sans(fontSize))
@@ -71,6 +76,16 @@ struct UserBubble: View {
                     .frame(maxWidth: BubbleShape.maxWidth, alignment: .trailing)
                     .fixedSize(horizontal: false, vertical: true)
                     .opacity(message.state == .sending ? 0.8 : 1)
+                if showsAvatar {
+                    Group {
+                        if meta.isLast {
+                            UserAvatar(size: 20)
+                        } else {
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .frame(width: 20, height: 20)
+                }
             }
             }
             if message.state == .queued {
@@ -99,7 +114,7 @@ struct UserBubble: View {
                         BubbleTime(date: meta.lastDate)
                     }
                 }
-                .padding(.trailing, Spacing.xs)
+                .padding(.trailing, Spacing.xs + avatarInset)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

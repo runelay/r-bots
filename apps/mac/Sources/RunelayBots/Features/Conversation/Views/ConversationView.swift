@@ -809,7 +809,7 @@ struct TranscriptRow: View, Equatable {
             if let message = store.userMessages[entry.id], let fromBotID = message.fromBotID {
                 DelegatedRequestBubble(message: message, from: model.bot(id: fromBotID), date: store.entryDates[entry.id])
             } else if let message = store.userMessages[entry.id] {
-                UserBubble(message: message, meta: bubble ?? BubbleMeta()) {
+                UserBubble(message: message, meta: bubble ?? BubbleMeta(), showsAvatar: store.bot.isGroup) {
                     store.retry(messageID: message.id)
                 }
                 .contextMenu {

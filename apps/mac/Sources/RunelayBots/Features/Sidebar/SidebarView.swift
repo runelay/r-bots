@@ -23,8 +23,12 @@ struct SidebarView: View {
             case .loaded:
                 BotChatList()
             }
-
-            SidebarFooter()
+        }
+        .bottomBar {
+            VStack(spacing: 0) {
+                SidebarFooter()
+                SidebarAccountBar()
+            }
         }
     }
 
@@ -1130,8 +1134,7 @@ struct SidebarFooter: View {
             }
         }
         .padding(.horizontal, Spacing.l)
-        .padding(.bottom, Spacing.l)
-        .padding(.top, Spacing.xs)
+        .padding(.top, model.sidebarNotice == nil ? 0 : Spacing.xs)
         .springAnimation(value: model.sidebarNotice)
     }
 }

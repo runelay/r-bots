@@ -150,6 +150,31 @@ final class AuthSession: NSObject {
         }
     }
 
+    func uploadAvatar(_ data: Data, mime: String) async throws {
+        guard let token = AuthStore.read(.session), var user else { throw AuthFailure.server(401, nil) }
+        user.image = try await client.uploadAvatar(token: token, data: data, mime: mime)
+        store(user)
+    }
+
+    func removeAvatar() async throws {
+        guard let token = AuthStore.read(.session), var user else { throw AuthFailure.server(401, nil) }
+        try await client.removeAvatar(token: token)
+        user.image = nil
+        store(user)
+    }
+
+    func avatarData(path: String) async throws -> Data {
+        guard let token = AuthStore.read(.session) else { throw AuthFailure.server(401, nil) }
+        return try await client.avatar(path: path, token: token)
+    }
+
+    private func store(_ user: AuthUser) {
+        if let data = try? JSONEncoder().encode(user) {
+            UserDefaults.standard.set(data, forKey: cachedUserKey)
+        }
+        state = .signedIn(user)
+    }
+
     func signInWithBrowser() {
         guard browserTask == nil else { return }
         browserBusy = true
@@ -234,11 +259,8 @@ final class AuthSession: NSObject {
     }
 
     private func apply(_ profile: AuthProfile) {
-        if let data = try? JSONEncoder().encode(profile.user) {
-            UserDefaults.standard.set(data, forKey: cachedUserKey)
-        }
         installCookie(profile)
-        state = .signedIn(profile.user)
+        store(profile.user)
     }
 
     private func ensureRunnerKey(token: String, force: Bool = false) {
