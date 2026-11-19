@@ -3,13 +3,13 @@ import { z } from "zod";
 
 const text = z.string().trim().min(1);
 const optionalText = text.optional();
-const port = z.coerce.number().int().min(1).max(65_535);
+const portNumber = z.coerce.number().int().min(1).max(65_535);
 const positive = z.coerce.number().positive();
 
 const schema = z.object({
   BOTS_APP_DIR: optionalText,
   GATEWAY_HOST: text.default("127.0.0.1"),
-  GATEWAY_PORT: port.default(2000),
+  GATEWAY_PORT: portNumber.default(2000),
   BOTS_DATA_DIR: optionalText,
   BOTS_MODEL: text.default("claude-sonnet-5-5"),
   BOTS_SCHEDULES: text.default("on"),
@@ -36,7 +36,7 @@ const schema = z.object({
   CODE_GH_BIN: optionalText,
   CODE_PR_AUTOCLOSE_HOURS: positive.default(24),
   CONTY_API_DIR: optionalText,
-  DEV_PORT_BASE: port.default(5310),
+  DEV_PORT_BASE: portNumber.default(5310),
   BROWSER_IDLE_MS: positive.optional(),
   DESKTOP_USER: optionalText,
   DESKTOP_HOME: optionalText,
