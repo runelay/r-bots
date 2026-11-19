@@ -225,38 +225,58 @@ describe("device authorization", () => {
 });
 
 describe("gate", () => {
-  test("reads the mode from BOTS_AUTH and stays off only when forced", async () => {
-    expect(authMode({})).toBe("auto");
-    expect(authMode({ BOTS_AUTH: " ON " })).toBe("on");
-    expect(authMode({ BOTS_AUTH: "true" })).toBe("on");
-    expect(authMode({ BOTS_AUTH: "1" })).toBe("on");
-    expect(authMode({ BOTS_AUTH: "off" })).toBe("off");
-    expect(authMode({ BOTS_AUTH: "false" })).toBe("off");
-    expect(authMode({ BOTS_AUTH: "0" })).toBe("off");
-    expect(authMode({ BOTS_AUTH: "maybe" })).toBe("auto");
+  test("keeps auth on and accepts BOTS_AUTH=off only in tests", async () => {
+    expect(authMode({})).toBe("on");
+    expect(authMode({ BOTS_AUTH: "off" })).toBe("on");
+    expect(authMode({ BOTS_AUTH: "off", NODE_ENV: "production" })).toBe("on");
+    expect(authMode({ BOTS_AUTH: "off", NODE_ENV: "test" })).toBe("off");
+    expect(authMode({ BOTS_AUTH: " FALSE ", BOTS_TEST: "1" })).toBe("off");
+    expect(authMode({ BOTS_AUTH: "0", BOTS_TEST: "true" })).toBe("off");
+    expect(authMode({ BOTS_AUTH: "maybe", NODE_ENV: "test" })).toBe("on");
+    expect(authMode({ NODE_ENV: "test" })).toBe("on");
+    expect(authMode({ BOTS_AUTH: "off", BOTS_TEST: "0" })).toBe("on");
     expect(authEnabled({})).toBe(true);
-    expect(authEnabled({ BOTS_AUTH: "off" })).toBe(false);
+    expect(authEnabled({ BOTS_AUTH: "off", NODE_ENV: "test" })).toBe(false);
     expect(authEnabled()).toBe(true);
-    expect(await initAuth({ BOTS_AUTH: "off" })).toBeNull();
+    expect(await initAuth({ BOTS_AUTH: "off", NODE_ENV: "test" })).toBeNull();
     expect(authActive()).toBe(false);
     expect(await gate(req("/bots"))).toBeNull();
   });
 
-  test("waits for the owner in auto mode, then locks and records who owns the data", async () => {
+  test("locks everything but first access before the owner, then records who owns the data", async () => {
     const logs: string[] = [];
     const log = spyOn(console, "log").mockImplementation((line: string) => {
       logs.push(line);
     });
     restores.push(() => log.mockRestore());
-    const created = await initAuth({ BETTER_AUTH_URL: base, BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
+    const { getDb } = await import("../../../db");
+    const { user: users } = await import("../../../db/schema/auth");
+    await getDb().delete(users);
+    const created = await initAuth({
+      BOTS_AUTH: "off",
+      BETTER_AUTH_URL: base,
+      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
+    });
     expect(created?.baseURL).toBe(base);
-    expect(logs).toContain(`auth waiting for the owner (${base}, secret from env)`);
-    expect(authActive()).toBe(false);
-    expect(await gate(req("/bots"))).toBeNull();
+    expect(logs).toContain(`auth on, waiting for the owner (${base}, secret from env)`);
+    expect(authActive()).toBe(true);
+    expect((await gate(req("/bots")))?.status).toBe(401);
+    expect((await gate(req("/status")))?.status).toBe(401);
+    expect(await gate(req("/health"))).toBeNull();
     const status = await gate(req("/auth/setup"));
-    expect(await status?.json()).toMatchObject({ ok: true, needsOwner: true, required: false });
+    expect(await status?.json()).toMatchObject({ ok: true, needsOwner: true, required: true });
     const device = await gate(req("/device"));
     expect(device?.status).toBe(200);
+    const previous = process.env.RUNNER_TOKEN;
+    process.env.RUNNER_TOKEN = internalToken;
+    restores.push(() => {
+      process.env.RUNNER_TOKEN = previous;
+    });
+    const machine = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${internalToken}` } });
+    expect(await gate(machine)).toBeNull();
+    expect(principalOf(machine)).toMatchObject({ userId: "internal", method: "internal" });
+    const invite = await gate(req("/auth/invites", { method: "POST", token: internalToken, body: "{}" }));
+    expect(invite?.status).toBe(403);
     const setup = await gate(
       req("/auth/setup", {
         method: "POST",
@@ -265,7 +285,6 @@ describe("gate", () => {
     );
     expect(setup?.status).toBe(201);
     const { token, user } = (await (setup as Response).json()) as { token: string; user: { id: string } };
-    expect(authActive()).toBe(true);
     expect((await readSetting<{ userId?: string }>("auth:owner", {})).userId).toBe(user.id);
     expect((await gate(req("/bots")))?.status).toBe(401);
     expect(await gate(req("/bots", { token }))).toBeNull();
@@ -273,12 +292,7 @@ describe("gate", () => {
     expect(await after?.json()).toMatchObject({ needsOwner: false, required: true });
     const again = await initAuth({ BETTER_AUTH_URL: base, BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
     expect(again).not.toBeNull();
-    expect(authActive()).toBe(true);
-    const previous = process.env.RUNNER_TOKEN;
-    process.env.RUNNER_TOKEN = internalToken;
-    restores.push(() => {
-      process.env.RUNNER_TOKEN = previous;
-    });
+    expect(logs).toContain(`auth on (${base}, secret from env)`);
     const internal = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${internalToken}` } });
     expect(await gate(internal)).toBeNull();
     expect(principalOf(internal)).toMatchObject({ userId: user.id, method: "internal", role: "owner" });
@@ -310,24 +324,6 @@ describe("gate", () => {
     expect(setup?.status).toBe(201);
     expect(authActive()).toBe(true);
     expect(errors).toContain("auth: could not record the owner");
-  });
-
-  test("initializes the real module when turned on", async () => {
-    const logs: string[] = [];
-    const log = spyOn(console, "log").mockImplementation((line: string) => {
-      logs.push(line);
-    });
-    restores.push(() => log.mockRestore());
-    const created = await initAuth({
-      BOTS_AUTH: "on",
-      BETTER_AUTH_URL: base,
-      BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
-    });
-    expect(created?.baseURL).toBe(base);
-    expect(authActive()).toBe(true);
-    expect(logs).toContain(`auth on (${base}, secret from env)`);
-    const blocked = await gate(req("/bots"));
-    expect(blocked?.status).toBe(401);
   });
 
   test("records the principal, honors the bypass and passes public routes", async () => {

@@ -44,7 +44,7 @@ services:
       - ${HOME}/.gitconfig:/home/app/.gitconfig:ro
       - desktop-home:/home/runelaybot
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:$${GATEWAY_PORT}/bots || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:$${GATEWAY_PORT}/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

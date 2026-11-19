@@ -18,7 +18,6 @@ export interface AuthModuleOptions {
   serverDir: string;
   host: string;
   port: number;
-  required?: () => boolean;
   internalToken?: () => string;
   onOwnerCreated?: (owner: IssuedSession["user"]) => void | Promise<void>;
   blobs?: () => BlobStore;
@@ -58,7 +57,7 @@ export function createAuthModule(options: AuthModuleOptions) {
     : undefined;
   const authenticate = createAuthenticator(auth, { trustedOrigins: [baseURL, ...extraOrigins], internal });
   const avatars = createAvatarService(auth, options.blobs ?? getBlobStore);
-  const routes = createAuthRoutes({ auth, access, avatars, secret: resolved.secret, required: options.required });
+  const routes = createAuthRoutes({ auth, access, avatars, secret: resolved.secret });
   return { auth, access, avatars, authenticate, handle: routes.handle, baseURL, secretSource: resolved.source };
 }
 
