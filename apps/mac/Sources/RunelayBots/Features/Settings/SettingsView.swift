@@ -315,6 +315,8 @@ struct ServerSettings: View {
                 .padding(Spacing.l)
             }
 
+            AccountSettingsGroup()
+
             SettingsGroup(caption: "Conexão") {
                 SettingsRow(title: "Motor", detail: nil) {
                     Text(model.meta.engineLabel ?? (model.metaLoaded ? "Não informado" : "Indisponível"))

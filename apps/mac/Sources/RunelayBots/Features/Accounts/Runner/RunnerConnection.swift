@@ -14,6 +14,7 @@ enum RunnerToken {
     }
 
     static func read() -> String? {
+        if let key = AuthStore.read(.runner) { return key }
         guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
         let token = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return token.count >= 24 ? token : nil

@@ -499,11 +499,13 @@ struct BotsClient: Sendable {
         var urlRequest = URLRequest(url: url)
         urlRequest.timeoutInterval = 20
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        AuthStore.authorize(&urlRequest)
         return urlRequest
     }
 
     private func perform(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await URLSession.shared.data(for: request)
+        AuthStore.reportUnauthorized(response)
         guard let http = response as? HTTPURLResponse else {
             throw ClientError.invalidResponse
         }

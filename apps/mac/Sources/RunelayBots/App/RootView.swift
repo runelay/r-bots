@@ -68,6 +68,7 @@ struct RootView: View {
             FloatingMenuLayer(anchors: anchors)
                 .environment(\.appReduceMotion, reduceMotion)
         }
+        .authGate()
         .background(WindowConfigurator())
         .ignoresSafeArea()
         .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)

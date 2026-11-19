@@ -70,7 +70,9 @@ final class BrowserLiveSession {
                 if self.phase != .unsupported {
                     self.phase = .connecting
                 }
-                let socket = URLSession.shared.webSocketTask(with: url)
+                var request = URLRequest(url: url)
+                AuthStore.authorize(&request)
+                let socket = URLSession.shared.webSocketTask(with: request)
                 self.socket = socket
                 socket.resume()
                 let outcome = await Self.receive(on: socket) { [weak self] event in

@@ -13,7 +13,9 @@ final class ScribeSocket: @unchecked Sendable {
     var onClose: (@Sendable (String) -> Void)?
 
     init(url: URL, sampleRate: Double) {
-        task = URLSession.shared.webSocketTask(with: url)
+        var request = URLRequest(url: url)
+        AuthStore.authorize(&request)
+        task = URLSession.shared.webSocketTask(with: request)
         self.sampleRate = Int(sampleRate)
     }
 
@@ -124,7 +126,9 @@ final class SpeechSocket: @unchecked Sendable {
     var onClose: (@Sendable () -> Void)?
 
     init(url: URL, speed: Double) {
-        task = URLSession.shared.webSocketTask(with: url)
+        var request = URLRequest(url: url)
+        AuthStore.authorize(&request)
+        task = URLSession.shared.webSocketTask(with: request)
         self.speed = speed
     }
 

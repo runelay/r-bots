@@ -1593,6 +1593,7 @@ final class AppModel {
                 do {
                     let request = try client.statusStreamRequest()
                     let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    AuthStore.reportUnauthorized(response)
                     guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                         throw BotsClient.ClientError.http((response as? HTTPURLResponse)?.statusCode ?? 0, nil)
                     }
