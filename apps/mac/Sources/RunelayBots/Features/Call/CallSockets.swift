@@ -287,7 +287,7 @@ final class SpeechSocket: @unchecked Sendable {
             }
         }
         if json["isFinal"]?.boolValue == true {
-            lock.withLock {
+            _ = lock.withLock {
                 finished.insert(id)
             }
             drain()

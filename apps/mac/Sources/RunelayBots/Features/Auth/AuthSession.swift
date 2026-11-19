@@ -236,7 +236,7 @@ final class AuthSession: NSObject {
     }
 }
 
-extension AuthSession: @preconcurrency ASWebAuthenticationPresentationContextProviding {
+extension AuthSession: ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         NSApp.keyWindow ?? NSApp.windows.first ?? ASPresentationAnchor()
     }

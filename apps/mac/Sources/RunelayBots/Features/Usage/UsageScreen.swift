@@ -1001,7 +1001,7 @@ private struct UsageDetailTable: View {
     @State private var rowFrames: [String: CGRect] = [:]
     @State private var hoveredLine: String?
 
-    private static let space = "usage-detail"
+    nonisolated private static let space = "usage-detail"
 
     private var lines: [DetailLine] {
         var map: [String: DetailLine] = [:]

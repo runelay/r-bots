@@ -308,7 +308,7 @@ struct CanvasEditorView: View {
                 CanvasNodeView(editor: editor, node: node)
             }
             ForEach(editor.doc.edges) { edge in
-                if let from = editor.doc.node(edge.from), let to = editor.doc.node(edge.to) {
+                if editor.doc.node(edge.from) != nil, editor.doc.node(edge.to) != nil {
                     CanvasEdgeLabel(editor: editor, edge: edge)
                 }
             }
