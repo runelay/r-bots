@@ -42,6 +42,7 @@ import {
   suggestedFallback,
 } from "../../bots/services/bots.service";
 import { startLiveView } from "../../browser/services/browser.service";
+import { blocksEditNote, blocksGuide } from "../../blocks/services/block-tools.service";
 import { canvasEditNote, canvasGuide } from "../../canvas/services/canvas.service";
 import { touchWorktree } from "../../code/repositories/code.repository";
 import { mentionedRepo, openTaskWorkspace } from "../../code/services/actions.service";
@@ -320,6 +321,7 @@ function systemPromptFor(
   if (openGuide) parts.push("", openGuide);
   parts.push("", permissionGuide(permission));
   parts.push("", canvasGuide);
+  parts.push("", blocksGuide);
   parts.push("", uploadGuide);
   parts.push("", vaultGuide);
   parts.push(
@@ -1331,6 +1333,14 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     if (!isSchedule && !group) {
       const canvasNote = await canvasEditNote(bot.id).catch(() => "");
       if (canvasNote) extraSystem = [extraSystem, canvasNote].filter(Boolean).join("\n\n");
+      const blocksNote = (() => {
+        try {
+          return blocksEditNote(bot.id);
+        } catch {
+          return "";
+        }
+      })();
+      if (blocksNote) extraSystem = [extraSystem, blocksNote].filter(Boolean).join("\n\n");
     }
     if (delivery.voice) extraSystem = [extraSystem, voiceNote].filter(Boolean).join("\n\n");
     const liveBots = [bot, ...delegatesOf(bot)]
