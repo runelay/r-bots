@@ -3,6 +3,7 @@ import SwiftUI
 enum UsagePalette {
     static let claude = Color.brand(light: 0xC96442, dark: 0xD97757)
     static let codex = Color.brand(light: 0x3A3A3A, dark: 0xD4D4D4)
+    static let codexChart = Color.brand(light: 0x0E8F6F, dark: 0x19C37D)
     static let track = Color.dynamic(light: Theme.rgb(0x000000), dark: Theme.rgb(0xFFFFFF), lightAlpha: 0.12, darkAlpha: 0.14)
     static let healthy = Theme.brandAccent
     static let healthyInner = Theme.brandAccent.opacity(0.55)

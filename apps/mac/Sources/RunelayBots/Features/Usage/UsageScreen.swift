@@ -302,16 +302,20 @@ private struct UsageLimitCard: View {
                     HStack(alignment: .firstTextBaseline, spacing: Spacing.xs) {
                         Text(UsageFormat.percent(lowest?.window.remainingPercent ?? 0))
                             .font(BrandFonts.sans(30, weight: .semibold).monospacedDigit())
+                            .lineLimit(1)
                             .foregroundStyle(UsagePalette.remaining(lowest?.window.remainingPercent))
                             .contentTransition(.numericText())
                         Text("restante")
                             .font(TypeScale.caption)
                             .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
                         Spacer(minLength: 0)
                         if let until = UsageFormat.until(lowest?.window.resetDate) {
                             Text("volta em \(until)")
                                 .font(TypeScale.caption.monospacedDigit())
                                 .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
+                                .fixedSize()
                         }
                     }
                 }
@@ -346,15 +350,21 @@ private struct UsageAccountBar: View {
                 Text(account.environmentLabel)
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
                 Spacer(minLength: Spacing.s)
                 if let until = UsageFormat.until(window.resetDate) {
                     Text(until)
                         .font(TypeScale.caption.monospacedDigit())
                         .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                        .fixedSize()
                 }
                 Text(UsageFormat.percent(window.remainingPercent))
                     .font(TypeScale.captionStrong.monospacedDigit())
                     .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .fixedSize()
                     .frame(minWidth: 36, alignment: .trailing)
             }
             GeometryReader { geometry in
@@ -420,6 +430,8 @@ private struct UsageTokensTab: View {
                         .foregroundStyle(Theme.textSecondary)
                     Text(mode == .tokens ? UsageFormat.tokens(totals.processed) : UsageFormat.usd(totals.costUsd))
                         .font(BrandFonts.sans(34, weight: .semibold).monospacedDigit())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .foregroundStyle(Theme.textPrimary)
                         .contentTransition(.numericText())
                 }
@@ -445,18 +457,17 @@ private struct UsageTokensTab: View {
                         .font(TypeScale.sectionTitle)
                         .foregroundStyle(Theme.textPrimary)
                     UsageAreaChart(points: points(summary), hourly: summary.granularity == "hour", mode: mode)
-                        .frame(height: 220)
                 }
             }
 
             if mode == .tokens {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: Spacing.m)], spacing: Spacing.m) {
-                    UsageStat(title: "Processados", value: UsageFormat.tokens(totals.processed))
-                    UsageStat(title: "Input em cache", value: UsageFormat.tokens(totals.cacheRead))
-                    UsageStat(title: "Input fora do cache", value: UsageFormat.tokens(totals.input + totals.cacheWrite))
-                    UsageStat(title: "Output", value: UsageFormat.tokens(totals.output))
-                    UsageStat(title: "Economia do cache", value: UsageFormat.usd(totals.savingsUsd), detail: cacheShare(totals))
-                }
+                UsageStatGrid(stats: [
+                    UsageStat(title: "Processados", value: UsageFormat.tokens(totals.processed)),
+                    UsageStat(title: "Input em cache", value: UsageFormat.tokens(totals.cacheRead)),
+                    UsageStat(title: "Input fora do cache", value: UsageFormat.tokens(totals.input + totals.cacheWrite)),
+                    UsageStat(title: "Output", value: UsageFormat.tokens(totals.output)),
+                    UsageStat(title: "Economia do cache", value: UsageFormat.usd(totals.savingsUsd), detail: cacheShare(totals)),
+                ])
                 UsageTypeBar(title: "Tokens por tipo", segments: [
                     ("Fora do cache", totals.input, UsagePalette.uncached),
                     ("Escrita no cache", totals.cacheWrite, UsagePalette.cacheWrite),
@@ -464,12 +475,12 @@ private struct UsageTokensTab: View {
                     ("Output", totals.output, UsagePalette.output),
                 ], format: UsageFormat.tokens)
             } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: Spacing.m)], spacing: Spacing.m) {
-                    UsageStat(title: "Custo total", value: UsageFormat.usd(totals.costUsd))
-                    UsageStat(title: "Economia do cache", value: UsageFormat.usd(totals.savingsUsd))
-                    UsageStat(title: "Por sessão", value: UsageFormat.usd(totals.sessions > 0 ? totals.costUsd / totals.sessions : 0))
-                    UsageStat(title: "Por chamada", value: UsageFormat.usd(totals.requests > 0 ? totals.costUsd / totals.requests : 0))
-                }
+                UsageStatGrid(stats: [
+                    UsageStat(title: "Custo total", value: UsageFormat.usd(totals.costUsd)),
+                    UsageStat(title: "Economia do cache", value: UsageFormat.usd(totals.savingsUsd)),
+                    UsageStat(title: "Por sessão", value: UsageFormat.usd(totals.sessions > 0 ? totals.costUsd / totals.sessions : 0)),
+                    UsageStat(title: "Por chamada", value: UsageFormat.usd(totals.requests > 0 ? totals.costUsd / totals.requests : 0)),
+                ])
                 UsageTypeBar(title: "Custo por tipo", segments: [
                     ("Input fora do cache", summary.costByType.input, UsagePalette.uncached),
                     ("Escrita no cache", summary.costByType.cacheWrite, UsagePalette.cacheWrite),
@@ -527,12 +538,62 @@ private struct UsageAreaChart: View {
     let mode: UsageMode
     @State private var hovered: Date?
 
+    private struct Band: Identifiable {
+        let date: Date
+        let provider: String
+        let start: Double
+        let end: Double
+
+        var id: String { "\(date.timeIntervalSince1970)|\(provider)" }
+    }
+
     private var dates: [Date] {
         Array(Set(points.map(\.date))).sorted()
     }
 
+    private var providers: [String] {
+        Array(Set(points.map(\.provider))).sorted { total($0) > total($1) }
+    }
+
+    private var bands: [Band] {
+        let order = providers
+        var values: [String: Double] = [:]
+        for point in points {
+            values[point.id, default: 0] += point.value
+        }
+        var result: [Band] = []
+        for date in dates {
+            var base = 0.0
+            for provider in order {
+                let value = values["\(date.timeIntervalSince1970)|\(provider)"] ?? 0
+                result.append(Band(date: date, provider: provider, start: base, end: base + value))
+                base += value
+            }
+        }
+        return result
+    }
+
+    private func total(_ provider: String) -> Double {
+        points.filter { $0.provider == provider }.reduce(0) { $0 + $1.value }
+    }
+
+    private func color(_ provider: String) -> Color {
+        provider == "Claude" ? UsagePalette.claude : UsagePalette.codexChart
+    }
+
     private func format(_ value: Double) -> String {
         mode == .tokens ? UsageFormat.tokens(value) : UsageFormat.usd(value)
+    }
+
+    private func axisLabel(_ value: Double) -> String {
+        guard mode == .cost else { return UsageFormat.tokens(value) }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = value >= 1000 ? 1 : 0
+        let shown = value >= 1000 ? value / 1000 : value
+        let number = formatter.string(from: NSNumber(value: shown)) ?? "\(Int(shown))"
+        return "US$ " + number + (value >= 1000 ? " mil" : "")
     }
 
     private func label(_ date: Date) -> String {
@@ -548,101 +609,148 @@ private struct UsageAreaChart: View {
             Text("Sem uso neste período.")
                 .font(TypeScale.rowSubtitle)
                 .foregroundStyle(Theme.textTertiary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, minHeight: 200)
         } else {
-            Chart {
-                ForEach(points) { point in
-                    AreaMark(
-                        x: .value("Data", point.date),
-                        y: .value("Valor", point.value),
-                        stacking: .standard
-                    )
-                    .foregroundStyle(by: .value("Provedor", point.provider))
-                    .interpolationMethod(.monotone)
-                    .opacity(0.85)
+            VStack(alignment: .leading, spacing: Spacing.xl) {
+                legend
+                chart
+                    .aspectRatio(2.8, contentMode: .fit)
+                    .frame(minHeight: 180, maxHeight: 340)
+            }
+        }
+    }
+
+    private var legend: some View {
+        HStack(spacing: Spacing.l) {
+            ForEach(providers, id: \.self) { provider in
+                HStack(spacing: Spacing.xs + 2) {
+                    ProviderLogo(provider: provider.lowercased(), size: 14)
+                    Text(provider)
+                        .foregroundStyle(Theme.textSecondary)
+                    Text(format(total(provider)))
+                        .foregroundStyle(Theme.textPrimary)
+                        .monospacedDigit()
                 }
-                if let hovered {
-                    RuleMark(x: .value("Data", hovered))
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineStyle(StrokeStyle(lineWidth: 1))
-                        .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit(to: .chart), y: .disabled)) {
-                            tooltip(hovered)
-                        }
+                .font(TypeScale.caption)
+                .lineLimit(1)
+                .fixedSize()
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var chart: some View {
+        let bands = bands
+        return Chart {
+            ForEach(bands) { band in
+                AreaMark(
+                    x: .value("Data", band.date),
+                    yStart: .value("Base", band.start),
+                    yEnd: .value("Valor", band.end),
+                    series: .value("Provedor", band.provider)
+                )
+                .interpolationMethod(.monotone)
+                .foregroundStyle(LinearGradient(colors: [color(band.provider).opacity(0.42), color(band.provider).opacity(0.04)], startPoint: .top, endPoint: .bottom))
+            }
+            ForEach(bands) { band in
+                LineMark(
+                    x: .value("Data", band.date),
+                    y: .value("Valor", band.end),
+                    series: .value("Provedor", band.provider)
+                )
+                .interpolationMethod(.monotone)
+                .foregroundStyle(color(band.provider))
+                .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            }
+            if let hovered {
+                RuleMark(x: .value("Data", hovered))
+                    .foregroundStyle(Theme.textTertiary.opacity(0.6))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .annotation(position: .top, spacing: Spacing.xs, overflowResolution: .init(x: .fit(to: .chart), y: .fit(to: .chart))) {
+                        tooltip(hovered)
+                    }
+                ForEach(bands.filter { $0.date == hovered }) { band in
+                    PointMark(x: .value("Data", band.date), y: .value("Valor", band.end))
+                        .symbolSize(42)
+                        .foregroundStyle(color(band.provider))
                 }
             }
-            .chartForegroundStyleScale(["Claude": UsagePalette.claude, "Codex": UsagePalette.codex])
-            .chartLegend(position: .top, alignment: .leading)
-            .chartYAxis {
-                AxisMarks(position: .leading) { value in
-                    AxisGridLine()
-                        .foregroundStyle(Theme.paneDivider)
-                    AxisValueLabel {
-                        if let number = value.as(Double.self) {
-                            Text(format(number))
-                                .font(TypeScale.caption)
-                                .foregroundStyle(Theme.textTertiary)
-                        }
+        }
+        .chartLegend(.hidden)
+        .chartYAxis {
+            AxisMarks(position: .leading, values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                    .foregroundStyle(Theme.paneDivider.opacity(0.6))
+                AxisValueLabel {
+                    if let number = value.as(Double.self) {
+                        Text(axisLabel(number))
+                            .font(TypeScale.caption.monospacedDigit())
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                 }
             }
-            .chartXAxis {
-                AxisMarks(values: .automatic(desiredCount: 6)) { value in
-                    AxisValueLabel {
-                        if let date = value.as(Date.self) {
-                            Text(date, format: hourly ? .dateTime.hour() : .dateTime.day().month(.abbreviated))
-                                .font(TypeScale.caption)
-                                .foregroundStyle(Theme.textTertiary)
-                        }
+        }
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(date, format: hourly ? .dateTime.hour() : .dateTime.day().month(.abbreviated))
+                            .font(TypeScale.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                            .fixedSize()
                     }
                 }
             }
-            .chartOverlay { proxy in
-                GeometryReader { geometry in
-                    Rectangle()
-                        .fill(.clear)
-                        .contentShape(Rectangle())
-                        .onContinuousHover { phase in
-                            switch phase {
-                            case .active(let location):
-                                guard let frame = proxy.plotFrame.map({ geometry[$0] }) else { return }
-                                let x = location.x - frame.origin.x
-                                guard x >= 0, x <= frame.width, let date: Date = proxy.value(atX: x) else {
-                                    hovered = nil
-                                    return
-                                }
-                                hovered = dates.min { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) }
-                            case .ended:
+        }
+        .chartOverlay { proxy in
+            GeometryReader { geometry in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            guard let frame = proxy.plotFrame.map({ geometry[$0] }) else { return }
+                            let x = location.x - frame.origin.x
+                            guard x >= 0, x <= frame.width, let date: Date = proxy.value(atX: x) else {
                                 hovered = nil
+                                return
                             }
+                            hovered = dates.min { abs($0.timeIntervalSince(date)) < abs($1.timeIntervalSince(date)) }
+                        case .ended:
+                            hovered = nil
                         }
-                }
+                    }
             }
         }
     }
 
     private func tooltip(_ date: Date) -> some View {
-        let items = points.filter { $0.date == date }
-        let total = items.reduce(0) { $0 + $1.value }
+        let items = providers.map { provider in
+            (provider, points.first { $0.date == date && $0.provider == provider }?.value ?? 0)
+        }
+        let total = items.reduce(0) { $0 + $1.1 }
         return VStack(alignment: .leading, spacing: Spacing.xs) {
             Text(label(date))
                 .font(TypeScale.captionStrong)
                 .foregroundStyle(Theme.textPrimary)
-            ForEach(items) { item in
-                HStack(spacing: Spacing.xs) {
-                    Circle()
-                        .fill(UsagePalette.provider(item.provider.lowercased()))
-                        .frame(width: 7, height: 7)
-                    Text(item.provider)
+            ForEach(items, id: \.0) { item in
+                HStack(spacing: Spacing.xs + 2) {
+                    ProviderLogo(provider: item.0.lowercased(), size: 12)
+                    Text(item.0)
                         .foregroundStyle(Theme.textSecondary)
                     Spacer(minLength: Spacing.m)
-                    Text(format(item.value))
+                    Text(format(item.1))
                         .foregroundStyle(Theme.textPrimary)
                         .monospacedDigit()
                 }
                 .font(TypeScale.caption)
             }
             if items.count > 1 {
-                HStack {
+                HStack(spacing: Spacing.xs + 2) {
                     Text("Total")
                         .foregroundStyle(Theme.textSecondary)
                     Spacer(minLength: Spacing.m)
@@ -653,10 +761,11 @@ private struct UsageAreaChart: View {
                 .font(TypeScale.captionStrong)
             }
         }
+        .lineLimit(1)
+        .fixedSize()
+        .frame(minWidth: 160, alignment: .leading)
         .padding(Spacing.s + 2)
-        .frame(minWidth: 160)
-        .background(Theme.background, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-        .softElevation(lifted: true)
+        .glassSurface(RoundedRectangle(cornerRadius: Radius.small, style: .continuous), fallback: Theme.background)
     }
 }
 
@@ -671,15 +780,54 @@ private struct UsageStat: View {
                 Text(title)
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 Text(value)
                     .font(BrandFonts.sans(20, weight: .semibold).monospacedDigit())
                     .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                     .contentTransition(.numericText())
                 if !detail.isEmpty {
                     Text(detail)
                         .font(TypeScale.caption)
                         .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                 }
+            }
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+        }
+    }
+}
+
+private struct UsageStatGrid: View {
+    let stats: [UsageStat]
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            grid(columns: stats.count)
+            if stats.count > 3 {
+                grid(columns: 3)
+            }
+            grid(columns: 2)
+        }
+    }
+
+    private func grid(columns: Int) -> some View {
+        VStack(spacing: Spacing.m) {
+            ForEach(Array(stride(from: 0, to: stats.count, by: columns)), id: \.self) { start in
+                HStack(alignment: .top, spacing: Spacing.m) {
+                    ForEach(start..<start + columns, id: \.self) { index in
+                        if index < stats.count {
+                            stats[index]
+                        } else {
+                            Color.clear
+                                .frame(maxWidth: .infinity, maxHeight: 0)
+                        }
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -710,26 +858,48 @@ private struct UsageTypeBar: View {
                     .clipShape(Capsule())
                 }
                 .frame(height: 10)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: Spacing.m, alignment: .leading)], alignment: .leading, spacing: Spacing.s) {
-                    ForEach(segments, id: \.0) { segment in
-                        HStack(spacing: Spacing.xs + 2) {
-                            Circle()
-                                .fill(segment.2)
-                                .frame(width: 8, height: 8)
-                            Text(segment.0)
-                                .foregroundStyle(Theme.textSecondary)
-                            Text(format(segment.1))
-                                .foregroundStyle(Theme.textPrimary)
-                                .monospacedDigit()
-                            Text(UsageFormat.percent(segment.1 / total * 100))
-                                .foregroundStyle(Theme.textTertiary)
-                                .monospacedDigit()
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: Spacing.l) {
+                        ForEach(segments, id: \.0) { segment in
+                            legendItem(segment, total: total)
                         }
-                        .font(TypeScale.caption)
+                    }
+                    Grid(alignment: .leading, horizontalSpacing: Spacing.l, verticalSpacing: Spacing.s) {
+                        ForEach(Array(stride(from: 0, to: segments.count, by: 2)), id: \.self) { start in
+                            GridRow {
+                                ForEach(segments[start..<min(start + 2, segments.count)], id: \.0) { segment in
+                                    legendItem(segment, total: total)
+                                }
+                            }
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: Spacing.s) {
+                        ForEach(segments, id: \.0) { segment in
+                            legendItem(segment, total: total)
+                        }
                     }
                 }
             }
         }
+    }
+
+    private func legendItem(_ segment: (String, Double, Color), total: Double) -> some View {
+        HStack(spacing: Spacing.xs + 2) {
+            Circle()
+                .fill(segment.2)
+                .frame(width: 8, height: 8)
+            Text(segment.0)
+                .foregroundStyle(Theme.textSecondary)
+            Text(format(segment.1))
+                .foregroundStyle(Theme.textPrimary)
+                .monospacedDigit()
+            Text(UsageFormat.percent(segment.1 / total * 100))
+                .foregroundStyle(Theme.textTertiary)
+                .monospacedDigit()
+        }
+        .font(TypeScale.caption)
+        .lineLimit(1)
+        .fixedSize()
     }
 }
 
@@ -833,6 +1003,7 @@ private struct UsageDetailTable: View {
                         Text("Output")
                         Text(mode == .cost ? "Custo" : "Total")
                     }
+                    .lineLimit(1)
                     .font(TypeScale.captionStrong)
                     .foregroundStyle(Theme.textTertiary)
                     ForEach(lines) { line in
@@ -852,6 +1023,7 @@ private struct UsageDetailTable: View {
                             Text(mode == .cost ? (line.priced ? UsageFormat.usd(line.cost) : "sem preço") : UsageFormat.tokens(line.processed))
                                 .foregroundStyle(Theme.textPrimary)
                         }
+                        .lineLimit(1)
                         .font(TypeScale.rowSubtitle.monospacedDigit())
                         .foregroundStyle(Theme.textSecondary)
                     }

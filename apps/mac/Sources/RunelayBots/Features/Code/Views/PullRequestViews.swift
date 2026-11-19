@@ -10,6 +10,8 @@ private struct InlineLink: View {
     var body: some View {
         Button(action: action) {
             Text(title)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(color)
                 .underline(hovering)
                 .contentShape(Rectangle())
@@ -333,9 +335,10 @@ struct PullRequestCard: View {
             } else if pr.status == .closed {
                 InlineLink(title: "Reabrir") { reopen() }
                     .help("Reabre o PR no GitHub")
-                InlineLink(title: "Fechar o repositório", color: Theme.textSecondary) { closeRepository() }
+                InlineLink(title: "Fechar cópia", color: Theme.textSecondary) { closeRepository() }
+                    .help("Remove a worktree. A branch continua no GitHub")
             } else if pr.status == .merged {
-                InlineLink(title: "Fechar o repositório", color: Theme.merged) { closeRepository() }
+                InlineLink(title: "Fechar cópia", color: Theme.merged) { closeRepository() }
                     .help("Remove a worktree. A branch continua no GitHub")
             }
         }
