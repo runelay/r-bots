@@ -199,3 +199,73 @@ POST /api/auth/sign-out -> 200 {"success":true}; depois 401
 
 reinício sem variável: auth on (http://127.0.0.1:2100, secret from data-file); GET /bots sem credencial -> 401
 ```
+
+## v37 (19/11): foto da conta
+
+### Rotas
+
+Todas pedem sessão (ou chave `rbk_…`, ou `RUNNER_TOKEN` com dono criado). Sem credencial: 401.
+
+| Rota | Corpo | Resposta |
+| --- | --- | --- |
+| `PUT /auth/me/avatar` (ou `POST`) | bytes da imagem, `content-type` `image/png`, `image/jpeg` ou `image/webp`, até 2 MB | `200 { ok, image }` |
+| `DELETE /auth/me/avatar` | vazio | `200 { ok, image: null }` |
+| `GET /auth/avatars/:userId/:arquivo` | | os bytes, com `content-type` da imagem e `cache-control: private, max-age=31536000, immutable` |
+
+- A imagem vai para o `BlobStore` em `users/<userId>/avatar/<arquivo>` e o caminho de serviço (`/auth/avatars/<userId>/<arquivo>`) fica no campo `image` do usuário do better-auth. Cada envio gera um arquivo novo e apaga o anterior; por isso o cache pode ser eterno.
+- O servidor confere a assinatura do arquivo (PNG, JPEG ou WebP) e o tamanho. Não recorta nem redimensiona: o app manda o recorte quadrado pronto (512×512).
+- `GET /auth/me` ganha `user.image` (`null` sem foto). O app baixa a foto pelo caminho com o próprio Bearer.
+- Servidor sem login (`GET /auth/setup` 404): não há foto no servidor. O app mostra o nome e a foto da conta do macOS.
+
+### Erros
+
+| Caso | Status | Corpo |
+| --- | --- | --- |
+| tipo não aceito ou corpo vazio | 400 | `{ ok: false, error, field: "image" }` |
+| bytes não batem com o tipo | 400 | `{ ok: false, error: "O arquivo não é a imagem que diz ser.", field: "image" }` |
+| mais de 2 MB | 413 | `{ ok: false, error, field: "image", code: "too_large" }` |
+| credencial sem conta (`RUNNER_TOKEN` antes do dono) | 404 | `{ ok: false, error: "Conta não encontrada.", code: "not_found" }` |
+| arquivo que não existe mais | 404 | `{ ok: false, error: "Foto não encontrada.", code: "not_found" }` |
+
+### Verificado
+
+Instância separada (`GATEWAY_PORT=2100`, `BOTS_SCHEDULES=off`, `BLOB_DRIVER=fs`, cópia do banco de produção). Tokens trocados por `…`.
+
+```text
+GET /auth/me -> 200
+{"ok":true,"user":{"id":"kE53UMUWZX4ROjBdDL1WrUaCAto1vmlD","name":"Teste Dono","email":"dono@example.com","role":"owner","image":null},"method":"session","expiresAt":"2026-12-19T23:31:33.979Z","cookie":{"name":"better-auth.session_token","value":"…"}}
+
+PUT /auth/me/avatar (image/png, 74 bytes) -> 200
+{"ok":true,"image":"/auth/avatars/kE53UMUWZX4ROjBdDL1WrUaCAto1vmlD/mwo6pczc-9be4f70e.png"}
+
+GET /auth/me -> 200
+{"ok":true,"user":{…,"role":"owner","image":"/auth/avatars/kE53UMUWZX4ROjBdDL1WrUaCAto1vmlD/mwo6pczc-9be4f70e.png"},…}
+
+GET /auth/avatars/kE53UMUWZX4ROjBdDL1WrUaCAto1vmlD/mwo6pczc-9be4f70e.png -> 200
+Content-Type: image/png
+Cache-Control: private, max-age=31536000, immutable
+X-Content-Type-Options: nosniff
+content-length: 74
+(mesmos bytes enviados)
+
+GET (sem credencial) -> 401
+{"ok":false,"error":"Entre de novo para continuar.","code":"unauthorized"}
+
+PUT /auth/me/avatar (image/gif) -> 400
+{"ok":false,"error":"Envie uma imagem PNG, JPEG ou WebP.","field":"image"}
+
+PUT /auth/me/avatar (2,2 MB) -> 413
+{"ok":false,"error":"A imagem passa de 2 MB.","field":"image","code":"too_large"}
+
+PUT /auth/me/avatar (de novo) -> 200
+{"ok":true,"image":"/auth/avatars/kE53UMUWZX4ROjBdDL1WrUaCAto1vmlD/mwo6pd1v-2825bfc5.png"}
+GET da foto anterior -> 404 {"ok":false,"error":"Foto não encontrada.","code":"not_found"}
+blobs/users/kE53UMUWZX4ROjBdDL1WrUaCAto1vmlD/avatar/ -> só o arquivo novo
+
+DELETE /auth/me/avatar -> 200
+{"ok":true,"image":null}
+blobs/users/…/avatar/ -> vazio
+
+GET /auth/me (Bearer RUNNER_TOKEN) -> 200
+{"ok":true,"user":{"id":"kE53UMUWZX4ROjBdDL1WrUaCAto1vmlD","name":"Teste Dono","email":"dono@example.com","role":"owner","image":null},"method":"internal","expiresAt":null}
+```
