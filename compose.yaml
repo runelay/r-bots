@@ -1,0 +1,54 @@
+name: runelay-bots
+
+services:
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    image: ${BOTS_IMAGE:-runelay-bots-server:latest}
+    container_name: ${BOTS_CONTAINER_NAME:-runelay-bots}
+    network_mode: host
+    init: true
+    restart: unless-stopped
+    shm_size: 2gb
+    mem_limit: ${BOTS_MEM_LIMIT:-6g}
+    memswap_limit: ${BOTS_MEM_LIMIT:-6g}
+    cpus: ${BOTS_CPUS:-3}
+    pids_limit: 4096
+    ulimits:
+      core: 0
+    environment:
+      GATEWAY_HOST: 127.0.0.1
+      GATEWAY_PORT: ${GATEWAY_PORT:-2000}
+      BOTS_DATA_DIR: ${BOTS_DATA_DIR:-/home/anderson/projects/runelay-bots/data}
+      BOTS_SCHEDULES: ${BOTS_SCHEDULES:-on}
+      BOTS_MAX_TURNS: ${BOTS_MAX_TURNS:-3}
+      VOICE_MAX_WARM: ${VOICE_MAX_WARM:-3}
+      CODE_REPO_ROOTS: /home/anderson/projects/conty-dev,/home/anderson/projects
+      CODE_WORKTREES_DIR: /home/anderson/projects/worktrees
+      CONTY_API_DIR: /home/anderson/projects/conty-dev/conty-api
+      VAULT_KEY_FILE: /run/runelay-bots/vault.key
+    volumes:
+      - /home/anderson/projects:/home/anderson/projects
+      - /home/anderson/projects/worktrees:/home/anderson/projects/worktrees
+      - ${BOTS_DATA_DIR:-/home/anderson/projects/runelay-bots/data}:${BOTS_DATA_DIR:-/home/anderson/projects/runelay-bots/data}
+      - ${BOTS_ENV_FILE:-/home/anderson/projects/runelay-bots/.env.local}:/app/apps/server/.env.local:ro
+      - /home/anderson/.claude:/home/anderson/.claude
+      - /home/anderson/.claude.json:/home/anderson/.claude.json
+      - /home/anderson/.codex:/home/anderson/.codex
+      - /home/anderson/.config/gh:/home/anderson/.config/gh
+      - /home/anderson/.supabase:/home/anderson/.supabase
+      - /home/anderson/.gitconfig:/home/anderson/.gitconfig:ro
+      - /home/runelaybot:/home/runelaybot
+      - ${VAULT_KEY_HOST_FILE:-/home/anderson/.config/runelay-bots/vault.key}:/run/runelay-bots/vault.key:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:$${GATEWAY_PORT}/bots || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: "5"

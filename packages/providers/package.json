@@ -1,0 +1,18 @@
+{
+  "name": "@runelay-bots/providers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./proc": "./src/proc.ts",
+    "./proc-tree": "./src/proc-tree.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "0.3.328",
+    "@runelay-bots/protocol": "*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

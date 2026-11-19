@@ -1,6 +1,5 @@
 /data/
-server-sdk/data/
-runner/data/
+/server-sdk/
 node_modules/
 .build/
 .swiftpm/
