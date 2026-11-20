@@ -62,9 +62,9 @@ enum SettingsTint {
 extension SettingsSection {
     var group: SettingsSectionGroup {
         switch self {
-        case .server, .account, .devices: .account
+        case .server, .account, .devices, .vault: .account
         case .appearance, .notifications, .shortcuts: .app
-        case .bots, .computer, .integrations: .automation
+        case .bots, .aiAccounts, .computer, .integrations: .automation
         case .about: .about
         }
     }
@@ -76,6 +76,8 @@ extension SettingsSection {
         case .appearance: "circle.lefthalf.filled"
         case .notifications: "bell.badge.fill"
         case .bots: "person.2.fill"
+        case .aiAccounts: "key.fill"
+        case .vault: "lock.shield.fill"
         case .computer: "cursorarrow.rays"
         case .integrations: "puzzlepiece.extension.fill"
         case .shortcuts: "command"
@@ -91,6 +93,8 @@ extension SettingsSection {
         case .appearance: SettingsTint.slate
         case .notifications: SettingsTint.red
         case .bots: SettingsTint.orange
+        case .aiAccounts: SettingsTint.amber
+        case .vault: SettingsTint.indigo
         case .computer: SettingsTint.purple
         case .integrations: SettingsTint.green
         case .shortcuts: SettingsTint.graphite
@@ -106,6 +110,8 @@ extension SettingsSection {
         case .appearance: ["tema", "escuro", "claro", "movimento", "texto", "fonte"]
         case .notifications: ["avisos", "respostas", "aprovações", "rotinas", "erros"]
         case .bots: ["arquivados", "ocultos", "excluídos", "restaurar", "novo bot", "editar"]
+        case .aiAccounts: ["contas", "claude", "codex", "grok", "cursor", "modelos", "máquinas"]
+        case .vault: ["segredos", "senhas", "tokens", "keychain", "touch id"]
         case .computer: ["acessibilidade", "gravação de tela", "automação", "permissões", "executor", "gravações"]
         case .integrations: ["elevenlabs", "jev", "chave", "voz", "runelay"]
         case .shortcuts: ["teclado", "voz", "microfone", "atalho"]
@@ -118,6 +124,8 @@ extension SettingsSection {
         switch self {
         case .server: "Cada servidor guarda o próprio login neste Mac. Trocar de servidor recarrega o app sem misturar bots, conversas e caches. Atalho: ⌃⌘1 a ⌃⌘9."
         case .computer: "Bots com \"Seu Mac\" ligado podem ver a tela, clicar, digitar e mexer nas pastas liberadas. O botão Parar aparece no topo da tela enquanto um bot age. Depois de reinstalar o app, o macOS pode pedir as permissões de novo."
+        case .aiAccounts: "As IAs logadas nas suas máquinas. Cada bot escolhe uma conta e um modelo."
+        case .vault: "Os valores ficam no Keychain deste Mac e nunca aparecem sem Touch ID. Abrir o cofre pede confirmação e ele tranca de novo em 5 minutos ou quando o app sai da frente."
         case .integrations: "Serviços opcionais. Os bots funcionam sem eles; cada chave liga uma parte a mais. A chave fica cifrada no servidor e nunca volta para o app."
         case .notifications: "O número no ícone do Dock mostra o total de mensagens não lidas."
         default: nil
@@ -250,6 +258,9 @@ struct SettingsScreen: View {
                 await model.loadExtraBots()
             }
         }
+        if section == .aiAccounts {
+            Task { await model.loadAccounts() }
+        }
     }
 
     private var header: some View {
@@ -309,6 +320,16 @@ struct SettingsScreen: View {
                 }
                 .buttonStyle(SettingsButtonStyle(kind: .primary))
             }
+            if navigator.path.isEmpty, model.settingsSection == .aiAccounts {
+                Button {
+                    model.refreshAccounts()
+                } label: {
+                    Label("Procurar de novo", systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(SettingsButtonStyle(kind: .plain))
+                .disabled(model.isRefreshingAccounts)
+                .clickable()
+            }
         }
         .padding(.bottom, Spacing.xs)
     }
@@ -327,6 +348,8 @@ struct SettingsScreen: View {
             case .appearance: AppearanceSettings()
             case .notifications: NotificationSettings()
             case .bots: BotsSettings()
+            case .aiAccounts: AIAccountsSettings()
+            case .vault: VaultSettings()
             case .computer: ComputerSettings()
             case .devices: DevicesSettings()
             case .integrations: IntegrationsSettings()

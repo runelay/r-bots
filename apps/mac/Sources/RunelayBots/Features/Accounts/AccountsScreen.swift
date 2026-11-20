@@ -1,37 +1,13 @@
 import SwiftUI
 
-struct AccountsScreen: View {
+struct AIAccountsSettings: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.xl) {
-                PageHeaderView(
-                    title: "Contas",
-                    description: "As IAs logadas nas suas máquinas. Cada bot escolhe uma conta e um modelo."
-                ) {
-                    IconActionButton(
-                        systemImage: "arrow.clockwise",
-                        label: "Procurar as contas de novo",
-                        spinning: model.isRefreshingAccounts
-                    ) {
-                        model.refreshAccounts()
-                    }
-                    .disabled(model.isRefreshingAccounts)
-                }
-                content
+        content
+            .task {
+                await model.loadAccounts()
             }
-            .frame(maxWidth: ScreenLayout.width, alignment: .leading)
-            .padding(.horizontal, Spacing.xxl)
-            .padding(.top, Spacing.xl + 4)
-            .padding(.bottom, Spacing.xxl)
-            .frame(maxWidth: .infinity)
-        }
-        .scrollEdgesHidden()
-        .background(Theme.background)
-        .task {
-            await model.loadAccounts()
-        }
     }
 
     @ViewBuilder

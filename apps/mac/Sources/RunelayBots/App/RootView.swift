@@ -144,14 +144,6 @@ struct RootView: View {
                 ConnectorsScreen()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity)
-            case .accounts:
-                AccountsScreen()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity)
-            case .vault:
-                VaultScreen()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity)
             case .usage:
                 UsageScreen()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

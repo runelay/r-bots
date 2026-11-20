@@ -30,9 +30,6 @@ struct IconRail: View {
                         model.closeSettings()
                         model.section = section
                     }
-                    if section == .accounts {
-                        Task { await model.loadAccounts() }
-                    }
                 }
             }
             Spacer(minLength: 0)

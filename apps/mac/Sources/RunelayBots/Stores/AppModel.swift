@@ -86,11 +86,9 @@ enum AppSection: String, CaseIterable, Identifiable {
     case conversations
     case routines
     case connectors
-    case accounts
-    case vault
     case usage
 
-    static let railCases: [AppSection] = [.conversations, .routines, .accounts, .vault]
+    static let railCases: [AppSection] = [.conversations, .routines]
 
     var id: String { rawValue }
 
@@ -99,8 +97,6 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .conversations: "Conversas"
         case .routines: "Rotinas"
         case .connectors: "Conectores"
-        case .accounts: "Contas"
-        case .vault: "Cofre"
         case .usage: "Uso"
         }
     }
@@ -110,8 +106,6 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .conversations: "bubble.left.and.bubble.right"
         case .routines: "clock.arrow.circlepath"
         case .connectors: "puzzlepiece.extension"
-        case .accounts: "key"
-        case .vault: "lock.shield"
         case .usage: "gauge.with.dots.needle.33percent"
         }
     }
@@ -139,8 +133,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case appearance
     case notifications
     case bots
+    case aiAccounts
     case computer
     case devices
+    case vault
     case integrations
     case shortcuts
     case about
@@ -154,8 +150,10 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "Aparência"
         case .notifications: "Notificações"
         case .bots: "Bots"
+        case .aiAccounts: "Contas de IA"
         case .computer: "Uso do computador"
         case .devices: "Dispositivos"
+        case .vault: "Cofre"
         case .integrations: "Integrações"
         case .shortcuts: "Atalhos"
         case .about: "Sobre"
@@ -169,6 +167,8 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: "paintbrush"
         case .notifications: "bell"
         case .bots: "person.2"
+        case .aiAccounts: "key"
+        case .vault: "lock.shield"
         case .computer: "desktopcomputer"
         case .devices: "laptopcomputer.and.iphone"
         case .integrations: "key.horizontal"
@@ -1077,6 +1077,9 @@ final class AppModel {
     func closeSettings() {
         settingsPresented = false
     }
+        if settingsSection == .aiAccounts {
+            Task { await loadAccounts() }
+        }
 
     private func applyMeta(_ loaded: ServerMeta?) {
         guard let loaded else { return }

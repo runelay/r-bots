@@ -1,6 +1,64 @@
 import SwiftUI
 
-struct VaultScreen: View {
+struct VaultSettings: View {
+    @State private var lock = VaultLock.shared
+
+    var body: some View {
+        Group {
+            if lock.isUnlocked {
+                VaultPanel()
+                    .transition(.opacity)
+            } else {
+                VaultLockedView(lock: lock)
+                    .transition(.opacity)
+            }
+        }
+        .springAnimation(value: lock.isUnlocked)
+    }
+}
+
+private struct VaultLockedView: View {
+    let lock: VaultLock
+
+    var body: some View {
+        VStack(spacing: Spacing.m) {
+            Image(systemName: "lock.shield.fill")
+                .font(.system(size: 30, weight: .regular))
+                .foregroundStyle(Theme.textTertiary)
+            VStack(spacing: Spacing.xs) {
+                Text("O cofre está trancado")
+                    .font(BrandFonts.sans(15, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                Text("Confirme com Touch ID ou a senha do Mac. Ele tranca de novo em 5 minutos ou quando você sai do app.")
+                    .font(TypeScale.rowSubtitle)
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let failure = lock.failure {
+                Text(failure)
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.attention)
+            }
+            Button {
+                Task { await lock.unlock() }
+            } label: {
+                Label("Desbloquear", systemImage: "touchid")
+            }
+            .buttonStyle(SettingsButtonStyle(kind: .primary))
+            .disabled(lock.isAuthenticating)
+            .clickable()
+        }
+        .frame(maxWidth: 380)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Spacing.xxl)
+        .task {
+            await lock.unlock()
+        }
+    }
+}
+
+private struct VaultPanel: View {
     @Environment(AppModel.self) private var model
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var store = VaultStore.shared
@@ -8,44 +66,38 @@ struct VaultScreen: View {
     @State private var creating = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Spacing.xl) {
-                PageHeaderView(
-                    title: "Cofre",
-                    description: "Senhas e tokens que os bots usam sem ver. Ficam no Keychain deste Mac."
-                ) {
-                    Button {
-                        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                            selection = nil
-                            creating = true
-                        }
-                    } label: {
-                        Label("Novo segredo", systemImage: "plus")
+        VStack(alignment: .leading, spacing: Spacing.l) {
+            HStack(spacing: Spacing.s) {
+                Text("Senhas e tokens que os bots usam sem ver. Ficam no Keychain deste Mac.")
+                    .font(TypeScale.rowSubtitle)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: Spacing.m)
+                Button {
+                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                        selection = nil
+                        creating = true
                     }
-                    .buttonStyle(.brandPrimary)
+                } label: {
+                    Label("Novo segredo", systemImage: "plus")
                 }
-
-                if let error = store.lastError {
-                    Text(error)
-                        .font(TypeScale.caption)
-                        .foregroundStyle(Theme.attention)
-                }
-
-                HStack(alignment: .top, spacing: Spacing.xl) {
-                    list
-                        .frame(width: 264)
-                    detail
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                }
+                .buttonStyle(SettingsButtonStyle(kind: .primary))
+                .clickable()
             }
-            .frame(maxWidth: ScreenLayout.width + 80, alignment: .leading)
-            .padding(.horizontal, Spacing.xxl)
-            .padding(.top, Spacing.xl + 4)
-            .padding(.bottom, Spacing.xxl)
-            .frame(maxWidth: .infinity)
+
+            if let error = store.lastError {
+                Text(error)
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.attention)
+            }
+
+            HStack(alignment: .top, spacing: Spacing.l) {
+                list
+                    .frame(width: 210)
+                detail
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
         }
-        .scrollEdgesHidden()
-        .background(Theme.background)
         .task {
             await store.reload()
             if selection == nil, !creating {
@@ -353,31 +405,45 @@ private struct VaultEditor: View {
                         .help("Copiar a referência que o bot usa")
                     }
                     Spacer(minLength: Spacing.m)
-                    if revealed == nil, secret.onMac {
-                        Button {
-                            reveal()
-                        } label: {
-                            Label("Ver o valor", systemImage: "touchid")
-                        }
-                        .buttonStyle(.brandSecondary)
-                        .disabled(busy)
-                        .help("Pede Touch ID e mostra por 10 segundos")
-                    }
                     moreMenu(secret)
                 }
-                if let revealed {
+                if secret.onMac {
                     HStack(spacing: Spacing.s) {
-                        Text(revealed)
+                        Text(revealed ?? String(repeating: "•", count: 12))
                             .font(TypeScale.mono)
-                            .foregroundStyle(Theme.textPrimary)
-                            .textSelection(.enabled)
+                            .foregroundStyle(revealed == nil ? Theme.textTertiary : Theme.textPrimary)
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        Button("Esconder") { hide() }
+                            .contentTransition(.opacity)
+                        if let revealed {
+                            Button {
+                                copyValue(revealed)
+                            } label: {
+                                Label(notice == "Valor copiado" ? "Copiado" : "Copiar", systemImage: notice == "Valor copiado" ? "checkmark" : "doc.on.doc")
+                                    .font(TypeScale.captionStrong)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
                             .buttonStyle(.plain)
-                            .font(TypeScale.captionStrong)
-                            .foregroundStyle(Theme.textSecondary)
                             .pointerStyle(.link)
+                            .help("Copia por 60 segundos")
+                            Button("Esconder") { hide() }
+                                .buttonStyle(.plain)
+                                .font(TypeScale.captionStrong)
+                                .foregroundStyle(Theme.textSecondary)
+                                .pointerStyle(.link)
+                        } else {
+                            Button {
+                                reveal()
+                            } label: {
+                                Label("Mostrar", systemImage: "touchid")
+                                    .font(TypeScale.captionStrong)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            .buttonStyle(.plain)
+                            .pointerStyle(.link)
+                            .disabled(busy)
+                            .help("Pede Touch ID e mostra por 20 segundos")
+                        }
                     }
                     .padding(.horizontal, Spacing.m)
                     .frame(minHeight: 40)
@@ -613,6 +679,11 @@ private struct VaultEditor: View {
         flash("Copiado")
     }
 
+    private func copyValue(_ value: String) {
+        guard VaultLock.shared.copy(value) else { return }
+        flash("Valor copiado")
+    }
+
     private func resetFields() {
         let policy = secret?.policy ?? VaultPolicy()
         descriptionText = policy.description
@@ -700,11 +771,15 @@ private struct VaultEditor: View {
     private func reveal() {
         guard let secret else { return }
         run {
-            let value = try await VaultStore.shared.reveal(secret)
+            guard VaultLock.shared.isUnlocked else { return }
+            let value = try await VaultLock.shared.authenticated {
+                try await VaultStore.shared.reveal(secret)
+            }
+            guard VaultLock.shared.isUnlocked else { return }
             revealed = value
             revealTask?.cancel()
             revealTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(10))
+                try? await Task.sleep(for: VaultLock.revealWindow)
                 guard !Task.isCancelled else { return }
                 hide()
             }
