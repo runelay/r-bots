@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 import Foundation
 import Observation
 import UniformTypeIdentifiers
@@ -84,9 +83,8 @@ final class ComposerAttachment: Identifiable {
     let fileURL: URL
     let name: String
     let kind: AttachmentKind
+    let byteCount: Int
     var state: AttachmentUploadState = .uploading(0)
-    var preview: NSImage?
-    var duration: Double?
     @ObservationIgnored var task: Task<Void, Never>?
     @ObservationIgnored let ownsFile: Bool
 
@@ -94,6 +92,7 @@ final class ComposerAttachment: Identifiable {
         self.fileURL = fileURL
         self.name = name ?? fileURL.lastPathComponent
         kind = AttachmentKind.guess(for: fileURL)
+        byteCount = (try? fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         self.ownsFile = ownsFile
     }
 
@@ -112,54 +111,13 @@ final class ComposerAttachment: Identifiable {
         return false
     }
 
-    var waveform: [Double] {
-        ref?.waveform ?? []
-    }
-
-    func loadPreview() {
-        let url = fileURL
-        let kind = kind
-        Task { [weak self] in
-            switch kind {
-            case .image:
-                let image = await Task.detached { AttachmentThumbnails.image(at: url, maxPixel: 240) }.value
-                self?.preview = image
-            case .video:
-                let asset = AVURLAsset(url: url)
-                let seconds = try? await asset.load(.duration).seconds
-                self?.duration = seconds.flatMap { $0.isFinite ? $0 : nil }
-                let generator = AVAssetImageGenerator(asset: asset)
-                generator.appliesPreferredTrackTransform = true
-                generator.maximumSize = CGSize(width: 240, height: 240)
-                if let frame = try? await generator.image(at: CMTime(seconds: 0.1, preferredTimescale: 600)).image {
-                    self?.preview = NSImage(cgImage: frame, size: NSSize(width: frame.width, height: frame.height))
-                }
-            case .audio:
-                let asset = AVURLAsset(url: url)
-                let seconds = try? await asset.load(.duration).seconds
-                self?.duration = seconds.flatMap { $0.isFinite ? $0 : nil }
-            case .file:
-                self?.preview = NSWorkspace.shared.icon(forFile: url.path)
-            }
-        }
+    var sizeLabel: String {
+        ByteCountFormatter.string(fromByteCount: Int64(ref?.size ?? byteCount), countStyle: .file)
     }
 
     func discardFile() {
         guard ownsFile else { return }
         try? FileManager.default.removeItem(at: fileURL)
-    }
-}
-
-enum AttachmentThumbnails {
-    static func image(at url: URL, maxPixel: Int) -> NSImage? {
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        let options: [CFString: Any] = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixel
-        ]
-        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
-        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
     }
 }
 

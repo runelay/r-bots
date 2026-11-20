@@ -4,180 +4,6 @@ import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ComposerAttachmentStrip: View {
-    let store: ConversationStore
-    @Environment(\.appReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .center, spacing: Spacing.s) {
-                ForEach(store.composerAttachments) { attachment in
-                    ComposerAttachmentChip(attachment: attachment) {
-                        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                            store.removeAttachment(attachment)
-                        }
-                    } retry: {
-                        store.retryUpload(attachment)
-                    }
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.85).combined(with: .opacity))
-                }
-            }
-            .padding(.horizontal, Spacing.m)
-        }
-        .frame(height: ComposerAttachmentChip.height)
-        .springAnimation(value: store.composerAttachments.map(\.id))
-    }
-}
-
-struct ComposerAttachmentChip: View {
-    static let height: CGFloat = 44
-    let attachment: ComposerAttachment
-    let remove: () -> Void
-    let retry: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        content
-            .overlay {
-                if case .uploading(let fraction) = attachment.state {
-                    UploadRing(fraction: fraction)
-                        .transition(.opacity)
-                } else if attachment.isFailed {
-                    failedOverlay
-                        .transition(.opacity)
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                Button(action: remove) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 16, height: 16)
-                        .background(.black.opacity(0.55), in: Circle())
-                }
-                .buttonStyle(PressableButtonStyle())
-                .padding(3)
-                .opacity(hovering || attachment.isFailed ? 1 : 0.8)
-                .help("Remover")
-                .accessibilityLabel("Remover \(attachment.name)")
-            }
-            .onHover { hovering = $0 }
-            .springAnimation(value: attachment.state)
-            .help(attachment.name)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch attachment.kind {
-        case .image:
-            thumbnail(attachment.preview)
-        case .video:
-            thumbnail(attachment.preview)
-                .overlay(alignment: .bottomLeading) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 7, weight: .bold))
-                        if let duration = attachment.duration {
-                            Text(AttachmentFormat.clock(duration))
-                                .font(TypeScale.caption.monospacedDigit())
-                        }
-                    }
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(.black.opacity(0.55), in: Capsule())
-                    .padding(3)
-                }
-        case .audio:
-            HStack(spacing: Spacing.s) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.brandText)
-                WaveformBars(levels: attachment.waveform, progress: 0, barCount: 18, height: 18)
-                    .frame(width: 72)
-                Text(attachment.duration.map(AttachmentFormat.clock) ?? "--:--")
-                    .font(TypeScale.caption.monospacedDigit())
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .padding(.leading, Spacing.m)
-            .padding(.trailing, Spacing.m + 18)
-            .frame(height: Self.height)
-            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-        case .file:
-            HStack(spacing: Spacing.s) {
-                if let icon = attachment.preview {
-                    Image(nsImage: icon)
-                        .resizable()
-                        .frame(width: 24, height: 24)
-                } else {
-                    Image(systemName: "doc")
-                        .font(.system(size: 18))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                Text(attachment.name)
-                    .font(TypeScale.captionStrong)
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: 150, alignment: .leading)
-            }
-            .padding(.leading, Spacing.s + 2)
-            .padding(.trailing, Spacing.m + 18)
-            .frame(height: Self.height)
-            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-        }
-    }
-
-    private func thumbnail(_ image: NSImage?) -> some View {
-        ZStack {
-            Theme.surfaceRaised
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .transition(.opacity)
-            }
-        }
-        .frame(width: Self.height, height: Self.height)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-    }
-
-    private var failedOverlay: some View {
-        Button(action: retry) {
-            Image(systemName: "arrow.clockwise")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.danger)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.background.opacity(0.8), in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .clickable()
-        .help("Não foi. Clique para tentar de novo.")
-    }
-}
-
-struct UploadRing: View {
-    let fraction: Double
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: Radius.medium, style: .continuous)
-                .fill(Theme.background.opacity(0.45))
-            Circle()
-                .stroke(Theme.textTertiary.opacity(0.35), lineWidth: 2.5)
-                .frame(width: 18, height: 18)
-            Circle()
-                .trim(from: 0, to: max(0.04, fraction))
-                .stroke(Theme.brandAccent, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-                .frame(width: 18, height: 18)
-                .animation(Motion.spring, value: fraction)
-        }
-        .allowsHitTesting(false)
-        .accessibilityLabel("Enviando, \(Int(fraction * 100))%")
-    }
-}
-
 struct WaveformBars: View {
     let levels: [Double]
     let progress: Double
@@ -291,6 +117,13 @@ struct MessageAttachments: View {
     }
 
     private func localFile(_ ref: AttachmentRef, client: BotsClient) async -> URL? {
+        await AttachmentOpening.localFile(ref, client: client)
+    }
+}
+
+enum AttachmentOpening {
+    @MainActor
+    static func localFile(_ ref: AttachmentRef, client: BotsClient) async -> URL? {
         guard let remote = client.absoluteURL(ref.url) else {
             BlocksLog.logger.error("attachment \(ref.id, privacy: .public) has no usable URL")
             return nil

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ComposerView: View {
-    @Bindable var store: ConversationStore
+    let store: ConversationStore
     let bot: Bot
     let focusToken: Int
     var mentionables: [Bot] = []
@@ -42,28 +42,16 @@ struct ComposerView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-        if !store.composerAttachments.isEmpty {
-            ComposerAttachmentStrip(store: store)
-                .padding(.top, Spacing.m)
-                .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
-        }
         HStack(alignment: .bottom, spacing: Spacing.s) {
             GlassMenuButton(help: "Mais ações", items: { composerActions }) { _ in
                 ComposerIcon(systemName: "plus")
             }
 
-            VStack(alignment: .leading, spacing: 0) {
-            if !store.attachedSkills.isEmpty {
-                SkillChipRow(skills: store.attachedSkills) { skill in
-                    store.detachSkill(skill)
-                    focus()
-                }
-                .padding(.top, Spacing.s)
-                .transition(.opacity.combined(with: .offset(y: 4)))
-            }
             ComposerTextView(
-                text: $store.draft,
+                store: store,
+                draft: store.draft,
+                tokens: store.draftTokens,
+                uploadStates: store.composerAttachments.map(\.state),
                 height: $composerHeight,
                 focusRequest: focusRequest,
                 placeholder: placeholder,
@@ -88,8 +76,6 @@ struct ComposerView: View {
                             .transition(.opacity)
                     }
                 }
-            }
-            .springAnimation(value: store.attachedSkills.map(\.slug))
 
             if isListening && !store.draft.isEmpty && !reduceMotion {
                 VoiceWaveform(voice: voice, barCount: 8, height: 14)
@@ -148,8 +134,6 @@ struct ComposerView: View {
         .padding(.leading, Spacing.s)
         .padding(.trailing, Spacing.s)
         .padding(.vertical, Spacing.s)
-        }
-        .springAnimation(value: store.composerAttachments.isEmpty)
         .glassPane(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous))
         .background {
             GeometryReader { proxy in
@@ -284,10 +268,6 @@ struct ComposerView: View {
             guard !store.draft.isEmpty else { return false }
             store.clearDraft()
             return true
-        case .deleteOnEmpty:
-            guard store.draft.isEmpty, let last = store.attachedSkills.last else { return false }
-            store.detachSkill(last)
-            return true
         }
     }
 
@@ -386,20 +366,21 @@ struct ComposerView: View {
         return slashCommands.map(SlashItem.command) + skillCatalog.results.map(SlashItem.skill)
     }
 
-    private func removeSlashToken() {
+    private var slashRange: NSRange {
         let draft = store.draft
         let start = draft.lastIndex(where: { $0 == " " || $0 == "\n" }).map { draft.index(after: $0) } ?? draft.startIndex
-        store.draft = String(draft[..<start])
+        return NSRange(start..<draft.endIndex, in: draft)
     }
 
     private func chooseSlash(_ item: SlashItem) {
-        removeSlashToken()
+        let range = slashRange
         dismissedSlashDraft = nil
         switch item {
         case .command(let command):
+            store.insertTokens([], replacing: range)
             command.action()
         case .skill(let skill):
-            store.attachSkill(skill)
+            store.insertTokens([.skill(skill)], replacing: range)
             focus()
         }
     }

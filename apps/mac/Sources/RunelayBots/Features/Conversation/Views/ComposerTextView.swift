@@ -7,11 +7,23 @@ enum ComposerCommand {
     case moveDown
     case tab
     case escape
-    case deleteOnEmpty
+}
+
+@MainActor
+protocol ComposerEditor: AnyObject {
+    func insert(_ tokens: [ComposerToken], replacing range: NSRange?)
+}
+
+struct ComposerClip: Codable {
+    static let type = NSPasteboard.PasteboardType("app.runelay.bots.composer-clip")
+    let text: String
+    let tokens: [ComposerToken]
 }
 
 final class ComposerNSTextView: NSTextView {
     var onFocusChange: ((Bool) -> Void)?
+    var copySelection: ((NSRange) -> (plain: String, clip: Data?))?
+    var pasteClip: ((Data) -> Bool)?
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
@@ -31,6 +43,34 @@ final class ComposerNSTextView: NSTextView {
 
     override func updateDragTypeRegistration() {
         unregisterDraggedTypes()
+    }
+
+    override var writablePasteboardTypes: [NSPasteboard.PasteboardType] {
+        [ComposerClip.type, .string]
+    }
+
+    override func writeSelection(to pboard: NSPasteboard, types: [NSPasteboard.PasteboardType]) -> Bool {
+        guard let copySelection else { return super.writeSelection(to: pboard, types: types) }
+        let range = selectedRange()
+        guard range.length > 0 else { return false }
+        let content = copySelection(range)
+        pboard.declareTypes(content.clip == nil ? [.string] : [ComposerClip.type, .string], owner: nil)
+        pboard.setString(content.plain, forType: .string)
+        if let clip = content.clip {
+            pboard.setData(clip, forType: ComposerClip.type)
+        }
+        return true
+    }
+
+    override func paste(_ sender: Any?) {
+        if let data = NSPasteboard.general.data(forType: ComposerClip.type), pasteClip?(data) == true {
+            return
+        }
+        pasteAsPlainText(sender)
+    }
+
+    override func pasteAsRichText(_ sender: Any?) {
+        paste(sender)
     }
 }
 
@@ -57,7 +97,10 @@ final class ComposerScrollView: NSScrollView {
 }
 
 struct ComposerTextView: NSViewRepresentable {
-    @Binding var text: String
+    let store: ConversationStore
+    let draft: String
+    let tokens: [ComposerToken]
+    let uploadStates: [AttachmentUploadState]
     @Binding var height: CGFloat
     let focusRequest: Int
     let placeholder: String
@@ -85,8 +128,10 @@ struct ComposerTextView: NSViewRepresentable {
     func makeNSView(context: Context) -> ComposerScrollView {
         let coordinator = context.coordinator
         let textView = ComposerNSTextView(usingTextLayoutManager: false)
-        textView.isRichText = false
+        textView.isRichText = true
         textView.importsGraphics = false
+        textView.usesFontPanel = false
+        textView.usesRuler = false
         textView.allowsUndo = true
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -107,10 +152,20 @@ struct ComposerTextView: NSViewRepresentable {
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.autoresizingMask = [.width]
         textView.setAccessibilityPlaceholderValue(placeholder)
-        textView.string = text
+        coordinator.textView = textView
+        coordinator.attach(store)
+        coordinator.uploadStates = uploadStates
+        textView.textStorage?.setAttributedString(coordinator.attributed(text: draft, tokens: tokens))
+        textView.typingAttributes = Coordinator.baseAttributes
         textView.delegate = coordinator
         textView.onFocusChange = { [weak coordinator] focused in
             coordinator?.parent.onFocusChange(focused)
+        }
+        textView.copySelection = { [weak coordinator] range in
+            coordinator?.copy(range) ?? ("", nil)
+        }
+        textView.pasteClip = { [weak coordinator] data in
+            coordinator?.paste(data) ?? false
         }
 
         let scrollView = ComposerScrollView()
@@ -133,7 +188,6 @@ struct ComposerTextView: NSViewRepresentable {
             coordinator?.observe(window)
         }
 
-        coordinator.textView = textView
         coordinator.scrollView = scrollView
         coordinator.focusRequest = focusRequest
         DispatchQueue.main.async { [weak coordinator] in
@@ -147,12 +201,16 @@ struct ComposerTextView: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.parent = self
         guard let textView = coordinator.textView else { return }
-        if textView.string != text, !textView.hasMarkedText() {
-            textView.string = text
-            let end = NSRange(location: (text as NSString).length, length: 0)
-            textView.setSelectedRange(end)
-            coordinator.measure()
-            textView.scrollRangeToVisible(end)
+        coordinator.attach(store)
+        if !textView.hasMarkedText() {
+            let current = coordinator.serialize()
+            if current.text != draft || current.tokens != tokens {
+                coordinator.rebuild(text: draft, tokens: tokens)
+            }
+        }
+        if coordinator.uploadStates != uploadStates {
+            coordinator.uploadStates = uploadStates
+            coordinator.refreshTokens()
         }
         if textView.accessibilityPlaceholderValue() != placeholder {
             textView.setAccessibilityPlaceholderValue(placeholder)
@@ -167,14 +225,17 @@ struct ComposerTextView: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: ComposerScrollView, coordinator: Coordinator) {
         coordinator.observe(nil)
+        coordinator.attach(nil)
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
+    final class Coordinator: NSObject, NSTextViewDelegate, ComposerEditor {
         var parent: ComposerTextView
         weak var textView: ComposerNSTextView?
         weak var scrollView: ComposerScrollView?
+        weak var store: ConversationStore?
         var focusRequest = 0
+        var uploadStates: [AttachmentUploadState] = []
         private var lastReported: CGFloat = 0
         private var windowHeight: CGFloat = 0
         private var windowObserver: NSObjectProtocol?
@@ -183,9 +244,168 @@ struct ComposerTextView: NSViewRepresentable {
             self.parent = parent
         }
 
+        static var baseAttributes: [NSAttributedString.Key: Any] {
+            [.font: ComposerTextView.font, .foregroundColor: NSColor(Theme.textPrimary)]
+        }
+
         func focus() {
             guard let textView, let window = textView.window, window.firstResponder !== textView else { return }
             window.makeFirstResponder(textView)
+        }
+
+        func attach(_ next: ConversationStore?) {
+            guard store !== next else { return }
+            if let store, store.composerEditor === self {
+                store.composerEditor = nil
+            }
+            store = next
+            next?.composerEditor = self
+        }
+
+        func tokenString(_ token: ComposerToken) -> NSAttributedString? {
+            guard let store else { return nil }
+            let file: ComposerAttachment?
+            let tip: String
+            switch token {
+            case .file(let id):
+                guard let found = store.attachment(id) else { return nil }
+                file = found
+                tip = "\(found.name) · \(found.sizeLabel)"
+            case .skill(let skill):
+                file = nil
+                tip = skill.description.isEmpty ? skill.name : "\(skill.name): \(skill.description)"
+            }
+            let cell = ComposerTokenCell(token: token, file: file, font: ComposerTextView.font) { [weak store] attachment in
+                store?.retryUpload(attachment)
+            }
+            let result = NSMutableAttributedString(attachment: ComposerTokenAttachment(token: token, cell: cell))
+            let range = NSRange(location: 0, length: result.length)
+            result.addAttributes(Self.baseAttributes, range: range)
+            result.addAttribute(.toolTip, value: tip, range: range)
+            return result
+        }
+
+        func attributed(text: String, tokens: [ComposerToken]) -> NSAttributedString {
+            let result = NSMutableAttributedString()
+            var pending = ""
+            var queue = tokens.makeIterator()
+            func flush() {
+                guard !pending.isEmpty else { return }
+                result.append(NSAttributedString(string: pending, attributes: Self.baseAttributes))
+                pending = ""
+            }
+            for scalar in text.unicodeScalars {
+                guard scalar == ComposerToken.glyph else {
+                    pending.unicodeScalars.append(scalar)
+                    continue
+                }
+                flush()
+                if let token = queue.next(), let piece = tokenString(token) {
+                    result.append(piece)
+                }
+            }
+            flush()
+            return result
+        }
+
+        func serialize(_ range: NSRange? = nil) -> (text: String, tokens: [ComposerToken]) {
+            guard let storage = textView?.textStorage else { return ("", []) }
+            let target = range ?? NSRange(location: 0, length: storage.length)
+            let source = storage.string as NSString
+            var text = ""
+            var tokens: [ComposerToken] = []
+            storage.enumerateAttribute(.attachment, in: target) { value, run, _ in
+                if let attachment = value as? ComposerTokenAttachment {
+                    for _ in 0..<run.length {
+                        text += ComposerToken.glyphString
+                        tokens.append(attachment.token)
+                    }
+                } else {
+                    text += ComposerToken.stripped(source.substring(with: run))
+                }
+            }
+            return (text, tokens)
+        }
+
+        func rebuild(text: String, tokens: [ComposerToken]) {
+            guard let textView, let storage = textView.textStorage else { return }
+            storage.setAttributedString(attributed(text: text, tokens: tokens))
+            textView.typingAttributes = Self.baseAttributes
+            let end = NSRange(location: storage.length, length: 0)
+            textView.setSelectedRange(end)
+            measure()
+            textView.scrollRangeToVisible(end)
+            let settled = serialize()
+            if settled.text != text || settled.tokens != tokens {
+                DispatchQueue.main.async { [weak self] in
+                    self?.store?.updateDraft(settled.text, tokens: settled.tokens)
+                }
+            }
+        }
+
+        func refreshTokens() {
+            guard let textView, let layoutManager = textView.layoutManager, let storage = textView.textStorage else { return }
+            let range = NSRange(location: 0, length: storage.length)
+            layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+            layoutManager.invalidateDisplay(forCharacterRange: range)
+            measure()
+        }
+
+        func insert(_ tokens: [ComposerToken], replacing range: NSRange?) {
+            guard let textView, let storage = textView.textStorage else { return }
+            let length = storage.length
+            let requested = range ?? textView.selectedRange()
+            let location = min(max(0, requested.location), length)
+            let target = NSRange(location: location, length: min(max(0, requested.length), length - location))
+            let piece = NSMutableAttributedString()
+            for token in tokens {
+                if let string = tokenString(token) {
+                    piece.append(string)
+                }
+            }
+            if piece.length > 0 {
+                let source = storage.string as NSString
+                if target.location > 0, !Self.isWhitespace(source.character(at: target.location - 1)) {
+                    piece.insert(NSAttributedString(string: " ", attributes: Self.baseAttributes), at: 0)
+                }
+                let end = target.location + target.length
+                if end >= length || !Self.isWhitespace(source.character(at: end)) {
+                    piece.append(NSAttributedString(string: " ", attributes: Self.baseAttributes))
+                }
+            }
+            replace(target, with: piece)
+            focus()
+        }
+
+        func copy(_ range: NSRange) -> (plain: String, clip: Data?) {
+            let part = serialize(range)
+            let plain = store?.markedText(part.text, tokens: part.tokens) ?? ComposerToken.stripped(part.text)
+            guard !part.tokens.isEmpty else { return (plain, nil) }
+            return (plain, try? JSONEncoder().encode(ComposerClip(text: part.text, tokens: part.tokens)))
+        }
+
+        func paste(_ data: Data) -> Bool {
+            guard let textView, let clip = try? JSONDecoder().decode(ComposerClip.self, from: data) else { return false }
+            replace(textView.selectedRange(), with: attributed(text: clip.text, tokens: clip.tokens))
+            return true
+        }
+
+        private func replace(_ range: NSRange, with piece: NSAttributedString) {
+            guard let textView, let storage = textView.textStorage else { return }
+            textView.breakUndoCoalescing()
+            guard textView.shouldChangeText(in: range, replacementString: piece.string) else { return }
+            storage.replaceCharacters(in: range, with: piece)
+            textView.didChangeText()
+            textView.breakUndoCoalescing()
+            let caret = NSRange(location: range.location + piece.length, length: 0)
+            textView.setSelectedRange(caret)
+            textView.typingAttributes = Self.baseAttributes
+            textView.scrollRangeToVisible(caret)
+        }
+
+        private static func isWhitespace(_ unit: unichar) -> Bool {
+            guard let scalar = Unicode.Scalar(unit) else { return false }
+            return CharacterSet.whitespacesAndNewlines.contains(scalar)
         }
 
         func observe(_ window: NSWindow?) {
@@ -228,9 +448,14 @@ struct ComposerTextView: NSViewRepresentable {
         }
 
         func textDidChange(_ notification: Notification) {
-            guard let textView else { return }
-            parent.text = textView.string
+            let current = serialize()
+            store?.updateDraft(current.text, tokens: current.tokens)
             measure()
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            guard let textView, !textView.hasMarkedText() else { return }
+            textView.typingAttributes = Self.baseAttributes
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -262,9 +487,6 @@ struct ComposerTextView: NSViewRepresentable {
                 }
                 textView.nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: nil)
                 return true
-            case #selector(NSResponder.deleteBackward(_:)):
-                guard textView.string.isEmpty else { return false }
-                return parent.onCommand(.deleteOnEmpty)
             default:
                 return false
             }

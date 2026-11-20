@@ -25,8 +25,9 @@ final class ConversationStore {
 
     private(set) var sessionId: String?
     var draft = ""
-    var attachedSkills: [SkillSummary] = []
-    var composerAttachments: [ComposerAttachment] = []
+    var draftTokens: [ComposerToken] = []
+    private(set) var attachmentPool: [UUID: ComposerAttachment] = [:]
+    @ObservationIgnored weak var composerEditor: ComposerEditor?
     @ObservationIgnored private var sendWhenReady = false
 
     private(set) var entries: [TranscriptEntry] = [] {
@@ -210,9 +211,30 @@ final class ConversationStore {
         }
     }
 
+    var composerAttachments: [ComposerAttachment] {
+        var seen = Set<UUID>()
+        return draftTokens.compactMap { token in
+            guard case .file(let id) = token, seen.insert(id).inserted else { return nil }
+            return attachmentPool[id]
+        }
+    }
+
+    var attachedSkills: [SkillSummary] {
+        var seen = Set<String>()
+        let skills: [SkillSummary] = draftTokens.compactMap { token in
+            guard case .skill(let skill) = token, seen.insert(skill.slug).inserted else { return nil }
+            return skill
+        }
+        return Array(skills.prefix(5))
+    }
+
+    func attachment(_ id: UUID) -> ComposerAttachment? {
+        attachmentPool[id]
+    }
+
     var canSend: Bool {
         !isCreating
-            && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedSkills.isEmpty || !composerAttachments.isEmpty)
+            && (!ComposerToken.stripped(draft).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachedSkills.isEmpty || !composerAttachments.isEmpty)
             && !composerAttachments.contains(where: \.isFailed)
     }
 
@@ -221,23 +243,87 @@ final class ConversationStore {
     }
 
     func attachFiles(_ urls: [URL], ownsFiles: Bool = false) {
+        var tokens: [ComposerToken] = []
         for url in urls.prefix(max(0, 10 - composerAttachments.count)) {
             var isDirectory: ObjCBool = false
             guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory), !isDirectory.boolValue else { continue }
             let attachment = ComposerAttachment(fileURL: url, ownsFile: ownsFiles)
-            composerAttachments.append(attachment)
-            attachment.loadPreview()
+            attachmentPool[attachment.id] = attachment
             upload(attachment)
+            tokens.append(.file(attachment.id))
+        }
+        insertTokens(tokens)
+    }
+
+    func insertTokens(_ tokens: [ComposerToken], replacing range: NSRange? = nil) {
+        var slugs = Set(attachedSkills.map(\.slug))
+        let accepted = tokens.filter { token in
+            guard case .skill(let skill) = token else { return true }
+            guard slugs.count < 5, slugs.insert(skill.slug).inserted else { return false }
+            return true
+        }
+        guard !accepted.isEmpty || range != nil else { return }
+        if let composerEditor {
+            composerEditor.insert(accepted, replacing: range)
+            return
+        }
+        let text = draft as NSString
+        let target = range.map { NSIntersectionRange($0, NSRange(location: 0, length: text.length)) } ?? NSRange(location: text.length, length: 0)
+        let head = text.substring(to: target.location)
+        let tail = text.substring(from: target.location + target.length)
+        let removed = ComposerToken.glyphCount(in: text.substring(with: target))
+        let index = ComposerToken.glyphCount(in: head)
+        var insertion = String(repeating: ComposerToken.glyphString, count: accepted.count)
+        if !accepted.isEmpty {
+            if let last = head.unicodeScalars.last, !CharacterSet.whitespacesAndNewlines.contains(last) {
+                insertion = " " + insertion
+            }
+            if tail.unicodeScalars.first.map({ !CharacterSet.whitespacesAndNewlines.contains($0) }) ?? true {
+                insertion += " "
+            }
+        }
+        var tokensAfter = draftTokens
+        let lower = min(index, tokensAfter.count)
+        tokensAfter.replaceSubrange(lower..<min(lower + removed, tokensAfter.count), with: accepted)
+        draftTokens = tokensAfter
+        draft = head + insertion + tail
+    }
+
+    func updateDraft(_ text: String, tokens: [ComposerToken]) {
+        if draft != text {
+            draft = text
+        }
+        if draftTokens != tokens {
+            draftTokens = tokens
         }
     }
 
-    func removeAttachment(_ attachment: ComposerAttachment) {
-        attachment.task?.cancel()
-        attachment.discardFile()
-        composerAttachments.removeAll { $0.id == attachment.id }
-        if composerAttachments.isEmpty {
-            sendWhenReady = false
+    func adoptDraft(from other: ConversationStore) {
+        attachmentPool.merge(other.attachmentPool) { current, _ in current }
+        draftTokens = other.draftTokens
+        draft = other.draft
+    }
+
+    func markedText(_ text: String, tokens: [ComposerToken]) -> String {
+        var result = ""
+        var tokens = tokens.makeIterator()
+        for scalar in text.unicodeScalars {
+            guard scalar == ComposerToken.glyph else {
+                result.unicodeScalars.append(scalar)
+                continue
+            }
+            switch tokens.next() {
+            case .file(let id):
+                if let attachment = attachmentPool[id] {
+                    result += InlineMarker.file(attachment.ref?.name ?? attachment.name)
+                }
+            case .skill(let skill):
+                result += InlineMarker.skill(skill.slug)
+            case nil:
+                break
+            }
         }
+        return result
     }
 
     func retryUpload(_ attachment: ComposerAttachment) {
@@ -481,23 +567,14 @@ final class ConversationStore {
     }
 
     func clearDraft() {
-        draft = ""
-        attachedSkills = []
-        for attachment in composerAttachments {
+        for attachment in attachmentPool.values {
             attachment.task?.cancel()
             attachment.discardFile()
         }
-        composerAttachments = []
+        attachmentPool = [:]
+        draftTokens = []
+        draft = ""
         sendWhenReady = false
-    }
-
-    func attachSkill(_ skill: SkillSummary) {
-        guard !attachedSkills.contains(where: { $0.slug == skill.slug }), attachedSkills.count < 5 else { return }
-        attachedSkills.append(skill)
-    }
-
-    func detachSkill(_ skill: SkillSummary) {
-        attachedSkills.removeAll { $0.slug == skill.slug }
     }
 
     func dismissError() {
@@ -505,20 +582,29 @@ final class ConversationStore {
     }
 
     func send() {
-        let typed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pending = composerAttachments
         let skills = attachedSkills
-        guard !typed.isEmpty || !skills.isEmpty || !composerAttachments.isEmpty, !isCreating else { return }
-        if composerAttachments.contains(where: \.isUploading) {
+        let typed = markedText(draft, tokens: draftTokens).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !typed.isEmpty || !skills.isEmpty || !pending.isEmpty, !isCreating else { return }
+        if pending.contains(where: \.isUploading) {
             sendWhenReady = true
             return
         }
-        guard !composerAttachments.contains(where: \.isFailed) else { return }
-        let attachments = composerAttachments.compactMap(\.ref)
-        let text = typed.isEmpty ? skills.map(\.invocation).joined(separator: " ") : typed
+        guard !pending.contains(where: \.isFailed) else { return }
+        let attachments = pending.compactMap(\.ref)
+        let kept = Set(pending.map(\.id))
+        for attachment in attachmentPool.values where !kept.contains(attachment.id) {
+            attachment.task?.cancel()
+            attachment.discardFile()
+        }
+        attachmentPool = [:]
+        draftTokens = []
         draft = ""
-        attachedSkills = []
-        composerAttachments = []
         sendWhenReady = false
+        post(text: typed, skills: skills, attachments: attachments)
+    }
+
+    private func post(text: String, skills: [SkillSummary], attachments: [AttachmentRef]) {
         lastError = nil
         let message = UserMessage(id: "local-\(UUID().uuidString)", text: text, state: .sending, isConfirmed: false, skills: skills, attachments: attachments)
         userMessages[message.id] = message
@@ -527,16 +613,14 @@ final class ConversationStore {
         if !queued {
             phase = .working
         }
-        deliver(messageID: message.id, text: typed, skills: skills.map(\.slug), attachments: attachments.map(\.id), queued: queued)
+        deliver(messageID: message.id, text: text, skills: skills.map(\.slug), attachments: attachments.map(\.id), queued: queued)
     }
 
     func resendPrompt(before entryID: String) {
         guard !isCreating, let index = entries.firstIndex(where: { $0.id == entryID }) else { return }
         let previous = entries[..<index].last { $0.kind == .user }
         guard let previous, let message = userMessages[previous.id] else { return }
-        draft = message.isSkillOnly ? "" : message.text
-        attachedSkills = message.skills
-        send()
+        post(text: message.text, skills: message.skills, attachments: message.attachments)
     }
 
     func retry(messageID: String) {
@@ -948,7 +1032,11 @@ final class ConversationStore {
             }
             userMessages[pending.id]?.isConfirmed = true
             userMessages[pending.id]?.state = .sent
-            let confirmedSkills = Self.skills(in: data)
+            let known = userMessages[pending.id]?.skills ?? []
+            let confirmedSkills = Self.skills(in: data).map { skill in
+                guard skill.description.isEmpty, let local = known.first(where: { $0.slug == skill.slug }) else { return skill }
+                return SkillSummary(slug: skill.slug, name: skill.name, description: local.description)
+            }
             if !confirmedSkills.isEmpty {
                 userMessages[pending.id]?.skills = confirmedSkills
             }

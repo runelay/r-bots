@@ -66,28 +66,45 @@ struct UserBubble: View {
     }
 
     var body: some View {
+        let segments = InlineTokens.segments(in: message.text, attachments: message.attachments, skills: message.skills)
+        let inlineFiles = Set((segments ?? []).compactMap { segment -> String? in
+            if case .file(let ref) = segment { return ref.id }
+            return nil
+        })
+        let inlineSkills = Set((segments ?? []).compactMap { segment -> String? in
+            if case .skill(let skill) = segment { return skill.slug }
+            return nil
+        })
+        let looseSkills = message.skills.filter { !inlineSkills.contains($0.slug) }
+        let looseAttachments = message.attachments.filter { $0.kind != .file || !inlineFiles.contains($0.id) }
         VStack(alignment: .trailing, spacing: Spacing.xs) {
-            if !message.skills.isEmpty {
-                SkillChipRow(skills: message.skills, compact: true)
+            if !looseSkills.isEmpty {
+                SkillChipRow(skills: looseSkills, compact: true)
                     .opacity(message.state == .sending ? 0.8 : 1)
                     .padding(.trailing, avatarInset)
             }
-            if !message.attachments.isEmpty {
-                MessageAttachments(attachments: message.attachments, trailing: true)
+            if !looseAttachments.isEmpty {
+                MessageAttachments(attachments: looseAttachments, trailing: true)
                     .opacity(message.state == .sending ? 0.8 : 1)
                     .padding(.trailing, avatarInset)
             }
-            if !message.isSkillOnly && !message.text.isEmpty {
+            if segments != nil || (!message.isSkillOnly && !message.text.isEmpty) {
             HStack(alignment: .bottom, spacing: Spacing.s) {
                 Spacer(minLength: 0)
-                FoldedMarkdown(
-                    text: message.text,
-                    plan: fold == nil ? nil : MessageFolding.plan(message.text, keepsTail: true),
-                    expanded: expanded,
-                    fontSize: fontSize,
-                    bubble: Theme.userBubble
-                ) {
-                    setExpanded(true)
+                Group {
+                    if let segments {
+                        InlineTokenText(segments: segments, fontSize: fontSize, ink: Theme.onAccent)
+                    } else {
+                        FoldedMarkdown(
+                            text: message.text,
+                            plan: fold == nil ? nil : MessageFolding.plan(message.text, keepsTail: true),
+                            expanded: expanded,
+                            fontSize: fontSize,
+                            bubble: Theme.userBubble
+                        ) {
+                            setExpanded(true)
+                        }
+                    }
                 }
                     .foregroundStyle(Theme.onAccent)
                     .environment(\.markdownInk, Theme.onAccent)
@@ -110,7 +127,7 @@ struct UserBubble: View {
                 }
             }
             }
-            if fold != nil, !message.isSkillOnly, MessageFolding.plan(message.text, keepsTail: true) != nil {
+            if fold != nil, segments == nil, !message.isSkillOnly, MessageFolding.plan(message.text, keepsTail: true) != nil {
                 FoldToggle(expanded: expanded) {
                     setExpanded(!expanded)
                 }

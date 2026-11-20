@@ -2240,8 +2240,7 @@ final class AppModel {
         guard let current = bot(id: botID) else { return }
         let next = store ?? makeStore(bot: current, sessionId: thread.sessionId, settled: thread.lastMessage == nil)
         if let previous, previous !== next {
-            next.draft = previous.draft
-            next.attachedSkills = previous.attachedSkills
+            next.adoptDraft(from: previous)
         }
         threads[botID] = next
         next.start()
