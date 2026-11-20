@@ -319,7 +319,7 @@ struct BoardSearchField: View {
         }
         .padding(.horizontal, Spacing.m)
         .frame(height: 30)
-        .background(focused ? Theme.selection : Theme.surface, in: Capsule())
+        .background(focused ? Theme.hover : Theme.hover.opacity(0.55), in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
         .opacity(isEnabled ? 1 : 0.5)
         .springAnimation(value: focused)
     }

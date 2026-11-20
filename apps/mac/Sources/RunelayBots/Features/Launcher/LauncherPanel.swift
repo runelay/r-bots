@@ -129,7 +129,8 @@ private struct LauncherPanel: View {
                         destination: destination,
                         summary: summary(for: destination),
                         isActive: isActive(destination),
-                        isEnabled: isAvailable(destination)
+                        isEnabled: isAvailable(destination),
+                        accessory: accessory(for: destination)
                     ) {
                         open(destination)
                     }
@@ -156,6 +157,9 @@ private struct LauncherPanel: View {
             await withTaskGroup(of: Void.self) { group in
                 group.addTask { await GitHubStore.shared.loadSummary() }
                 group.addTask { await LinearStore.shared.loadSummary() }
+                group.addTask {
+                    if await LinearStore.shared.views.isEmpty { await LinearStore.shared.loadViews(refresh: false) }
+                }
             }
         }
         .accessibilityElement(children: .contain)
@@ -182,6 +186,20 @@ private struct LauncherPanel: View {
         case .agenda: return model.section == .conversations && ArtifactCenter.shared.current?.kind == BlockKind.agenda.rawValue
         case .notes: return model.section == .conversations && ArtifactCenter.shared.current?.kind == BlockKind.filesKind
         }
+    }
+
+    private func accessory(for destination: LauncherDestination) -> AnyView? {
+        guard destination == .linear, let view = LinearStore.shared.currentView else { return nil }
+        return AnyView(
+            HStack(spacing: 4) {
+                LinearViewIcon(view: view, size: 13)
+                Text(view.name)
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: 110, alignment: .trailing)
+        )
     }
 
     private func summary(for destination: LauncherDestination) -> String {
@@ -263,6 +281,7 @@ private struct LauncherTile: View {
     let summary: String
     let isActive: Bool
     let isEnabled: Bool
+    var accessory: AnyView? = nil
     let action: () -> Void
 
     @State private var hovering = false
@@ -286,6 +305,10 @@ private struct LauncherTile: View {
                         .contentTransition(.opacity)
                 }
                 Spacer(minLength: 0)
+                if let accessory, !hovering {
+                    accessory
+                        .transition(.opacity)
+                }
                 Image(systemName: isActive ? "checkmark" : "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(isActive ? Theme.textSecondary : Theme.textTertiary)

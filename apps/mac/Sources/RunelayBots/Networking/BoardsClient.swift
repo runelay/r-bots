@@ -29,6 +29,19 @@ extension BotsClient {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    func boardImageRequest(_ source: String) throws -> URLRequest {
+        guard let url = URL(string: source), url.scheme == "https" else { throw ClientError.invalidURL }
+        let host = url.host?.lowercased() ?? ""
+        var request: URLRequest
+        if host == "github.com" || host.hasSuffix("githubusercontent.com") {
+            request = try self.request(path: "/github/asset", query: [URLQueryItem(name: "url", value: source)])
+        } else {
+            request = URLRequest(url: url)
+        }
+        request.timeoutInterval = 45
+        return request
+    }
+
     static func pathPart(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? value
     }

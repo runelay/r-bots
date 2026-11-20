@@ -208,7 +208,7 @@ private struct GitDescriptionTab: View {
                     .font(TypeScale.rowSubtitle)
                     .foregroundStyle(Theme.textTertiary)
             } else {
-                MarkdownView(text: detail.body, fontSize: 13.5, lineSpacing: 3)
+                BoardRichText(text: detail.body, fontSize: 13.5, lineSpacing: 3)
                     .textSelection(.enabled)
             }
             if !detail.pull.labels.isEmpty {
@@ -349,7 +349,7 @@ private struct GitCommentBubble: View {
                         .foregroundStyle(Theme.textTertiary)
                 }
                 if !text.isEmpty {
-                    MarkdownView(text: text, fontSize: 13, lineSpacing: 2)
+                    BoardRichText(text: text, fontSize: 13, lineSpacing: 2)
                         .textSelection(.enabled)
                         .padding(Spacing.m)
                         .frame(maxWidth: .infinity, alignment: .leading)

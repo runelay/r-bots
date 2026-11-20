@@ -106,50 +106,100 @@ private struct LinearHeader: View {
     private var store: LinearStore { .shared }
 
     var body: some View {
-        HStack(spacing: Spacing.m) {
+        HStack(spacing: Spacing.s) {
             HStack(spacing: Spacing.s) {
                 BrandMarkImage(mark: .linear, size: 18)
                     .foregroundStyle(BrandMark.linearColor)
+                    .frame(width: 22, height: 22)
                 Text("Linear")
                     .font(BrandFonts.sans(18, weight: .semibold))
                     .tracking(-0.18)
                     .foregroundStyle(Theme.textPrimary)
             }
             if !store.views.isEmpty {
-                GlassSelect(
-                    options: viewOptions,
-                    selection: Binding(get: { store.viewID }, set: { store.choose($0) }),
-                    help: "Escolher a visão",
-                    maxWidth: 260,
-                    minWidth: 280
-                )
+                Text("/")
+                    .font(BrandFonts.sans(16, weight: .regular))
+                    .foregroundStyle(Theme.textTertiary)
+                viewPicker
+            }
+            if !store.projectViewActive, !store.projects.isEmpty {
+                projectPicker
+            }
+            if !store.labels.isEmpty {
+                labelPicker
             }
             if store.phase == .loaded {
                 Text(countText)
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .contentTransition(.numericText())
+                    .padding(.leading, Spacing.xs)
+                    .fixedSize()
             }
             Spacer(minLength: Spacing.m)
-            BoardSearchField(text: $searchText, prompt: store.searchable ? "Buscar issues" : "Busca só em Minhas issues e times", isEnabled: store.searchable)
-                .frame(maxWidth: 260)
+            BoardSearchField(text: $searchText, prompt: store.searchable ? "Buscar issues" : "Busca fora de visão salva", isEnabled: store.searchable)
+                .frame(maxWidth: 220)
             if store.nextCursor != nil {
-                BoardActionButton(title: "Carregar mais", systemImage: "arrow.down", isBusy: store.loadingMore) {
+                Button {
                     Task { await store.loadMore() }
+                } label: {
+                    BoardQuietFace(title: "Carregar mais", systemImage: "arrow.down", isBusy: store.loadingMore)
                 }
+                .buttonStyle(PressableButtonStyle())
             }
+            ReviewButton(view: store.viewID, project: store.activeProject) { store.show($0) }
             if let url = store.currentView?.url {
-                BoardIconButton(systemImage: "arrow.up.right.square", help: "Abrir a visão no Linear") {
+                BoardIconButton(systemImage: "arrow.up.right.square", help: "Abrir no Linear") {
                     BoardLinks.open(url)
                 }
             }
             BoardIconButton(systemImage: "arrow.clockwise", help: "Atualizar (⌘R)", spinning: store.refreshing) {
-                Task { await store.load(refresh: true) }
+                Task {
+                    await store.loadCatalogs()
+                    await store.load(refresh: true)
+                }
             }
         }
         .padding(.horizontal, Spacing.xl)
         .padding(.top, Spacing.l)
         .padding(.bottom, Spacing.m)
+    }
+
+    private var viewPicker: some View {
+        GlassMenuButton(help: "Escolher a visão", minWidth: 280, items: { viewItems }) { isOpen in
+            BoardQuietFace(
+                title: store.currentView?.name ?? "Visão",
+                leading: store.currentView.map { AnyView(LinearViewIcon(view: $0, size: 16)) },
+                isActive: isOpen,
+                showsChevron: true
+            )
+        }
+    }
+
+    private var projectPicker: some View {
+        let selected = store.projects.first { $0.id == store.projectFilter }
+        return GlassMenuButton(help: "Filtrar por projeto", minWidth: 260, items: { projectItems }) { isOpen in
+            BoardQuietFace(
+                title: selected?.name ?? "Projeto",
+                systemImage: "square.grid.2x2",
+                leading: selected.map { AnyView(LinearEntityIcon(icon: $0.icon, color: $0.color, name: $0.name, size: 14)) },
+                isActive: isOpen || selected != nil,
+                showsChevron: true
+            )
+        }
+    }
+
+    private var labelPicker: some View {
+        let selected = store.labelFilter
+        return GlassMenuButton(help: "Filtrar por etiqueta", minWidth: 220, items: { labelItems }) { isOpen in
+            BoardQuietFace(
+                title: selected ?? "Etiqueta",
+                systemImage: "tag",
+                leading: selected.map { AnyView(Circle().fill(store.labelColor($0) ?? Theme.textTertiary).frame(width: 8, height: 8)) },
+                isActive: isOpen || selected != nil,
+                showsChevron: true
+            )
+        }
     }
 
     private var countText: String {
@@ -158,23 +208,57 @@ private struct LinearHeader: View {
         return store.nextCursor == nil ? base : "\(base) carregadas"
     }
 
-    private var viewOptions: [GlassSelectOption<String>] {
-        var options: [GlassSelectOption<String>] = []
+    private var viewItems: [GlassMenuItem] {
+        var items: [GlassMenuItem] = []
         var lastKind = ""
         for view in store.views {
-            let starts = !options.isEmpty && view.kind != lastKind
+            let starts = !items.isEmpty && view.kind != lastKind
             lastKind = view.kind
-            options.append(
-                GlassSelectOption(
+            items.append(
+                GlassMenuItem(
                     view.name,
-                    value: view.id,
-                    systemImage: view.kind == "mine" ? "person.crop.circle" : view.kind == "team" ? "person.3" : "square.stack",
-                    subtitle: view.kind == "view" ? (view.description ?? view.team?.name) : view.kind == "team" ? view.team?.key : nil,
-                    startsSection: starts
-                )
+                    id: view.id,
+                    subtitle: view.kind == "view" ? (view.description ?? view.team?.name) : view.kind == "team" ? view.team?.key : view.kind == "project" ? view.description : nil,
+                    isOn: view.id == store.viewID,
+                    startsSection: starts,
+                    leading: AnyView(LinearViewIcon(view: view, size: 16))
+                ) {
+                    store.choose(view.id)
+                }
             )
         }
-        return options
+        return items
+    }
+
+    private var projectItems: [GlassMenuItem] {
+        [GlassMenuItem("Todos os projetos", id: "all", isOn: store.projectFilter == nil) { store.setProjectFilter(nil) }]
+            + store.projects.enumerated().map { index, project in
+                GlassMenuItem(
+                    project.name,
+                    id: project.id,
+                    subtitle: project.state,
+                    isOn: project.id == store.projectFilter,
+                    startsSection: index == 0,
+                    leading: AnyView(LinearEntityIcon(icon: project.icon, color: project.color, name: project.name, size: 16))
+                ) {
+                    store.setProjectFilter(project.id)
+                }
+            }
+    }
+
+    private var labelItems: [GlassMenuItem] {
+        [GlassMenuItem("Todas as etiquetas", id: "all", isOn: store.labelFilter == nil) { store.setLabelFilter(nil) }]
+            + store.labels.enumerated().map { index, label in
+                GlassMenuItem(
+                    label.name,
+                    id: label.id,
+                    isOn: label.name == store.labelFilter,
+                    startsSection: index == 0,
+                    leading: AnyView(Circle().fill(LinearPalette.color(hex: label.color) ?? Theme.textTertiary).frame(width: 9, height: 9).frame(width: 16))
+                ) {
+                    store.setLabelFilter(label.name)
+                }
+            }
     }
 }
 
@@ -235,7 +319,7 @@ private struct LinearColumnView: View {
         let cards = store.cards(in: column)
         VStack(alignment: .leading, spacing: Spacing.s) {
             HStack(spacing: Spacing.s) {
-                StateIcon(type: column.type, size: 12.5)
+                StateIcon(type: column.type, name: column.name, size: 13)
                 Text(column.name)
                     .font(TypeScale.captionStrong)
                     .foregroundStyle(Theme.textPrimary)
@@ -294,6 +378,10 @@ private struct LinearCardView: View {
                     Text(card.id)
                         .font(BrandFonts.mono(10.5))
                         .foregroundStyle(Theme.textTertiary)
+                    if let team = card.team, let view = store.views.first(where: { $0.kind == "team" && $0.name == team }) {
+                        LinearViewIcon(view: view, size: 12)
+                            .help(team)
+                    }
                     Spacer(minLength: 0)
                     PriorityIcon(priority: card.priority)
                 }
@@ -303,16 +391,33 @@ private struct LinearCardView: View {
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                HStack(spacing: 5) {
-                    ForEach(card.labels.prefix(2), id: \.self) { label in
-                        BoardChip(text: label)
+                BoardFlow(spacing: 5) {
+                    if let project = card.project, !store.projectViewActive {
+                        LinearProjectTag(name: project, project: store.project(named: project))
+                    }
+                    ForEach(card.labels.prefix(3), id: \.self) { label in
+                        LinearLabelTag(name: label, color: store.labelColor(label), compact: true)
                     }
                     if let estimate = card.estimate {
-                        BoardChip(text: estimate.formatted(), systemImage: "triangle")
+                        HStack(spacing: 3) {
+                            Image(systemName: "triangle")
+                                .font(.system(size: 8, weight: .semibold))
+                            Text(estimate.formatted())
+                                .font(BrandFonts.sans(10.5, weight: .medium))
+                        }
+                        .foregroundStyle(Theme.textTertiary)
+                        .frame(height: 19)
                     }
                     if let pr = card.pr {
                         LinearPullChip(link: pr)
                     }
+                }
+                HStack(spacing: 6) {
+                    StateIcon(type: card.stateType, name: card.state, size: 11)
+                    Text(BoardDates.relative(card.updatedAt))
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
                     Spacer(minLength: 0)
                     if let assignee = card.assignee {
                         RemoteAvatar(url: nil, name: assignee, size: 18)

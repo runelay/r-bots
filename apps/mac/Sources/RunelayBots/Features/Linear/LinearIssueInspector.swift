@@ -59,8 +59,7 @@ private struct LinearIssueContent: View {
                     LinearPullCard(link: pr)
                 }
                 if !detail.description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    MarkdownView(text: detail.description, fontSize: 13.5, lineSpacing: 3)
-                        .textSelection(.enabled)
+                    BoardRichText(text: detail.description, fontSize: 13.5, lineSpacing: 3)
                 } else {
                     Text("Sem descrição.")
                         .font(TypeScale.rowSubtitle)
@@ -100,7 +99,17 @@ private struct LinearIssueContent: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             HStack(spacing: Spacing.s) {
-                BoardChip(text: card.state, systemImage: LNStyle.stateSymbol(card.stateType), tint: LNStyle.stateColor(card.stateType), filled: true)
+                HStack(spacing: 5) {
+                    StateIcon(type: card.stateType, name: card.state, size: 11)
+                    Text(card.state)
+                        .font(BrandFonts.sans(11, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 8)
+                .frame(height: 22)
+                .background(LNStyle.stateColor(card.stateType, name: card.state).opacity(0.14), in: Capsule())
+                .fixedSize()
                 Text(card.id)
                     .font(BrandFonts.mono(11.5))
                     .foregroundStyle(Theme.textSecondary)
@@ -158,13 +167,13 @@ private struct LinearIssueContent: View {
             PropertyRow(label: "Status") {
                 GlassMenuButton(help: "Mudar o status", items: {
                     detail.states.map { state in
-                        GlassMenuItem(state.name, id: state.id, systemImage: LNStyle.stateSymbol(state.type), isOn: state.name == card.state) {
+                        GlassMenuItem(state.name, id: state.id, isOn: state.name == card.state, leading: AnyView(StateIcon(type: state.type, name: state.name, size: 12))) {
                             Task { await store.move(card.id, to: "\(state.type):\(state.name)") }
                         }
                     }
                 }) { isOpen in
                     HStack(spacing: 6) {
-                        StateIcon(type: card.stateType, size: 11)
+                        StateIcon(type: card.stateType, name: card.state, size: 11)
                         Text(card.state)
                             .font(TypeScale.rowSubtitle)
                             .foregroundStyle(Theme.textPrimary)
@@ -197,7 +206,12 @@ private struct LinearIssueContent: View {
                 PropertyRow(label: "Time") { Text(team).propertyValue() }
             }
             if let project = card.project {
-                PropertyRow(label: "Projeto") { Text(project).propertyValue() }
+                PropertyRow(label: "Projeto") {
+                    HStack(spacing: 6) {
+                        LinearEntityIcon(icon: store.project(named: project)?.icon, color: store.project(named: project)?.color, name: project, size: 14)
+                        Text(project).propertyValue()
+                    }
+                }
             }
             if let estimate = card.estimate {
                 PropertyRow(label: "Estimativa") { Text(estimate.formatted()).propertyValue() }
@@ -207,8 +221,10 @@ private struct LinearIssueContent: View {
             }
             if !card.labels.isEmpty {
                 PropertyRow(label: "Etiquetas") {
-                    HStack(spacing: 4) {
-                        ForEach(card.labels, id: \.self) { BoardChip(text: $0) }
+                    BoardFlow(spacing: 4) {
+                        ForEach(card.labels, id: \.self) { label in
+                            LinearLabelTag(name: label, color: store.labelColor(label))
+                        }
                     }
                 }
             }
@@ -315,7 +331,7 @@ private struct LinearChildRow: View {
             LinearStore.shared.select(card.id)
         } label: {
             HStack(spacing: Spacing.s) {
-                StateIcon(type: card.stateType, size: 11.5)
+                StateIcon(type: card.stateType, name: card.state, size: 11.5)
                 Text(card.id)
                     .font(BrandFonts.mono(10.5))
                     .foregroundStyle(Theme.textTertiary)
@@ -410,8 +426,7 @@ private struct LinearCommentView: View {
                             Capsule().fill(Theme.textTertiary).frame(width: 2)
                         }
                 }
-                MarkdownView(text: comment.body, fontSize: 13, lineSpacing: 2)
-                    .textSelection(.enabled)
+                BoardRichText(text: comment.body, fontSize: 13, lineSpacing: 2)
                     .padding(Spacing.m)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))

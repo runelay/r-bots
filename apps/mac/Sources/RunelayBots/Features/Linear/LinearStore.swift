@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Observation
 
 extension BotsClient {
@@ -8,8 +9,18 @@ extension BotsClient {
         return try await boardRequest("/linear/views", query: query, as: LNViewsReply.self).views
     }
 
-    func linearBoard(view: String, query: String, cursor: String?, refresh: Bool) async throws -> LNBoard {
+    func linearLabels() async throws -> [LNLabel] {
+        try await boardRequest("/linear/labels", as: LNLabelsReply.self).labels
+    }
+
+    func linearProjects() async throws -> [LNProject] {
+        try await boardRequest("/linear/projects", as: LNProjectsReply.self).projects
+    }
+
+    func linearBoard(view: String, query: String, label: String?, project: String?, cursor: String?, refresh: Bool) async throws -> LNBoard {
         var items = [URLQueryItem(name: "view", value: view)]
+        if let label { items.append(URLQueryItem(name: "label", value: label)) }
+        if let project { items.append(URLQueryItem(name: "project", value: project)) }
         if !query.isEmpty { items.append(URLQueryItem(name: "q", value: query)) }
         if let cursor { items.append(URLQueryItem(name: "cursor", value: cursor)) }
         if refresh { items.append(URLQueryItem(name: "refresh", value: "1")) }
@@ -55,6 +66,10 @@ final class LinearStore {
     private(set) var busy: String?
     private(set) var notice: BoardNotice?
     private(set) var summary: LNSummary?
+    private(set) var labels: [LNLabel] = []
+    private(set) var projects: [LNProject] = []
+    private(set) var labelFilter = UserDefaults.standard.string(forKey: "linear.label")
+    private(set) var projectFilter = UserDefaults.standard.string(forKey: "linear.project")
     private(set) var summaryError: String?
 
     @ObservationIgnored private var client: BotsClient?
@@ -63,6 +78,41 @@ final class LinearStore {
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
 
     var currentView: LNView? { views.first { $0.id == viewID } }
+
+    var projectViewActive: Bool { viewID.hasPrefix("project:") }
+
+    var activeProject: String? { projectViewActive ? nil : projectFilter }
+
+    func labelColor(_ name: String) -> Color? {
+        let lowered = name.lowercased()
+        return LinearPalette.color(hex: labels.first { $0.name.lowercased() == lowered }?.color)
+    }
+
+    func project(named name: String) -> LNProject? {
+        projects.first { $0.name == name }
+    }
+
+    func loadCatalogs() async {
+        guard let client else { return }
+        async let loadedLabels = try? client.linearLabels()
+        async let loadedProjects = try? client.linearProjects()
+        if let value = await loadedLabels { labels = value }
+        if let value = await loadedProjects { projects = value }
+    }
+
+    func setLabelFilter(_ name: String?) {
+        guard name != labelFilter else { return }
+        labelFilter = name
+        UserDefaults.standard.set(name, forKey: "linear.label")
+        Task { await load() }
+    }
+
+    func setProjectFilter(_ id: String?) {
+        guard id != projectFilter else { return }
+        projectFilter = id
+        UserDefaults.standard.set(id, forKey: "linear.project")
+        Task { await load() }
+    }
 
     func attach(_ client: BotsClient) {
         self.client = client
@@ -73,6 +123,7 @@ final class LinearStore {
     }
 
     func start() async {
+        if labels.isEmpty || projects.isEmpty { Task { await loadCatalogs() } }
         if views.isEmpty { await loadViews(refresh: false) }
         if phase == .idle || cards.isEmpty { await load() }
     }
@@ -112,7 +163,7 @@ final class LinearStore {
         if refresh { refreshing = true }
         defer { if current == token { refreshing = false } }
         do {
-            let board = try await client.linearBoard(view: viewID, query: searchable ? query : "", cursor: nil, refresh: refresh)
+            let board = try await client.linearBoard(view: viewID, query: searchable ? query : "", label: labelFilter, project: activeProject, cursor: nil, refresh: refresh)
             guard current == token else { return }
             columns = board.columns
             cards = board.issues
@@ -132,7 +183,7 @@ final class LinearStore {
         defer { loadingMore = false }
         let current = token
         do {
-            let board = try await client.linearBoard(view: viewID, query: searchable ? query : "", cursor: cursor, refresh: false)
+            let board = try await client.linearBoard(view: viewID, query: searchable ? query : "", label: labelFilter, project: activeProject, cursor: cursor, refresh: false)
             guard current == token else { return }
             let known = Set(cards.map(\.id))
             cards += board.issues.filter { !known.contains($0.id) }

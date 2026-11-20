@@ -59,31 +59,24 @@ private struct GitRepoColumn: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                HStack(spacing: Spacing.s) {
-                    BrandMarkImage(mark: .github, size: 18)
-                        .foregroundStyle(Theme.textPrimary)
-                    Text("Git")
-                        .font(BrandFonts.sans(18, weight: .semibold))
-                        .tracking(-0.18)
-                        .foregroundStyle(Theme.textPrimary)
-                }
+            HStack(spacing: Spacing.s) {
+                BrandMarkImage(mark: .github, size: 18)
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 22, height: 22)
+                Text("GitHub")
+                    .font(BrandFonts.sans(18, weight: .semibold))
+                    .tracking(-0.18)
+                    .foregroundStyle(Theme.textPrimary)
+                Spacer(minLength: 0)
                 if let viewer = store.viewer {
-                    HStack(spacing: 6) {
-                        RemoteAvatar(url: viewer.avatarUrl, name: viewer.login, size: 16)
-                        Text(viewer.login)
-                            .font(TypeScale.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                    .transition(.opacity)
-                } else {
-                    Text("Seus PRs no GitHub")
-                        .font(TypeScale.caption)
-                        .foregroundStyle(Theme.textTertiary)
+                    RemoteAvatar(url: viewer.avatarUrl, name: viewer.login, size: 22)
+                        .help("Conectado como \(viewer.login)")
+                        .transition(.opacity)
                 }
             }
+            .frame(height: 30)
             .padding(.horizontal, Spacing.l)
-            .padding(.top, Spacing.xl)
+            .padding(.top, Spacing.l)
             .padding(.bottom, Spacing.l)
 
             Text("REPOSITÓRIOS")
@@ -205,6 +198,7 @@ private struct GitPullList: View {
                         onSelect: { store.setFilter($0) }
                     )
                     Spacer(minLength: Spacing.s)
+                    ReviewButton { store.show($0) }
                     BoardIconButton(systemImage: "arrow.clockwise", help: "Atualizar (⌘R)", spinning: store.refreshing) {
                         Task { await store.load(refresh: true) }
                     }

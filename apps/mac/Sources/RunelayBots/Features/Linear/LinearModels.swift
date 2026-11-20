@@ -14,6 +14,33 @@ struct LNView: Decodable, Hashable, Identifiable, Sendable {
     let description: String?
     let team: LNTeam?
     let url: String?
+    let icon: String?
+    let color: String?
+}
+
+struct LNLabel: Decodable, Hashable, Identifiable, Sendable {
+    let id: String
+    let name: String
+    let color: String?
+}
+
+struct LNLabelsReply: Decodable, Sendable {
+    let labels: [LNLabel]
+}
+
+struct LNProject: Decodable, Hashable, Identifiable, Sendable {
+    let id: String
+    let name: String
+    let icon: String?
+    let color: String?
+    let url: String?
+    let summary: String?
+    let state: String?
+    let stateType: String?
+}
+
+struct LNProjectsReply: Decodable, Sendable {
+    let projects: [LNProject]
 }
 
 struct LNViewsReply: Decodable, Sendable {
@@ -155,15 +182,8 @@ enum LNStyle {
         }
     }
 
-    static func stateColor(_ type: String) -> Color {
-        switch type {
-        case "triage": Theme.brandText
-        case "started": Theme.warning
-        case "completed": Theme.merged
-        case "canceled", "duplicate": Theme.textTertiary
-        case "unstarted": Theme.textSecondary
-        default: Theme.textTertiary
-        }
+    static func stateColor(_ type: String, name: String = "") -> Color {
+        LinearPalette.state(type: type, name: name)
     }
 
     static func priorityLevel(_ priority: Int) -> Double {
@@ -193,7 +213,7 @@ struct PriorityIcon: View {
         Group {
             if priority == 1 {
                 Image(systemName: "exclamationmark.square.fill")
-                    .foregroundStyle(Theme.danger)
+                    .foregroundStyle(LinearPalette.urgent)
             } else if priority == 0 {
                 Image(systemName: "ellipsis")
                     .foregroundStyle(Theme.textTertiary)
@@ -210,11 +230,10 @@ struct PriorityIcon: View {
 
 struct StateIcon: View {
     let type: String
+    var name: String = ""
     var size: CGFloat = 12
 
     var body: some View {
-        Image(systemName: LNStyle.stateSymbol(type))
-            .font(.system(size: size, weight: .semibold))
-            .foregroundStyle(LNStyle.stateColor(type))
+        LinearStateGlyph(type: type, name: name, size: size)
     }
 }
