@@ -1618,7 +1618,8 @@ extension ConversationStore {
             case "started":
                 append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("App no ar na porta \(port)", "play.circle")), date: currentLineDateValue)
             case "exited":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("O app da porta \(port) parou", "stop.circle")), date: currentLineDateValue)
+                let reason = data["reason"]?.stringValue.map { ": \($0)" } ?? ""
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("O app da porta \(port) parou\(reason)", "stop.circle")), date: currentLineDateValue)
             default:
                 break
             }
