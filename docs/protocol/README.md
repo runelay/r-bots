@@ -91,6 +91,8 @@ Contrato verificado entre o servidor do r/bots (gateway em `127.0.0.1:2000`, exp
 | v53 | simuladores e testes: `/runner/tunnel`, operações `sim.*`/`maestro.*` do runner, `GET /simulators`, `POST /simulators/open-expo` (com ponte das portas da API do app), `/tests/:id` (arquivos, `rerun`), evento `test.result`, ferramentas `simulator_*`, `test_maestro`, `test_playwright`, `maestro_install`, `playwright_install` | [simulators](simulators.md) |
 | v54 | vários repositórios na mesma conversa (`meta.workspaces`, `workspace_open` adiciona, adoção de worktree pelo caminho, `?workspaceId=` nas rotas de código, `workspaces` no `GET /bots/:id/code`, `repo` nas ferramentas), diff pela base de merge com o `HEAD`, app com uma pílula por repositório | [code](code.md) |
 | v55 | conversas secundárias: `POST /bots/:id/conversations/:sessionId/side`, `parentSessionId` na conversa, fork da sessão Claude da mãe, ferramentas `thread_side`, `thread_create`, `thread_list` e `thread_read` com `threadId`, `side` no `delivery.consumed` do resultado | [conversations](conversations.md) |
+| v56 | orçamento de `test_playwright` por turno, system prompt estável com `## Contexto desta mensagem` no prompt, recall sem repetir na sessão, compactação do Claude em 200k, linha `turn.summary` no log | [simulators](simulators.md) |
+| v57 | Git e Linear no app: `GET /github/summary`, `GET /github/pulls`, `GET/POST /github/repos/:dono/:nome/pulls/:n[/merge\|review\|comment\|reply\|ready\|rerun]`, `GET /linear/summary\|views\|board`, `GET/POST /linear/issues/:id[/state\|assign\|start]`, só do dono | [github-linear](github-linear.md) |
 
 ## Contrato
 

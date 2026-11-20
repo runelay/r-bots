@@ -104,3 +104,19 @@ Com um dev client Debug compilado do commit `7067247` do conty3.0 e o Metro numa
 `test_maestro` pelo bot com `.maestro/abre-o-app.yaml` (`openLink` do dev client, `extendedWaitUntil` "Conty.*", `takeScreenshot`) → `test.result` `passed`, alvo "iPhone 17 Pro · iOS 26.5", `screenshot:true`. Os passos vieram vazios; o Maestro 2.12 grava `<debug>/<flow>/commands.json` e `takeScreenshot/`, e a leitura foi corrigida para procurar nas subpastas (saída real: `Open conty://… COMPLETED`, `Assert that "Conty.*" is visible… COMPLETED`, `Wait for animation to end… COMPLETED`, `Take screenshot tela-inicial… COMPLETED`).
 
 `test_playwright` pelo bot (spec de login no conty-whitelabel, `server` do Vite) → `failed`: "Executable doesn't exist at /home/app/.cache/ms-playwright/ffmpeg-1013" (vídeo da falha). Corrigido com o ffmpeg na pasta de ferramentas. Repetido com a mesma config que o servidor gera, dentro do container: Chrome 158 abre, passo "abre o app" ok, "vê o formulário de entrada" falha com o print da tela "Alguma coisa deu errado" do whitelabel (a API do `.env.local` não responde daqui), anexos `screenshot`, `video`, `error-context` e `trace`.
+
+## v56 (20/11): orçamento de Playwright e contexto por mensagem
+
+### Ferramenta
+
+- `test_playwright` roda no máximo 3 vezes por turno (`BOTS_PLAYWRIGHT_PER_TURN`). Acima disso devolve `isError` com o texto: "Já rodei o Playwright 3 vezes neste pedido, o limite por pedido. Mostre à pessoa o que já tem e pergunte se ela quer outra rodada; não rode o Playwright pelo Bash para contornar." A recusa não abre card nem emite `call.*`.
+- A descrição da ferramenta e o guia do repositório aberto dizem para usar o Playwright só quando a pessoa pedir teste ou prints, ou uma vez para fechar uma feature de UI. Para uma olhada rápida, o caminho é `browser_open` + `browser_screenshot`, conferindo uma vez por rodada e no máximo 3 prints.
+
+### Prompt do turno
+
+- O system prompt ficou estável entre turnos: instruções, guias, o índice de skills e a nota da conversa secundária. O que muda a cada mensagem vai no começo do prompt, no bloco `## Contexto desta mensagem` seguido de `---`: o estado do repositório (`Dependências de <repo>: …`, `Servidores no ar: …`), as memórias lembradas, o log do time, as notas de canvas e blocos, a nota de voz e `## Data e hora`.
+- `memory.recalled` lista só as memórias novas para a sessão do provedor. As que já foram injetadas ficam em `meta.recallSeen[<chave da sessão>]` e voltam quando a sessão recomeça.
+- Claude: `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000` (`BOTS_COMPACT_WINDOW`), `BASH_MAX_OUTPUT_LENGTH=12000` (`BOTS_BASH_OUTPUT_CHARS`) e `MAX_MCP_OUTPUT_TOKENS=10000` (`BOTS_MCP_OUTPUT_TOKENS`). O padrão de `BOTS_CONTEXT_LIMIT` passou de 120k para 150k.
+- Cada turno grava no log do servidor uma linha `turn.summary {json}` com `botId`, `sessionId`, `turnId`, `model`, `account`, `resumed`, `steps`, `calls`, `tools`, `usage`, `contextTokens`, `promptChars` e `recalled`.
+
+### Verificado
