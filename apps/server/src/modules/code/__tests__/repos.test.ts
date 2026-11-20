@@ -1,13 +1,14 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { join } from "node:path";
+import { dataDir } from "../../../config/env";
 import * as dbModule from "../../../db";
 import { type Db, getDb } from "../../../db";
 import { codeWorkspaces } from "../../../db/tables";
-import { dataDir } from "../../../config/env";
 import {
   addAllowedRepo,
   allowedRepos,
   fileRoots,
+  removeAllowedRepo,
   repoRootProblem,
   seedAllowedRepos,
   worktreesRoot,
@@ -37,6 +38,14 @@ function failingSelects() {
 }
 
 describe("repos", () => {
+  test("removeAllowedRepo drops a liberated repo and ignores an unknown one", async () => {
+    const path = join(process.env.HOST_HOME as string, "repos", `remove-${Date.now()}`);
+    await addAllowedRepo(path, "teste", null);
+    expect((await removeAllowedRepo(path))?.path).toBe(path);
+    expect(allowedRepos().some((repo) => repo.path === path)).toBe(false);
+    expect(await removeAllowedRepo(path)).toBeNull();
+  });
+
   test("fileRoots lists the worktree root, allowed repos and worktrees that were not removed", async () => {
     const repo = await addAllowedRepo(
       join(process.env.HOST_HOME as string, "repos", `roots-${Date.now()}`),

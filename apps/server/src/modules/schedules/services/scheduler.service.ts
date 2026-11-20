@@ -29,6 +29,7 @@ export async function runFireJob(payload: FirePayload) {
   if (env.BOTS_SCHEDULES === "off") return { skipped: "off" };
   const item = getBot(payload.botId)?.schedules.find((entry) => entry.name === payload.scheduleId);
   if (!item) return { skipped: "gone" };
+  if (item.paused) return { skipped: "paused" };
   return fire(payload.botId, item.name, item.prompt);
 }
 
@@ -41,7 +42,7 @@ export function scheduleKey(botId: string, name: string) {
 async function syncSchedules() {
   const desired = new Map<string, { botId: string; name: string; cron: string; timezone: string }>();
   for (const bot of listBots()) {
-    for (const item of bot.schedules)
+    for (const item of bot.schedules.filter((entry) => !entry.paused))
       desired.set(scheduleKey(bot.id, item.name), {
         botId: bot.id,
         name: item.name,

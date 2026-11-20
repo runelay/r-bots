@@ -25,6 +25,7 @@ export const ownerRoutes: OwnerRule[] = [
   { method: ["POST"], path: ["accounts", "refresh"] },
   { method: "write", path: ["accounts", "**"] },
   { method: "write", path: ["servers", "**"] },
+  { method: "write", path: ["preferences"] },
   { method: "write", path: ["tests", "**"] },
   { method: "write", path: ["simulators", "**"] },
 ];

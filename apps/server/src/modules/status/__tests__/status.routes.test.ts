@@ -6,6 +6,8 @@ import * as devServers from "../../code/services/dev-server.service";
 import * as conversations from "../../conversations/services/conversations.service";
 import * as engine from "../../engine/services/engine.service";
 import { defineJob, enqueue, laneCounts } from "../../jobs/services/jobs.service";
+import * as preferences from "../../settings/services/preferences.service";
+import { emitSettingsChange } from "../../settings/services/settings-events.service";
 import { appWatching } from "../services/viewers.service";
 
 let server: TestServer;
@@ -123,6 +125,15 @@ describe("GET /status/stream", () => {
       };
     });
     restores.push(() => onServerChange.mockRestore());
+    let preferencesListener: ((value: preferences.AppPreferences) => void) | null = null;
+    const onPreferences = spyOn(preferences, "onPreferences").mockImplementation((listener) => {
+      preferencesListener = listener;
+      return () => {
+        unsubscribed++;
+        return true;
+      };
+    });
+    restores.push(() => onPreferences.mockRestore());
     const realInterval = globalThis.setInterval;
     const intervals = spyOn(globalThis, "setInterval").mockImplementation(((callback: () => void, ms?: number) =>
       realInterval(callback, ms === 15_000 ? 1 : ms)) as typeof setInterval);
@@ -148,14 +159,19 @@ describe("GET /status/stream", () => {
     emitStatus({ botId: "b1", sessionId: "s1", status: "awaiting" } as engine.StatusEvent);
     emitConversation({ botId: "b1", sessionId: "s1", conversation: null });
     (serverListener as unknown as (server: unknown, removed: boolean) => void)({ id: "dev_1" }, true);
+    emitSettingsChange(["bots", "usage", "bots"]);
+    emitSettingsChange([]);
+    (preferencesListener as unknown as (value: unknown) => void)({ microphone: "USB" });
     const seen: Array<Record<string, unknown>> = [];
-    while (!seen.some((line) => line.type === "heartbeat") || seen.filter((l) => l.type !== "heartbeat").length < 4)
+    while (!seen.some((line) => line.type === "heartbeat") || seen.filter((l) => l.type !== "heartbeat").length < 6)
       seen.push(await next());
     expect(seen.filter((line) => line.type !== "heartbeat")).toEqual([
       { type: "status", botId: "b1", status: "working" },
       { type: "session", botId: "b1", sessionId: "s1", status: "awaiting" },
       { type: "conversation", botId: "b1", sessionId: "s1", conversation: null },
       { type: "server", server: { id: "dev_1" }, removed: true },
+      { type: "settings", areas: ["bots", "usage"] },
+      { type: "preferences", preferences: { microphone: "USB" } },
     ]);
 
     controller.abort();

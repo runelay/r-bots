@@ -109,7 +109,11 @@ describe("reloadSchedules", () => {
     await reloadSchedules();
     expect(upsert).not.toHaveBeenCalled();
     expect(await schedulersOf(bot.id)).toHaveLength(1);
-    track(spyOn(botsService, "listBots").mockReturnValue([]));
+    track(
+      spyOn(botsService, "listBots").mockReturnValue([
+        { ...bot, schedules: [{ ...schedule, timezone: "UTC", description: "", paused: true }] },
+      ]),
+    );
     await reloadSchedules();
     expect(await schedulersOf(bot.id)).toHaveLength(0);
     expect(log).toHaveBeenCalledWith("schedules loaded: none");
@@ -167,6 +171,12 @@ describe("runFireJob", () => {
     withSchedules("on");
     expect(await runFireJob({ botId: bot.id, scheduleId: "outra" })).toEqual({ skipped: "gone" });
     expect(await runFireJob({ botId: "ninguem", scheduleId: "diaria" })).toEqual({ skipped: "gone" });
+  });
+
+  test("skips a paused schedule", async () => {
+    const bot = await makeBot({ schedules: [{ ...schedule, paused: true }] });
+    withSchedules("on");
+    expect(await runFireJob({ botId: bot.id, scheduleId: "diaria" })).toEqual({ skipped: "paused" });
   });
 });
 

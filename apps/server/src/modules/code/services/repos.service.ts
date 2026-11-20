@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { dataDir, rootDir } from "../../../config/env";
 import { getDb } from "../../../db";
 import { codeRepos, codeWorkspaces } from "../../../db/tables";
@@ -122,6 +122,15 @@ export async function addAllowedRepo(path: string, reason: string, addedBy: stri
   await getDb().insert(codeRepos).values(row).onConflictDoNothing();
   await loadAllowedRepos();
   return allowedRepos().find((repo) => repo.path === absolute) ?? row;
+}
+
+export async function removeAllowedRepo(path: string) {
+  const absolute = resolve(path);
+  const found = allowedRepos().find((repo) => repo.path === absolute);
+  if (!found) return null;
+  await getDb().delete(codeRepos).where(eq(codeRepos.path, absolute));
+  await loadAllowedRepos();
+  return found;
 }
 
 export async function fileRoots() {

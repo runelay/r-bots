@@ -3,7 +3,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ValidationError } from "../../../shared/errors";
 import { redactText } from "../../../shared/redact";
-import { type DecisionRecord, type DecisionSettings, decideApproval } from "../../approvals/services/decisions.service";
+import {
+  type DecisionRecord,
+  type DecisionSettings,
+  decideApproval,
+  decideHardList,
+} from "../../approvals/services/decisions.service";
 import type { DeliveryAsk } from "../../approvals/services/delivery-intent.service";
 import {
   type PermissionMode,
@@ -46,6 +51,7 @@ import {
   registerQuestionTools,
 } from "../../questions/services/questions.service";
 import { registerServerTools } from "../../servers/services/server-tools.service";
+import { registerSettingsTools } from "../../settings/services/settings-tools.service";
 import { fileEventOf } from "../../uploads/services/uploads.service";
 import { onlyRefs } from "../../vault/services/vault.service";
 import {
@@ -374,7 +380,7 @@ async function runDelegate(context: ToolContext, target: string, message: string
   }
 }
 
-type ConfigGate = "jev" | "human" | "config" | "always" | "none";
+type ConfigGate = "human" | "config" | "always" | "none";
 
 const configHumanReason: Record<string, string> = {
   human: "Pedido de capacidade sempre passa por uma pessoa.",
@@ -456,35 +462,23 @@ async function runConfigTool(
     }
     let cleared: Record<string, unknown> | null = null;
     if (gate === "always" || (gate !== "none" && context.permission !== "full")) {
-      let needsHuman = true;
-      if (gate === "jev") {
-        const decision = await decideApproval(await approvalState(context, name, input), context.decisions, callId);
-        context.emitDecision(decision);
-        if (decision.outcome === "auto_approved") {
-          needsHuman = false;
-          cleared = { decision: "jev", model: decision.model };
-        }
-      } else {
-        context.emitDecision({
-          kind: "approval",
-          question: "Esta ação do bot é segura para rodar sem uma pessoa confirmar?",
-          answer: null,
-          confidence: null,
-          threshold: context.decisions.threshold,
-          outcome: "human",
-          latencyMs: 0,
-          model: null,
-          reason: configHumanReason[gate],
-          tool: name,
-          callId,
-        });
-      }
-      if (needsHuman) {
-        if (context.isSchedule) return reject(null, "Ninguém está aqui para aprovar mudanças agora.");
-        const { choice, interactionId } = await context.requestApproval(prompt, callId, context.origin);
-        if (choice !== "approve") return reject(interactionId, "A pessoa negou essa mudança.");
-        cleared = { interactionId };
-      }
+      context.emitDecision({
+        kind: "approval",
+        question: "Esta ação do bot é segura para rodar sem uma pessoa confirmar?",
+        answer: null,
+        confidence: null,
+        threshold: context.decisions.threshold,
+        outcome: "human",
+        latencyMs: 0,
+        model: null,
+        reason: configHumanReason[gate],
+        tool: name,
+        callId,
+      });
+      if (context.isSchedule) return reject(null, "Ninguém está aqui para aprovar mudanças agora.");
+      const { choice, interactionId } = await context.requestApproval(prompt, callId, context.origin);
+      if (choice !== "approve") return reject(interactionId, "A pessoa negou essa mudança.");
+      cleared = { interactionId };
     }
     log.emit({
       type: "call.started",
@@ -597,8 +591,29 @@ async function runRemote(context: ToolContext, spec: RemoteSpec, work: () => Pro
       });
       return reject(null, readonlyRemoteMessage);
     }
-    const needsHuman = verdict === "card";
-    if (needsHuman) {
+    const hardList = mode === "full" && (spec.alwaysHuman || spec.kind === "outbound");
+    let cleared: Record<string, unknown> | null = null;
+    let needsHuman = verdict === "card";
+    if (hardList) {
+      const decision = await decideHardList(
+        {
+          ...(await approvalState(context, spec.capability, spec.input)),
+          reason: spec.alwaysHuman
+            ? "Escrita em banco pelo conector."
+            : "Mensagem para fora ou dinheiro pelo conector.",
+          isSchedule: context.isSchedule,
+        },
+        callId,
+      );
+      context.emitDecision(decision);
+      if (decision.outcome === "denied")
+        return reject(
+          null,
+          "Lista dura numa rotina, sem ninguém para aprovar: o Jev não liberou com confiança alta. Não rode; registre no resumo da rotina.",
+        );
+      needsHuman = decision.outcome !== "auto_approved";
+      if (!needsHuman) cleared = { decision: "jev", model: decision.model, hardList: true };
+    } else if (needsHuman) {
       context.emitDecision({
         kind: "approval",
         question: "Esta ação do bot é segura para rodar sem uma pessoa confirmar?",
@@ -610,20 +625,18 @@ async function runRemote(context: ToolContext, spec: RemoteSpec, work: () => Pro
         model: null,
         reason:
           spec.kind === "outbound" || spec.alwaysHuman
-            ? "Lista dura (mensagem para fora, dinheiro, deploy, merge, apagar ou banco): sempre passa por uma pessoa."
+            ? "Lista dura (mensagem para fora, dinheiro, deploy, merge, apagar ou banco): passa por uma pessoa."
             : "Modo Editar: escrita em conector pede sua confirmação.",
         tool: spec.capability,
         callId,
       });
     }
-    let cleared: Record<string, unknown> | null = null;
     if (needsHuman) {
       if (context.isSchedule) return reject(null, "Ninguém está aqui para aprovar essa ação agora.");
       const { choice, interactionId } = await context.requestApproval(spec.prompt, callId, context.origin);
       if (choice !== "approve") return reject(interactionId, "A pessoa negou essa ação.");
       cleared = { interactionId };
     }
-    if (!cleared && mode === "full" && spec.kind === "outbound" && !spec.alwaysHuman) cleared = { permission: mode };
     log.emit({
       type: "call.started",
       data: { callId, ...(cleared ? { clearedBy: cleared } : {}) },
@@ -1513,7 +1526,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
         "add_schedule",
         `Criar rotina ${String(args.name)} (${String(args.cron)})`,
         args,
-        "jev",
+        "none",
         `Posso criar a rotina "${String(args.name)}" (${String(args.cron)}, ${String(args.timezone ?? "America/Sao_Paulo")})? Ela roda sozinha e gasta sua assinatura.`,
         (bot) => {
           const schedule = {
@@ -1534,7 +1547,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
   server.registerTool(
     "remove_schedule",
     {
-      description: "Remove uma rotina sua pelo nome. O servidor só abre card se o modo da conversa exigir.",
+      description: "Remove uma rotina sua pelo nome. Roda sem card.",
       inputSchema: { name: z.string().min(1) },
     },
     (args: Record<string, unknown>) =>
@@ -1543,7 +1556,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
         "remove_schedule",
         `Remover rotina ${String(args.name)}`,
         args,
-        "jev",
+        "none",
         `Posso remover a rotina "${String(args.name)}"?`,
         (bot) => {
           if (!bot.schedules.some((item) => item.name === String(args.name)))
@@ -1616,6 +1629,7 @@ export function buildServer(context: ToolContext) {
   registerCodeTools(server, context, () => context.runner ?? "vps");
   registerVaultTools(server, context);
   registerServerTools(server, context);
+  registerSettingsTools(server, context);
   registerThreadTools(server, context);
   registerQuestionTools(server, context);
   if (context.groupMembers.length > 0) {

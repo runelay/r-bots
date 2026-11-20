@@ -215,6 +215,8 @@ describe("createBot", () => {
       [{ name, engine: { account: "Cloud:claude" } }, "engine.account"],
       [{ name, engine: { account: 3 } }, "engine.account"],
       [{ name, engine: { effort: "max" } }, "engine.effort"],
+      [{ name, engine: { autoSwitch: "sim" } }, "engine.autoSwitch"],
+      [{ name, schedules: [{ cron: "* * * * *", prompt: "p", paused: "sim" }] }, "schedules[0].paused"],
       [{ name, engine: { model: "" } }, "engine.model"],
       [{ name, engine: { fallback: [] } }, "engine.fallback"],
       [{ name, engine: { fallback: { account: "x" } } }, "engine.fallback.account"],

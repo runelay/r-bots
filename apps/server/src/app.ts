@@ -26,6 +26,7 @@ import { handleIntegrations } from "./modules/integrations/routes/integrations.r
 import { handleJobs } from "./modules/jobs/routes/jobs.routes";
 import { handleSections } from "./modules/sections/routes/sections.routes";
 import { handleServers } from "./modules/servers/routes/servers.routes";
+import { handlePreferences } from "./modules/settings/routes/preferences.routes";
 import { handleSimulators } from "./modules/simulators/routes/simulators.routes";
 import { isTunnelUpgrade, tunnelSocket, tunnelUpgradeData } from "./modules/simulators/services/tunnel.service";
 import { handleSkills } from "./modules/skills/routes/skills.routes";
@@ -81,6 +82,7 @@ export const routeTable: RouteEntry[] = [
   { root: "sections", handle: (req, res, _url, method, parts) => handleSections(req, res, method, parts) },
   { root: "groups", handle: (req, res, url, method, parts) => handleGroups(req, res, url, method, parts) },
   { root: "jobs", handle: (req, res, url, method, parts) => handleJobs(req, res, url, method, parts) },
+  { root: "preferences", handle: (req, res, _url, method, parts) => handlePreferences(req, res, method, parts) },
   { root: "servers", handle: (req, res, url, method, parts) => handleServers(req, res, url, method, parts) },
   { root: "tests", handle: (req, res, _url, method, parts) => handleTests(req, res, method, parts) },
   { root: "simulators", handle: (req, res, _url, method, parts) => handleSimulators(req, res, method, parts) },

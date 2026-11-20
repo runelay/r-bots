@@ -188,21 +188,13 @@ describe("self configuration", () => {
     expect(result).toMatchObject({ isError: true, text: "Esse bot não existe mais." });
   });
 
-  test("add_schedule asks a person when Jev is off and honors the answer", async () => {
-    const asked = await open();
-    expect((await asked.call("add_schedule", { name: "a", cron: "0 9 * * *", prompt: "p" })).isError).toBe(false);
-    expect(asked.approvals[0].prompt).toContain('Posso criar a rotina "a"');
-    const denied = await open({ approve: () => "deny" });
-    const result = await denied.call("add_schedule", { name: "x", cron: "0 9 * * *", prompt: "p" });
-    expect(result).toMatchObject({ isError: true, text: "A pessoa negou essa mudança." });
-  });
-
-  test("add_schedule lets Jev clear it without a person", async () => {
-    approvalJev(0.2);
-    const { call, approvals } = await open();
-    expect((await call("add_schedule", { name: "j", cron: "0 9 * * *", prompt: "p" })).isError).toBe(false);
+  test("add_schedule and remove_schedule run right away in the default mode, without Jev or a card", async () => {
+    const { call, approvals, decisions } = await open({ approve: () => "deny" });
+    expect((await call("add_schedule", { name: "a", cron: "0 9 * * *", prompt: "p" })).isError).toBe(false);
+    expect((await call("remove_schedule", { name: "a" })).isError).toBe(false);
     expect(approvals).toHaveLength(0);
-    expect(await startedOf()).toMatchObject({ clearedBy: { decision: "jev", model: "jev-test" } });
+    expect(decisions).toHaveLength(0);
+    expect(getBot(bot.id)?.schedules).toEqual([]);
   });
 
   test("add_schedule creates or replaces a routine right away in full access", async () => {
@@ -240,15 +232,6 @@ describe("self configuration", () => {
     expect(await settledOf()).toMatchObject({ outcome: "failed" });
     expect((await call("remove_schedule", { name: "r1" })).text).toContain('Rotina "r1" removida.');
     expect(getBot(bot.id)?.schedules).toEqual([]);
-  });
-
-  test("remove_schedule still lets Jev clear it without a person", async () => {
-    await bots.updateBot(bot.id, { schedules: [{ name: "r2", cron: "0 9 * * *", prompt: "p" }] });
-    approvalJev(0.2);
-    const { call, approvals } = await open();
-    expect((await call("remove_schedule", { name: "r2" })).isError).toBe(false);
-    expect(approvals).toHaveLength(0);
-    expect(await startedOf()).toMatchObject({ clearedBy: { decision: "jev", model: "jev-test" } });
   });
 
   test("request_connector and request_capability always go through a person", async () => {
@@ -429,7 +412,8 @@ describe("connector tools", () => {
     );
     const full = await open({ permission: "full" });
     expect((await full.call("connector_call", { tool: "solo.send_email" })).text).toBe("ok");
-    expect(await startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
+    expect(full.approvals).toHaveLength(1);
+    expect(full.decisions.at(-1)).toMatchObject({ outcome: "human", reason: "Jev desligado." });
     const fallback = await open({ permission: undefined });
     expect((await fallback.call("connector_call", { tool: "solo.update_doc" })).text).toBe("ok");
   });
@@ -450,6 +434,34 @@ describe("connector tools", () => {
     const migration = await full.call("connector_call", { tool: "solo.apply_migration", args: { name: "x" } });
     expect(migration.text).toBe("ok");
     expect(full.approvals).toHaveLength(2);
+  });
+
+  test("full access lets Jev clear a requested hard-list action and denies an unclear one in a routine", async () => {
+    fakeRunelay.tool("list_connections", () => []);
+    fakeRunelay.tool("call_tool", () => "ok");
+    let requested = 0.95;
+    fakeJev(() => ({
+      answers: {
+        requested: { type: "noul", noul: requested },
+        irreversible: { type: "noul", noul: 0.05 },
+        risk: { type: "score", score: 0.2, confidence: 0.9, probabilities: { "0": 0.9 } },
+      },
+    }));
+    const full = await open({ permission: "full", request: "manda o e-mail de boas-vindas para a Ana" });
+    expect((await full.call("connector_call", { tool: "solo.send_email" })).text).toBe("ok");
+    expect(full.approvals).toHaveLength(0);
+    expect(await startedOf()).toMatchObject({ clearedBy: { decision: "jev", hardList: true } });
+    expect(full.decisions.at(-1)).toMatchObject({ outcome: "auto_approved", threshold: 0.5 });
+    requested = 0.3;
+    const unclear = await open({ permission: "full" });
+    expect((await unclear.call("connector_call", { tool: "solo.send_email" })).text).toBe("ok");
+    expect(unclear.approvals).toHaveLength(1);
+    const routine = await open({ permission: "full", isSchedule: true });
+    const denied = await routine.call("connector_call", { tool: "solo.send_email" });
+    expect(denied.isError).toBe(true);
+    expect(denied.text).toContain("registre no resumo da rotina");
+    expect(routine.decisions.at(-1)).toMatchObject({ outcome: "denied", threshold: 0.85 });
+    expect(routine.approvals).toHaveLength(0);
   });
 
   test("connector_call reports a failing remote tool", async () => {

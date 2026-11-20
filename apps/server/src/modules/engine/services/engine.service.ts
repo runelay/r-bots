@@ -80,6 +80,7 @@ import {
   questionInteraction,
   resolveAnswers,
 } from "../../questions/services/questions.service";
+import { settingsGuide } from "../../settings/services/settings-tools.service";
 import { type LoadedSkill, skillsBlock } from "../../skills/services/skills.service";
 import {
   attachmentsTitle,
@@ -359,10 +360,16 @@ function systemPromptFor(
   parts.push("", blocksGuide);
   parts.push("", uploadGuide);
   parts.push("", vaultGuide);
+  parts.push("", settingsGuide);
+  if (bot.engine?.autoSwitch)
+    parts.push(
+      "",
+      "A pessoa deixou você trocar de modelo quando achar melhor: se outro modelo servir melhor para a tarefa, troque com `bot_update` e diga em uma linha.",
+    );
   parts.push(
     "",
     "## Autoconfiguração",
-    "Você pode se configurar com as ferramentas do servidor MCP `bots`: `set_role`, `update_instructions`, `add_schedule` (converta o pedido em cron), e `remove_schedule`. Use quando a pessoa pedir algo recorrente ou uma mudança no seu jeito de trabalhar. Para criar um bot novo no time, use `create_bot`; para criar um grupo de bots, use `create_group`; para adicionar, tirar ou renomear num grupo existente, use `update_group` (nunca crie outro grupo para isso); `archive_group` arquiva, mas só quando a pessoa pedir com todas as letras. Nunca arquive, apague ou desfaça nada por iniciativa própria, nem para “arrumar”: confira o estado atual com as ferramentas antes de mexer, sua memória da conversa pode estar velha. Faça direto, sem pedir confirmação nem delegar. Nunca use o computador (cliques na tela) para mexer no próprio app runelay bots: tudo dele tem ferramenta. Delegar para outro bot também não pede permissão: faça. Você já tem acesso a tudo (terminal na VPS com gh, supabase, wrangler e curl, navegador, o Mac da pessoa, banco de produção em leitura, todos os conectores e os outros bots): nunca peça acesso nem diga que não tem. Ferramentas que aparecem em conversas antigas e não estão na sua lista de agora não existem mais: use as de agora.",
+    'Você pode se configurar com as ferramentas do servidor MCP `bots`: `set_role`, `update_instructions`, `add_schedule` (converta o pedido em cron), `remove_schedule` e as de "Seus ajustes" acima. Use quando a pessoa pedir algo recorrente ou uma mudança no seu jeito de trabalhar. Para criar um bot novo no time, use `create_bot`; para criar um grupo de bots, use `create_group`; para adicionar, tirar ou renomear num grupo existente, use `update_group` (nunca crie outro grupo para isso); `archive_group` arquiva, mas só quando a pessoa pedir com todas as letras. Nunca arquive, apague ou desfaça nada por iniciativa própria, nem para “arrumar”: confira o estado atual com as ferramentas antes de mexer, sua memória da conversa pode estar velha. Faça direto, sem pedir confirmação nem delegar. Nunca use o computador (cliques na tela) para mexer no próprio app runelay bots: tudo dele tem ferramenta. Delegar para outro bot também não pede permissão: faça. Você já tem acesso a tudo (terminal na VPS com gh, supabase, wrangler e curl, navegador, o Mac da pessoa, banco de produção em leitura, todos os conectores e os outros bots): nunca peça acesso nem diga que não tem. Ferramentas que aparecem em conversas antigas e não estão na sua lista de agora não existem mais: use as de agora.',
     "",
     "## Rotinas",
     "Quando a pessoa pedir para criar uma rotina, crie com `add_schedule` neste turno, sem perguntar antes. Decida o óbvio sozinho: o escopo que o pedido descreve (se fala de vários ambientes ou tenants, todos), todas as checagens que você consegue rodar e uma frequência sensata; diga a frequência em uma linha no fim. O prompt da rotina é autossuficiente: comandos reais, refs e o formato da saída. Passo que mexe em dinheiro, escreve em produção, faz deploy ou manda mensagem para fora não entra na rotina: vira um aviso no resultado. Se a rotina tiver checagens longas ou de raciocínio complexo e você estiver num modelo pequeno (Haiku), sugira em uma linha trocar para Sonnet, sem esperar resposta.",
@@ -989,19 +996,21 @@ function requestApproval(
           interactionId,
           request: {
             allowFreeform: false,
-            display: details?.secret ? "secret_form" : "confirmation",
-            kind: details?.secret ? "secret" : "approval",
-            options: details?.secret
-              ? [
-                  { id: "approve", label: "Salvar" },
-                  { id: "deny", label: "Agora não" },
-                ]
-              : [
-                  { id: "approve", label: "Aprovar" },
-                  ...(details?.grant ? [{ id: "approve_always", label: "Sempre neste repositório" }] : []),
-                  { id: "deny", label: "Negar" },
-                ],
+            display: details?.secret ? "secret_form" : details?.integration ? "integration_form" : "confirmation",
+            kind: details?.secret ? "secret" : details?.integration ? "integration" : "approval",
+            options:
+              details?.secret || details?.integration
+                ? [
+                    { id: "approve", label: "Salvar" },
+                    { id: "deny", label: "Agora não" },
+                  ]
+                : [
+                    { id: "approve", label: "Aprovar" },
+                    ...(details?.grant ? [{ id: "approve_always", label: "Sempre neste repositório" }] : []),
+                    { id: "deny", label: "Negar" },
+                  ],
             ...(details?.secret ? { secret: details.secret } : {}),
+            ...(details?.integration ? { integration: details.integration } : {}),
             prompt,
             ...(details?.grant ? { grant: details.grant } : {}),
             ...(details?.target ? { target: details.target } : {}),

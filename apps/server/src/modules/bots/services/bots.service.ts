@@ -50,6 +50,7 @@ export interface BotSchedule {
   timezone: string;
   prompt: string;
   description: string;
+  paused?: boolean;
 }
 
 export interface BotCapabilities {
@@ -69,6 +70,7 @@ export interface BotEngine {
   model: string;
   effort: "low" | "medium" | "high" | null;
   fallback?: EngineFallback | null;
+  autoSwitch?: boolean;
 }
 
 export const efforts = ["low", "medium", "high"] as const;
@@ -273,7 +275,9 @@ function validateSchedules(value: unknown): BotSchedule[] {
     const prompt = asString(raw.prompt, `${field}.prompt`, 1, 20_000, "O pedido da rotina");
     const description =
       raw.description === undefined ? "" : asString(raw.description, `${field}.description`, 0, 200, "A descrição");
-    return { name, cron, timezone, prompt, description };
+    if (raw.paused !== undefined && typeof raw.paused !== "boolean")
+      throw new ValidationError("paused precisa ser verdadeiro ou falso.", `${field}.paused`);
+    return { name, cron, timezone, prompt, description, ...(raw.paused === true ? { paused: true } : {}) };
   });
 }
 
@@ -428,7 +432,7 @@ function validateEngine(value: unknown, current: BotEngine): BotEngine {
     throw new ValidationError("Motor inválido.", "engine");
   const raw = value as Record<string, unknown>;
   for (const key of Object.keys(raw)) {
-    if (!["account", "model", "effort", "fallback"].includes(key))
+    if (!["account", "model", "effort", "fallback", "autoSwitch"].includes(key))
       throw new ValidationError(`Campo desconhecido: engine.${key}.`, `engine.${key}`);
   }
   const account = raw.account === undefined ? current.account : raw.account;
@@ -442,11 +446,15 @@ function validateEngine(value: unknown, current: BotEngine): BotEngine {
   if (effortRaw !== null && !(efforts as readonly unknown[]).includes(effortRaw)) {
     throw new ValidationError("Esforço inválido. Use low, medium ou high.", "engine.effort");
   }
+  const autoSwitch = raw.autoSwitch === undefined ? current.autoSwitch : raw.autoSwitch;
+  if (autoSwitch !== undefined && typeof autoSwitch !== "boolean")
+    throw new ValidationError("engine.autoSwitch precisa ser verdadeiro ou falso.", "engine.autoSwitch");
   return {
     account: account as string,
     model,
     effort: (effortRaw as BotEngine["effort"]) ?? null,
     fallback: validateFallback(raw.fallback, current.fallback),
+    ...(autoSwitch ? { autoSwitch: true } : {}),
   };
 }
 

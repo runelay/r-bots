@@ -7,6 +7,8 @@ import { botStatuses, onStatus, sessionStatuses } from "../../engine/services/en
 import { turnStats } from "../../engine/services/turn-queue.service";
 import { integrationFlags } from "../../integrations/services/integrations.service";
 import { laneCounts } from "../../jobs/services/jobs.service";
+import { onPreferences } from "../../settings/services/preferences.service";
+import { onSettingsChange } from "../../settings/services/settings-events.service";
 import { warmVoiceLayers } from "../../voice/services/voice.service";
 import { appWatching, watchApp } from "../services/viewers.service";
 
@@ -61,6 +63,12 @@ export function handleStatusStream(req: Req, res: Res) {
   const unsubscribeConversations = onConversation((event) =>
     res.write(`${JSON.stringify({ type: "conversation", ...event })}\n`),
   );
+  const unsubscribeSettings = onSettingsChange((areas) =>
+    res.write(`${JSON.stringify({ type: "settings", areas })}\n`),
+  );
+  const unsubscribePreferences = onPreferences((preferences) =>
+    res.write(`${JSON.stringify({ type: "preferences", preferences })}\n`),
+  );
   const heartbeat = setInterval(() => res.write(`${JSON.stringify({ type: "heartbeat" })}\n`), 15_000);
   const unwatch = watchApp();
   const close = () => {
@@ -68,6 +76,8 @@ export function handleStatusStream(req: Req, res: Res) {
     unsubscribe();
     unsubscribeConversations();
     unsubscribeServers();
+    unsubscribeSettings();
+    unsubscribePreferences();
     clearInterval(heartbeat);
   };
   res.on("close", close);

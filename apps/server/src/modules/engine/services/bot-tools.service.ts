@@ -40,6 +40,7 @@ export interface ApprovalDetails {
   reason?: string;
   grant?: string;
   secret?: Record<string, unknown>;
+  integration?: Record<string, unknown>;
 }
 
 const webUrl = z
