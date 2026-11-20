@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { CellFormat } from "@runelay-bots/protocol";
 import { eq } from "drizzle-orm";
 import { resetData } from "../../../../test/helpers";
 import { getDb } from "../../../db";
@@ -153,7 +152,7 @@ describe("read and write", () => {
     expect(result.cells).toEqual([
       { a: "A1", r: 0, c: 0, input: "5", v: 5, t: "n" },
       { a: "B1", r: 0, c: 1, input: "=A1+A2", v: 5, t: "n" },
-      { a: "A2", r: 1, c: 0, input: "", v: null, t: null, format: { bold: true } as CellFormat },
+      { a: "A2", r: 1, c: 0, input: "", v: null, t: null, format: { type: "general", bold: true } },
       { a: "C1", r: 0, c: 2, input: "", v: null, t: null },
       { a: "D9", r: 8, c: 3, input: "", v: null, t: null },
     ]);
@@ -241,7 +240,8 @@ describe("read and write", () => {
       .set({ value: "cru", format: { bold: true } })
       .where(eq(sheetCells.row, 1));
     const row = (await getDb().select().from(sheetCells).where(eq(sheetCells.row, 1)).limit(1))[0]!;
-    expect(cellOf(row)).toMatchObject({ a: "B2", v: "cru", format: { bold: true } });
+    expect(cellOf(row).format).toEqual({ type: "general", bold: true });
+    expect(cellOf(row)).toMatchObject({ a: "B2", v: "cru" });
     await patchTab(bot, sheet.id, tab, { colWidths: { A: 200 } }, "bot");
     const preview = await previewOf(sheet.id);
     expect(preview).toMatchObject({
@@ -255,7 +255,7 @@ describe("read and write", () => {
     expect(preview.rows).toHaveLength(8);
     expect(preview.rows[0]).toHaveLength(6);
     expect(preview.rows[0][0]).toEqual({ v: 1, t: "n" });
-    expect(preview.rows[1][1]).toEqual({ v: "cru", t: "s", format: { bold: true } as CellFormat });
+    expect(preview.rows[1][1]).toEqual({ v: "cru", t: "s", format: { type: "general", bold: true } });
     expect(preview.colWidths).toEqual([200, 96, 96, 96, 96, 96]);
     await getDb().update(sheetTabs).set({ rowCount: 1, colCount: 1 }).where(eq(sheetTabs.id, tab));
     expect((await previewOf(sheet.id, tab)).rows).toEqual([[{ v: 1, t: "n" }]]);
