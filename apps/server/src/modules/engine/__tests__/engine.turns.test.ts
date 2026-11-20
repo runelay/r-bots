@@ -460,7 +460,7 @@ describe("usage limits", () => {
     expect(failover.line).toBe("Limite do Claude (VPS) acabou · continuei com Claude (Mac)");
     expect(failover.until).toBeNull();
     expect(settledOf(session)).toMatchObject({ outcome: "failed", error: { code: "MODEL_CALL_FAILED" } });
-    expect(settledOf(session)?.error?.message).toContain("Runner do Mac");
+    expect(settledOf(session)?.error?.message).toContain("Mac desconectado");
   });
 
   test("retries on the fallback when the limit hits mid-turn", async () => {

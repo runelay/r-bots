@@ -10,6 +10,13 @@ export interface Principal {
   sessionId?: string;
   apiKeyId?: string;
   expiresAt?: string;
+  device?: PrincipalDevice;
+}
+
+export interface PrincipalDevice {
+  id: string;
+  name: string;
+  registeredAt: string;
 }
 
 export type AuthOutcome = { kind: "public" } | { kind: "principal"; principal: Principal };
@@ -49,6 +56,33 @@ export function readToken(headers: Headers) {
   return apiKey || null;
 }
 
+export function parseKeyMetadata(raw: unknown): Record<string, unknown> {
+  let value = raw;
+  for (let depth = 0; depth < 2 && typeof value === "string"; depth++) {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+export function dateText(value: unknown) {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value.toISOString();
+  return typeof value === "string" ? value : "";
+}
+
+function deviceOf(metadata: unknown): PrincipalDevice | undefined {
+  const parsed = parseKeyMetadata(metadata);
+  if (parsed.kind !== "device" || typeof parsed.deviceId !== "string") return undefined;
+  return {
+    id: parsed.deviceId,
+    name: typeof parsed.name === "string" ? parsed.name : "",
+    registeredAt: dateText(parsed.registeredAt),
+  };
+}
+
 function isUpgrade(request: Request) {
   return request.headers.get("upgrade")?.toLowerCase() === "websocket";
 }
@@ -79,6 +113,7 @@ export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
     const context = await auth.$context;
     const found = await context.internalAdapter.findUserById(result.key.referenceId);
     if (!found || (found as { banned?: boolean | null }).banned) return null;
+    const device = deviceOf((result.key as { metadata?: unknown }).metadata);
     return {
       userId: found.id,
       email: found.email,
@@ -86,6 +121,7 @@ export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
       role: (found as { role?: string | null }).role ?? memberRole,
       method: "api-key",
       apiKeyId: result.key.id,
+      ...(device ? { device } : {}),
     };
   }
 

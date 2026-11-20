@@ -79,7 +79,7 @@ export async function handleConversations(
       let deliveryId: string | null = null;
       if (message?.trim() || skills.length > 0 || attachments.length > 0) {
         deliveryId = randomUUID();
-        deliver(session, {
+        await deliver(session, {
           deliveryId,
           text: deliveryText(message, skills),
           source: "chat",

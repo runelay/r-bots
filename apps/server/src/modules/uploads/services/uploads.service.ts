@@ -24,6 +24,7 @@ import {
 import { fileRoots } from "../../code/services/repos.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
 import { integrationSecret } from "../../integrations/services/integration-store.service";
+import { defineJob, enqueue, jobsActive } from "../../jobs/services/jobs.service";
 import { blobKeys, blobToFile, putBlob } from "../../storage/services/storage.service";
 import {
   listUploadRows,
@@ -433,7 +434,7 @@ async function register(botId: string, meta: UploadMeta) {
     throw new UploadError("Não consegui guardar o arquivo agora. Tente de novo.", 503);
   }
   rememberLabel(meta);
-  void preparedOf(botId, meta);
+  queuePrepare(botId, meta);
   return meta;
 }
 
@@ -907,6 +908,38 @@ function preparedOf(botId: string, meta: UploadMeta) {
     preparing.set(key, pending);
   }
   return pending;
+}
+
+export const prepareJobType = "upload.prepare";
+
+export interface PreparePayload {
+  botId: string;
+  uploadId: string;
+}
+
+export async function runPrepareJob(payload: PreparePayload) {
+  const meta = await readUpload(payload.botId, payload.uploadId);
+  if (!meta) return { skipped: true };
+  const prepared = await preparedOf(payload.botId, meta);
+  if (prepared.error) {
+    preparing.delete(`${payload.botId}/${payload.uploadId}`);
+    throw new Error(prepared.error);
+  }
+  return { skipped: false };
+}
+
+defineJob<PreparePayload>(prepareJobType, { attempts: 4, backoffMs: 10_000, handler: runPrepareJob });
+
+function queuePrepare(botId: string, meta: UploadMeta) {
+  if (!jobsActive()) {
+    void preparedOf(botId, meta);
+    return;
+  }
+  void enqueue<PreparePayload>(
+    prepareJobType,
+    { botId, uploadId: meta.uploadId },
+    { id: `prepare-${botId}-${meta.uploadId}` },
+  ).catch(() => preparedOf(botId, meta));
 }
 
 export async function resolveUploads(botId: string, ids: string[]) {

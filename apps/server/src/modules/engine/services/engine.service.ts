@@ -5,7 +5,7 @@ import {
   type Account,
   findAccount,
   mcpBaseFor,
-  type RunnerId,
+  runnerTarget,
   runOnRunner,
 } from "../../accounts/services/accounts.service";
 import {
@@ -812,7 +812,7 @@ async function executeProvider(run: ProviderRun) {
   const revoke = needsMcp ? registerContext(context) : () => false;
   try {
     await runOnRunner(
-      run.account.runner as RunnerId,
+      runnerTarget(run.account),
       {
         turnId: `${turn.turnId}-${randomBytes(4).toString("hex")}`,
         provider: run.provider,
@@ -834,7 +834,7 @@ async function executeProvider(run: ProviderRun) {
         ...(run.images?.length ? { images: run.images } : {}),
         resume: run.resume,
         mcp: needsMcp
-          ? { url: `${mcpBaseFor(run.account.runner)}/mcp/${bot.id}/${session.meta.sessionId}`, token }
+          ? { url: `${mcpBaseFor()}/mcp/${bot.id}/${session.meta.sessionId}`, token }
           : null,
         workKey: `${bot.id}/${run.ownerCallId ? "delegate" : session.meta.sessionId}`,
         code:

@@ -20,8 +20,22 @@ export interface TurnSlot {
 }
 
 let running = 0;
+let suspended = 0;
 let seq = 0;
 const waiters: Waiter[] = [];
+const suspendListeners = new Set<(count: number) => void>();
+
+function setSuspended(delta: number) {
+  suspended += delta;
+  for (const listener of suspendListeners) listener(suspended);
+}
+
+export function onSuspendedChange(listener: (count: number) => void) {
+  suspendListeners.add(listener);
+  return () => {
+    suspendListeners.delete(listener);
+  };
+}
 
 function notifyPositions() {
   waiters.forEach((waiter, index) => {
@@ -51,18 +65,20 @@ function makeSlot(): TurnSlot {
         holding = false;
         running--;
         pump();
-      }
+      } else setSuspended(-1);
     },
     suspend: () => {
       if (released || !holding) return;
       holding = false;
       running--;
+      setSuspended(1);
       pump();
     },
     resume: () => {
       if (released || holding) return;
       holding = true;
       running++;
+      setSuspended(-1);
     },
   };
 }
@@ -102,4 +118,8 @@ export function acquireTurnSlot(
 
 export function slotStats() {
   return { running, queued: waiters.length, max: maxTurns };
+}
+
+export function suspendedSlots() {
+  return suspended;
 }

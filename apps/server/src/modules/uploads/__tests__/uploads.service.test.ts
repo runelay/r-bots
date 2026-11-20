@@ -1,13 +1,17 @@
-import { afterEach, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import * as anydoc from "@firecrawl/anydoc";
 import { ulid } from "ulid";
+import { waitFor } from "../../../../test/engine-helpers";
 import { fakeProcesses, resetData, testDataDir, writeData } from "../../../../test/helpers";
+import { startTestJobs, type TestJobs } from "../../../../test/jobs-helpers";
 import { connectFakeRunner, fastTimers, fixtureFile, mediaTools, pcmSamples } from "../../../../test/media-helpers";
 import { getDb, tables } from "../../../db";
 import { Req, Res } from "../../../shared/http";
+import * as jobsService from "../../jobs/services/jobs.service";
+import { getJobView } from "../../jobs/services/jobs.service";
 import { blobKeys, getBlobStore, putBlob } from "../../storage/services/storage.service";
 import { readUploadRow, saveUploadRow } from "../repositories/uploads.repository";
 import {
@@ -20,6 +24,7 @@ import {
   publicUpload,
   readUpload,
   resolveUploads,
+  runPrepareJob,
   serveUpload,
   type UploadMeta,
   uploadGuide,
@@ -816,5 +821,39 @@ describe("serveUpload", () => {
     await rm(uploadPath(botId, meta));
     await getBlobStore().delete(blobKeys(botId).upload(meta.uploadId, meta.name));
     expect((await serve(meta)).status).toBe(404);
+  });
+});
+
+describe("prepare job", () => {
+  let jobs: TestJobs;
+
+  beforeAll(async () => {
+    jobs = await startTestJobs();
+  }, 30_000);
+
+  afterAll(async () => {
+    await jobs.stop();
+  }, 30_000);
+
+  test("queues the preparation of a new upload and retries it when Scribe fails", async () => {
+    delete process.env.ELEVENLABS_API_KEY;
+    const meta = await importFixture("fila.mp3", "a");
+    await waitFor(async () => (await getJobView(`prepare-${botId}-${meta.uploadId}`)) !== null);
+    await expect(runPrepareJob({ botId, uploadId: meta.uploadId })).rejects.toThrow("não está configurado");
+    process.env.ELEVENLABS_API_KEY = "test-eleven-key";
+    scribeReplies(ok("de novo"));
+    expect(await runPrepareJob({ botId, uploadId: meta.uploadId })).toEqual({ skipped: false });
+    expect(await runPrepareJob({ botId, uploadId: "sumiu" })).toEqual({ skipped: true });
+  });
+
+  test("prepares in process when the queue refuses the job", async () => {
+    const refused = spyOn(jobsService, "enqueue").mockRejectedValue(new Error("redis caiu"));
+    scribeReplies(ok("na hora"));
+    try {
+      const meta = await importFixture("direto.mp3", "a");
+      await waitFor(async () => (await readUploadRow(botId, meta.uploadId))?.transcript === "na hora");
+    } finally {
+      refused.mockRestore();
+    }
   });
 });

@@ -10,12 +10,24 @@ import {
 } from "@runelay-bots/protocol";
 import { probe, runTurn } from "@runelay-bots/providers";
 import { dataDir, env } from "../../../config/env";
-import { runnerToken } from "../../../config/runtime-secrets";
-import { emitFault, injectedFault } from "./limits.service";
-import { macAccounts, macRunnerConnected, onMacRunnerChange, runMacTurn } from "./mac-runner.service";
+import { listRegisteredDevices } from "../../devices/services/devices.service";
+import { emitFault, injectedFault, providerName } from "./limits.service";
+import {
+  macAccounts,
+  macRunnerConnected,
+  macRunnerConnections,
+  onMacRunnerChange,
+  runMacTurn,
+} from "./mac-runner.service";
 
 export type RunnerId = "vps" | "mac";
 export type AccountStatus = "ready" | "logged_out" | "offline" | "missing";
+
+export interface AccountDevice {
+  id: string;
+  name: string;
+  connected: boolean;
+}
 
 export interface Account {
   id: string;
@@ -26,58 +38,106 @@ export interface Account {
   models: ModelOption[];
   detail: string;
   checkedAt: string;
+  device?: AccountDevice | null;
+}
+
+interface MacSlot {
+  prefix: string;
+  key: string;
+  name: string | null;
+  connected: boolean;
 }
 
 export const runnerIds: RunnerId[] = ["vps", "mac"];
-const macUrl = env.MAC_RUNNER_URL;
-const macUrlMissing = "Mac não conectado e MAC_RUNNER_URL não definida.";
+const macPrefixPattern = /^mac(?:-[a-z0-9]{1,16})?$/;
 const runnerLabels: Record<RunnerId, string> = { vps: "VPS", mac: "Mac" };
+const offlineDetail = "Mac desconectado: abra o app runelay bots nele.";
+const noDeviceDetail = "Nenhum Mac na conta: entre no app runelay bots no Mac.";
 const maxAgeMs = 10 * 60_000;
 
 let cache: Account[] = [];
 let checkedAt = 0;
 let pending: Promise<Account[]> | null = null;
 
+function shortKey(key: string) {
+  return (
+    key
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, "")
+      .slice(0, 8) || "mac"
+  );
+}
+
+async function macSlots(): Promise<MacSlot[]> {
+  const devices = await listRegisteredDevices();
+  const next: Omit<MacSlot, "prefix">[] = devices.map((device) => ({
+    key: device.id,
+    name: device.name,
+    connected: macRunnerConnected(device.id),
+  }));
+  for (const live of macRunnerConnections())
+    if (!next.some((slot) => slot.key === live.key)) next.push({ key: live.key, name: live.name, connected: true });
+  if (next.length === 0) next.push({ key: "", name: null, connected: false });
+  const used = new Set<string>();
+  return next.map((slot, index) => {
+    let prefix = index === 0 ? "mac" : `mac-${shortKey(slot.key)}`;
+    while (used.has(prefix)) prefix = `${prefix}x`.slice(0, 20);
+    used.add(prefix);
+    return { ...slot, prefix };
+  });
+}
+
 function toAccount(
   runner: RunnerId,
   result: AccountProbe | { provider: Provider; status: AccountStatus; detail: string; models: ModelOption[] },
+  slot?: MacSlot,
 ): Account {
+  const named = slot?.name ?? null;
   return {
-    id: `${runner}:${result.provider}`,
+    id: `${slot?.prefix ?? runner}:${result.provider}`,
     runner,
     provider: result.provider,
-    label: `${providerLabels[result.provider]} (${runnerLabels[runner]})`,
+    label: named
+      ? `${providerName(result.provider)} · ${named}`
+      : `${providerLabels[result.provider]} (${runnerLabels[runner]})`,
     status: result.status,
     models: result.models,
     detail: result.detail,
     checkedAt: new Date().toISOString(),
+    ...(runner === "mac"
+      ? { device: slot && named ? { id: slot.key, name: named, connected: slot.connected } : null }
+      : {}),
   };
 }
 
-async function probeMacHttp() {
-  if (!macUrl) throw new Error(macUrlMissing);
-  const response = await fetch(`${macUrl}/accounts`, {
-    headers: { authorization: `Bearer ${runnerToken()}` },
-    signal: AbortSignal.timeout(90_000),
-  });
-  if (!response.ok) throw new Error(`runner respondeu ${response.status}`);
-  return (await response.json()) as AccountProbe[];
-}
-
-async function probeMac(): Promise<Account[]> {
+async function probeSlot(slot: MacSlot): Promise<Account[]> {
+  if (!slot.connected)
+    return providers.map((provider) =>
+      toAccount(
+        "mac",
+        { provider, status: "offline", detail: slot.key ? offlineDetail : noDeviceDetail, models: [] },
+        slot,
+      ),
+    );
   try {
-    const list = macRunnerConnected() ? await macAccounts() : await probeMacHttp();
+    const list = await macAccounts(slot.key);
     return providers.map((provider) => {
       const found = list.find((item) => item.provider === provider);
       return toAccount(
         "mac",
         found ?? { provider, status: "missing", detail: "CLI não instalada no Mac.", models: [] },
+        slot,
       );
     });
   } catch (error) {
     const detail = `Mac fora do ar: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200);
-    return providers.map((provider) => toAccount("mac", { provider, status: "offline", detail, models: [] }));
+    return providers.map((provider) => toAccount("mac", { provider, status: "offline", detail, models: [] }, slot));
   }
+}
+
+async function probeMac(): Promise<Account[]> {
+  const found = await macSlots();
+  return (await Promise.all(found.map(probeSlot))).flat();
 }
 
 async function probeVps(): Promise<Account[]> {
@@ -132,79 +192,41 @@ export async function findAccount(id: string) {
 }
 
 export function isAccountId(value: string) {
-  const [runner, provider] = value.split(":");
-  return runnerIds.includes(runner as RunnerId) && (providers as readonly string[]).includes(provider ?? "");
+  const [runner = "", provider] = value.split(":");
+  return (
+    (runner === "vps" || macPrefixPattern.test(runner)) && (providers as readonly string[]).includes(provider ?? "")
+  );
 }
 
-export function mcpBaseFor(runner: RunnerId) {
-  if (runner === "mac" && env.PUBLIC_MCP_BASE) return env.PUBLIC_MCP_BASE;
+export function runnerTarget(account: Pick<Account, "id" | "runner">) {
+  const prefix = account.id.split(":")[0] ?? "";
+  return account.runner === "mac" && macPrefixPattern.test(prefix) ? prefix : account.runner;
+}
+
+export function mcpBaseFor() {
   return `http://127.0.0.1:${env.GATEWAY_PORT}`;
 }
 
-async function runRemote(request: TurnRequest, signal: AbortSignal, emit: (event: ProviderEvent) => void) {
-  if (!macUrl) {
-    emit({ type: "done", ok: false, message: macUrlMissing });
+async function deviceFor(target: string) {
+  return (await macSlots()).find((slot) => slot.prefix === target)?.key || undefined;
+}
+
+async function runOnMac(
+  target: string,
+  request: TurnRequest,
+  signal: AbortSignal,
+  emit: (event: ProviderEvent) => void,
+) {
+  const key = await deviceFor(target);
+  if (!key) {
+    emit({ type: "done", ok: false, message: "Mac desconectado." });
     return;
   }
-  const controller = new AbortController();
-  const onAbort = () => {
-    void fetch(`${macUrl}/turns/${encodeURIComponent(request.turnId)}/cancel`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${runnerToken()}` },
-      signal: AbortSignal.timeout(5000),
-    }).catch(() => undefined);
-    setTimeout(() => controller.abort(), 5000).unref();
-  };
-  signal.addEventListener("abort", onAbort, { once: true });
-  let done = false;
-  try {
-    const response = await fetch(`${macUrl}/turns`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${runnerToken()}`, "content-type": "application/json" },
-      body: JSON.stringify(request),
-      signal: controller.signal,
-    });
-    if (!response.ok || !response.body) {
-      const body = await response.text().catch(() => "");
-      emit({ type: "done", ok: false, message: `Runner do Mac respondeu ${response.status}: ${body.slice(0, 200)}` });
-      return;
-    }
-    const decoder = new TextDecoder();
-    let buffer = "";
-    for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
-      buffer += decoder.decode(chunk, { stream: true });
-      let index = buffer.indexOf("\n");
-      while (index !== -1) {
-        const line = buffer.slice(0, index).trim();
-        buffer = buffer.slice(index + 1);
-        index = buffer.indexOf("\n");
-        if (!line) continue;
-        try {
-          const event = JSON.parse(line) as ProviderEvent;
-          if (event.type === "done") done = true;
-          emit(event);
-        } catch {}
-      }
-    }
-  } catch (error) {
-    if (!done)
-      emit({
-        type: "done",
-        ok: false,
-        message: signal.aborted
-          ? "cancelled"
-          : `Runner do Mac caiu: ${error instanceof Error ? error.message : String(error)}`,
-      });
-    done = true;
-  } finally {
-    signal.removeEventListener("abort", onAbort);
-  }
-  if (!done)
-    emit({ type: "done", ok: false, message: signal.aborted ? "cancelled" : "Runner do Mac fechou a conexão." });
+  return runMacTurn({ ...request, code: null }, signal, emit, key);
 }
 
 export function runOnRunner(
-  runner: RunnerId,
+  runner: string,
   request: TurnRequest,
   signal: AbortSignal,
   emit: (event: ProviderEvent) => void,
@@ -212,9 +234,6 @@ export function runOnRunner(
 ) {
   const fault = injectedFault(`${runner}:${request.provider}`);
   if (fault) return Promise.resolve(emitFault(fault, emit));
-  if (runner === "mac")
-    return macRunnerConnected()
-      ? runMacTurn({ ...request, code: null }, signal, emit)
-      : runRemote({ ...request, code: null }, signal, emit);
+  if (runner === "mac" || macPrefixPattern.test(runner)) return runOnMac(runner, request, signal, emit);
   return runTurn(request, dataDir, signal, emit, hooks);
 }

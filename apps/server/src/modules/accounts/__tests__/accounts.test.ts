@@ -1,10 +1,21 @@
-import { afterAll, afterEach, beforeAll, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  setSystemTime,
+  spyOn,
+  test,
+} from "bun:test";
 import { rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { fakeProviders, request, startTestServer, type TestServer, testDataDir } from "../../../../test/helpers";
-import { env } from "../../../config/env";
 import type { Socket } from "../../../shared/ws";
+import * as devices from "../../devices/services/devices.service";
 import {
   findAccount,
   isAccountId,
@@ -12,6 +23,7 @@ import {
   mcpBaseFor,
   refreshAccounts,
   runnerIds,
+  runnerTarget,
   runOnRunner,
 } from "../services/accounts.service";
 import {
@@ -26,37 +38,22 @@ import {
   parseResetAt,
   providerName,
 } from "../services/limits.service";
-import * as macRunner from "../services/mac-runner.service";
-import { macRunnerConnected, runnerSocket } from "../services/mac-runner.service";
+import {
+  disconnectMacDevice,
+  macRunnerConnected,
+  macRunnerConnections,
+  runnerSocket,
+} from "../services/mac-runner.service";
 
-const macUrl = process.env.MAC_RUNNER_URL ?? "";
-const realFetch = globalThis.fetch;
 let server: TestServer;
-
-type MacHandler = (path: string, init: RequestInit | undefined) => Response | Promise<Response>;
-
-function stubMac(handler: MacHandler) {
-  const calls: string[] = [];
-  const spy = spyOn(globalThis, "fetch").mockImplementation((async (
-    input: Parameters<typeof fetch>[0],
-    init?: Parameters<typeof fetch>[1],
-  ) => {
-    const target = input instanceof Request ? input.url : String(input);
-    if (!target.startsWith(macUrl)) return realFetch(input, init);
-    const path = target.slice(macUrl.length);
-    calls.push(`${init?.method ?? "GET"} ${path}`);
-    return handler(path, init);
-  }) as typeof fetch);
-  return { calls, restore: () => spy.mockRestore() };
-}
 
 const restores: Array<() => void> = [];
 
-function runnerSocketFake() {
+function runnerSocketFake(key = "mac-a-device", name = "MacBook", rank = 1) {
   const sent: Array<{ type: string; id: string; op?: string }> = [];
   const ws = {
     readyState: 1,
-    data: { kind: "runner" },
+    data: { kind: "runner", deviceKey: key, rank, deviceName: name, userId: "u1" },
     send: (raw: string) => {
       sent.push(JSON.parse(raw));
     },
@@ -86,12 +83,38 @@ async function until(check: () => boolean | Promise<boolean>) {
   throw new Error("condition never became true");
 }
 
+async function refreshWith(fakes: Array<[ReturnType<typeof runnerSocketFake>, unknown[] | string]>) {
+  let settled = false;
+  const running = refreshAccounts().finally(() => {
+    settled = true;
+  });
+  const answered = new Set<string>();
+  while (!settled) {
+    for (const [fake, result] of fakes)
+      for (const message of fake.sent)
+        if (message.op === "accounts" && !answered.has(message.id)) {
+          answered.add(message.id);
+          fake.say(
+            typeof result === "string"
+              ? { type: "response", id: message.id, ok: false, error: result }
+              : { type: "response", id: message.id, ok: true, result },
+          );
+        }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  return running;
+}
+
 function turnRequest(provider: TurnRequest["provider"] = "claude"): TurnRequest {
   return { turnId: `turn-${Math.random().toString(36).slice(2)}`, provider } as unknown as TurnRequest;
 }
 
 beforeAll(async () => {
   server = await startTestServer();
+});
+
+beforeEach(() => {
+  for (const live of macRunnerConnections()) disconnectMacDevice(live.key, 1000, "test");
 });
 
 afterEach(() => {
@@ -177,7 +200,7 @@ describe("limits", () => {
 });
 
 describe("accounts", () => {
-  test("probes the VPS and reports the Mac offline when it does not answer", async () => {
+  test("probes the VPS and shows the Mac slot offline when no Mac is on the account", async () => {
     fakeProviders.probes.grok = { provider: "grok", status: "logged_out", detail: "entre", models: [] };
     const first = refreshAccounts();
     expect(refreshAccounts()).toBe(first);
@@ -196,50 +219,97 @@ describe("accounts", () => {
       status: "logged_out",
       label: "Grok (VPS)",
     });
-    const mac = accounts.find((account) => account.id === "mac:claude");
-    expect(mac?.status).toBe("offline");
-    expect(mac?.detail).toStartWith("Mac fora do ar:");
+    expect(accounts.find((account) => account.id === "vps:grok")).not.toHaveProperty("device");
+    expect(accounts.find((account) => account.id === "mac:claude")).toMatchObject({
+      status: "offline",
+      label: "Claude · assinatura (Mac)",
+      detail: "Nenhum Mac na conta: entre no app runelay bots no Mac.",
+      device: null,
+    });
   });
 
-  test("reads the Mac over HTTP and marks missing CLIs", async () => {
-    const mac = stubMac(() => Response.json([{ provider: "claude", status: "ready", detail: "ok", models: [] }]));
-    restores.push(mac.restore);
-    const accounts = await refreshAccounts();
-    expect(mac.calls).toEqual(["GET /accounts"]);
-    expect(accounts.find((account) => account.id === "mac:claude")?.status).toBe("ready");
+  test("lists accounts per Mac and names each one", async () => {
+    const first = runnerSocketFake("aaaa1111-device", "MacBook");
+    const second = runnerSocketFake("BBBB2222-device", "Mac mini", 2);
+    const accounts = await refreshWith([
+      [first, [{ provider: "codex", status: "ready", detail: "app", models: [] }]],
+      [second, []],
+    ]);
     expect(accounts.find((account) => account.id === "mac:codex")).toMatchObject({
+      status: "ready",
+      label: "Codex · MacBook",
+      device: { id: "aaaa1111-device", name: "MacBook", connected: true },
+    });
+    expect(accounts.find((account) => account.id === "mac:claude")).toMatchObject({
       status: "missing",
       detail: "CLI não instalada no Mac.",
     });
-  });
-
-  test("reports an HTTP error from the Mac", async () => {
-    const mac = stubMac(() => new Response("no", { status: 500 }));
-    restores.push(mac.restore);
-    const accounts = await refreshAccounts();
-    expect(accounts.find((account) => account.id === "mac:claude")?.detail).toBe(
-      "Mac fora do ar: runner respondeu 500",
-    );
-  });
-
-  test("reads the Mac through the connected app and refreshes when it connects", async () => {
-    const runner = runnerSocketFake();
-    await until(() => runner.sent.some((message) => message.op === "accounts"));
-    runner.say({
-      type: "response",
-      id: runner.sent.find((message) => message.op === "accounts")?.id,
-      ok: true,
-      result: [{ provider: "codex", status: "ready", detail: "app", models: [] }],
+    expect(accounts.find((account) => account.id === "mac-bbbb2222:claude")).toMatchObject({
+      status: "missing",
+      label: "Claude · Mac mini",
     });
-    await until(async () => (await listAccounts()).some((a) => a.id === "mac:codex" && a.detail === "app"));
-    const before = runner.sent.length;
-    const failing = refreshAccounts();
-    await until(() => runner.sent.slice(before).some((message) => message.op === "accounts"));
-    const asked = runner.sent.slice(before).find((message) => message.op === "accounts");
-    runner.say({ type: "response", id: asked?.id, ok: false, error: "quebrou" });
-    const accounts = await failing;
-    expect(accounts.find((account) => account.id === "mac:codex")?.detail).toBe("Mac fora do ar: quebrou");
+    first.close();
+    second.close();
+  });
+
+  test("shows a registered Mac that is closed as disconnected and reports a failing probe", async () => {
+    const listed = spyOn(devices, "listRegisteredDevices").mockResolvedValue([
+      {
+        id: "off-device",
+        keyId: "k1",
+        userId: "u1",
+        name: "iMac",
+        model: null,
+        osVersion: null,
+        appVersion: null,
+        machineId: null,
+        registeredAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "on-device",
+        keyId: "k2",
+        userId: "u1",
+        name: "MacBook",
+        model: null,
+        osVersion: null,
+        appVersion: null,
+        machineId: null,
+        registeredAt: "2026-02-01T00:00:00.000Z",
+      },
+    ]);
+    restores.push(() => listed.mockRestore());
+    const runner = runnerSocketFake("on-device", "MacBook");
+    const accounts = await refreshWith([[runner, "quebrou"]]);
+    expect(accounts.find((account) => account.id === "mac:claude")).toMatchObject({
+      status: "offline",
+      label: "Claude · iMac",
+      detail: "Mac desconectado: abra o app runelay bots nele.",
+      device: { id: "off-device", name: "iMac", connected: false },
+    });
+    expect(accounts.find((account) => account.id === "mac-ondevice:claude")?.detail).toBe("Mac fora do ar: quebrou");
+    const events: ProviderEvent[] = [];
+    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => events.push(event));
+    expect(events).toEqual([{ type: "done", ok: false, message: "Mac desconectado." }]);
     runner.close();
+  });
+
+  test("gives colliding short ids distinct prefixes and a fallback for odd keys", async () => {
+    const a = runnerSocketFake("same0000-a", "A", 1);
+    const b = runnerSocketFake("same0000-b", "B", 2);
+    const c = runnerSocketFake("---", "C", 3);
+    const d = runnerSocketFake("same0000-d", "D", 4);
+    const ids = (
+      await refreshWith([
+        [a, []],
+        [b, []],
+        [c, []],
+        [d, []],
+      ])
+    )
+      .filter((item) => item.provider === "claude" && item.runner === "mac")
+      .map((x) => x.id);
+    expect(ids).toEqual(["mac:claude", "mac-same0000:claude", "mac-mac:claude", "mac-same0000x:claude"]);
+    for (const runner of [a, b, c, d]) runner.close();
   });
 
   test("a Mac refresh that fails on connect does not break the runner", async () => {
@@ -277,14 +347,19 @@ describe("accounts", () => {
     expect(offline?.status).toBe("offline");
   });
 
-  test("validates ids and picks the MCP base per runner", () => {
+  test("validates ids, picks the runner target and the MCP base", () => {
     expect(runnerIds).toEqual(["vps", "mac"]);
     expect(isAccountId("vps:claude")).toBe(true);
     expect(isAccountId("mac:grok")).toBe(true);
+    expect(isAccountId("mac-ab12cd34:grok")).toBe(true);
+    expect(isAccountId("mac-AB:grok")).toBe(false);
     expect(isAccountId("pc:claude")).toBe(false);
     expect(isAccountId("vps")).toBe(false);
-    expect(mcpBaseFor("mac")).toBe(process.env.PUBLIC_MCP_BASE as string);
-    expect(mcpBaseFor("vps")).toStartWith("http://127.0.0.1:");
+    expect(runnerTarget({ id: "mac-ab12:claude", runner: "mac" })).toBe("mac-ab12");
+    expect(runnerTarget({ id: "mac:claude", runner: "mac" })).toBe("mac");
+    expect(runnerTarget({ id: "weird:claude", runner: "mac" })).toBe("mac");
+    expect(runnerTarget({ id: "vps:claude", runner: "vps" })).toBe("vps");
+    expect(mcpBaseFor()).toStartWith("http://127.0.0.1:");
   });
 });
 
@@ -306,177 +381,33 @@ describe("runOnRunner", () => {
     expect(events.at(-1)).toEqual({ type: "done", ok: true });
   });
 
-  test("runs on the connected Mac app without code", async () => {
-    const runner = runnerSocketFake();
+  test("runs on the right Mac without code", async () => {
+    const first = runnerSocketFake("first000-device", "A", 1);
+    const second = runnerSocketFake("second00-device", "B", 2);
     const events: ProviderEvent[] = [];
     const request = turnRequest("codex");
-    const running = runOnRunner("mac", request, new AbortController().signal, (event) => events.push(event));
-    const start = runner.sent.find((message) => message.type === "turn.start") as unknown as {
+    const running = runOnRunner("mac-second00", request, new AbortController().signal, (event) => events.push(event));
+    await until(() => second.sent.some((message) => message.type === "turn.start"));
+    expect(first.sent.some((message) => message.type === "turn.start")).toBe(false);
+    const start = second.sent.find((message) => message.type === "turn.start") as unknown as {
       turn: TurnRequest & { code: unknown };
     };
     expect(start.turn.code).toBeNull();
-    runner.say({ type: "turn.event", id: request.turnId, event: { type: "done", ok: true } });
-    runner.say({ type: "turn.end", id: request.turnId });
+    second.say({ type: "turn.event", id: request.turnId, event: { type: "done", ok: true } });
+    second.say({ type: "turn.end", id: request.turnId });
     await running;
     expect(events).toEqual([{ type: "done", ok: true }]);
+    first.close();
+    second.close();
   });
 
-  test("streams a remote turn over HTTP", async () => {
-    let sentBody: unknown;
-    const mac = stubMac((_path, init) => {
-      sentBody = JSON.parse(String(init?.body));
-      const lines = ['{"type":"text","part":"p","text":"oi"}\n', "\n", "lixo\n", '{"type":"done","ok":true}\n'];
-      return new Response(
-        new ReadableStream({
-          start(controller) {
-            for (const line of lines) controller.enqueue(new TextEncoder().encode(line));
-            controller.close();
-          },
-        }),
-      );
-    });
-    restores.push(mac.restore);
+  test("fails a turn for a Mac that is not on the account", async () => {
     const events: ProviderEvent[] = [];
-    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => events.push(event));
-    expect(mac.calls).toEqual(["POST /turns"]);
-    expect((sentBody as { code: unknown }).code).toBeNull();
-    expect(events).toEqual([
-      { type: "text", part: "p", text: "oi" },
-      { type: "done", ok: true },
-    ]);
-  });
-
-  test("reports a refused remote turn", async () => {
-    const mac = stubMac(() => new Response("ocupado", { status: 503 }));
-    restores.push(mac.restore);
-    const events: ProviderEvent[] = [];
-    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => events.push(event));
-    expect(events).toEqual([{ type: "done", ok: false, message: "Runner do Mac respondeu 503: ocupado" }]);
-  });
-
-  test("reports a refused remote turn whose body cannot be read", async () => {
-    const mac = stubMac(
-      () =>
-        new Response(
-          new ReadableStream({
-            pull(controller: ReadableStreamDefaultController<Uint8Array>) {
-              controller.error(new Error("broken body"));
-            },
-          }),
-          { status: 500 },
-        ),
-    );
-    restores.push(mac.restore);
-    const events: ProviderEvent[] = [];
-    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => events.push(event));
-    expect(events).toEqual([{ type: "done", ok: false, message: "Runner do Mac respondeu 500: " }]);
-  });
-
-  test("reports a remote stream that closes early or a runner that is down", async () => {
-    const empty = stubMac(() => new Response(""));
-    restores.push(empty.restore);
-    const events: ProviderEvent[] = [];
-    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => events.push(event));
-    expect(events).toEqual([{ type: "done", ok: false, message: "Runner do Mac fechou a conexão." }]);
-    empty.restore();
-
-    const down = stubMac(() => {
-      throw new TypeError("connection refused");
-    });
-    restores.push(down.restore);
-    const failed: ProviderEvent[] = [];
-    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => failed.push(event));
-    expect(failed).toEqual([{ type: "done", ok: false, message: "Runner do Mac caiu: connection refused" }]);
-  });
-
-  test("cancels a remote turn and aborts the stream after the grace period", async () => {
-    jest.useFakeTimers();
-    let streamSignal: AbortSignal | undefined;
-    let opened!: () => void;
-    const streaming = new Promise<void>((resolve) => {
-      opened = resolve;
-    });
-    const mac = stubMac((path, init) => {
-      if (path.endsWith("/cancel")) return new Response(null, { status: 202 });
-      streamSignal = init?.signal ?? undefined;
-      return new Response(
-        new ReadableStream({
-          start(controller) {
-            controller.enqueue(new TextEncoder().encode('{"type":"text","part":"p","text":"a"}\n'));
-            streamSignal?.addEventListener("abort", () => controller.error(new Error("aborted")));
-            opened();
-          },
-        }),
-      );
-    });
-    restores.push(mac.restore);
-    const controller = new AbortController();
-    const events: ProviderEvent[] = [];
-    const request = turnRequest();
-    const running = runOnRunner("mac", request, controller.signal, (event) => events.push(event));
-    await streaming;
-    await until(() => events.length > 0);
-    controller.abort();
-    await until(() => mac.calls.length === 2);
-    expect(mac.calls[1]).toBe(`POST /turns/${request.turnId}/cancel`);
-    jest.advanceTimersByTime(5000);
-    await running;
-    expect(events.at(-1)).toEqual({ type: "done", ok: false, message: "cancelled" });
-  });
-
-  test("closes as cancelled when an aborted stream simply ends", async () => {
-    const controller = new AbortController();
-    const mac = stubMac((path) => {
-      if (path.endsWith("/cancel")) return Promise.reject(new Error("gone"));
-      controller.abort();
-      return new Response("");
-    });
-    restores.push(mac.restore);
-    jest.useFakeTimers();
-    const events: ProviderEvent[] = [];
-    await runOnRunner("mac", turnRequest(), controller.signal, (event) => events.push(event));
-    expect(events).toEqual([{ type: "done", ok: false, message: "cancelled" }]);
-  });
-
-  test("keeps a done event when the stream fails afterwards", async () => {
-    const mac = stubMac(
-      () =>
-        new Response(
-          new ReadableStream({
-            pulls: 0,
-            pull(controller: ReadableStreamDefaultController<Uint8Array>) {
-              this.pulls++;
-              if (this.pulls === 1) controller.enqueue(new TextEncoder().encode('{"type":"done","ok":true}\n'));
-              else controller.error(new Error("cut"));
-            },
-          } as Bun.UnderlyingSource<Uint8Array> & { pulls: number }),
-        ),
-    );
-    restores.push(mac.restore);
-    const events: ProviderEvent[] = [];
-    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => events.push(event));
-    expect(events).toEqual([{ type: "done", ok: true }]);
-  });
-});
-
-describe("without a Mac runner url", () => {
-  test("reports the Mac as offline and fails remote turns with the reason", async () => {
-    const saved = env.MAC_RUNNER_URL;
-    delete (env as { MAC_RUNNER_URL?: string }).MAC_RUNNER_URL;
-    const register = spyOn(macRunner, "onMacRunnerChange").mockImplementation(() => () => true);
-    let fresh: typeof import("../services/accounts.service");
-    try {
-      fresh = await import(`../services/accounts.service?${"no-mac-url"}`);
-    } finally {
-      env.MAC_RUNNER_URL = saved;
-      register.mockRestore();
-    }
-    const missing = "Mac não conectado e MAC_RUNNER_URL não definida.";
-    const accounts = await fresh.refreshAccounts();
-    expect(accounts.find((account) => account.id === "mac:claude")?.detail).toBe(`Mac fora do ar: ${missing}`);
-    const events: ProviderEvent[] = [];
-    await fresh.runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => events.push(event));
-    expect(events).toEqual([{ type: "done", ok: false, message: missing }]);
+    await runOnRunner("mac-nowhere", turnRequest(), new AbortController().signal, (event) => events.push(event));
+    expect(events).toEqual([{ type: "done", ok: false, message: "Mac desconectado." }]);
+    const none: ProviderEvent[] = [];
+    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => none.push(event));
+    expect(none).toEqual([{ type: "done", ok: false, message: "Mac desconectado." }]);
   });
 });
 

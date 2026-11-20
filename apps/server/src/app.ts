@@ -1,6 +1,6 @@
 import type { Server } from "bun";
 import { handleAccounts, handleAccountsRefresh } from "./modules/accounts/routes/accounts.routes";
-import { isRunnerUpgrade, runnerSocket, runnerUpgradeAllowed } from "./modules/accounts/services/mac-runner.service";
+import { isRunnerUpgrade, runnerSocket, runnerUpgradeData } from "./modules/accounts/services/mac-runner.service";
 import { gate } from "./modules/auth/gate";
 import { handleBots } from "./modules/bots/routes/bots.routes";
 import { getBot } from "./modules/bots/services/bots.service";
@@ -16,6 +16,7 @@ import {
 import { botIsCoding } from "./modules/code/services/bot-code.service";
 import { handleComputerHealth } from "./modules/computer/routes/computer.routes";
 import { handleConnections, handleConnectorActions } from "./modules/connectors/routes/connectors.routes";
+import { handleDevices } from "./modules/devices/routes/devices.routes";
 import { handleMcp } from "./modules/engine/routes/mcp.routes";
 import { handleGroups } from "./modules/groups/routes/groups.routes";
 import { handleIntegrations } from "./modules/integrations/routes/integrations.routes";
@@ -43,6 +44,7 @@ async function route(req: Req, res: Res) {
   if (parts[0] === "integrations") return handleIntegrations(req, res, method, parts);
   if (method === "GET" && url.pathname === "/accounts") return handleAccounts(res, url);
   if (method === "POST" && url.pathname === "/accounts/refresh") return handleAccountsRefresh(req, res);
+  if (parts[0] === "devices") return handleDevices(req, res, method, parts);
   if (method === "GET" && parts[0] === "usage") return handleUsageRoute(res, url);
   if (method === "GET" && url.pathname === "/voice/voices") return handleVoices(res, url);
   if (method === "GET" && url.pathname === "/skills") return handleSkills(res, url);
@@ -93,8 +95,9 @@ async function upgrade(request: Request, server: Server<SocketData>) {
       ? undefined
       : new Response("Upgrade failed", { status: 400 });
   if (isRunnerUpgrade(url.pathname)) {
-    if (!runnerUpgradeAllowed(req)) return new Response(null, { status: 401 });
-    return accept({ kind: "runner" });
+    const data = runnerUpgradeData(req);
+    if (!data) return new Response(null, { status: 401 });
+    return accept(data);
   }
   const preview = previewUpgradeTarget(req);
   if (preview) {

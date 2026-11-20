@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { acquireTurnSlot, maxTurns, slotStats, type TurnSlot } from "../services/turn-slots.service";
+import {
+  acquireTurnSlot,
+  maxTurns,
+  onSuspendedChange,
+  slotStats,
+  suspendedSlots,
+  type TurnSlot,
+} from "../services/turn-slots.service";
 
 const held: TurnSlot[] = [];
 
@@ -78,5 +85,22 @@ describe("turn slots", () => {
     expect(slotStats().queued).toBe(1);
     held[0].release();
     held.push(await second);
+  });
+
+  test("counts suspended slots and tells the listeners", async () => {
+    const seen: number[] = [];
+    const stop = onSuspendedChange((count) => seen.push(count));
+    const first = await take();
+    const second = await take();
+    first.suspend();
+    second.suspend();
+    expect(suspendedSlots()).toBe(2);
+    first.resume();
+    second.release();
+    expect(suspendedSlots()).toBe(0);
+    stop();
+    first.suspend();
+    first.resume();
+    expect(seen).toEqual([1, 2, 1, 0]);
   });
 });

@@ -78,7 +78,7 @@ async function handleSessionPost(req: Req, res: Res, bot: BotDefinition, session
   if (!attachments) return;
   if (raw.message?.trim() || skills.length > 0 || attachments.length > 0) {
     if (rejectInactiveBot(res, bot)) return;
-    deliver(session, {
+    await deliver(session, {
       deliveryId,
       text: deliveryText(raw.message, skills),
       source: "chat",
@@ -165,7 +165,7 @@ export async function handleEve(req: Req, res: Res, url: URL, bot: BotDefinition
     });
     const deliveryId = randomUUID();
     if (message?.trim() || skills.length > 0 || attachments.length > 0)
-      deliver(session, {
+      await deliver(session, {
         deliveryId,
         text: deliveryText(message, skills),
         source: "chat",

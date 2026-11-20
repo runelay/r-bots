@@ -1,15 +1,27 @@
-import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { scheduledJobs } from "croner";
+import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
 import { factsOfType, makeBot, waitFor } from "../../../../test/engine-helpers";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
+import { startTestJobs, type TestJobs } from "../../../../test/jobs-helpers";
 import { env } from "../../../config/env";
 import * as botsService from "../../bots/services/bots.service";
 import * as sessionsService from "../../conversations/services/sessions.service";
 import * as threadsService from "../../conversations/services/threads.service";
 import { isBusy } from "../../engine/services/engine.service";
-import { fire, reloadSchedules, startScheduler } from "../services/scheduler.service";
+import * as jobsService from "../../jobs/services/jobs.service";
+import { scheduledJobs } from "../../jobs/services/jobs.service";
+import {
+  fire,
+  fireJobType,
+  reloadSchedules,
+  runFireJob,
+  scheduleKey,
+  startScheduler,
+} from "../services/scheduler.service";
+
+setDefaultTimeout(30_000);
 
 let server: TestServer;
+let jobs: TestJobs;
 const restores: Array<() => void> = [];
 
 function track<T extends { mockRestore(): void }>(spy: T) {
@@ -23,6 +35,7 @@ function quiet() {
 
 beforeAll(async () => {
   server = await startTestServer();
+  jobs = await startTestJobs();
 });
 
 afterEach(() => {
@@ -30,11 +43,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
-  const listBots = spyOn(botsService, "listBots").mockReturnValue([]);
-  const log = spyOn(console, "log").mockImplementation(() => undefined);
-  reloadSchedules();
-  log.mockRestore();
-  listBots.mockRestore();
+  await jobs.stop();
   await server.close();
 });
 
@@ -70,53 +79,103 @@ describe("fire", () => {
   });
 });
 
+function withSchedules(value: "on" | "off") {
+  const previous = env.BOTS_SCHEDULES;
+  env.BOTS_SCHEDULES = value;
+  restores.push(() => {
+    env.BOTS_SCHEDULES = previous;
+  });
+}
+
+async function schedulersOf(botId: string) {
+  return (await scheduledJobs()).filter((item) => item.key.startsWith(`schedule.${botId}.`));
+}
+
 describe("reloadSchedules", () => {
-  test("registers a named job per schedule and fires it on trigger", async () => {
-    quiet();
+  test("registers one scheduler per schedule, keeps it on reload and drops stale ones", async () => {
+    const log = track(spyOn(console, "log").mockImplementation(() => undefined));
     const bot = await makeBot({ schedules: [schedule] });
     track(spyOn(botsService, "listBots").mockReturnValue([bot]));
-    reloadSchedules();
-    const job = scheduledJobs.find((item) => item.name === `${bot.id}:diaria`);
-    expect(job?.nextRun()).toBeInstanceOf(Date);
-    await job!.trigger();
-    const thread = await waitFor(async () => {
-      const state = await threadsService.ensureThread(bot.id);
-      const session = sessionsService.getStoredSession(state.sessionId);
-      return session && factsOfType(session, "delivery.consumed").length > 0 ? state : null;
+    await reloadSchedules();
+    const [registered] = await schedulersOf(bot.id);
+    expect(registered).toMatchObject({
+      key: scheduleKey(bot.id, "diaria"),
+      type: fireJobType,
+      pattern: "0 9 * * *",
+      timezone: bot.schedules[0]?.timezone,
     });
-    await settled(thread.sessionId);
-    reloadSchedules();
-    expect(scheduledJobs.filter((item) => item.name === `${bot.id}:diaria`)).toHaveLength(1);
+    expect(log.mock.calls.some((call) => String(call[0]).includes(`${scheduleKey(bot.id, "diaria")}@`))).toBe(true);
+    const upsert = track(spyOn(jobsService, "schedule"));
+    await reloadSchedules();
+    expect(upsert).not.toHaveBeenCalled();
+    expect(await schedulersOf(bot.id)).toHaveLength(1);
+    track(spyOn(botsService, "listBots").mockReturnValue([]));
+    await reloadSchedules();
+    expect(await schedulersOf(bot.id)).toHaveLength(0);
+    expect(log).toHaveBeenCalledWith("schedules loaded: none");
   });
 
-  test("logs a failed run and an invalid cron without stopping the others", async () => {
+  test("logs an invalid cron and a failed reload without stopping the others", async () => {
     quiet();
     const errors = track(spyOn(console, "error").mockImplementation(() => undefined));
     const bot = await makeBot({ schedules: [schedule] });
     const broken = await makeBot();
     broken.schedules = [{ ...schedule, name: "quebrada", cron: "not a cron", timezone: "UTC", description: "" }];
     track(spyOn(botsService, "listBots").mockReturnValue([bot, broken]));
-    reloadSchedules();
+    await reloadSchedules();
     expect(errors.mock.calls.some((call) => call[0] === `invalid schedule ${broken.id}/quebrada`)).toBe(true);
-    const failure = new Error("thread indisponível");
-    track(spyOn(threadsService, "ensureThread").mockRejectedValue(failure));
-    await scheduledJobs.find((item) => item.name === `${bot.id}:diaria`)!.trigger();
-    await waitFor(() => errors.mock.calls.some((call) => call[0] === "schedule failed" && call[1] === failure));
+    expect(await schedulersOf(bot.id)).toHaveLength(1);
+    track(spyOn(jobsService, "scheduledJobs").mockRejectedValue(new Error("redis caiu")));
+    await reloadSchedules();
+    expect(errors.mock.calls.some((call) => call[0] === "schedules not loaded")).toBe(true);
   });
 
-  test("logs none when no bot has schedules", () => {
-    const log = track(spyOn(console, "log").mockImplementation(() => undefined));
+  test("runs the run missed while the server was down once it is back", async () => {
+    quiet();
+    withSchedules("on");
+    const bot = await makeBot({ schedules: [{ ...schedule, cron: "* * * * * *" }] });
+    track(spyOn(botsService, "listBots").mockReturnValue([bot]));
+    await reloadSchedules();
+    const [registered] = await schedulersOf(bot.id);
+    await jobs.restart();
+    const due = Date.parse(registered?.next ?? "");
+    await waitFor(() => Date.now() > due + 1500, 5000);
+    const upsert = track(spyOn(jobsService, "schedule"));
+    await reloadSchedules();
+    expect(upsert).not.toHaveBeenCalled();
+    const thread = await waitFor(async () => {
+      const state = await threadsService.ensureThread(bot.id);
+      const session = sessionsService.getStoredSession(state.sessionId);
+      return session && (await factsOfType(session, "delivery.consumed")).length > 0 ? state : null;
+    }, 8000);
     track(spyOn(botsService, "listBots").mockReturnValue([]));
-    reloadSchedules();
-    expect(log).toHaveBeenCalledWith("schedules loaded: none");
+    await reloadSchedules();
+    await settled(thread.sessionId);
+    const session = sessionsService.getStoredSession(thread.sessionId);
+    expect((await factsOfType(session!, "delivery.consumed"))[0]?.data).toMatchObject({
+      source: "schedule",
+      scheduleId: schedule.name,
+    });
+  });
+});
+
+describe("runFireJob", () => {
+  test("skips when schedules are off or the schedule is gone", async () => {
+    const bot = await makeBot({ schedules: [schedule] });
+    withSchedules("off");
+    expect(await runFireJob({ botId: bot.id, scheduleId: "diaria" })).toEqual({ skipped: "off" });
+    withSchedules("on");
+    expect(await runFireJob({ botId: bot.id, scheduleId: "outra" })).toEqual({ skipped: "gone" });
+    expect(await runFireJob({ botId: "ninguem", scheduleId: "diaria" })).toEqual({ skipped: "gone" });
   });
 });
 
 describe("startScheduler", () => {
-  test("does nothing when schedules are off", () => {
+  test("does nothing when schedules are off", async () => {
     const log = track(spyOn(console, "log").mockImplementation(() => undefined));
     const changed = track(spyOn(botsService, "onBotsChanged").mockImplementation(() => undefined));
-    startScheduler();
+    withSchedules("off");
+    await startScheduler();
     expect(log).toHaveBeenCalledWith("schedules off");
     expect(changed).not.toHaveBeenCalled();
   });
@@ -131,18 +190,14 @@ describe("startScheduler", () => {
         listener = next;
       }),
     );
-    const previous = env.BOTS_SCHEDULES;
-    env.BOTS_SCHEDULES = "on";
-    try {
-      startScheduler();
-    } finally {
-      env.BOTS_SCHEDULES = previous;
-    }
-    expect(log.mock.calls.some((call) => String(call[0]).includes(`${bot.id}:diaria@`))).toBe(true);
-    expect(listener).not.toBeNull();
+    withSchedules("on");
+    await startScheduler();
+    const key = scheduleKey(bot.id, "diaria");
+    expect(log.mock.calls.some((call) => String(call[0]).includes(`${key}@`))).toBe(true);
     log.mockClear();
-    listener!();
-    expect(log.mock.calls.some((call) => String(call[0]).includes(`${bot.id}:diaria@`))).toBe(true);
+    track(spyOn(botsService, "listBots").mockReturnValue([]));
+    (listener as unknown as () => void)();
+    await waitFor(() => log.mock.calls.some((call) => call[0] === "schedules loaded: none"));
   });
 });
 

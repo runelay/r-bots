@@ -97,7 +97,7 @@ export function connectFakeRunner(capabilities: string[], reply: RunnerReply = (
   const requests: Array<{ op: string; body: Record<string, unknown> }> = [];
   const socket = {
     readyState: 1,
-    data: { kind: "runner" },
+    data: { kind: "runner", deviceKey: "test-mac", rank: 1, deviceName: "Mac de teste", userId: "test-user" },
     send(raw: string) {
       const message = JSON.parse(raw) as { type: string; id: string; op: string; body?: Record<string, unknown> };
       if (message.type !== "request") return;
@@ -118,6 +118,9 @@ export function connectFakeRunner(capabilities: string[], reply: RunnerReply = (
   runnerSocket.message(socket as unknown as Socket, JSON.stringify({ type: "hello", capabilities }));
   return {
     requests,
+    say(message: unknown) {
+      runnerSocket.message(socket as unknown as Socket, JSON.stringify(message));
+    },
     close() {
       socket.readyState = 3;
       runnerSocket.close(socket as unknown as Socket, 1000, "");

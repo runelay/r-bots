@@ -1,4 +1,4 @@
-import { type Account, runOnRunner } from "../../accounts/services/accounts.service";
+import { type Account, runnerTarget, runOnRunner } from "../../accounts/services/accounts.service";
 import { askJev, jevEnabled, noul } from "../../approvals/services/jev.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { runelayCall, runelayEnabled } from "../../connectors/services/runelay.service";
@@ -99,7 +99,7 @@ export async function cheapCall(
   const timer = setTimeout(() => controller.abort(), 90_000);
   try {
     await runOnRunner(
-      account.runner,
+      runnerTarget(account),
       {
         turnId: `aux-${Date.now()}`,
         provider: account.provider,

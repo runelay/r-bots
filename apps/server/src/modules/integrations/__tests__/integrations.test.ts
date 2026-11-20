@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fakeRunelay, request, startTestServer, type TestServer, testDataDir } from "../../../../test/helpers";
-import { readOrCreateSecret, runnerToken, runnerTokenFile, runnerTokenSource } from "../../../config/runtime-secrets";
+import { readOrCreateSecret, runnerToken, runnerTokenFile } from "../../../config/runtime-secrets";
 import { getDb } from "../../../db";
 import { readSetting, writeSetting } from "../../../db/settings";
 import { jevEnabled } from "../../approvals/services/jev.service";
@@ -67,7 +67,6 @@ afterAll(async () => {
   await services.stop(true);
   process.env.ELEVENLABS_API_URL = saved.ELEVENLABS_API_URL;
   process.env.JEV_URL = saved.JEV_URL;
-  process.env.RUNNER_TOKEN = saved.RUNNER_TOKEN;
 });
 
 type Item = {
@@ -279,14 +278,12 @@ describe("integrations", () => {
 });
 
 describe("runtime secrets", () => {
-  test("runner token comes from env, otherwise from a generated data file", () => {
-    process.env.RUNNER_TOKEN = "from-env-token";
-    expect(runnerToken()).toBe("from-env-token");
-    expect(runnerTokenSource()).toBe("env");
-    delete process.env.RUNNER_TOKEN;
+  test("runner token is generated in the data dir and ignores the old env variable", () => {
+    process.env.RUNNER_TOKEN = "from-env-token-0123456789abcdef";
     const token = runnerToken();
+    delete process.env.RUNNER_TOKEN;
+    expect(token).not.toBe("from-env-token-0123456789abcdef");
     expect(token.length).toBeGreaterThanOrEqual(24);
-    expect(runnerTokenSource()).toBe("data-file");
     expect(readFileSync(join(testDataDir(), "runner.token"), "utf8").trim()).toBe(token);
     expect(runnerToken()).toBe(token);
   });

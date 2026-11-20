@@ -82,6 +82,10 @@ export function principalOf(request: Request) {
   return principals.get(request) ?? null;
 }
 
+export function currentAuthModule() {
+  return current;
+}
+
 export function authActive() {
   return current !== null && enforced;
 }

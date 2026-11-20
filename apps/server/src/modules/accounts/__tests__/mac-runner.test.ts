@@ -1,18 +1,22 @@
-import { afterEach, describe, expect, jest, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, spyOn, test } from "bun:test";
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import { host, port } from "../../../config/env";
 import { Req } from "../../../shared/http";
 import type { Socket } from "../../../shared/ws";
 import type { AuthModule } from "../../auth";
 import { gate, useAuthModule } from "../../auth/gate";
 import {
+  disconnectMacDevice,
   isRunnerUpgrade,
   MacRunnerUnavailable,
   macAccounts,
   macComputerCall,
   macComputerHealth,
+  macDeviceLastSeen,
   macReadFile,
   macRunnerAuthorized,
   macRunnerConnected,
+  macRunnerConnections,
   macRunnerInfo,
   macRunnerSupports,
   macSecretResolve,
@@ -20,21 +24,35 @@ import {
   macUsageBuckets,
   macUsageLimits,
   onMacRunnerChange,
+  revokedCloseCode,
   runMacTurn,
   runnerConnectPath,
   runnerSocket,
-  runnerUpgradeAllowed,
+  runnerUpgradeData,
+  useMcpForwarder,
   watchMacComputerEvents,
 } from "../services/mac-runner.service";
 
-type Sent = { type: string; id: string; op?: string; body?: Record<string, unknown>; turn?: TurnRequest };
+function device(key: string, rank: number, name = `Mac ${key}`) {
+  return { kind: "runner", deviceKey: key, rank, deviceName: name, userId: "u1" };
+}
 
-function socket() {
+type Sent = {
+  type: string;
+  id: string;
+  op?: string;
+  body?: Record<string, unknown> | string;
+  turn?: TurnRequest;
+  status?: number;
+  headers?: Record<string, string>;
+};
+
+function socket(data: Record<string, unknown> = device("main", 1)) {
   const sent: Sent[] = [];
   const closed: Array<[number, string]> = [];
   const ws = {
     readyState: 1,
-    data: { kind: "runner" },
+    data,
     pings: 0,
     terminated: false,
     failPing: false,
@@ -76,12 +94,15 @@ function socket() {
 
 const open: Array<ReturnType<typeof socket>> = [];
 
-function connect() {
-  const runner = socket();
+async function connect(data?: Record<string, unknown>) {
+  const runner = socket(data);
   runner.open();
   open.push(runner);
-  for (const message of runner.sent.splice(0))
-    if (message.type === "request") runner.say({ type: "response", id: message.id, ok: true, result: [] });
+  for (let tick = 0; tick < 5; tick++) {
+    await new Promise((resolve) => setImmediate(resolve));
+    for (const message of runner.sent.splice(0))
+      if (message.type === "request") runner.say({ type: "response", id: message.id, ok: true, result: [] });
+  }
   return runner;
 }
 
@@ -89,10 +110,15 @@ function turn(id: string): TurnRequest {
   return { turnId: id, provider: "claude" } as unknown as TurnRequest;
 }
 
-afterEach(() => {
+beforeEach(() => {
+  for (const live of macRunnerConnections()) disconnectMacDevice(live.key, 1000, "test");
+});
+
+afterEach(async () => {
   for (const runner of open.splice(0)) runner.drop();
   jest.useRealTimers();
   useAuthModule(null);
+  useMcpForwarder(null);
 });
 
 describe("connection", () => {
@@ -105,32 +131,32 @@ describe("connection", () => {
     expect(isRunnerUpgrade("/runner")).toBe(false);
   });
 
-  test("tracks hello, notifies listeners and replaces an older socket", () => {
+  test("tracks hello, notifies listeners and replaces an older socket", async () => {
     const changes: boolean[] = [];
     const stop = onMacRunnerChange((connected) => changes.push(connected));
     const stopBroken = onMacRunnerChange(() => {
       throw new Error("listener broke");
     });
-    const first = connect();
+    const first = await connect();
     first.say({ type: "hello", version: "2.0", capabilities: ["computer"] });
     expect(macRunnerConnected()).toBe(true);
     expect(macRunnerInfo()).toMatchObject({ connected: true, version: "2.0" });
     expect(macRunnerSupports("computer")).toBe(true);
     expect(macRunnerSupports("voice")).toBe(false);
-    const second = connect();
+    const second = await connect();
     expect(first.closed).toEqual([[4000, "replaced"]]);
     expect(macRunnerSupports("computer")).toBe(false);
     first.drop();
     expect(macRunnerConnected()).toBe(true);
     second.drop();
     expect(macRunnerConnected()).toBe(false);
-    expect(changes).toEqual([true, true, false]);
+    expect(changes).toEqual([true, false, true, false]);
     stop();
     stopBroken();
   });
 
   test("ignores garbage, unknown responses and binary frames", async () => {
-    const runner = connect();
+    const runner = await connect();
     runner.say("not json");
     runner.say({ type: "response", id: "nobody" });
     runner.say({ type: "turn.event", id: "nobody", event: { type: "text" } });
@@ -141,9 +167,9 @@ describe("connection", () => {
     expect(await pending).toEqual({ claude: 1 });
   });
 
-  test("pings on a heartbeat and terminates a silent runner", () => {
+  test("pings on a heartbeat and terminates a silent runner", async () => {
     jest.useFakeTimers();
-    const runner = connect();
+    const runner = await connect();
     jest.advanceTimersByTime(15_000);
     expect(runner.ws.pings).toBe(1);
     runnerSocket.pong?.(runner.as);
@@ -161,48 +187,246 @@ describe("connection", () => {
 });
 
 describe("authorization", () => {
-  test("rejects a short or wrong runner token", () => {
-    const req = new Req(new Request("http://127.0.0.1/runner/connect", { headers: { authorization: "Bearer nope" } }));
+  test("refuses everything while auth is off", async () => {
+    const req = new Req(new Request("http://127.0.0.1/runner/connect", { headers: { authorization: "Bearer x" } }));
     expect(macRunnerAuthorized(req)).toBe(false);
-    expect(runnerUpgradeAllowed(new Req(new Request("http://127.0.0.1/runner/connect")))).toBe(false);
+    expect(runnerUpgradeData(req)).toBeNull();
   });
 
-  test("accepts a long runner token that matches", () => {
-    const saved = process.env.RUNNER_TOKEN;
-    process.env.RUNNER_TOKEN = "runner-token-0123456789abcdef";
-    try {
-      const good = new Request("http://127.0.0.1/runner/connect", {
-        headers: { authorization: "Bearer runner-token-0123456789abcdef" },
-      });
-      const bad = new Request("http://127.0.0.1/runner/connect", {
-        headers: { authorization: "Bearer runner-token-0123456789abcdeX" },
-      });
-      expect(runnerUpgradeAllowed(new Req(good))).toBe(true);
-      expect(runnerUpgradeAllowed(new Req(bad))).toBe(false);
-    } finally {
-      process.env.RUNNER_TOKEN = saved;
-    }
-  });
-
-  test("uses the signed in principal when auth is on", async () => {
+  test("accepts only a device token from a signed in account", async () => {
     const principal = { userId: "u1", email: "a@b.c", name: "A", role: "owner", method: "session" as const };
+    const devicePrincipal = {
+      ...principal,
+      method: "api-key" as const,
+      device: { id: "dev-1", name: "MacBook", registeredAt: "2026-11-19T10:00:00.000Z" },
+    };
+    const undated = { ...devicePrincipal, device: { id: "dev-2", name: "", registeredAt: "" } };
     useAuthModule({
-      authenticate: async (request: Request) =>
-        request.headers.get("authorization") ? { kind: "principal", principal } : { kind: "public" },
+      authenticate: async (request: Request) => {
+        const header = request.headers.get("authorization");
+        if (header === "Bearer device") return { kind: "principal", principal: devicePrincipal };
+        if (header === "Bearer undated") return { kind: "principal", principal: undated };
+        return header ? { kind: "principal", principal } : { kind: "public" };
+      },
       handle: async () => null,
     } as unknown as AuthModule);
     const signed = new Request("http://127.0.0.1/runner/connect", { headers: { authorization: "Bearer s" } });
+    const fromDevice = new Request("http://127.0.0.1/runner/connect", { headers: { authorization: "Bearer device" } });
+    const fromUndated = new Request("http://127.0.0.1/runner/connect", {
+      headers: { authorization: "Bearer undated" },
+    });
     const anonymous = new Request("http://127.0.0.1/runner/connect");
-    expect(await gate(signed)).toBeNull();
-    expect(await gate(anonymous)).toBeNull();
-    expect(runnerUpgradeAllowed(new Req(signed))).toBe(true);
-    expect(runnerUpgradeAllowed(new Req(anonymous))).toBe(false);
+    for (const request of [signed, fromDevice, fromUndated, anonymous]) expect(await gate(request)).toBeNull();
+    expect(macRunnerAuthorized(new Req(signed))).toBe(true);
+    expect(macRunnerAuthorized(new Req(anonymous))).toBe(false);
+    expect(runnerUpgradeData(new Req(signed))).toBeNull();
+    expect(runnerUpgradeData(new Req(fromDevice))).toEqual({
+      kind: "runner",
+      deviceKey: "dev-1",
+      rank: Date.parse("2026-11-19T10:00:00.000Z"),
+      deviceName: "MacBook",
+      userId: "u1",
+    });
+    expect(runnerUpgradeData(new Req(fromUndated))).toMatchObject({ deviceKey: "dev-2", rank: 0, deviceName: null });
+    expect(runnerUpgradeData(new Req(anonymous))).toBeNull();
+  });
+});
+
+describe("several Macs", () => {
+  test("keeps one connection per device and prefers the oldest registered", async () => {
+    const changes: Array<[boolean, string]> = [];
+    const stop = onMacRunnerChange((connected, key) => changes.push([connected, key]));
+    const newer = await connect(device("b", 200));
+    const older = await connect(device("a", 100));
+    older.say({ type: "hello", version: "3.1", capabilities: ["computer"] });
+    expect(macRunnerConnected("a")).toBe(true);
+    expect(macRunnerConnected("zzz")).toBe(false);
+    expect(macRunnerSupports("computer")).toBe(true);
+    expect(macRunnerSupports("computer", "b")).toBe(false);
+    expect(macRunnerInfo()).toMatchObject({ connected: true, version: "3.1" });
+    expect(macRunnerConnections().map((item) => [item.key, item.name, item.version])).toEqual([
+      ["b", "Mac b", null],
+      ["a", "Mac a", "3.1"],
+    ]);
+    older.sent.splice(0);
+    newer.sent.splice(0);
+    const health = macComputerHealth();
+    const asked = older.sent.find((item) => item.op === "computer.health");
+    expect(asked).toBeDefined();
+    expect(newer.sent.some((item) => item.op === "computer.health")).toBe(false);
+    newer.say({ type: "response", id: asked?.id, body: { ok: false } });
+    older.say({ type: "response", id: asked?.id, body: { ok: true } });
+    expect(await health).toEqual({ ok: true });
+    newer.sent.splice(0);
+    const listed = macAccounts("b");
+    const listing = newer.sent.find((item) => item.op === "accounts");
+    newer.say({ type: "response", id: listing?.id, ok: true, result: [] });
+    expect(await listed).toEqual([]);
+    await expect(macAccounts("zzz")).rejects.toThrow("não está conectado");
+    expect(macDeviceLastSeen("a")).not.toBeNull();
+    expect(macDeviceLastSeen("never")).toBeNull();
+    const pendingOnNewer = macAccounts("b");
+    newer.drop();
+    await expect(pendingOnNewer).rejects.toThrow("desconectou");
+    expect(macDeviceLastSeen("b")).not.toBeNull();
+    expect(macRunnerConnected("a")).toBe(true);
+    expect(changes.filter(([connected]) => !connected).map(([, key]) => key)).toEqual(["b"]);
+    stop();
+  });
+
+  test("disconnects a revoked device and fails its running turn", async () => {
+    const runner = await connect(device("dev-x", 1));
+    const events: ProviderEvent[] = [];
+    const finished = runMacTurn(turn("rv"), new AbortController().signal, (event) => events.push(event), "dev-x");
+    expect(disconnectMacDevice("dev-x")).toBe(true);
+    await finished;
+    expect(runner.closed).toEqual([[revokedCloseCode, "revoked"]]);
+    expect(events).toEqual([{ type: "done", ok: false, message: "O app runelay bots fechou no meio do turno." }]);
+    expect(disconnectMacDevice("dev-x")).toBe(false);
+    const broken = await connect(device("dev-y", 2));
+    broken.ws.close = () => {
+      throw new Error("already closed");
+    };
+    expect(disconnectMacDevice("dev-y")).toBe(true);
+    expect(macRunnerConnected("dev-y")).toBe(false);
+  });
+
+  test("a replaced socket that fails to close is still dropped", async () => {
+    const first = await connect(device("dup", 1));
+    first.ws.close = () => {
+      throw new Error("gone");
+    };
+    const second = await connect(device("dup", 1));
+    expect(macRunnerConnections().filter((item) => item.key === "dup")).toHaveLength(1);
+    second.say({ type: "hello", capabilities: ["turns"] });
+    expect(macRunnerSupports("turns", "dup")).toBe(true);
+  });
+
+  test("closes a socket that is not tied to a device", async () => {
+    const runner = socket({ kind: "runner", deviceKey: 5 });
+    runner.open();
+    expect(runner.closed).toEqual([[4003, "device required"]]);
+    expect(macRunnerConnections()).toEqual([]);
+    runner.say({ type: "hello" });
+    runner.drop();
+  });
+
+  test("routes a turn to the device and tells when it is gone", async () => {
+    const runner = await connect(device("t-dev", 1));
+    const events: ProviderEvent[] = [];
+    const finished = runMacTurn(turn("td"), new AbortController().signal, (event) => events.push(event), "t-dev");
+    expect(runner.sent[0]).toMatchObject({ type: "turn.start", id: "td" });
+    runner.say({ type: "turn.end", id: "td" });
+    await finished;
+    const gone: ProviderEvent[] = [];
+    await runMacTurn(turn("tg"), new AbortController().signal, (event) => gone.push(event), "missing");
+    expect(gone).toEqual([{ type: "done", ok: false, message: "Mac desconectado." }]);
+  });
+});
+
+describe("mcp over the connection", () => {
+  function mcpTurn(url: string): TurnRequest {
+    return { turnId: "m1", provider: "claude", mcp: { url, token: "tk" } } as unknown as TurnRequest;
+  }
+
+  test("sends the MCP path when the app has the local proxy", async () => {
+    const runner = await connect(device("px", 1));
+    runner.say({ type: "hello", capabilities: ["mcp-proxy"] });
+    void runMacTurn(mcpTurn("http://127.0.0.1:2000/mcp/bot/sess"), new AbortController().signal, () => {}, "px");
+    expect(runner.sent[0].turn?.mcp).toEqual({ url: "/mcp/bot/sess", token: "tk" });
+    runner.say({ type: "turn.end", id: "m1" });
+    void runMacTurn(mcpTurn("not a url"), new AbortController().signal, () => {}, "px");
+    expect(runner.sent[1].turn?.mcp).toEqual({ url: "not a url", token: "tk" });
+    runner.say({ type: "turn.end", id: "m1" });
+    const old = await connect(device("old", 2));
+    void runMacTurn(mcpTurn("http://127.0.0.1:2000/mcp/bot/sess"), new AbortController().signal, () => {}, "old");
+    expect(old.sent[0].turn?.mcp).toEqual({ url: "http://127.0.0.1:2000/mcp/bot/sess", token: "tk" });
+    old.say({ type: "turn.end", id: "m1" });
+  });
+
+  test("forwards MCP calls to the server and returns status, headers and body", async () => {
+    const calls: Array<{ path: string; init: RequestInit }> = [];
+    useMcpForwarder(async (path, init) => {
+      calls.push({ path, init });
+      return new Response('{"jsonrpc":"2.0"}', {
+        status: 200,
+        headers: { "content-type": "application/json", "mcp-session-id": "s1", "x-other": "no" },
+      });
+    });
+    const runner = await connect(device("fw", 1));
+    runner.say({
+      type: "mcp.request",
+      id: "q1",
+      method: "post",
+      path: "/mcp/bot/sess",
+      headers: { Authorization: "Bearer tk", "Content-Type": "application/json", Cookie: "no", Accept: 3 },
+      body: '{"jsonrpc":"2.0","method":"tools/list"}',
+    });
+    await Bun.sleep(0);
+    await Bun.sleep(0);
+    expect(calls[0].path).toBe("/mcp/bot/sess");
+    expect(calls[0].init.method).toBe("POST");
+    expect(calls[0].init.headers).toEqual({ authorization: "Bearer tk", "content-type": "application/json" });
+    expect(calls[0].init.body).toBe('{"jsonrpc":"2.0","method":"tools/list"}');
+    expect(runner.sent.at(-1)).toEqual({
+      type: "mcp.response",
+      id: "q1",
+      status: 200,
+      headers: { "content-type": "application/json", "mcp-session-id": "s1" },
+      body: '{"jsonrpc":"2.0"}',
+    } as Sent);
+    runner.say({ type: "mcp.request", id: "q2", method: "DELETE", path: "/mcp/bot/sess", headers: null });
+    await Bun.sleep(0);
+    await Bun.sleep(0);
+    expect(calls[1].init).toMatchObject({ method: "DELETE", headers: {} });
+    expect(calls[1].init.body).toBeUndefined();
+  });
+
+  test("forwards to the local server by default", async () => {
+    const seen: string[] = [];
+    const spy = spyOn(globalThis, "fetch").mockImplementation((async (input: Parameters<typeof fetch>[0]) => {
+      seen.push(String(input));
+      return new Response("{}", { status: 202 });
+    }) as typeof fetch);
+    try {
+      const runner = await connect(device("loop", 1));
+      runner.say({ type: "mcp.request", id: "l1", method: "GET", path: "/mcp/bot/sess" });
+      await Bun.sleep(0);
+      await Bun.sleep(0);
+      expect(seen).toEqual([`http://${host}:${port}/mcp/bot/sess`]);
+      expect(runner.sent.find((item) => item.id === "l1")).toMatchObject({ status: 202, body: "{}" });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("refuses paths outside the MCP route and reports a failing server", async () => {
+    useMcpForwarder(async () => {
+      throw new Error("refused");
+    });
+    const runner = await connect(device("bad", 1));
+    runner.say({ type: "mcp.request", id: "r1", method: "POST", path: "/bots" });
+    runner.say({ type: "mcp.request", id: "r2", method: "PUT", path: "/mcp/a/b" });
+    runner.say({ type: "mcp.request", path: "/mcp/a/b" });
+    await Bun.sleep(0);
+    await Bun.sleep(0);
+    expect(runner.sent.map((item) => [item.id, item.status])).toEqual([
+      ["r1", 404],
+      ["r2", 404],
+      ["", 502],
+    ]);
+    expect(String(runner.sent[2].body)).toContain("refused");
+    runner.say({ type: "mcp.request", id: "r3", method: "POST", path: "/mcp/a/b" });
+    runner.ws.readyState = 3;
+    await Bun.sleep(0);
+    await Bun.sleep(0);
+    expect(runner.sent).toHaveLength(3);
   });
 });
 
 describe("requests", () => {
   test("lists accounts or reports the runner error", async () => {
-    const runner = connect();
+    const runner = await connect();
     const listed = macAccounts();
     expect(runner.sent[0]).toMatchObject({ type: "request", op: "accounts" });
     runner.answer(0, { ok: true, result: [{ provider: "claude" }] });
@@ -219,7 +443,7 @@ describe("requests", () => {
   });
 
   test("computer health and tool calls", async () => {
-    const runner = connect();
+    const runner = await connect();
     const health = macComputerHealth();
     runner.answer(0, { body: { ok: true, screen: "on" } });
     expect(await health).toEqual({ ok: true, screen: "on" });
@@ -236,7 +460,7 @@ describe("requests", () => {
   });
 
   test("reads a file, transcribes and reads usage", async () => {
-    const runner = connect();
+    const runner = await connect();
     const file = macReadFile("~/a.txt", 10);
     runner.answer(0, { ok: true, result: { path: "/Users/a/a.txt", name: "a.txt", base64: btoa("oi") } });
     const read = await file;
@@ -298,7 +522,7 @@ describe("requests", () => {
 
   test("times out, cancels and fails when the runner drops", async () => {
     jest.useFakeTimers();
-    const runner = connect();
+    const runner = await connect();
     const late = macComputerHealth();
     jest.advanceTimersByTime(5000);
     await expect(late).rejects.toThrow("O Mac não respondeu a tempo.");
@@ -321,8 +545,8 @@ describe("requests", () => {
 });
 
 describe("computer events", () => {
-  test("forwards valid events to every listener", () => {
-    const runner = connect();
+  test("forwards valid events to every listener", async () => {
+    const runner = await connect();
     const events: unknown[] = [];
     const stop = watchMacComputerEvents((event) => events.push(event));
     const stopBroken = watchMacComputerEvents(() => {
@@ -340,7 +564,7 @@ describe("computer events", () => {
 
 describe("runMacTurn", () => {
   test("streams events until the runner ends the turn", async () => {
-    const runner = connect();
+    const runner = await connect();
     const events: ProviderEvent[] = [];
     const finished = runMacTurn(turn("t1"), new AbortController().signal, (event) => events.push(event));
     expect(runner.sent[0]).toMatchObject({ type: "turn.start", id: "t1" });
@@ -356,7 +580,7 @@ describe("runMacTurn", () => {
   });
 
   test("closes a turn the runner ends without a reply", async () => {
-    const runner = connect();
+    const runner = await connect();
     const events: ProviderEvent[] = [];
     const finished = runMacTurn(turn("t2"), new AbortController().signal, (event) => events.push(event));
     runner.say({ type: "turn.end", id: "t2" });
@@ -366,7 +590,7 @@ describe("runMacTurn", () => {
 
   test("cancels a turn and closes it after the grace period", async () => {
     jest.useFakeTimers();
-    const runner = connect();
+    const runner = await connect();
     const events: ProviderEvent[] = [];
     const controller = new AbortController();
     const finished = runMacTurn(turn("t3"), controller.signal, (event) => events.push(event));
@@ -379,7 +603,7 @@ describe("runMacTurn", () => {
 
   test("skips the grace close when the turn already ended", async () => {
     jest.useFakeTimers();
-    const runner = connect();
+    const runner = await connect();
     const controller = new AbortController();
     const events: ProviderEvent[] = [];
     const finished = runMacTurn(turn("t4"), controller.signal, (event) => events.push(event));
@@ -391,7 +615,7 @@ describe("runMacTurn", () => {
   });
 
   test("fails the turn when the runner drops or is missing", async () => {
-    const runner = connect();
+    const runner = await connect();
     const events: ProviderEvent[] = [];
     const finished = runMacTurn(turn("t5"), new AbortController().signal, (event) => events.push(event));
     runner.drop();
@@ -407,7 +631,7 @@ describe("runMacTurn", () => {
 
   test("still cancels quietly when the runner is gone", async () => {
     jest.useFakeTimers();
-    const runner = connect();
+    const runner = await connect();
     const controller = new AbortController();
     const events: ProviderEvent[] = [];
     const finished = runMacTurn(turn("t7"), controller.signal, (event) => events.push(event));

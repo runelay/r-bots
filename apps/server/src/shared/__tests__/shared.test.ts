@@ -73,7 +73,6 @@ describe("config", () => {
         GATEWAY_PORT: undefined,
         BOTS_MODEL: undefined,
         BOTS_SCHEDULES: undefined,
-        RUNNER_TOKEN: undefined,
       },
       "defaults",
     );
@@ -82,7 +81,6 @@ describe("config", () => {
     expect(defaults.port).toBe(2000);
     expect(defaults.model).toBe("claude-sonnet-5-5");
     expect(defaults.env.BOTS_SCHEDULES).toBe("on");
-    expect(defaults.env.RUNNER_TOKEN).toBe("");
     expect(defaults.env.CODE_PR_AUTOCLOSE_HOURS).toBe(24);
   });
 

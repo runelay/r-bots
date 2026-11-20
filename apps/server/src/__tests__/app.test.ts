@@ -159,11 +159,12 @@ describe("websocket upgrades", () => {
     });
     expect(refused.status).toBe(401);
     const events = recordSocket(macRunner.runnerSocket);
-    track(spyOn(macRunner, "runnerUpgradeAllowed").mockReturnValue(true));
+    const data = { kind: "runner" as const, deviceKey: "d1", rank: 1, deviceName: "Mac", userId: "u1" };
+    track(spyOn(macRunner, "runnerUpgradeData").mockReturnValue(data));
     const runner = connect("/runner/connect");
     await runner.opened;
     await until(() => events.open.length === 1);
-    expect(events.open[0].data).toEqual({ kind: "runner" });
+    expect(events.open[0].data).toEqual(data);
     runner.ws.send("hello");
     (runner.ws as unknown as { pong(): void }).pong();
     await until(() => events.message.length === 1 && events.pong === 1);
@@ -174,7 +175,8 @@ describe("websocket upgrades", () => {
   });
 
   test("answers 400 when the upgrade handshake is broken", async () => {
-    track(spyOn(macRunner, "runnerUpgradeAllowed").mockReturnValue(true));
+    const data = { kind: "runner" as const, deviceKey: "d1", rank: 1, deviceName: "Mac", userId: "u1" };
+    track(spyOn(macRunner, "runnerUpgradeData").mockReturnValue(data));
     const broken = await fetch(`${server.url}/runner/connect`, { headers: { upgrade: "websocket" } });
     expect(broken.status).toBe(400);
     expect(await broken.text()).toBe("Upgrade failed");

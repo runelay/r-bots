@@ -3,8 +3,9 @@ import { type Req, type Res, sendJson } from "../../../shared/http";
 import { accents, capabilityCatalog, efforts } from "../../bots/services/bots.service";
 import { onConversation } from "../../conversations/services/conversations.service";
 import { botStatuses, onStatus, sessionStatuses } from "../../engine/services/engine.service";
-import { slotStats } from "../../engine/services/turn-slots.service";
+import { turnStats } from "../../engine/services/turn-queue.service";
 import { integrationFlags } from "../../integrations/services/integrations.service";
+import { laneCounts } from "../../jobs/services/jobs.service";
 import { warmVoiceLayers } from "../../voice/services/voice.service";
 import { appWatching, watchApp } from "../services/viewers.service";
 
@@ -23,10 +24,23 @@ export function handleMeta(res: Res) {
   });
 }
 
-export function handleStatus(res: Res) {
+async function jobTotals() {
+  const counts = await laneCounts();
+  if (!counts) return null;
+  const all = Object.values(counts);
+  return {
+    running: all.reduce((sum, item) => sum + item.running, 0),
+    queued: all.reduce((sum, item) => sum + item.queued + item.delayed, 0),
+    failed: all.reduce((sum, item) => sum + item.failed, 0),
+    queues: counts,
+  };
+}
+
+export async function handleStatus(res: Res) {
   return sendJson(res, 200, {
     bots: botStatuses(),
-    turns: slotStats(),
+    turns: await turnStats(),
+    jobs: await jobTotals(),
     warmVoice: warmVoiceLayers(),
     appWatching: appWatching(),
   });

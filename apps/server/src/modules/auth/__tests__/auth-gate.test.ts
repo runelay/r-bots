@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/api";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import * as schema from "../../../db/schema/auth";
+import { runnerToken } from "../../../config/runtime-secrets";
 import { readSetting } from "../../../db/settings";
 import { type AuthModule, createAuthModule, isPublicRoute, type Principal } from "..";
 import { authActive, authEnabled, authMode, gate, initAuth, principalOf, useAuthModule } from "../gate";
@@ -274,12 +275,7 @@ describe("gate", () => {
     const again = await initAuth({ BETTER_AUTH_URL: base, BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
     expect(again).not.toBeNull();
     expect(authActive()).toBe(true);
-    const previous = process.env.RUNNER_TOKEN;
-    process.env.RUNNER_TOKEN = internalToken;
-    restores.push(() => {
-      process.env.RUNNER_TOKEN = previous;
-    });
-    const internal = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${internalToken}` } });
+    const internal = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${runnerToken()}` } });
     expect(await gate(internal)).toBeNull();
     expect(principalOf(internal)).toMatchObject({ userId: user.id, method: "internal", role: "owner" });
   });

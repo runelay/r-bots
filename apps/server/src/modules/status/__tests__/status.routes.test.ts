@@ -1,11 +1,21 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { waitFor } from "../../../../test/engine-helpers";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
+import { startTestJobs } from "../../../../test/jobs-helpers";
 import * as conversations from "../../conversations/services/conversations.service";
 import * as engine from "../../engine/services/engine.service";
+import { defineJob, enqueue, laneCounts } from "../../jobs/services/jobs.service";
 import { appWatching } from "../services/viewers.service";
 
 let server: TestServer;
 const restores: Array<() => void> = [];
+
+defineJob<Record<string, never>>("status.fail", {
+  attempts: 1,
+  handler: async () => {
+    throw new Error("falhou");
+  },
+});
 
 beforeAll(async () => {
   server = await startTestServer();
@@ -58,9 +68,29 @@ describe("GET /status", () => {
   test("reports bots, turn slots, warm voice layers and app watching", async () => {
     const response = await request<Record<string, unknown>>("/status");
     expect(response.status).toBe(200);
-    expect(Object.keys(response.body).sort()).toEqual(["appWatching", "bots", "turns", "warmVoice"]);
+    expect(Object.keys(response.body).sort()).toEqual(["appWatching", "bots", "jobs", "turns", "warmVoice"]);
     expect(typeof response.body.appWatching).toBe("boolean");
+    expect(response.body.jobs).toBeNull();
+    expect(response.body.turns).toMatchObject({ failed: 0 });
   });
+
+  test("adds the real queue counts when the queue is on", async () => {
+    const jobs = await startTestJobs();
+    try {
+      await enqueue("status.fail", {}, { id: "status-fail" });
+      await waitFor(async () => (await laneCounts())?.tasks.failed === 1);
+      const response = await request<{ jobs: Record<string, unknown>; turns: Record<string, number> }>("/status");
+      expect(response.body.jobs).toMatchObject({
+        running: 0,
+        queued: 0,
+        failed: 1,
+        queues: { tasks: { failed: 1 }, turns: { failed: 0 } },
+      });
+      expect(response.body.turns).toMatchObject({ running: 0, queued: 0, failed: 0 });
+    } finally {
+      await jobs.stop();
+    }
+  }, 30_000);
 });
 
 describe("GET /status/stream", () => {

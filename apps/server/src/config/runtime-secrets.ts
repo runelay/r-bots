@@ -29,11 +29,5 @@ export function runnerTokenFile() {
 }
 
 export function runnerToken() {
-  const fromEnv = process.env.RUNNER_TOKEN?.trim();
-  if (fromEnv) return fromEnv;
   return readOrCreateSecret("runner.token");
-}
-
-export function runnerTokenSource() {
-  return process.env.RUNNER_TOKEN?.trim() ? "env" : "data-file";
 }

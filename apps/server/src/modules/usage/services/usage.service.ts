@@ -369,7 +369,7 @@ function accountLabel(account: string) {
           : provider === "cursor"
             ? "Cursor"
             : provider;
-  return `${name} (${runner === "mac" ? "Mac" : "VPS"})`;
+  return `${name} (${runner?.startsWith("mac") ? "Mac" : "VPS"})`;
 }
 
 function failoversFor(accountId: string) {

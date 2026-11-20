@@ -20,6 +20,7 @@ import { env } from "../../../config/env";
 import { getDb } from "../../../db";
 import { exports } from "../../../db/tables";
 import { BlockError, newId, nowIso } from "../../blocks/services/blocks.shared";
+import { defineJob, jobsActive, runJob } from "../../jobs/services/jobs.service";
 import { requireNote } from "../../notes/services/notes.service";
 import { address, colLetters, excelSerial, toEngineFormula } from "../../sheets/services/formula";
 import { bookFor, cellOf } from "../../sheets/services/sheets.service";
@@ -372,6 +373,53 @@ async function render(
   return { name: `${sheet.title}.pdf`, data: await sheetPdf(botId, sourceId, tabId) };
 }
 
+export async function renderExport(botId: string, exportId: string, final = true) {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(exports)
+    .where(and(eq(exports.id, exportId), eq(exports.botId, botId)))
+    .limit(1);
+  if (!row || row.status === "ready") return;
+  const kind = row.sourceType === "sheet" ? "sheet" : "note";
+  try {
+    const file = await render(botId, kind, row.sourceId, row.format as ExportFormat, row.tabId);
+    const fileName = safeName(file.name);
+    const key = `bots/${botId}/exports/${exportId}/${fileName}`;
+    const stored = await putBlob(key, file.data, { mime: mimeOf(row.format), botId });
+    await db
+      .update(exports)
+      .set({ status: "ready", blobKey: key, fileName, size: stored.size, error: null, finishedAt: nowIso() })
+      .where(eq(exports.id, exportId));
+  } catch (error) {
+    if (!final) throw error;
+    await db
+      .update(exports)
+      .set({
+        status: "failed",
+        error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+        finishedAt: nowIso(),
+      })
+      .where(eq(exports.id, exportId));
+    throw error;
+  }
+}
+
+export const exportJobType = "export.render";
+export const exportAttempts = 3;
+export const exportWaitMs = 90_000;
+
+export interface ExportPayload {
+  botId: string;
+  exportId: string;
+}
+
+defineJob<ExportPayload>(exportJobType, {
+  attempts: exportAttempts,
+  backoffMs: 1000,
+  handler: (payload, context) => renderExport(payload.botId, payload.exportId, context.attempt >= exportAttempts),
+});
+
 export async function createExport(botId: string, body: Record<string, unknown>) {
   const kind = body.kind === "sheet" ? "sheet" : body.kind === "note" ? "note" : null;
   if (!kind) throw new BlockError("kind precisa ser note ou sheet.");
@@ -386,28 +434,15 @@ export async function createExport(botId: string, body: Record<string, unknown>)
   else bookFor(botId, sourceId);
   const id = newId("exp");
   const createdAt = nowIso();
-  const db = getDb();
-  db.insert(exports)
-    .values({ id, botId, sourceType: kind, sourceId, format, status: "pending", tabId, createdAt })
-    .run();
+  await getDb()
+    .insert(exports)
+    .values({ id, botId, sourceType: kind, sourceId, format, status: "pending", tabId, createdAt });
   try {
-    const file = await render(botId, kind, sourceId, format, tabId);
-    const fileName = safeName(file.name);
-    const key = `bots/${botId}/exports/${id}/${fileName}`;
-    const stored = await putBlob(key, file.data, { mime: mimeOf(format), botId });
-    db.update(exports)
-      .set({ status: "ready", blobKey: key, fileName, size: stored.size, finishedAt: nowIso() })
-      .where(eq(exports.id, id))
-      .run();
+    if (!jobsActive()) await renderExport(botId, id);
+    else
+      await runJob<ExportPayload>(exportJobType, { botId, exportId: id }, { id: `export-${id}`, waitMs: exportWaitMs });
   } catch (error) {
-    db.update(exports)
-      .set({
-        status: "failed",
-        error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
-        finishedAt: nowIso(),
-      })
-      .where(eq(exports.id, id))
-      .run();
+    console.warn(`export ${id} falhou: ${error instanceof Error ? error.message : String(error)}`);
   }
   return readExport(botId, id);
 }

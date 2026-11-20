@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { activeMarkers, sweepOrphans } from "@runelay-bots/providers/proc-tree";
 import { startServer } from "./app";
 import { dataDir, host, model, port } from "./config/env";
-import { runnerToken, runnerTokenFile, runnerTokenSource } from "./config/runtime-secrets";
+import { runnerToken, runnerTokenFile } from "./config/runtime-secrets";
 import { closeDb, getDb } from "./db";
 import { refreshAccounts } from "./modules/accounts/services/accounts.service";
 import { initAuth } from "./modules/auth/gate";
@@ -34,7 +34,7 @@ async function main() {
   await mkdir(dataDir, { recursive: true });
   getDb();
   runnerToken();
-  if (runnerTokenSource() === "data-file") console.log(`runner token in ${runnerTokenFile()}`);
+  console.log(`runner token in ${runnerTokenFile()}`);
   console.log(`allowed repos: ${seedAllowedRepos()}`);
   await loadVault();
   await loadBots();
