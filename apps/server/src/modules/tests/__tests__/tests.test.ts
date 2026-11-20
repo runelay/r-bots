@@ -30,7 +30,13 @@ import {
   startRun,
   type TestRun,
 } from "../services/test-runs.service";
-import { registerTestTools, runSummary } from "../services/test-tools.service";
+import {
+  playwrightBudgetMessage,
+  playwrightRunsPerTurn,
+  registerTestTools,
+  runSummary,
+  takePlaywrightRun,
+} from "../services/test-tools.service";
 
 let server: TestServer;
 const spies: Mock<(...args: never[]) => unknown>[] = [];
@@ -466,13 +472,13 @@ describe("routes", () => {
 });
 
 describe("tools", () => {
-  function harness(choice: "approve" | "deny" = "approve") {
+  function harness(choice: "approve" | "deny" = "approve", turnId = "turn1") {
     const events: Array<{ type: string; data: Record<string, unknown> }> = [];
     const prompts: string[] = [];
     const context = {
       botId: "bot1",
       sessionId: "s1",
-      turnId: "turn1",
+      turnId,
       runId: () => "run1",
       log: {
         emit: (event: { type: string; data: Record<string, unknown> }) => events.push(event),
@@ -580,6 +586,23 @@ describe("tools", () => {
     }) as never);
     expect((await tools.call("test_maestro", { path: "a.yaml" })).content[0].text).toBe("disco cheio");
     startFails.mockRestore();
+  });
+
+  test("caps Playwright runs per turn and tells the bot to stop", async () => {
+    expect(playwrightRunsPerTurn).toBe(3);
+    expect(takePlaywrightRun("s9:turn1", 2)).toBe(true);
+    expect(takePlaywrightRun("s9:turn1", 2)).toBe(true);
+    expect(takePlaywrightRun("s9:turn1", 2)).toBe(false);
+    expect(takePlaywrightRun("s9:turn2", 2)).toBe(true);
+    for (let index = 0; index < 510; index++) takePlaywrightRun(`fill:${index}`, 1);
+    expect(takePlaywrightRun("s9:turn1", 2)).toBe(true);
+    for (let used = 0; used < playwrightRunsPerTurn; used++) expect(takePlaywrightRun("s1:turn-cap")).toBe(true);
+    const tools = harness("approve", "turn-cap");
+    const blocked = await tools.call("test_playwright", { path: "e2e/login.spec.ts" });
+    expect(blocked.isError).toBe(true);
+    expect(blocked.content[0].text).toBe(playwrightBudgetMessage());
+    expect(blocked.content[0].text).toContain("3 vezes neste pedido");
+    expect(tools.events).toEqual([]);
   });
 
   test("summarizes runs for the bot", () => {

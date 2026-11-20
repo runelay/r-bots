@@ -43,6 +43,26 @@ function realDataGate(writes: boolean, where: string): Gate {
     : { kind: "allow" };
 }
 
+export const playwrightRunsPerTurn = Math.max(1, Number(Bun.env.BOTS_PLAYWRIGHT_PER_TURN ?? 3) || 3);
+const playwrightRuns = new Map<string, number>();
+
+export function takePlaywrightRun(key: string, limit = playwrightRunsPerTurn) {
+  const used = playwrightRuns.get(key) ?? 0;
+  if (used >= limit) return false;
+  playwrightRuns.delete(key);
+  playwrightRuns.set(key, used + 1);
+  while (playwrightRuns.size > 500) {
+    const oldest = playwrightRuns.keys().next().value;
+    if (oldest === undefined) break;
+    playwrightRuns.delete(oldest);
+  }
+  return true;
+}
+
+export function playwrightBudgetMessage(limit = playwrightRunsPerTurn) {
+  return `Já rodei o Playwright ${limit} vezes neste pedido, o limite por pedido. Mostre à pessoa o que já tem e pergunte se ela quer outra rodada; não rode o Playwright pelo Bash para contornar.`;
+}
+
 const writesRealData = z
   .boolean()
   .optional()
@@ -106,8 +126,7 @@ export function registerTestTools(server: McpServer, context: ToolContext) {
   server.registerTool(
     "test_playwright",
     {
-      description:
-        "Roda uma spec do Playwright (arquivo .spec.ts do repositório, importando só @playwright/test) contra um servidor de desenvolvimento no ar (server, de server_list) ou uma baseUrl. Use page.goto com caminho relativo e test.step para cada passo. Guarda trace, print e vídeo curto quando falha.",
+      description: `Roda uma spec do Playwright (arquivo .spec.ts do repositório, importando só @playwright/test) contra um servidor de desenvolvimento no ar (server, de server_list) ou uma baseUrl. Use page.goto com caminho relativo e test.step para cada passo. Guarda trace, print e vídeo curto quando falha. Só quando a pessoa pedir teste ou prints, ou uma vez para fechar uma feature de UI; nunca depois de cada ajuste. No máximo ${playwrightRunsPerTurn} rodadas por pedido. Para olhar rápido, use browser_open e browser_screenshot.`,
       inputSchema: {
         path: z.string().min(1).max(400),
         project: z.string().max(200).optional(),
@@ -119,6 +138,7 @@ export function registerTestTools(server: McpServer, context: ToolContext) {
       },
     },
     (args: Record<string, unknown>) => {
+      if (!takePlaywrightRun(`${context.sessionId}:${context.turnId}`)) return text(playwrightBudgetMessage(), true);
       const baseUrl = typeof args.baseUrl === "string" ? args.baseUrl : undefined;
       const remote = baseUrl !== undefined && !isLocalUrl(baseUrl);
       const gate: Gate = remote
