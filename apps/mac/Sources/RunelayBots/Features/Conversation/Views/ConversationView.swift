@@ -476,9 +476,7 @@ struct ConversationView: View {
                 .transition(Motion.insertion(reduceMotion: reduceMotion))
             }
             if let question = store.openQuestion {
-                QuestionCard(approval: question, via: question.viaAgent.flatMap { model.bot(id: $0) }) { answers in
-                    store.answerQuestion(id: question.id, answers: answers)
-                }
+                QuestionCard(store: store, approval: question, via: question.viaAgent.flatMap { model.bot(id: $0) })
                 .id(question.id)
                 .transition(Motion.insertion(reduceMotion: reduceMotion))
             } else {

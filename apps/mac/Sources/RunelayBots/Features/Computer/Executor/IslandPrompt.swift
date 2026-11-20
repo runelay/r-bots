@@ -13,16 +13,14 @@ struct IslandPrompt: Identifiable {
 }
 
 struct IslandPromptCard: View {
-    static let visibleChoices = 4
-    static let otherID = "other"
-
     let prompt: IslandPrompt
     let width: CGFloat
     let avatar: Namespace.ID?
+    var bodyLimits: [CGFloat]? = nil
+    var wizard: QuestionWizard? = nil
     let open: @MainActor () -> Void
 
     @Environment(\.appReduceMotion) private var reduceMotion
-    @State private var text = ""
 
     var body: some View {
         if let approval = prompt.approval {
@@ -88,10 +86,7 @@ struct IslandPromptCard: View {
         if approval.secretForm != nil || approval.integrationForm != nil || approval.signInURL != nil {
             return true
         }
-        if approval.options.isEmpty {
-            return true
-        }
-        return approval.options.count > Self.visibleChoices
+        return approval.options.isEmpty
     }
 
     private func isSimple(_ approval: Approval) -> Bool {
@@ -156,10 +151,12 @@ struct IslandPromptCard: View {
     private func optionsBody(_ approval: Approval) -> some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
             title(approval.prompt.isEmpty ? approval.title : approval.prompt)
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                ForEach(approval.options) { option in
-                    IslandChoiceRow(label: option.label, detail: option.detail, recommended: option.isPrimary) {
-                        answer(option.id)
+            scrolling(bodyLimits?.first) {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    ForEach(approval.options) { option in
+                        IslandChoiceRow(label: option.label, detail: option.detail, recommended: option.isPrimary) {
+                            answer(option.id)
+                        }
                     }
                 }
             }
@@ -167,53 +164,25 @@ struct IslandPromptCard: View {
     }
 
     @ViewBuilder
-    private func questionBody(_ approval: Approval) -> some View {
-        if let question = approval.questions.first, approval.questions.count == 1, !question.multiSelect {
-            VStack(alignment: .leading, spacing: Spacing.m) {
-                title(question.title)
-                VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    ForEach(question.choices.prefix(Self.visibleChoices)) { choice in
-                        IslandChoiceRow(label: choice.label, detail: choice.detail, recommended: choice.recommended) {
-                            submit(question, optionIDs: [choice.id], text: "")
-                        }
-                    }
-                }
-                HStack(spacing: Spacing.s) {
-                    TextField("Ou escreva sua resposta", text: $text)
-                        .textFieldStyle(.plain)
-                        .font(TypeScale.rowSubtitle)
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                        .onSubmit { sendText(question) }
-                    Button("Enviar") { sendText(question) }
-                        .buttonStyle(SmallPillButtonStyle(kind: .primary))
-                        .disabled(trimmed.isEmpty)
-                }
-                .padding(.leading, Spacing.m)
-                .padding(.trailing, Spacing.xs)
-                .padding(.vertical, Spacing.xs)
-                .background(Theme.selection, in: Capsule())
-                HStack(spacing: Spacing.s) {
-                    Spacer(minLength: 0)
-                    Button("Pular") { skip(approval) }
-                        .buttonStyle(SmallPillButtonStyle(kind: .neutral))
-                    Button("Responder") { open() }
-                        .buttonStyle(SmallPillButtonStyle(kind: .neutral))
-                }
-            }
+    private func scrolling<Content: View>(_ limit: CGFloat?, @ViewBuilder content: () -> Content) -> some View {
+        if let limit {
+            ScrollView(.vertical) { content() }
+                .frame(height: limit)
         } else {
-            let first = approval.questions.first?.title ?? approval.prompt
-            let extra = approval.questions.count > 1 ? " (+\(approval.questions.count - 1))" : ""
-            VStack(alignment: .leading, spacing: Spacing.m) {
-                title(first + extra)
-                HStack(spacing: Spacing.s) {
-                    Spacer(minLength: 0)
-                    Button("Pular") { skip(approval) }
-                        .buttonStyle(SmallPillButtonStyle(kind: .neutral))
-                    Button("Responder") { open() }
-                        .buttonStyle(SmallPillButtonStyle(kind: .primary))
-                }
-            }
+            content()
+        }
+    }
+
+    @ViewBuilder
+    private func questionBody(_ approval: Approval) -> some View {
+        if approval.questions.isEmpty {
+            openBody(approval.prompt.isEmpty ? approval.title : approval.prompt)
+        } else {
+            QuestionWizardView(
+                wizard: wizard ?? QuestionWizard.shared(store: prompt.store, approvalID: prompt.approvalID),
+                style: .island,
+                bodyLimits: bodyLimits
+            )
         }
     }
 
@@ -236,31 +205,8 @@ struct IslandPromptCard: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
-    private var trimmed: String {
-        text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     private func answer(_ optionID: String) {
         prompt.store.respond(approvalID: prompt.approvalID, optionID: optionID)
-    }
-
-    private func submit(_ question: QuestionPrompt, optionIDs: [String], text: String) {
-        prompt.store.answerQuestion(
-            id: prompt.approvalID,
-            answers: [QuestionAnswerDraft(questionID: question.id, optionIDs: optionIDs, text: text)]
-        )
-    }
-
-    private func sendText(_ question: QuestionPrompt) {
-        guard !trimmed.isEmpty else { return }
-        submit(question, optionIDs: [Self.otherID], text: trimmed)
-    }
-
-    private func skip(_ approval: Approval) {
-        prompt.store.answerQuestion(
-            id: prompt.approvalID,
-            answers: approval.questions.map { QuestionAnswerDraft(questionID: $0.id, skipped: true) }
-        )
     }
 }
 

@@ -1,57 +1,66 @@
+import AppKit
 import SwiftUI
 
 struct QuestionCard: View {
+    let store: ConversationStore
     let approval: Approval
     var via: Bot? = nil
-    let submit: ([QuestionAnswerDraft]) -> Void
+
+    var body: some View {
+        QuestionWizardView(wizard: QuestionWizard.shared(store: store, approvalID: approval.id), style: .card, via: via)
+            .padding(Spacing.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassSurface(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
+    }
+}
+
+enum QuestionWizardStyle {
+    case card
+    case island
+}
+
+struct QuestionWizardView: View {
+    let wizard: QuestionWizard
+    let style: QuestionWizardStyle
+    var via: Bot? = nil
+    var bodyLimits: [CGFloat]? = nil
 
     @Environment(\.appReduceMotion) private var reduceMotion
-    @State private var index = 0
-    @State private var forward = true
-    @State private var drafts: [String: QuestionAnswerDraft] = [:]
-    @State private var highlight = 0
-    @State private var editingOther = false
     @FocusState private var cardFocused: Bool
     @FocusState private var otherFocused: Bool
 
-    private static let otherID = "other"
-
-    private var questions: [QuestionPrompt] { approval.questions }
-
-    private var question: QuestionPrompt? {
-        questions.indices.contains(index) ? questions[index] : nil
-    }
-
-    private var isLast: Bool { index >= questions.count - 1 }
-
-    private func draft(for question: QuestionPrompt) -> QuestionAnswerDraft {
-        drafts[question.id] ?? QuestionAnswerDraft(questionID: question.id)
-    }
+    private var isIsland: Bool { style == .island }
 
     var body: some View {
-        if let question {
-            VStack(alignment: .leading, spacing: Spacing.m) {
+        if let question = wizard.question {
+            VStack(alignment: .leading, spacing: isIsland ? Spacing.s : Spacing.m) {
                 header(question)
                 ZStack(alignment: .topLeading) {
-                    page(question)
+                    container(question)
                         .id(question.id)
                         .transition(slide)
                 }
                 .clipped()
                 footer(question)
             }
-            .padding(Spacing.l)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassSurface(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
             .focusable()
             .focusEffectDisabled()
             .focused($cardFocused)
-            .onKeyPress(phases: .down) { press in handle(press, question: question) }
+            .onKeyPress(phases: .down) { press in
+                if otherFocused { return .ignored }
+                let result = wizard.handle(press, question: question, reduceMotion: reduceMotion)
+                syncFocus()
+                return result
+            }
             .onAppear { cardFocused = true }
-            .springAnimation(value: index)
-            .springAnimation(value: drafts)
-            .springAnimation(value: highlight)
-            .springAnimation(value: editingOther)
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+                if isIsland, !otherFocused { cardFocused = true }
+            }
+            .springAnimation(value: wizard.index)
+            .springAnimation(value: wizard.drafts)
+            .springAnimation(value: wizard.highlight)
+            .springAnimation(value: wizard.editingOther)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Pergunta do bot: \(question.title)")
         }
@@ -60,51 +69,78 @@ struct QuestionCard: View {
     private var slide: AnyTransition {
         if reduceMotion { return .opacity }
         return .asymmetric(
-            insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
-            removal: .move(edge: forward ? .leading : .trailing).combined(with: .opacity)
+            insertion: .move(edge: wizard.forward ? .trailing : .leading).combined(with: .opacity),
+            removal: .move(edge: wizard.forward ? .leading : .trailing).combined(with: .opacity)
         )
     }
 
     private func header(_ question: QuestionPrompt) -> some View {
-        HStack(spacing: Spacing.s) {
+        let questions = wizard.questions
+        return HStack(spacing: Spacing.s) {
             if let via {
                 ViaAgentTag(bot: via)
             }
             Image(systemName: "questionmark.bubble.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.brandAccent)
-            Text(question.header ?? (questions.count > 1 ? "Pergunta \(index + 1) de \(questions.count)" : "Pergunta"))
+            Text(question.header ?? (questions.count > 1 ? "Pergunta \(wizard.index + 1) de \(questions.count)" : "Pergunta"))
                 .font(TypeScale.captionStrong)
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
             Spacer(minLength: Spacing.s)
             if questions.count > 1 {
-                PageDots(count: questions.count, current: index) { target in go(to: target) }
+                PageDots(count: questions.count, current: wizard.index) { target in
+                    otherFocused = false
+                    wizard.go(to: target, reduceMotion: reduceMotion)
+                    cardFocused = true
+                }
             }
         }
     }
 
+    @ViewBuilder
+    private func container(_ question: QuestionPrompt) -> some View {
+        if let limit = bodyLimits?[safe: wizard.index] {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    page(question)
+                }
+                .frame(height: limit)
+                .onChange(of: wizard.highlight) { _, row in
+                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                        proxy.scrollTo(row)
+                    }
+                }
+            }
+        } else {
+            page(question)
+        }
+    }
+
     private func page(_ question: QuestionPrompt) -> some View {
-        VStack(alignment: .leading, spacing: Spacing.m) {
+        VStack(alignment: .leading, spacing: isIsland ? Spacing.s : Spacing.m) {
             Text(question.title)
-                .font(BrandFonts.sans(15, weight: .semibold))
+                .font(isIsland ? TypeScale.rowTitle : BrandFonts.sans(15, weight: .semibold))
                 .foregroundStyle(Theme.textPrimary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
+            VStack(alignment: .leading, spacing: isIsland ? Spacing.xs : Spacing.xxs) {
                 ForEach(Array(question.choices.enumerated()), id: \.element.id) { offset, choice in
                     QuestionChoiceRow(
-                        letter: Self.letter(offset),
+                        style: style,
+                        letter: QuestionWizard.letter(offset),
                         label: choice.label,
                         detail: choice.detail,
                         recommended: choice.recommended,
                         multiSelect: question.multiSelect,
-                        isSelected: draft(for: question).optionIDs.contains(choice.id),
-                        isHighlighted: highlight == offset && cardFocused
+                        isSelected: wizard.isSelected(choice.id, in: question),
+                        isHighlighted: wizard.highlight == offset && cardFocused
                     ) {
-                        highlight = offset
-                        toggle(choice.id, in: question)
+                        wizard.highlight = offset
+                        wizard.toggle(choice.id, in: question)
+                        syncFocus()
                     }
+                    .id(offset)
                 }
                 otherRow(question)
             }
@@ -113,32 +149,34 @@ struct QuestionCard: View {
 
     private func otherRow(_ question: QuestionPrompt) -> some View {
         let offset = question.choices.count
-        let selected = draft(for: question).optionIDs.contains(Self.otherID)
+        let selected = wizard.isSelected(QuestionWizard.otherID, in: question)
         return VStack(alignment: .leading, spacing: Spacing.xs) {
             QuestionChoiceRow(
-                letter: Self.letter(offset),
+                style: style,
+                letter: QuestionWizard.letter(offset),
                 label: "Outra coisa",
                 detail: selected ? nil : "Escreva com suas palavras",
                 recommended: false,
                 multiSelect: question.multiSelect,
                 isSelected: selected,
-                isHighlighted: highlight == offset && cardFocused
+                isHighlighted: wizard.highlight == offset && cardFocused
             ) {
-                highlight = offset
-                toggle(Self.otherID, in: question)
+                wizard.highlight = offset
+                wizard.toggle(QuestionWizard.otherID, in: question)
+                syncFocus()
             }
             if selected {
-                TextField("Sua resposta", text: otherText(for: question), axis: .vertical)
+                TextField("Sua resposta", text: wizard.otherText(for: question), axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(TypeScale.rowSubtitle)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1...4)
                     .padding(.horizontal, Spacing.m)
                     .padding(.vertical, Spacing.s)
-                    .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-                    .padding(.leading, 24 + Spacing.m)
+                    .background(isIsland ? Theme.selection : Theme.surface, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+                    .padding(.leading, isIsland ? 0 : 24 + Spacing.m)
                     .focused($otherFocused)
-                    .onSubmit { advance(question) }
+                    .onSubmit { wizard.advance(question, reduceMotion: reduceMotion) }
                     .onExitCommand {
                         otherFocused = false
                         cardFocused = true
@@ -147,155 +185,46 @@ struct QuestionCard: View {
                     .transition(Motion.insertion(reduceMotion: reduceMotion))
             }
         }
+        .id(offset)
     }
 
     private func footer(_ question: QuestionPrompt) -> some View {
-        HStack(spacing: Spacing.s) {
-            Text(question.multiSelect ? "Escolha uma ou mais" : "↑↓ ou 1–\(min(question.choices.count + 1, 9)) para escolher, ⏎ para seguir")
-                .font(TypeScale.caption)
-                .foregroundStyle(Theme.textTertiary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+        let keys = min(question.choices.count + 1, 9)
+        return HStack(spacing: Spacing.s) {
+            ViewThatFits(in: .horizontal) {
+                hint(question.multiSelect ? "Escolha uma ou mais" : "↑↓ ou 1–\(keys) para escolher, ⏎ para seguir")
+                hint(question.multiSelect ? "Uma ou mais" : "1–\(keys) escolhe · ⏎ segue")
+                Color.clear.frame(width: 0, height: 0)
+            }
             Spacer(minLength: Spacing.s)
-            Button("Pular") { skip(question) }
+            Button("Pular") { wizard.skip(question, reduceMotion: reduceMotion) }
                 .buttonStyle(SmallPillButtonStyle(kind: .neutral))
                 .help("Pular esta pergunta (Esc)")
-            Button(isLast ? "Enviar" : "Avançar") { advance(question) }
+            Button(wizard.isLast ? "Enviar" : "Avançar") { wizard.advance(question, reduceMotion: reduceMotion) }
                 .buttonStyle(SmallPillButtonStyle(kind: .primary))
-                .disabled(draft(for: question).isEmpty)
-                .help(isLast ? "Enviar respostas (⏎)" : "Próxima pergunta (⏎)")
+                .disabled(wizard.draft(for: question).isEmpty)
+                .help(wizard.isLast ? "Enviar respostas (⏎)" : "Próxima pergunta (⏎)")
         }
     }
 
-    private func otherText(for question: QuestionPrompt) -> Binding<String> {
-        Binding(
-            get: { drafts[question.id]?.text ?? "" },
-            set: { value in
-                var current = draft(for: question)
-                current.text = value
-                drafts[question.id] = current
-            }
-        )
+    private func hint(_ text: String) -> some View {
+        Text(text)
+            .font(TypeScale.caption)
+            .foregroundStyle(Theme.textTertiary)
+            .lineLimit(1)
+            .fixedSize()
     }
 
-    private func toggle(_ optionID: String, in question: QuestionPrompt) {
-        var current = draft(for: question)
-        current.skipped = false
-        if current.optionIDs.contains(optionID) {
-            current.optionIDs.removeAll { $0 == optionID }
-            if optionID == Self.otherID {
-                current.text = ""
-            }
-        } else if question.multiSelect {
-            current.optionIDs.append(optionID)
-        } else {
-            if optionID != Self.otherID {
-                current.text = ""
-            }
-            current.optionIDs = [optionID]
-        }
-        drafts[question.id] = current
-        editingOther = current.optionIDs.contains(Self.otherID)
-        if !editingOther {
+    private func syncFocus() {
+        if !wizard.editingOther {
             otherFocused = false
             cardFocused = true
         }
     }
-
-    private func select(row: Int, in question: QuestionPrompt) {
-        let rows = question.choices.count + 1
-        guard row >= 0, row < rows else { return }
-        highlight = row
-        toggle(row < question.choices.count ? question.choices[row].id : Self.otherID, in: question)
-    }
-
-    private func handle(_ press: KeyPress, question: QuestionPrompt) -> KeyPress.Result {
-        if otherFocused { return .ignored }
-        let rows = question.choices.count + 1
-        switch press.key {
-        case .upArrow:
-            move(to: (highlight - 1 + rows) % rows, in: question)
-            return .handled
-        case .downArrow:
-            move(to: (highlight + 1) % rows, in: question)
-            return .handled
-        case .return:
-            if draft(for: question).isEmpty {
-                select(row: highlight, in: question)
-                if editingOther { return .handled }
-            }
-            advance(question)
-            return .handled
-        case .escape:
-            skip(question)
-            return .handled
-        case .space:
-            select(row: highlight, in: question)
-            return .handled
-        default:
-            break
-        }
-        guard press.modifiers.isEmpty || press.modifiers == .shift, let character = press.characters.lowercased().first else {
-            return .ignored
-        }
-        if let digit = character.wholeNumberValue, digit >= 1 {
-            select(row: digit - 1, in: question)
-            return digit <= rows ? .handled : .ignored
-        }
-        if let ascii = character.asciiValue, ascii >= 97, ascii < 97 + UInt8(rows) {
-            select(row: Int(ascii - 97), in: question)
-            return .handled
-        }
-        return .ignored
-    }
-
-    private func move(to row: Int, in question: QuestionPrompt) {
-        highlight = row
-        guard !question.multiSelect, row < question.choices.count else { return }
-        let optionID = question.choices[row].id
-        if !draft(for: question).optionIDs.contains(optionID) {
-            toggle(optionID, in: question)
-        }
-    }
-
-    private func skip(_ question: QuestionPrompt) {
-        drafts[question.id] = QuestionAnswerDraft(questionID: question.id, skipped: true)
-        next()
-    }
-
-    private func advance(_ question: QuestionPrompt) {
-        guard !draft(for: question).isEmpty else { return }
-        next()
-    }
-
-    private func next() {
-        if isLast {
-            submit(questions.map { drafts[$0.id] ?? QuestionAnswerDraft(questionID: $0.id, skipped: true) })
-            return
-        }
-        go(to: index + 1)
-    }
-
-    private func go(to target: Int) {
-        guard target != index, questions.indices.contains(target) else { return }
-        forward = target > index
-        otherFocused = false
-        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-            index = target
-            let selected = questions[target].choices.firstIndex { drafts[questions[target].id]?.optionIDs.contains($0.id) == true }
-            highlight = selected ?? 0
-            editingOther = drafts[questions[target].id]?.optionIDs.contains(Self.otherID) == true
-        }
-        cardFocused = true
-    }
-
-    static func letter(_ index: Int) -> String {
-        let letters = Array("ABCDEFGHI")
-        return index < letters.count ? String(letters[index]) : "\(index + 1)"
-    }
 }
 
 private struct QuestionChoiceRow: View {
+    let style: QuestionWizardStyle
     let letter: String
     let label: String
     let detail: String?
@@ -307,21 +236,23 @@ private struct QuestionChoiceRow: View {
 
     @State private var isHovering = false
 
+    private var isIsland: Bool { style == .island }
+
     var body: some View {
         Button(action: select) {
-            HStack(alignment: .top, spacing: Spacing.m) {
+            HStack(alignment: .top, spacing: isIsland ? Spacing.s : Spacing.m) {
                 Text(letter)
                     .font(TypeScale.counter)
                     .foregroundStyle(isSelected ? Theme.onAccent : Theme.textSecondary)
-                    .frame(width: 24, height: 24)
+                    .frame(width: isIsland ? 20 : 24, height: isIsland ? 20 : 24)
                     .background(
-                        isSelected ? Theme.brandAccent : Theme.surfaceRaised,
+                        isSelected ? Theme.brandAccent : (isIsland ? Theme.selection : Theme.surfaceRaised),
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous)
                     )
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: Spacing.s) {
                         Text(label)
-                            .font(TypeScale.rowTitle)
+                            .font(isIsland ? TypeScale.rowSubtitle : TypeScale.rowTitle)
                             .foregroundStyle(isSelected ? Theme.brandText : Theme.textPrimary)
                             .lineLimit(2)
                         if recommended {
@@ -332,33 +263,37 @@ private struct QuestionChoiceRow: View {
                                 .fixedSize()
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 1)
-                                .background(Theme.surfaceRaised, in: Capsule())
+                                .background(isIsland ? Theme.selection : Theme.surfaceRaised, in: Capsule())
                         }
                     }
                     if let detail, !detail.isEmpty {
                         Text(detail)
                             .font(TypeScale.caption)
                             .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(isIsland ? 2 : nil)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .padding(.top, 2)
+                .padding(.top, isIsland ? 1 : 2)
                 Spacer(minLength: 0)
                 if multiSelect, isSelected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Theme.brandAccent)
-                        .padding(.top, 5)
+                        .padding(.top, isIsland ? 3 : 5)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
             .padding(Spacing.s)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(background, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
         }
         .buttonStyle(.plain)
         .clickable()
-        .onHover { isHovering = $0 }
+        .background(AlwaysHover { hovering in
+            isHovering = hovering
+        })
         .springAnimation(value: isHovering)
         .springAnimation(value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -366,6 +301,11 @@ private struct QuestionChoiceRow: View {
     }
 
     private var background: Color {
+        if isIsland {
+            if isSelected { return Theme.brandAccent.opacity(0.22) }
+            if isHovering || isHighlighted { return Theme.selection }
+            return Theme.hover
+        }
         if isSelected { return Theme.brandAccent.opacity(0.12) }
         if isHovering || isHighlighted { return Theme.hover }
         return Color.clear

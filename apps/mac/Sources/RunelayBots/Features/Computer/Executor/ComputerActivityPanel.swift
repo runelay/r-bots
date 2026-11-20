@@ -3,8 +3,28 @@ import SwiftUI
 
 private final class ControlTabPanel: NSPanel {
     var acceptsKey = false
+    private(set) var previousApp: NSRunningApplication?
     override var canBecomeKey: Bool { acceptsKey }
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown, acceptsKey, !isKeyWindow {
+            let front = NSWorkspace.shared.frontmostApplication
+            previousApp = front?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : front
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
+
+    func giveBackFocus() {
+        let previous = previousApp
+        previousApp = nil
+        guard isKeyWindow else { return }
+        resignKey()
+        if let previous, !previous.isTerminated {
+            previous.activate()
+        }
+    }
 }
 
 private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
@@ -20,6 +40,7 @@ final class ComputerControlTab {
     static let cardWidth: CGFloat = 392
     static let cardPadding: CGFloat = Spacing.l
     static let shrinkDelay: Duration = .milliseconds(520)
+    static let heightShare: CGFloat = 0.6
     private let panel: ControlTabPanel
     private let host: FirstMouseHostingView<ControlTabView>
     private let state: ComputerOverlayState
@@ -30,6 +51,7 @@ final class ComputerControlTab {
     private var notchWidth: CGFloat = 0
     private var tabWidth = ComputerControlTab.plainWidth
     private var cardHeight: CGFloat = 0
+    private var bodyLimits: [CGFloat]?
     private var collapse: Task<Void, Never>?
 
     init(state: ComputerOverlayState, stop: @escaping @MainActor () -> Void, open: @escaping @MainActor (IslandPrompt) -> Void) {
@@ -69,7 +91,10 @@ final class ComputerControlTab {
         let wanted = state.computerActive || state.promptVisible
         if wanted {
             collapse?.cancel()
-            panel.acceptsKey = state.promptVisible
+            panel.acceptsKey = state.promptVisible && state.prompt?.isOpen == true
+            if !panel.acceptsKey {
+                panel.giveBackFocus()
+            }
             reposition()
             if !visible {
                 visible = true
@@ -97,10 +122,9 @@ final class ComputerControlTab {
             try? await Task.sleep(for: Self.shrinkDelay)
             guard let self, !Task.isCancelled, !self.state.promptVisible else { return }
             self.panel.acceptsKey = false
-            if self.panel.isKeyWindow {
-                self.panel.resignKey()
-            }
+            self.panel.giveBackFocus()
             self.cardHeight = 0
+            self.bodyLimits = nil
             self.applyFrame()
         }
     }
@@ -109,6 +133,7 @@ final class ComputerControlTab {
         visible = false
         collapse?.cancel()
         panel.acceptsKey = false
+        panel.giveBackFocus()
         let panel = panel
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
@@ -118,6 +143,7 @@ final class ComputerControlTab {
                 guard let self, !self.visible else { return }
                 panel.orderOut(nil)
                 self.cardHeight = 0
+                self.bodyLimits = nil
             }
         }
     }
@@ -134,17 +160,35 @@ final class ComputerControlTab {
         self.notchWidth = notchWidth
         tabWidth = notchWidth > 0 ? notchWidth + Self.earWidth * 2 + TabShape.flare * 2 : Self.plainWidth
         if state.promptVisible, let prompt = state.prompt {
-            cardHeight = measure(prompt)
+            let screenHeight = screen.visibleFrame.height + (screen.frame.maxY - screen.visibleFrame.maxY)
+            let layout = measure(prompt, cap: max(160, screenHeight * Self.heightShare - height))
+            cardHeight = layout.height
+            bodyLimits = layout.limits
         }
-        host.rootView = ControlTabView(state: state, stop: stop, open: open, notchWidth: notchWidth, tabWidth: tabWidth, expandedWidth: expandedWidth, height: height)
+        host.rootView = ControlTabView(state: state, stop: stop, open: open, notchWidth: notchWidth, tabWidth: tabWidth, expandedWidth: expandedWidth, height: height, bodyLimits: bodyLimits)
         applyFrame()
     }
 
-    private func measure(_ prompt: IslandPrompt) -> CGFloat {
+    private func measure(_ prompt: IslandPrompt, cap: CGFloat) -> (height: CGFloat, limits: [CGFloat]?) {
+        let steps = max(1, prompt.approval.map { $0.isQuestion ? $0.questions.count : 1 } ?? 1)
+        let natural = (0..<steps).map { probe(prompt, step: $0, limits: nil) }
+        let tallest = natural.max() ?? 0
+        guard tallest > cap else { return (tallest, nil) }
+        let chrome = (0..<steps).map { probe(prompt, step: $0, limits: Array(repeating: 0, count: steps)) }
+        let limits = (0..<steps).map { max(48, min(natural[$0], cap) - chrome[$0]) }
+        let height = (0..<steps).map { chrome[$0] + limits[$0] }.max() ?? cap
+        return (height, limits)
+    }
+
+    private func probe(_ prompt: IslandPrompt, step: Int, limits: [CGFloat]?) -> CGFloat {
         let width = Self.contentWidth(expandedWidth: expandedWidth)
-        let probe = NSHostingView(rootView: IslandPromptCard(prompt: prompt, width: width, avatar: nil, open: {}).environment(\.appReduceMotion, true))
-        probe.appearance = NSAppearance(named: .darkAqua)
-        return ceil(probe.fittingSize.height) + Self.cardPadding * 2
+        let wizard = prompt.approval?.isQuestion == true
+            ? QuestionWizard(store: prompt.store, approvalID: prompt.approvalID, index: step, revealOther: true)
+            : nil
+        let card = IslandPromptCard(prompt: prompt, width: width, avatar: nil, bodyLimits: limits, wizard: wizard, open: {})
+        let view = NSHostingView(rootView: card.environment(\.appReduceMotion, true).environment(\.colorScheme, .dark))
+        view.appearance = NSAppearance(named: .darkAqua)
+        return ceil(view.fittingSize.height) + Self.cardPadding * 2
     }
 
     private func applyFrame() {
@@ -171,6 +215,7 @@ struct ControlTabView: View {
     let tabWidth: CGFloat
     let expandedWidth: CGFloat
     let height: CGFloat
+    var bodyLimits: [CGFloat]? = nil
     @Namespace private var island
     @State private var isHoveringStop = false
 
@@ -196,7 +241,8 @@ struct ControlTabView: View {
                 IslandPromptCard(
                     prompt: prompt,
                     width: ComputerControlTab.contentWidth(expandedWidth: expandedWidth),
-                    avatar: island
+                    avatar: island,
+                    bodyLimits: bodyLimits
                 ) { open(prompt) }
                 .id(prompt.id)
                 .padding(.horizontal, TabShape.flare + ComputerControlTab.cardPadding)
