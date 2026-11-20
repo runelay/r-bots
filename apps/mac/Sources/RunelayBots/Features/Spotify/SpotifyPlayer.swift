@@ -122,7 +122,7 @@ final class SpotifyPlayer {
         case .denied:
             setPhase(.denied)
         case .failed:
-            break
+            if phase == .unavailable || phase == .closed { setPhase(.idle) }
         case .output(let text):
             apply(text, at: started)
         }
@@ -259,23 +259,36 @@ actor SpotifyScriptRunner {
     return playerState & sep & my txt(trackId) & sep & my txt(trackName) & sep & my txt(trackArtist) & sep & my txt(trackAlbum) & sep & my txt(trackArtwork) & sep & my txt(trackDuration) & sep & ((round (playerPosition * 1000)) as text)
     """
 
-    private var compiled: [String: NSAppleScript] = [:]
-
-    func run(_ source: String) -> Outcome {
-        let script: NSAppleScript
-        if let cached = compiled[source] {
-            script = cached
-        } else {
-            guard let created = NSAppleScript(source: source) else { return .failed }
-            script = created
-            compiled[source] = created
+    func run(_ source: String) async -> Outcome {
+        await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+            process.arguments = ["-"]
+            let input = Pipe()
+            let output = Pipe()
+            let failure = Pipe()
+            process.standardInput = input
+            process.standardOutput = output
+            process.standardError = failure
+            process.terminationHandler = { finished in
+                let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                let problem = String(decoding: failure.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                if finished.terminationStatus == 0 {
+                    continuation.resume(returning: .output(text.trimmingCharacters(in: .newlines)))
+                } else if problem.contains("-1743") || problem.contains("-1744") {
+                    continuation.resume(returning: .denied)
+                } else {
+                    BlocksLog.logger.error("spotify script failed: \(problem, privacy: .public)")
+                    continuation.resume(returning: .failed)
+                }
+            }
+            do {
+                try process.run()
+                input.fileHandleForWriting.write(Data(source.utf8))
+                try? input.fileHandleForWriting.close()
+            } catch {
+                continuation.resume(returning: .failed)
+            }
         }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
-        if let error {
-            let number = error[NSAppleScript.errorNumber] as? Int ?? 0
-            return number == -1743 || number == -1744 ? .denied : .failed
-        }
-        return .output(result.stringValue ?? "")
     }
 }
