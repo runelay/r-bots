@@ -5,7 +5,8 @@ import WebKit
 
 enum AuthState: Equatable {
     case checking
-    case disabled
+    case outdated
+    case unreachable
     case signedOut(needsOwner: Bool)
     case signedIn(AuthUser)
 }
@@ -20,6 +21,7 @@ final class AuthSession: NSObject {
     var pendingUserCode: String?
     var browserBusy = false
     var status: SetupStatus?
+    var providers: [String] = []
 
     @ObservationIgnored private var bootedServer: String?
     @ObservationIgnored private var browserTask: Task<Void, Never>?
@@ -31,31 +33,15 @@ final class AuthSession: NSObject {
         return nil
     }
 
-    var blocksApp: Bool {
-        switch state {
-        case .signedOut, .checking: return true
-        case .disabled, .signedIn: return false
-        }
-    }
-
     var needsOwner: Bool {
         if case .signedOut(let needsOwner) = state { return needsOwner }
         return false
-    }
-
-    var canSkipAccount: Bool {
-        needsOwner && status?.required == false
-    }
-
-    var serverSupportsLogin: Bool {
-        status != nil
     }
 
     private var server: URL { ServerConfig.currentURL() }
     private var client: AuthClient { AuthClient(baseURL: server) }
 
     private var cachedUserKey: String { "auth.user.\(AuthStore.origin(of: server) ?? "")" }
-    private var supportKey: String { "auth.required.\(AuthStore.origin(of: server) ?? "")" }
 
     func onSignIn(_ action: @escaping () -> Void) {
         onSignedIn = action
@@ -65,30 +51,28 @@ final class AuthSession: NSObject {
         let origin = AuthStore.origin(of: server)
         guard force || bootedServer != origin else { return }
         bootedServer = origin
+        if state == .outdated || state == .unreachable { state = .checking }
         let client = client
         let fetched: SetupStatus?
         do {
             fetched = try await client.setupStatus()
         } catch {
-            if AuthStore.read(.session) != nil {
-                state = cachedSignedIn()
-            } else {
-                state = UserDefaults.standard.bool(forKey: supportKey) ? .signedOut(needsOwner: false) : .disabled
-            }
+            state = AuthStore.read(.session) != nil ? cachedSignedIn() : .unreachable
             return
         }
         status = fetched
-        UserDefaults.standard.set(fetched?.required == true, forKey: supportKey)
         guard let fetched else {
-            state = .disabled
+            providers = []
+            state = .outdated
             return
         }
+        providers = await client.providers()
         if fetched.needsOwner {
             state = .signedOut(needsOwner: true)
             return
         }
         guard let token = AuthStore.read(.session) else {
-            state = fetched.required ? .signedOut(needsOwner: false) : .disabled
+            state = .signedOut(needsOwner: false)
             return
         }
         do {
@@ -111,8 +95,12 @@ final class AuthSession: NSObject {
         return .signedOut(needsOwner: false)
     }
 
-    func signIn(email: String, password: String) async throws {
-        let token = try await client.signIn(email: email.trimmingCharacters(in: .whitespaces).lowercased(), password: password)
+    func signIn(email: String, password: String, remember: Bool) async throws {
+        let token = try await client.signIn(
+            email: email.trimmingCharacters(in: .whitespaces).lowercased(),
+            password: password,
+            remember: remember
+        )
         try await finish(token: token)
     }
 
@@ -135,9 +123,8 @@ final class AuthSession: NSObject {
         try await finish(token: token)
     }
 
-    func continueWithoutAccount() {
-        guard canSkipAccount else { return }
-        state = .disabled
+    func requestPasswordReset(email: String) async throws {
+        try await client.requestPasswordReset(email: email.trimmingCharacters(in: .whitespaces).lowercased())
     }
 
     func changePassword(current: String, new: String) async throws {
@@ -163,6 +150,13 @@ final class AuthSession: NSObject {
         store(user)
     }
 
+    func updateName(_ name: String) async throws {
+        guard let token = AuthStore.read(.session) else { throw AuthFailure.server(401, nil) }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await client.updateName(token: token, name: trimmed)
+        apply(try await client.profile(token: token))
+    }
+
     func avatarData(path: String) async throws -> Data {
         guard let token = AuthStore.read(.session) else { throw AuthFailure.server(401, nil) }
         return try await client.avatar(path: path, token: token)
@@ -175,7 +169,7 @@ final class AuthSession: NSObject {
         state = .signedIn(user)
     }
 
-    func signInWithBrowser() {
+    func signInWithBrowser(provider: String? = nil) {
         guard browserTask == nil else { return }
         browserBusy = true
         let client = client
@@ -190,7 +184,7 @@ final class AuthSession: NSObject {
             do {
                 let grant = try await client.startDevice()
                 self?.pendingUserCode = grant.userCode
-                self?.openBrowser(grant.verificationURL)
+                self?.openBrowser(Self.browserURL(grant.verificationURL, provider: provider))
                 var interval = grant.interval
                 let deadline = Date().addingTimeInterval(TimeInterval(grant.expiresIn))
                 while !Task.isCancelled, Date() < deadline {
@@ -211,6 +205,12 @@ final class AuthSession: NSObject {
                 return
             }
         }
+    }
+
+    private static func browserURL(_ url: URL, provider: String?) -> URL {
+        guard let provider, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "provider", value: provider)]
+        return components.url ?? url
     }
 
     func cancelBrowser() {

@@ -1,6 +1,6 @@
 # Protocolo do runelay bots
 
-Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v35, todas de 19/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
+Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v39, de 19 e 20/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
 
 ## Arquivos
 
@@ -70,6 +70,8 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v38 | dispositivos (`POST/GET/DELETE /devices`), o Mac chama o servidor, proxy MCP pela conexão, contas por Mac, sem `MAC_RUNNER_URL`/`PUBLIC_MCP_BASE`/`RUNNER_TOKEN` | [accounts](accounts.md) |
 | v39 | fila de jobs no Redis (turnos, rotinas, exportações, captura, anexos), `GET /jobs`, `POST /jobs/:id/retry`, `/status` da fila | [usage-status-limits](usage-status-limits.md) |
 | v40 | banco no Postgres; busca de conversas e notas com `tsvector` + `unaccent` (mesmas rotas e corpos) | [conversations](conversations.md) |
+| v41 | login obrigatório: portão sempre ligado, `BOTS_AUTH=off` só em teste, app sem modo sem conta | [auth](auth.md) |
+| v42 | tela de login dividida, `GET /auth/providers`, login social pela página `/device`, `rememberMe` | [auth](auth.md) |
 
 ## Contrato
 

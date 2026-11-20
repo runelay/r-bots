@@ -159,6 +159,11 @@ struct AppCommands: Commands {
                 model.openSettings()
             }
             .keyboardShortcut(",", modifiers: .command)
+            Button("Configurar de novo…") {
+                model.closeSettings()
+                OnboardingStore.shared.restart()
+            }
+            .disabled(AuthSession.shared.user == nil)
         }
         CommandGroup(after: .sidebar) {
             Button(sidebarCollapsed ? "Mostrar conversas" : "Ocultar conversas") {

@@ -1,8 +1,11 @@
+import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { freshDb } from "../../../../test/db-helpers";
+import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/api";
+import { drizzle } from "drizzle-orm/bun-sqlite";
+import * as schema from "../../../db/schema/auth";
 import type { BlobStore } from "../../storage/services/blob-store";
 import { FsBlobStore } from "../../storage/services/fs-blob-store";
 import { type AuthModule, createAuthModule } from "..";
@@ -11,6 +14,15 @@ import type { AccessService } from "../services/accounts-access.service";
 import type { Principal } from "../services/auth.middleware";
 import type { Auth } from "../services/auth.service";
 import { avatarMaxBytes, avatarPath, createAvatarService } from "../services/avatar.service";
+
+async function freshDb() {
+  const sqlite = new Database(":memory:");
+  const db = drizzle(sqlite);
+  const empty = await generateSQLiteDrizzleJson({});
+  const current = await generateSQLiteDrizzleJson(schema as Record<string, unknown>);
+  for (const statement of await generateSQLiteMigration(empty, current)) sqlite.run(statement);
+  return db;
+}
 
 const base = "http://127.0.0.1:2997";
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);

@@ -1,5 +1,4 @@
 import AppKit
-import Collaboration
 import SwiftUI
 
 @MainActor
@@ -10,14 +9,11 @@ final class UserIdentity {
     private(set) var photo: NSImage?
     @ObservationIgnored private var loadedPath: String?
     @ObservationIgnored private var cache: [String: NSImage] = [:]
-    @ObservationIgnored private lazy var systemPhoto: NSImage? = Self.readSystemPhoto()
 
     private let session = AuthSession.shared
 
     var displayName: String {
-        if let user = session.user { return user.name }
-        let full = NSFullUserName()
-        return full.isEmpty ? NSUserName() : full
+        session.user?.name ?? ""
     }
 
     var initials: String {
@@ -26,15 +22,8 @@ final class UserIdentity {
         return letters.isEmpty ? "?" : String(letters).uppercased()
     }
 
-    var usesSystemAccount: Bool { session.user == nil }
-
     func refresh() async {
-        guard let user = session.user else {
-            loadedPath = nil
-            photo = systemPhoto
-            return
-        }
-        guard let path = user.image else {
+        guard let path = session.user?.image else {
             loadedPath = nil
             photo = nil
             return
@@ -59,10 +48,6 @@ final class UserIdentity {
         }
         loadedPath = path
         photo = image
-    }
-
-    private static func readSystemPhoto() -> NSImage? {
-        CBUserIdentity(posixUID: getuid(), authority: CBIdentityAuthority.local())?.image
     }
 }
 
@@ -89,7 +74,7 @@ struct UserAvatar: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
-        .task(id: session.user?.image ?? (session.user == nil ? "system" : "none")) {
+        .task(id: session.user?.image ?? "none") {
             await identity.refresh()
         }
         .accessibilityHidden(true)

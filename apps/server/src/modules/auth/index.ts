@@ -3,7 +3,7 @@ import { getBlobStore } from "../storage/services/storage.service";
 import { createAuthRoutes } from "./routes/auth.routes";
 import { createAccessService, type IssuedSession } from "./services/accounts-access.service";
 import { createAuthenticator, type Principal } from "./services/auth.middleware";
-import { type AuthDatabase, createAuth, ownerRole } from "./services/auth.service";
+import { type AuthDatabase, createAuth, ownerRole, socialFromEnv } from "./services/auth.service";
 import { resolveAuthSecret } from "./services/auth-secret.service";
 import { createAvatarService } from "./services/avatar.service";
 
@@ -18,7 +18,6 @@ export interface AuthModuleOptions {
   serverDir: string;
   host: string;
   port: number;
-  required?: () => boolean;
   internalToken?: () => string;
   onOwnerCreated?: (owner: IssuedSession["user"]) => void | Promise<void>;
   blobs?: () => BlobStore;
@@ -38,7 +37,9 @@ export function createAuthModule(options: AuthModuleOptions) {
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
-  const auth = createAuth({ db: options.db, secret: resolved.secret, baseURL, trustedOrigins: extraOrigins });
+  const social = socialFromEnv(options.env);
+  const providers = Object.keys(social);
+  const auth = createAuth({ db: options.db, secret: resolved.secret, baseURL, trustedOrigins: extraOrigins, social });
   const access = createAccessService(auth, options.db, { onOwnerCreated: options.onOwnerCreated });
   const internalToken = options.internalToken;
   const internal = internalToken
@@ -58,8 +59,17 @@ export function createAuthModule(options: AuthModuleOptions) {
     : undefined;
   const authenticate = createAuthenticator(auth, { trustedOrigins: [baseURL, ...extraOrigins], internal });
   const avatars = createAvatarService(auth, options.blobs ?? getBlobStore);
-  const routes = createAuthRoutes({ auth, access, avatars, secret: resolved.secret, required: options.required });
-  return { auth, access, avatars, authenticate, handle: routes.handle, baseURL, secretSource: resolved.source };
+  const routes = createAuthRoutes({ auth, access, avatars, secret: resolved.secret, providers });
+  return {
+    auth,
+    access,
+    avatars,
+    authenticate,
+    handle: routes.handle,
+    baseURL,
+    providers,
+    secretSource: resolved.source,
+  };
 }
 
 export type AuthModule = ReturnType<typeof createAuthModule>;

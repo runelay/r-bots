@@ -1,3 +1,4 @@
+import "reflect-metadata";
 import { mkdir } from "node:fs/promises";
 import { activeMarkers, sweepOrphans } from "@runelay-bots/providers/proc-tree";
 import { startServer } from "./app";

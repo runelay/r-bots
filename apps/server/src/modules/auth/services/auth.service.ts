@@ -16,6 +16,26 @@ export const apiKeyPrefix = "rbk_";
 export const ownerRole = "owner";
 export const memberRole = "member";
 
+export const socialProviderIds = ["apple", "google", "github"] as const;
+export type SocialProviderId = (typeof socialProviderIds)[number];
+export interface SocialCredentials {
+  clientId: string;
+  clientSecret: string;
+}
+export type SocialConfig = Partial<Record<SocialProviderId, SocialCredentials>>;
+const appleOrigin = "https://appleid.apple.com";
+
+export function socialFromEnv(env: Record<string, string | undefined>): SocialConfig {
+  const config: SocialConfig = {};
+  for (const id of socialProviderIds) {
+    const prefix = id.toUpperCase();
+    const clientId = env[`${prefix}_CLIENT_ID`]?.trim();
+    const clientSecret = env[`${prefix}_CLIENT_SECRET`]?.trim();
+    if (clientId && clientSecret) config[id] = { clientId, clientSecret };
+  }
+  return config;
+}
+
 export type AuthDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 export interface AuthConfig {
@@ -24,18 +44,25 @@ export interface AuthConfig {
   baseURL: string;
   appName?: string;
   trustedOrigins?: string[];
+  social?: SocialConfig;
 }
 
 export function createAuth(config: AuthConfig) {
   const base = new URL(config.baseURL);
   const origin = base.origin;
+  const social = config.social ?? {};
+  const socialProviders = Object.fromEntries(
+    Object.entries(social).map(([id, credentials]) => [id, { ...credentials, disableImplicitSignUp: true }]),
+  );
+  const socialOrigins = social.apple ? [appleOrigin] : [];
   return betterAuth({
     appName: config.appName ?? "runelay bots",
     baseURL: config.baseURL,
     basePath: authBasePath,
     secret: config.secret,
     database: drizzleAdapter(config.db, { provider: "pg", schema: authSchema }),
-    trustedOrigins: [origin, ...(config.trustedOrigins ?? [])],
+    trustedOrigins: [origin, ...socialOrigins, ...(config.trustedOrigins ?? [])],
+    socialProviders,
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,

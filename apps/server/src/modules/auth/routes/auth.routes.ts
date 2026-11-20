@@ -15,7 +15,7 @@ export interface AuthRouteDeps {
   access: AccessService;
   avatars?: AvatarService;
   secret: string;
-  required?: () => boolean;
+  providers?: string[];
   now?: () => number;
 }
 
@@ -141,9 +141,11 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
         return json({
           ok: true,
           needsOwner: await deps.access.needsOwner(),
-          required: deps.required?.() ?? true,
+          required: true,
           methods: authMethods,
         });
+      if (path === "/auth/providers" && method === "GET")
+        return json({ ok: true, providers: deps.providers ?? [], methods: authMethods });
       if (path === "/auth/setup" && method === "POST") {
         const blocked = limited(request, "setup");
         if (blocked) return blocked;
@@ -166,7 +168,7 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
       if (deps.avatars && path.startsWith(`${avatarBasePath}/`) && method === "GET")
         return await serveAvatar(deps.avatars, path);
       if (path === "/auth/invites" || path.startsWith("/auth/invites/")) {
-        if (principal.role !== ownerRole)
+        if (principal.role !== ownerRole || principal.method === "internal")
           return json({ ok: false, error: "Só o dono pode convidar.", code: "forbidden" }, 403);
         if (path === "/auth/invites" && method === "GET")
           return json({ ok: true, invites: await deps.access.listInvites() });

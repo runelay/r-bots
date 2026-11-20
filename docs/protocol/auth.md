@@ -147,7 +147,7 @@ Ganhou `required` e `methods`. O app decide o fluxo só por esta resposta:
 
 ### App
 
-- Fluxo no molde da runelay: boas-vindas e endereço do servidor (só numa instalação nova), conta (dono, entrar ou convite) e "Primeiros passos" em linha do tempo: contas de IA, integrações, permissões do Mac e primeiro bot. Cada passo pode ser pulado e o progresso fica salvo por servidor no Mac.
+- Fluxo no molde da runelay: boas-vindas e endereço do servidor (só numa instalação nova), conta (dono, entrar ou convite) e "Primeiros passos" num trilho de 6 etapas: perfil (nome e foto), primeiro bot, contas de IA, integrações, conectores e uso do Mac. As três últimas são opcionais; cada etapa tem "depois". O progresso fica salvo no Mac por servidor e por conta (`onboarding.v2.<origem>.<userId>`), então toda conta nova vê o setup, inclusive o dono criado num servidor que já tinha sido usado antes do login. Ajustes › Conta › "Configurar de novo" e o menu do app "Configurar de novo…" reabrem. O nome muda por `POST /api/auth/update-user` (bearer).
 - Instalação que já tinha dados e servidor sem dono: abre direto em "Configurar este runelay bots", avisando que os bots e conversas continuam e passam a ser da conta.
 - Sessão no Keychain (`com.runelay.bots.auth`), como na v32. Sair e trocar senha em Ajustes › Conta.
 
@@ -269,3 +269,91 @@ blobs/users/…/avatar/ -> vazio
 GET /auth/me (Bearer RUNNER_TOKEN) -> 200
 {"ok":true,"user":{"id":"kE53UMUWZX4ROjBdDL1WrUaCAto1vmlD","name":"Teste Dono","email":"dono@example.com","role":"owner","image":null},"method":"internal","expiresAt":null}
 ```
+
+## v41 (20/11): login obrigatório
+
+### Servidor
+
+- O portão está sempre ligado. Sem nenhum usuário, só respondem `GET /health`, as rotas de primeiro acesso (`GET`/`POST /auth/setup`), `POST /auth/invites/accept`, `/api/auth/*` e `GET /device`. Todo o resto dá 401. O modo automático da v36 (aberto até criar o dono) saiu.
+- `BOTS_AUTH=off` só vale em teste (`NODE_ENV=test`, que o `bun test` define, ou `BOTS_TEST=1`/`true`). Em qualquer outro ambiente o valor é ignorado e o portão continua ligado. `BOTS_AUTH=on` deixou de existir como opção (é sempre assim).
+- `GET /auth/setup` responde `required: true` sempre. O campo fica por compatibilidade.
+- `RUNNER_TOKEN` (≥24 caracteres) continua valendo como credencial de máquina em qualquer rota, inclusive antes do dono (principal `userId: "internal"`), até o executor do Mac virar dispositivo. Ele não administra contas: `/auth/invites*` com `method: "internal"` dá 403.
+- Log do boot: `auth on, waiting for the owner (…)` sem usuário, `auth on (…)` com dono.
+- O binário compilado (`bun build --compile`) carrega `reflect-metadata` na primeira linha de `src/index.ts`; sem isso o `tsyringe` do plugin de passkey derruba o boot (o bundler avalia o `tsyringe` antes do polyfill que o `@peculiar/x509` importa).
+- `BETTER_AUTH_URL` precisa ser o endereço que o app usa (no tailnet, `https://<host>:10447`). Sem ela, o login do app leva 403 `INVALID_ORIGIN`, porque o app manda `Origin` com o endereço do tailnet.
+- Healthcheck do compose passou para `/health` (`/bots` agora dá 401).
+- Operação: `GET /status` exige credencial. Antes de reiniciar, `curl -s -H "Authorization: Bearer $RUNNER_TOKEN" 127.0.0.1:2000/status`.
+
+### App
+
+- Não existe mais uso sem conta: saíram o bloco "Neste Mac" (nome e foto do macOS), o "Agora não" do primeiro acesso, o pular quando `/auth/setup` dá 404 e o menu da barra lateral sem "Sair".
+- Sem sessão: tela de entrar ou de primeiro acesso. `/auth/setup` 404: tela "Este servidor está desatualizado" com o campo do endereço. Servidor fora do ar e sem sessão salva: "Não deu para falar com o servidor", também com o campo.
+- Ajustes › Conta mostra só a conta: foto, nome, e-mail, trocar senha e sair.
+
+### Verificado
+
+Produção (container `runelay-bots`, imagem `runelay-bots-server:release-b75488d`), antes e depois. `RUNNER_TOKEN` = credencial de máquina.
+
+```text
+antes (release-f04bdae): /bots, /status, /accounts, /integrations, /meta sem credencial -> 200; /auth/setup -> 404
+
+boot: auth on, waiting for the owner (https://vps.…:10447, secret from data-file)
+
+                 sem credencial   RUNNER_TOKEN
+/health          200              200
+/bots            401              200
+/status          401              200
+/accounts        401              200
+/integrations    401              200
+/meta            401              200
+/vault/secrets   401              200
+/usage/limits    401              200
+/auth/setup      200              200
+tailnet /health 200 · /bots 401
+
+GET /auth/setup -> 200
+{"ok":true,"needsOwner":true,"required":true,"methods":{"password":true,"passkey":true,"device":true,"invites":true,"passwordReset":false}}
+
+bots 4 (boss, davi, engenheiro-de-software, qa), uma conversa cada; banco 25 bots, 31 threads, 0 usuários (igual ao antes)
+integrações elevenlabs/jev/runelay connected; contas vps:claude, vps:codex, mac:claude, mac:codex, mac:cursor ready (igual ao antes)
+log: mac runner connected (RUNNER_TOKEN)
+
+instância de teste, BETTER_AUTH_URL ausente: POST /api/auth/sign-in/email com Origin do tailnet -> 403 {"code":"INVALID_ORIGIN"}
+com BETTER_AUTH_URL: -> 200
+```
+
+## v42 (20/11): tela de login e provedores sociais
+
+### `GET /auth/providers` (pública)
+
+```text
+GET /auth/providers -> 200
+{"ok":true,"providers":[],"methods":{"password":true,"passkey":true,"device":true,"invites":true,"passwordReset":false}}
+```
+
+- `providers` lista, na ordem `apple`, `google`, `github`, só os que têm as duas variáveis: `APPLE_CLIENT_ID`/`APPLE_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`. Sem nenhuma, `[]`. Com Apple, `https://appleid.apple.com` entra nas origens confiáveis.
+- O callback de cada provedor é o do better-auth: `<BETTER_AUTH_URL>/api/auth/callback/<provedor>`.
+- Cadastro continua só por convite: os provedores sobem com `disableImplicitSignUp`, então só entra quem já tem conta com o mesmo e-mail.
+
+### Login social pelo app
+
+1. O app pede o código de dispositivo como no Touch ID e abre `verification_uri_complete` com `&provider=<id>`.
+2. A página `/device`, sem sessão, chama `POST /api/auth/sign-in/social` com `{ provider, callbackURL: "/device?user_code=…", errorCallbackURL: "/device?user_code=…", disableRedirect: true }` e segue para o `url` devolvido.
+3. Na volta, com a sessão do provedor, a página mostra "Liberar o app" como no fluxo da v32. Se o provedor recusar, volta com `error`: `signup_disabled` vira "Essa conta ainda não tem acesso. Peça um convite."; o resto, "Não deu para entrar com essa conta."
+
+### Manter conectado
+
+`POST /api/auth/sign-in/email` recebe `rememberMe`. `true` (padrão no app): sessão de 30 dias. `false`: sessão de 1 dia (padrão do better-auth para `dontRememberMe`).
+
+### App
+
+- Tela dividida: formulário à esquerda (sem cabeçalho de logo desde 20/11; "Não tem conta?" + "Usar convite" no canto superior direito, na altura dos botões da janela; selo com o ícone do app (`RunelayAppMark`, o mesmo da barra) no halo em todas as variantes, título, botões sociais e "OU" só quando `providers` não está vazio, e-mail e senha com rótulo, asterisco, ícone e olho, "Manter conectado", "Esqueci a senha?" só com `methods.passwordReset`, botão escuro "Entrar", rodapé com "© 2026 runelay bots", o servidor (volta para a escolha do endereço) e "PT"). À direita, numa superfície de contraste com grade sutil: três personagens de pontos animados e três frases que trocam a cada 6 s com fade, param com o mouse em cima e têm indicador clicável.
+- Primeiro acesso ("Configure seus bots na runelay", subtítulo "Crie a conta dona deste servidor para começar."; até 20/11 era "Configurar este runelay bots") e convite ("Criar conta com convite") usam o mesmo layout, trocando título e campos.
+- Abaixo de 900 pt de largura o painel da direita some.
+- Touch ID continua como "Entrar com Touch ID" abaixo do botão principal.
+
+### Verificado
+
+Testes do módulo de auth com o better-auth real: `socialFromEnv` só aceita par completo; módulo com GitHub e Apple lista `["apple","github"]`, `/auth/providers` é pública, e `POST /api/auth/sign-in/social` com `provider: "github"` devolve 200 com `url` começando em `https://github.com/login/oauth/authorize`.
+
+Produção (`release-955354f`): `/auth/providers` 200 sem credencial com `providers: []`; `/bots`, `/status`, `/accounts`, `/integrations` 401 sem credencial e 200 com `RUNNER_TOKEN`; 4 bots com uma conversa cada, banco 25/31/0, integrações conectadas e contas do Mac `ready` depois de o app reconectar.

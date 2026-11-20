@@ -5,71 +5,45 @@ enum OnboardingStage: Equatable {
     case checking
     case welcome
     case server
+    case outdated
+    case unreachable
     case account
     case setup
 }
 
 enum SetupStepID: String, CaseIterable, Identifiable, Codable {
+    case profile
+    case bot
     case accounts
     case integrations
+    case connectors
     case computer
-    case bot
 
     var id: String { rawValue }
 
-    var title: String {
+    var railName: String {
         switch self {
-        case .accounts: "Conecte suas contas de IA"
-        case .integrations: "Ligue as integrações que quiser"
-        case .computer: "Libere o Mac para os bots"
-        case .bot: "Crie o primeiro bot"
+        case .profile: "Seu perfil"
+        case .bot: "Primeiro bot"
+        case .accounts: "Contas de IA"
+        case .integrations: "Integrações"
+        case .connectors: "Conectores"
+        case .computer: "Uso do Mac"
         }
     }
 
-    var description: String {
+    var optional: Bool {
         switch self {
-        case .accounts:
-            "Os bots rodam nas assinaturas já logadas nas suas máquinas. Entre no Claude Code, Codex, Grok ou Cursor e confira aqui."
-        case .integrations:
-            "Tudo opcional: cada chave liga uma parte a mais, como a voz ou os conectores da runelay. A chave fica cifrada no servidor."
-        case .computer:
-            "Com estas permissões um bot pode ver a tela, clicar e digitar quando você pedir. Toda ação passa por você ou pelo Jev."
-        case .bot:
-            "Dê um nome, um rosto e diga o que ele faz. Dá para mudar tudo depois."
-        }
-    }
-
-    var doneSummary: String {
-        switch self {
-        case .accounts: "Contas prontas."
-        case .integrations: "Integrações em dia."
-        case .computer: "Mac liberado."
-        case .bot: "Time montado."
-        }
-    }
-
-    var skipLabel: String {
-        switch self {
-        case .accounts, .bot: "Pular por enquanto"
-        case .integrations, .computer: "Deixar para depois"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .accounts: "sparkles"
-        case .integrations: "key.horizontal"
-        case .computer: "desktopcomputer"
-        case .bot: "person.badge.plus"
+        case .profile, .bot, .accounts: false
+        case .integrations, .connectors, .computer: true
         }
     }
 }
 
 private struct ServerProgress: Codable {
-    var pending = false
     var finished = false
     var marks: [SetupStepID] = []
-    var active: SetupStepID?
+    var skipped: [SetupStepID] = []
 }
 
 @MainActor
@@ -81,6 +55,7 @@ final class OnboardingStore {
     private static let ignoredPrefixes = ["NS", "Apple", "com.apple", "AK", "WebKit", "onboarding.", "auth."]
 
     var intro: OnboardingStage?
+    var picked: SetupStepID?
     private var progress: [String: ServerProgress] = [:]
     @ObservationIgnored private let existingInstall: Bool
 
@@ -93,20 +68,26 @@ final class OnboardingStore {
         intro = existingInstall || started ? nil : .welcome
     }
 
-    private var origin: String { AuthStore.origin(of: ServerConfig.currentURL()) ?? "" }
+    private var key: String {
+        let origin = AuthStore.origin(of: ServerConfig.currentURL()) ?? ""
+        let user = AuthSession.shared.user?.id ?? ""
+        return "onboarding.v2.\(origin).\(user)"
+    }
 
     private var current: ServerProgress {
         get {
-            if let cached = progress[origin] { return cached }
-            guard let data = UserDefaults.standard.data(forKey: "onboarding.v1.\(origin)"),
+            let key = key
+            if let cached = progress[key] { return cached }
+            guard let data = UserDefaults.standard.data(forKey: key),
                   let stored = try? JSONDecoder().decode(ServerProgress.self, from: data)
             else { return ServerProgress() }
             return stored
         }
         set {
-            progress[origin] = newValue
+            let key = key
+            progress[key] = newValue
             if let data = try? JSONEncoder().encode(newValue) {
-                UserDefaults.standard.set(data, forKey: "onboarding.v1.\(origin)")
+                UserDefaults.standard.set(data, forKey: key)
             }
         }
     }
@@ -116,19 +97,19 @@ final class OnboardingStore {
         switch session.state {
         case .checking:
             return .checking
+        case .outdated:
+            return .outdated
+        case .unreachable:
+            return .unreachable
         case .signedOut:
             return .account
-        case .signedIn, .disabled:
-            return current.pending && !current.finished ? .setup : nil
+        case .signedIn:
+            return current.finished ? nil : .setup
         }
     }
 
     var marks: [SetupStepID] { current.marks }
-
-    var activeStep: SetupStepID? {
-        get { current.active }
-        set { current.active = newValue }
-    }
+    var skipped: [SetupStepID] { current.skipped }
 
     func begin() {
         intro = .server
@@ -145,38 +126,32 @@ final class OnboardingStore {
     func serverChosen() {
         UserDefaults.standard.set(true, forKey: Self.startedKey)
         intro = nil
-        startSetupIfNeeded()
-    }
-
-    func signedIn() {
-        startSetupIfNeeded()
-    }
-
-    func skippedAccount() {
-        startSetupIfNeeded()
-    }
-
-    private func startSetupIfNeeded() {
-        guard !current.finished, !current.pending else { return }
-        current.pending = true
     }
 
     func mark(_ step: SetupStepID) {
         var next = current
         if !next.marks.contains(step) { next.marks.append(step) }
-        next.active = nil
+        next.skipped.removeAll { $0 == step }
         current = next
+        picked = nil
+    }
+
+    func skip(_ step: SetupStepID) {
+        var next = current
+        if !next.skipped.contains(step) { next.skipped.append(step) }
+        current = next
+        picked = nil
     }
 
     func finish() {
         var next = current
         next.finished = true
-        next.pending = false
-        next.active = nil
         current = next
+        picked = nil
     }
 
     func restart() {
-        current = ServerProgress(pending: true)
+        current = ServerProgress()
+        picked = SetupStepID.allCases.first
     }
 }
