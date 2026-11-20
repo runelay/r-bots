@@ -42,8 +42,6 @@ struct MessageAttachments: View {
     @Environment(AppModel.self) private var model
     let attachments: [AttachmentRef]
     let trailing: Bool
-    @State private var previewURL: URL?
-    @State private var previewItems: [URL] = []
     @State private var opening: String?
     @State private var saving: String?
 
@@ -51,9 +49,15 @@ struct MessageAttachments: View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: Spacing.s) {
             let images = attachments.filter { $0.kind == .image }
             if !images.isEmpty {
-                ImageGrid(images: images, trailing: trailing, opening: opening) { ref in
-                    open(ref, among: images)
-                }
+                ImageGrid(
+                    images: images,
+                    trailing: trailing,
+                    opening: opening,
+                    open: { ref in open(ref, among: images) },
+                    copy: { ref in copy(ref) },
+                    save: { ref in save(ref) },
+                    openExternally: { ref in openExternally(ref) }
+                )
             }
             ForEach(attachments.filter { $0.kind == .video }) { ref in
                 InlineVideo(ref: ref, saving: saving == ref.id) {
@@ -72,7 +76,36 @@ struct MessageAttachments: View {
             }
         }
         .frame(maxWidth: BubbleShape.maxWidth, alignment: trailing ? .trailing : .leading)
-        .quickLookPreview($previewURL, in: previewItems)
+    }
+
+    private func copy(_ ref: AttachmentRef) {
+        let client = model.client
+        Task {
+            guard let local = await localFile(ref, client: client) else {
+                model.showNotice("Não consegui baixar \(ref.name).")
+                return
+            }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            var objects: [NSPasteboardWriting] = []
+            if let image = NSImage(contentsOf: local) {
+                objects.append(image)
+            }
+            objects.append(local as NSURL)
+            pasteboard.writeObjects(objects)
+            model.showNotice("Imagem copiada.")
+        }
+    }
+
+    private func openExternally(_ ref: AttachmentRef) {
+        let client = model.client
+        Task {
+            guard let local = await localFile(ref, client: client) else {
+                model.showNotice("Não consegui abrir \(ref.name).")
+                return
+            }
+            NSWorkspace.shared.open(local)
+        }
     }
 
     private func open(_ ref: AttachmentRef, among group: [AttachmentRef]) {
@@ -93,8 +126,7 @@ struct MessageAttachments: View {
                 model.showNotice("Não consegui abrir \(ref.name).")
                 return
             }
-            previewItems = urls
-            previewURL = selected
+            QuickLookPanel.shared.show(urls, selected: selected)
         }
     }
 
@@ -145,6 +177,9 @@ struct ImageGrid: View {
     let trailing: Bool
     let opening: String?
     let open: (AttachmentRef) -> Void
+    var copy: (AttachmentRef) -> Void = { _ in }
+    var save: (AttachmentRef) -> Void = { _ in }
+    var openExternally: (AttachmentRef) -> Void = { _ in }
 
     var body: some View {
         if images.count == 1, let ref = images.first {
@@ -195,6 +230,11 @@ struct ImageGrid: View {
             .contentShape(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
         }
         .buttonStyle(PressableButtonStyle())
+        .contextMenu {
+            Button("Copiar imagem") { copy(ref) }
+            Button("Salvar em Downloads") { save(ref) }
+            Button("Abrir no Pré-Visualização") { openExternally(ref) }
+        }
         .help(ref.name)
         .accessibilityLabel("Imagem \(ref.name)")
     }

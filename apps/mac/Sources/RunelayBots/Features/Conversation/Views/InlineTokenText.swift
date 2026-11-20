@@ -6,7 +6,6 @@ struct InlineTokenText: View {
     let segments: [InlineSegment]
     let fontSize: CGFloat
     let ink: Color
-    @State private var previewURL: URL?
     @State private var shownSkill: SkillSummary?
 
     private static let scheme = "rbots-token"
@@ -22,7 +21,6 @@ struct InlineTokenText: View {
                 open(url)
                 return .handled
             })
-            .quickLookPreview($previewURL)
             .popover(item: $shownSkill, arrowEdge: .bottom) { skill in
                 SkillDescriptionCard(skill: skill)
             }
@@ -65,7 +63,7 @@ struct InlineTokenText: View {
                     model.showNotice("Não consegui abrir \(ref.name).")
                     return
                 }
-                previewURL = local
+                QuickLookPanel.shared.show([local], selected: local)
             }
         case .skill(let skill):
             shownSkill = skill
