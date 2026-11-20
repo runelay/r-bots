@@ -305,6 +305,21 @@ async function mergeBase(path: string, ref: string) {
   return result.code === 0 ? result.stdout.trim() || null : null;
 }
 
+const baseMemo = new Map<string, { head: string; base: string; commit: string }>();
+
+export async function diffBase(workspace: WorkspaceState) {
+  if (!workspace.base || workspace.base === "HEAD") return workspace.baseCommit;
+  const head = (await git(workspace.path, ["rev-parse", "HEAD"])).stdout.trim();
+  if (!head) return workspace.baseCommit;
+  const memo = baseMemo.get(workspace.path);
+  if (memo && memo.head === head && memo.base === workspace.base && memo.commit === workspace.baseCommit)
+    return workspace.baseCommit;
+  const commit = await mergeBase(workspace.path, workspace.base);
+  if (commit) workspace.baseCommit = commit;
+  baseMemo.set(workspace.path, { head, base: workspace.base, commit: workspace.baseCommit });
+  return workspace.baseCommit;
+}
+
 export async function closestBase(workspace: WorkspaceState) {
   let best: { base: string; commit: string; distance: number } | null = null;
   for (const ref of new Set([workspace.base, ...baseRefs])) {
@@ -637,9 +652,10 @@ async function countLines(path: string) {
 export async function changedFiles(workspace: WorkspaceState, fresh = false): Promise<FileChange[]> {
   const cached = statusCache.get(workspace.path);
   if (!fresh && cached && Date.now() - cached.at < 3_000) return cached.files;
+  const base = await diffBase(workspace);
   const [numstat, names, untracked] = await Promise.all([
-    git(workspace.path, ["diff", "--numstat", "-M", workspace.baseCommit]),
-    git(workspace.path, ["diff", "--name-status", "-M", workspace.baseCommit]),
+    git(workspace.path, ["diff", "--numstat", "-M", base]),
+    git(workspace.path, ["diff", "--name-status", "-M", base]),
     git(workspace.path, ["ls-files", "--others", "--exclude-standard"]),
   ]);
   const statusByPath = new Map<string, FileChange["status"]>();
@@ -801,7 +817,7 @@ export async function fileDiff(workspace: WorkspaceState, path: string) {
 
 export async function allDiffs(workspace: WorkspaceState) {
   const files = await changedFiles(workspace, true);
-  const tracked = await git(workspace.path, ["diff", "--no-color", "-M", workspace.baseCommit]);
+  const tracked = await git(workspace.path, ["diff", "--no-color", "-M", await diffBase(workspace)]);
   const parsed = parsePatch(tracked.stdout);
   const result = files.map((file) => {
     const match = parsed.find((item) => item.path === file.path);
@@ -817,6 +833,7 @@ export async function allDiffs(workspace: WorkspaceState) {
 
 export async function revertFile(workspace: WorkspaceState, path: string) {
   const rel = cleanPath(workspace, path);
+  await diffBase(workspace);
   const inBase = (await git(workspace.path, ["cat-file", "-e", `${workspace.baseCommit}:${rel}`])).code === 0;
   if (inBase) {
     const restored = await git(workspace.path, ["checkout", workspace.baseCommit, "--", rel]);

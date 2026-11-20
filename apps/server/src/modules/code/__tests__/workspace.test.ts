@@ -389,6 +389,24 @@ describe("changes and diffs", () => {
     expect(snapshot.get("gone.txt")).toBeNull();
   });
 
+  test("diffs against the merge base when the branch is reset onto older history", async () => {
+    const { workspace } = await opened("ws-reset", { origin: true });
+    const fork = workspace.baseCommit;
+    writeFiles(workspace.repo, { "upstream.txt": "a\nb\nc\n" });
+    gitSync(workspace.repo, ["add", "-A"]);
+    gitSync(workspace.repo, ["commit", "-q", "-m", "upstream"]);
+    gitSync(workspace.repo, ["push", "-q", "origin", "main"]);
+    gitSync(workspace.path, ["reset", "-q", "--hard", "origin/main"]);
+    workspace.baseCommit = gitSync(workspace.path, ["rev-parse", "origin/main"]).stdout.trim();
+    gitSync(workspace.path, ["reset", "-q", "--hard", fork]);
+    writeFiles(workspace.path, { "feature.txt": "x\n" });
+    gitSync(workspace.path, ["add", "-A"]);
+    gitSync(workspace.path, ["commit", "-q", "-m", "feature"]);
+    const files = await changedFiles(workspace, true);
+    expect(files.map((file) => file.path)).toEqual(["feature.txt"]);
+    expect(workspace.baseCommit).toBe(fork);
+  });
+
   test("keeps unparseable quoted paths as written", async () => {
     const { workspace } = await opened("ws-quoted");
     writeFileSync(join(workspace.path, "café.txt"), "x\n");

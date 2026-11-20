@@ -260,7 +260,7 @@ describe("delivery safety", () => {
     gitSync(workspace.path, ["add", "package.json"]);
     gitSync(workspace.path, ["commit", "-q", "--no-verify", "-m", "chore: pkg"]);
     const base = gitSync(workspace.path, ["rev-parse", "HEAD"]).stdout.trim();
-    const pinned = { ...workspace, baseCommit: base };
+    const pinned = { ...workspace, base: "HEAD", baseCommit: base };
     writeFileSync(join(workspace.path, "package.json"), JSON.stringify({ name: "b", scripts: { test: "x" } }));
     expect(await deliverRisk(pinned)).toEqual([]);
     writeFileSync(
@@ -291,7 +291,8 @@ describe("delivery safety", () => {
     const fake = withGh((args) => (args.startsWith("pr list") ? { code: 0, stdout: "[]" } : undefined));
     const result = await deliverWorkspace(workspace, { action: "push", message: "feat(core): add feature" });
     expect(result.commit).not.toBeNull();
-    for (const name of ["pre-commit", "commit-msg", "pre-push"]) expect(existsSync(join(workspace.repo, `ran-${name}`))).toBe(false);
+    for (const name of ["pre-commit", "commit-msg", "pre-push"])
+      expect(existsSync(join(workspace.repo, `ran-${name}`))).toBe(false);
     const commitCall = fake.calls.find((call) => gitArgs(call, "commit"));
     expect(commitCall?.args).toContain("--no-verify");
     const gh = fake.calls.find((call) => call.command === "gh");
