@@ -46,9 +46,24 @@ struct UserBubble: View {
     let message: UserMessage
     let meta: BubbleMeta
     var showsAvatar = false
+    var fold: MessageFoldRef? = nil
     let retry: () -> Void
+    @Environment(\.transcriptToggle) private var transcriptToggle
+    @Environment(\.appReduceMotion) private var reduceMotion
 
     private var avatarInset: CGFloat { showsAvatar ? 20 + Spacing.s : 0 }
+
+    private var expanded: Bool {
+        fold.map { MessageFolds.shared.isExpanded($0.key) } ?? false
+    }
+
+    private func setExpanded(_ open: Bool) {
+        guard let fold else { return }
+        transcriptToggle(fold.row, !open)
+        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+            MessageFolds.shared.set(fold.key, expanded: open)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .trailing, spacing: Spacing.xs) {
@@ -65,11 +80,18 @@ struct UserBubble: View {
             if !message.isSkillOnly && !message.text.isEmpty {
             HStack(alignment: .bottom, spacing: Spacing.s) {
                 Spacer(minLength: 0)
-                Text(message.text)
-                    .font(BrandFonts.sans(fontSize))
-                    .lineSpacing(Metrics.bodyLineSpacing - 1)
+                FoldedMarkdown(
+                    text: message.text,
+                    plan: fold == nil ? nil : MessageFolding.plan(message.text, keepsTail: true),
+                    expanded: expanded,
+                    fontSize: fontSize,
+                    bubble: Theme.userBubble
+                ) {
+                    setExpanded(true)
+                }
                     .foregroundStyle(Theme.onAccent)
-                    .textSelection(.enabled)
+                    .environment(\.markdownInk, Theme.onAccent)
+                    .environment(\.markdownOnAccent, true)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(Theme.userBubble, in: BubbleShape.make(meta: meta, trailing: true))
@@ -87,6 +109,12 @@ struct UserBubble: View {
                     .frame(width: 20, height: 20)
                 }
             }
+            }
+            if fold != nil, !message.isSkillOnly, MessageFolding.plan(message.text, keepsTail: true) != nil {
+                FoldToggle(expanded: expanded) {
+                    setExpanded(!expanded)
+                }
+                .padding(.trailing, avatarInset + Spacing.xs)
             }
             if message.state == .queued {
                 Label("na fila", systemImage: "clock")
@@ -132,9 +160,24 @@ struct ReplyCard: View {
     var isHovered = false
     var live: LiveTextBuffer? = nil
     var onHover: (Bool) -> Void = { _ in }
+    var fold: MessageFoldRef? = nil
     let regenerate: () -> Void
 
     @State private var copied = false
+    @Environment(\.transcriptToggle) private var transcriptToggle
+    @Environment(\.appReduceMotion) private var reduceMotion
+
+    private var expanded: Bool {
+        fold.map { MessageFolds.shared.isExpanded($0.key) } ?? false
+    }
+
+    private func setExpanded(_ open: Bool) {
+        guard let fold else { return }
+        transcriptToggle(fold.row, !open)
+        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+            MessageFolds.shared.set(fold.key, expanded: open)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -156,9 +199,13 @@ struct ReplyCard: View {
 
                 Group {
                     if let live {
-                        LiveBubbleBody(live: live, id: part.id, fallback: part.text, fontSize: fontSize)
+                        LiveBubbleBody(live: live, id: part.id, fallback: part.text, fontSize: fontSize, folds: fold != nil, expanded: expanded) {
+                            setExpanded(true)
+                        }
                     } else {
-                        BubbleBody(text: part.text, fontSize: fontSize)
+                        BubbleBody(text: part.text, fontSize: fontSize, folds: fold != nil, expanded: expanded) {
+                            setExpanded(true)
+                        }
                     }
                 }
                     .padding(.horizontal, 14)
@@ -181,6 +228,12 @@ struct ReplyCard: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 0)
+            }
+            if fold != nil, MessageFolding.plan(part.text, keepsTail: false) != nil {
+                FoldToggle(expanded: expanded) {
+                    setExpanded(!expanded)
+                }
+                .padding(.leading, 20 + Spacing.s + Spacing.xs)
             }
             if meta.isLast {
                 HStack(spacing: Spacing.xs) {
@@ -227,19 +280,32 @@ struct LiveBubbleBody: View {
     let id: String
     let fallback: String
     let fontSize: CGFloat
+    var folds = false
+    var expanded = false
+    var expand: () -> Void = {}
 
     var body: some View {
-        BubbleBody(text: live.texts[id] ?? fallback, fontSize: fontSize)
+        BubbleBody(text: live.texts[id] ?? fallback, fontSize: fontSize, folds: folds, expanded: expanded, expand: expand)
     }
 }
 
 struct BubbleBody: View {
     let text: String
     let fontSize: CGFloat
+    var folds = false
+    var expanded = false
+    var expand: () -> Void = {}
 
     var body: some View {
-        MarkdownView(text: text, fontSize: fontSize)
-            .foregroundStyle(Theme.textPrimary)
+        FoldedMarkdown(
+            text: text,
+            plan: folds ? MessageFolding.plan(text, keepsTail: false) : nil,
+            expanded: expanded,
+            fontSize: fontSize,
+            bubble: Theme.surface,
+            expand: expand
+        )
+        .foregroundStyle(Theme.textPrimary)
     }
 }
 

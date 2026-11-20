@@ -27,6 +27,7 @@ struct MarkdownBlocksView: View {
 }
 
 struct MarkdownBlockView: View, Equatable {
+    @Environment(\.markdownOnAccent) private var onAccent
     let block: MarkdownBlock
     let fontSize: CGFloat
     let lineSpacing: CGFloat
@@ -56,7 +57,7 @@ struct MarkdownBlockView: View, Equatable {
                     HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
                         Text(item.marker)
                             .font(BrandFonts.sans(fontSize).monospacedDigit())
-                            .foregroundStyle(Theme.textTertiary)
+                            .foregroundStyle(onAccent ? Theme.onAccent.opacity(0.7) : Theme.textTertiary)
                             .frame(minWidth: Spacing.m, alignment: .trailing)
                         inline(item.text)
                     }
@@ -66,18 +67,18 @@ struct MarkdownBlockView: View, Equatable {
         case .quote(let blocks):
             HStack(alignment: .top, spacing: Spacing.m) {
                 Capsule()
-                    .fill(Theme.selection)
+                    .fill(onAccent ? Theme.onAccent.opacity(0.4) : Theme.selection)
                     .frame(width: 3)
                 MarkdownBlocksView(blocks: blocks, fontSize: fontSize, lineSpacing: lineSpacing)
-                    .foregroundStyle(Theme.textSecondary)
-                    .environment(\.markdownInk, Theme.textSecondary)
+                    .foregroundStyle(onAccent ? Theme.onAccent.opacity(0.85) : Theme.textSecondary)
+                    .environment(\.markdownInk, onAccent ? Theme.onAccent : Theme.textSecondary)
             }
             .fixedSize(horizontal: false, vertical: true)
         case .code(let language, let text):
             MarkdownCodeBlock(language: language, code: text)
         case .rule:
             Rectangle()
-                .fill(Theme.paneDivider)
+                .fill(onAccent ? Theme.onAccent.opacity(0.3) : Theme.paneDivider)
                 .frame(height: 1)
                 .padding(.vertical, Spacing.xs)
         case .table(let table):
@@ -107,6 +108,7 @@ struct MarkdownBlockView: View, Equatable {
 }
 
 struct MarkdownCodeBlock: View {
+    @Environment(\.markdownOnAccent) private var onAccent
     let language: String
     let code: String
 
@@ -125,7 +127,7 @@ struct MarkdownCodeBlock: View {
         }
         .scrollIndicators(.automatic)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
+        .background(onAccent ? Theme.onAccent.opacity(0.14) : Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
         .overlay(alignment: .topTrailing) {
             Button(action: copy) {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")

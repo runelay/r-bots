@@ -378,6 +378,9 @@ struct ConversationView: View {
                     .environment(model)
                     .environment(\.appReduceMotion, reduceMotion)
                     .environment(\.conversationFontSize, conversationFontSize)
+                    .environment(\.transcriptToggle, { row, collapsing in
+                        scroll.noteToggle(row: row, collapsing: collapsing)
+                    })
             )
         )
     }
@@ -689,13 +692,17 @@ struct TranscriptRow: View, Equatable {
         return ModelNames.providerName(account)
     }
 
+    private var foldRef: MessageFoldRef {
+        MessageFoldRef(key: "\(store.sessionId ?? store.bot.id)|\(entry.id)", row: entry.id)
+    }
+
     var body: some View {
         switch entry.kind {
         case .user:
             if let message = store.userMessages[entry.id], let fromBotID = message.fromBotID {
                 DelegatedRequestBubble(message: message, from: model.bot(id: fromBotID), date: store.entryDates[entry.id])
             } else if let message = store.userMessages[entry.id] {
-                UserBubble(message: message, meta: bubble ?? BubbleMeta(), showsAvatar: store.bot.isGroup) {
+                UserBubble(message: message, meta: bubble ?? BubbleMeta(), showsAvatar: store.bot.isGroup, fold: foldRef) {
                     store.retry(messageID: message.id)
                 }
                 .contextMenu {
@@ -722,7 +729,8 @@ struct TranscriptRow: View, Equatable {
                         live: part.isStreaming ? store.liveText : nil,
                         onHover: { hovering in
                             setHovered(hovering ? entry.id : nil)
-                        }
+                        },
+                        fold: foldRef
                     ) {
                         store.resendPrompt(before: entry.id)
                     }

@@ -41,6 +41,10 @@ final class TranscriptScrollController {
     func scrollToEnd(animated: Bool) {
         list?.scrollToEnd(animated: animated)
     }
+
+    func noteToggle(row: String, collapsing: Bool) {
+        list?.noteToggle(row: row, collapsing: collapsing)
+    }
 }
 
 struct TranscriptScrollView: NSViewRepresentable {
@@ -101,6 +105,8 @@ final class TranscriptListView: NSScrollView {
     private var reflowing = false
     private var zone: TranscriptScrollZone = .atEnd
     private var lastClick = Date.distantPast
+    private var animateFramesUntil = Date.distantPast
+    private var reveal: (id: String, until: Date)?
     private var clickMonitor: Any?
     private var lastClipSize: CGSize = .zero
     private var pendingRestore: TranscriptScrollMemory?
@@ -318,7 +324,34 @@ final class TranscriptListView: NSScrollView {
             }
         }
         placeMounted(width: width)
+        applyReveal()
         report()
+    }
+
+    func noteToggle(row: String, collapsing: Bool) {
+        if !reduceMotion {
+            animateFramesUntil = Date().addingTimeInterval(0.6)
+        }
+        if !collapsing, pinned {
+            heldAnchor = nil
+            pinned = false
+        }
+        reveal = collapsing ? (row, Date().addingTimeInterval(0.8)) : nil
+    }
+
+    private func applyReveal() {
+        guard let reveal, reveal.until > Date(), !pinned, let position = index[reveal.id], positions.count == rows.count else {
+            if let reveal, reveal.until <= Date() { self.reveal = nil }
+            return
+        }
+        let top = positions[position]
+        let bottom = top + height(of: reveal.id)
+        let bandTop = contentView.bounds.origin.y + contentInsets.top
+        let bandHeight = viewportHeight - contentInsets.top - contentInsets.bottom
+        let keep = min(bottom - top, bandHeight * 0.5, 160)
+        if bottom < bandTop + keep {
+            adjust { moveTo(bottom - keep - contentInsets.top) }
+        }
     }
 
     private func firstRow(below y: CGFloat) -> Int {
@@ -429,11 +462,27 @@ final class TranscriptListView: NSScrollView {
 
     private func placeMounted(width: CGFloat) {
         guard positions.count == rows.count else { return }
+        var changes: [(NSView, CGRect)] = []
         for (id, host) in mounted {
             guard let position = index[id] else { continue }
             let frame = CGRect(x: 0, y: positions[position], width: width, height: height(of: id))
             if host.view.frame != frame {
-                host.view.frame = frame
+                changes.append((host.view, frame))
+            }
+        }
+        guard !changes.isEmpty else { return }
+        guard animateFramesUntil > Date(), !reduceMotion else {
+            for (view, frame) in changes { view.frame = frame }
+            return
+        }
+        for (view, _) in changes { view.clipsToBounds = true }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.35
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.25, 1)
+            for (view, frame) in changes { view.animator().frame = frame }
+        } completionHandler: {
+            MainActor.assumeIsolated {
+                for (view, _) in changes { view.clipsToBounds = false }
             }
         }
     }

@@ -121,14 +121,17 @@ struct LinkText: NSViewRepresentable {
     let fontSize: CGFloat
     let lineSpacing: CGFloat
     @Environment(\.markdownInk) private var ink
+    @Environment(\.markdownOnAccent) private var onAccent
 
     func makeNSView(context: Context) -> LinkTextView {
         let view = LinkTextView()
+        view.useLinkColor(onAccent ? NSColor(Theme.onAccent) : nil)
         view.apply(source: source, fontSize: fontSize, lineSpacing: lineSpacing, ink: NSColor(ink))
         return view
     }
 
     func updateNSView(_ view: LinkTextView, context: Context) {
+        view.useLinkColor(onAccent ? NSColor(Theme.onAccent) : nil)
         view.apply(source: source, fontSize: fontSize, lineSpacing: lineSpacing, ink: NSColor(ink))
     }
 
@@ -169,7 +172,18 @@ final class LinkTextView: NSTextView {
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     }
 
-    func apply(source: String, fontSize: CGFloat, lineSpacing: CGFloat, ink: NSColor) {
+    func useLinkColor(_ color: NSColor?) {
+        var attributes: [NSAttributedString.Key: Any] = [
+            .foregroundColor: color ?? NSColor(Theme.brandText),
+            .cursor: NSCursor.pointingHand
+        ]
+        if color != nil {
+            attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
+        linkTextAttributes = attributes
+    }
+
+        func apply(source: String, fontSize: CGFloat, lineSpacing: CGFloat, ink: NSColor) {
         let key = "\(fontSize)|\(lineSpacing)|\(ink.hash)|\(source)"
         guard key != appliedKey, let storage = textStorage else { return }
         appliedKey = key
