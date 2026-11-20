@@ -3,11 +3,14 @@ import Foundation
 import Observation
 import UserNotifications
 
-struct UsageRingState: Equatable, Sendable {
+struct UsageRingState: Equatable, Sendable, Identifiable {
+    let id: String
     let provider: String
     let session: Double?
     let long: Double?
     let tooltip: String
+    var badge: String?
+    var dimmed = false
 }
 
 @MainActor
@@ -25,6 +28,7 @@ final class UsageStore {
     var range: UsageRange = .month
     var provider: String?
     var account: String?
+    var focusAccount: String?
 
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var summaryTask: Task<Void, Never>?
@@ -118,6 +122,57 @@ final class UsageStore {
         accounts.filter { $0.provider == provider }
     }
 
+    var rings: [UsageRingState] {
+        let ordered = ["claude", "codex"].flatMap { provider in
+            accounts(for: provider).enumerated()
+                .sorted { lhs, rhs in
+                    let left = lhs.element.isDefault == true ? 0 : 1
+                    let right = rhs.element.isDefault == true ? 0 : 1
+                    return left == right ? lhs.offset < rhs.offset : left < right
+                }
+                .map(\.element)
+        }
+        return ordered.map { account in
+            let siblings = accounts(for: account.provider).count
+            return Self.ring(for: account, badge: siblings > 1 ? Self.initials(account) : nil)
+        }
+    }
+
+    static func initials(_ account: UsageLimitAccount) -> String {
+        let base = UsageFormat.providerName(account.provider)
+        var rest = account.label.hasPrefix(base) ? String(account.label.dropFirst(base.count)) : account.label
+        rest = rest.trimmingCharacters(in: .whitespaces)
+        let words = rest.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        if words.count >= 2 { return String(words.prefix(2).compactMap(\.first)).uppercased() }
+        let capitals = rest.filter(\.isUppercase)
+        if capitals.count >= 2 { return String(capitals.prefix(2)) }
+        return rest.first.map { String($0).uppercased() } ?? ""
+    }
+
+    static func ring(for account: UsageLimitAccount, badge: String?) -> UsageRingState {
+        var lines = [account.label]
+        guard account.ok else {
+            lines.append(account.error ?? "Sem dados desta conta.")
+            return UsageRingState(id: account.id, provider: account.provider, session: nil, long: nil, tooltip: lines.joined(separator: "\n"), badge: badge, dimmed: true)
+        }
+        let session = account.windows.filter { $0.kind == "session" }.min { $0.remainingPercent < $1.remainingPercent }
+        let long = account.windows.filter(\.isLongWindow).min { $0.remainingPercent < $1.remainingPercent }
+        if let session {
+            lines.append(phrase("Sessão", session))
+        }
+        if let long {
+            lines.append(phrase(long.kind == "monthly" ? "Mensal" : "Semanal", long))
+        }
+        let exhausted = account.windows.contains { $0.kind != "weekly_model" && $0.remainingPercent < 1 }
+        if exhausted, let target = account.failover.first {
+            let names = Set(account.failover.map(\.botName)).count
+            lines.append("Acabou: \(names == 1 ? account.failover[0].botName + " está indo" : "\(names) bots estão indo") para \(target.toLabel).")
+        } else if exhausted {
+            lines.append("Acabou, e nenhum bot tem para onde trocar.")
+        }
+        return UsageRingState(id: account.id, provider: account.provider, session: session?.remainingPercent, long: long?.remainingPercent, tooltip: lines.joined(separator: "\n"), badge: badge)
+    }
+
     func ring(for provider: String) -> UsageRingState? {
         let list = accounts(for: provider).filter(\.ok)
         guard !list.isEmpty else { return nil }
@@ -130,7 +185,7 @@ final class UsageStore {
         if let long {
             parts.append(Self.phrase(long.kind == "monthly" ? "mensal" : "semanal", long))
         }
-        return UsageRingState(provider: provider, session: session?.remainingPercent, long: long?.remainingPercent, tooltip: parts.joined(separator: " · "))
+        return UsageRingState(id: provider, provider: provider, session: session?.remainingPercent, long: long?.remainingPercent, tooltip: parts.joined(separator: " · "))
     }
 
     private static func phrase(_ name: String, _ window: UsageLimitWindow) -> String {

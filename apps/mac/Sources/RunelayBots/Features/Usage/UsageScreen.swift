@@ -6,6 +6,7 @@ struct UsageScreen: View {
     @State private var store = UsageStore.shared
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             PageContainer {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
@@ -54,14 +55,30 @@ struct UsageScreen: View {
             if !store.limitsLoaded {
                 await store.refreshLimits()
             }
+            reveal(store.focusAccount, proxy)
             if store.summary == nil {
                 store.reloadSummary()
             }
+        }
+        .onChange(of: store.focusAccount) { reveal(store.focusAccount, proxy) }
+        .onChange(of: store.limitsLoaded) { reveal(store.focusAccount, proxy) }
         }
         .onChange(of: store.range) { store.reloadSummary() }
         .onChange(of: store.provider) { store.reloadSummary() }
         .onChange(of: store.account) { store.reloadSummary() }
     }
+
+    private func reveal(_ id: String?, _ proxy: ScrollViewProxy) {
+        guard let id, store.tab == .limits, store.accounts.contains(where: { $0.id == id }) else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(80))
+            withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                proxy.scrollTo(UsageScreen.anchor(id), anchor: .top)
+            }
+        }
+    }
+
+    static func anchor(_ id: String) -> String { "usage-account-\(id)" }
 }
 
 private struct UsageRefreshButton: View {
@@ -200,6 +217,7 @@ private struct UsageLimitsTab: View {
             }
             ForEach(visibleAccounts) { account in
                 UsageAccountLimits(account: account)
+                    .id(UsageScreen.anchor(account.id))
             }
         }
     }

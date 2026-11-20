@@ -28,17 +28,31 @@ struct UsageRing: View {
     let session: Double?
     let long: Double?
     var size: CGFloat = 35
+    var badge: String? = nil
 
-    private let lineWidth: CGFloat = 3
+    private var lineWidth: CGFloat { size < 32 ? 2.5 : 3 }
     private let gap: CGFloat = 2
 
     var body: some View {
         ZStack {
             arc(session, diameter: size, inner: false)
             arc(long, diameter: size - (lineWidth + gap) * 2, inner: true)
-            ProviderLogo(provider: provider, size: 14)
+            ProviderLogo(provider: provider, size: size * 0.4)
         }
         .frame(width: size, height: size)
+        .overlay(alignment: .bottomTrailing) {
+            if let badge, !badge.isEmpty {
+                Text(badge)
+                    .font(.system(size: 7.5, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 2.5)
+                    .frame(height: 11)
+                    .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                    .offset(x: 3, y: 2)
+            }
+        }
     }
 
     private func arc(_ value: Double?, diameter: CGFloat, inner: Bool) -> some View {
@@ -60,13 +74,26 @@ struct UsageRailIndicator: View {
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var store = UsageStore.shared
 
+    private func ringSize(_ count: Int) -> CGFloat {
+        switch count {
+        case ...3: 35
+        case 4: 31
+        default: 27
+        }
+    }
+
     var body: some View {
-        let rings = ["claude", "codex"].compactMap { store.ring(for: $0) }
+        let rings = store.rings
         if !rings.isEmpty {
-            VStack(spacing: Spacing.s) {
-                ForEach(rings, id: \.provider) { ring in
-                    UsageRailButton(ring: ring, isSelected: model.section == .usage && !model.settingsPresented) {
+            let size = ringSize(rings.count)
+            VStack(spacing: rings.count > 3 ? Spacing.xs : Spacing.s) {
+                ForEach(rings) { ring in
+                    UsageRailButton(ring: ring, size: size, isSelected: model.section == .usage && !model.settingsPresented && store.focusAccount == ring.id) {
                         withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                            store.provider = nil
+                            store.account = nil
+                            store.tab = .limits
+                            store.focusAccount = ring.id
                             model.closeSettings()
                             model.section = .usage
                         }
@@ -74,12 +101,14 @@ struct UsageRailIndicator: View {
                 }
             }
             .transition(.opacity)
+            .springAnimation(value: rings.map(\.id))
         }
     }
 }
 
 private struct UsageRailButton: View {
     let ring: UsageRingState
+    let size: CGFloat
     let isSelected: Bool
     let action: () -> Void
 
@@ -87,8 +116,9 @@ private struct UsageRailButton: View {
 
     var body: some View {
         Button(action: action) {
-            UsageRing(provider: ring.provider, session: ring.session, long: ring.long, size: 35)
-                .frame(width: 40, height: 40)
+            UsageRing(provider: ring.provider, session: ring.session, long: ring.long, size: size, badge: ring.badge)
+                .opacity(ring.dimmed ? 0.4 : 1)
+                .frame(width: 40, height: size + 5)
                 .background(
                     isSelected ? Theme.railSelected : (isHovering ? Theme.hover : Theme.maskHidden),
                     in: RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -99,6 +129,7 @@ private struct UsageRailButton: View {
         .onHover { isHovering = $0 }
         .springAnimation(value: isHovering)
         .springAnimation(value: isSelected)
+        .springAnimation(value: size)
         .help(ring.tooltip)
         .accessibilityLabel(ring.tooltip)
     }
