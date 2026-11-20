@@ -2,7 +2,8 @@ import AppKit
 import SwiftUI
 
 private final class ControlTabPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
+    var acceptsKey = false
+    override var canBecomeKey: Bool { acceptsKey }
     override var canBecomeMain: Bool { false }
 }
 
@@ -16,17 +17,24 @@ final class ComputerControlTab {
     static let glowPad: CGFloat = 14
     static let plainWidth: CGFloat = 220
     static let plainHeight: CGFloat = 30
+    static let cardWidth: CGFloat = 380
+    static let cardGap: CGFloat = Spacing.s
     private let panel: ControlTabPanel
     private let host: FirstMouseHostingView<ControlTabView>
     private let state: ComputerOverlayState
     private let stop: @MainActor () -> Void
-    private var active = false
+    private let open: @MainActor (IslandPrompt) -> Void
+    private var visible = false
     private var height = ComputerControlTab.plainHeight
     private var notchWidth: CGFloat = 0
+    private var tabWidth = ComputerControlTab.plainWidth
+    private var cardHeight: CGFloat = 0
+    private var collapse: Task<Void, Never>?
 
-    init(state: ComputerOverlayState, stop: @escaping @MainActor () -> Void) {
+    init(state: ComputerOverlayState, stop: @escaping @MainActor () -> Void, open: @escaping @MainActor (IslandPrompt) -> Void) {
         self.state = state
         self.stop = stop
+        self.open = open
         panel = ControlTabPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.plainWidth, height: Self.plainHeight),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -42,69 +50,148 @@ final class ComputerControlTab {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        host = FirstMouseHostingView(rootView: ControlTabView(state: state, stop: stop, notchWidth: 0, height: Self.plainHeight, active: false))
+        host = FirstMouseHostingView(rootView: ControlTabView(state: state, stop: stop, open: open, notchWidth: 0, tabWidth: Self.plainWidth, height: Self.plainHeight))
         panel.contentView = host
     }
 
-    func show() {
-        active = true
-        reposition()
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.25
-            panel.animator().alphaValue = 1
+    var isVisible: Bool { visible }
+
+    func update() {
+        let wanted = state.computerActive || state.promptVisible
+        if wanted {
+            collapse?.cancel()
+            panel.acceptsKey = state.promptVisible
+            reposition()
+            if !visible {
+                visible = true
+                if !state.promptVisible {
+                    cardHeight = 0
+                    applyFrame()
+                }
+                panel.alphaValue = 0
+                panel.orderFrontRegardless()
+                NSAnimationContext.runAnimationGroup { context in
+                    context.duration = 0.25
+                    panel.animator().alphaValue = 1
+                }
+            } else if !state.promptVisible {
+                scheduleShrink()
+            }
+        } else if visible {
+            hide()
         }
     }
 
-    func hide() {
+    private func scheduleShrink() {
+        collapse?.cancel()
+        collapse = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(380))
+            guard let self, !Task.isCancelled, !self.state.promptVisible else { return }
+            self.panel.acceptsKey = false
+            if self.panel.isKeyWindow {
+                self.panel.resignKey()
+            }
+            self.cardHeight = 0
+            self.applyFrame()
+        }
+    }
+
+    private func hide() {
+        visible = false
+        collapse?.cancel()
+        panel.acceptsKey = false
         let panel = panel
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
+                guard let self, !self.visible else { return }
                 panel.orderOut(nil)
-                guard let self, panel.alphaValue == 0 else { return }
-                self.active = false
-                self.host.rootView = ControlTabView(state: self.state, stop: self.stop, notchWidth: self.notchWidth, height: self.height, active: false)
+                self.cardHeight = 0
             }
         }
     }
 
     func reposition() {
         guard let screen = NSScreen.screens.first else { return }
-        let frame = screen.frame
         var notchWidth: CGFloat = 0
-        var centerX = frame.midX
         var height = Self.plainHeight
         if let left = screen.auxiliaryTopLeftArea, let right = screen.auxiliaryTopRightArea, screen.safeAreaInsets.top > 0 {
             notchWidth = max(0, right.minX - left.maxX)
-            centerX = left.maxX + notchWidth / 2
             height = screen.safeAreaInsets.top
         }
-        let width = notchWidth > 0 ? notchWidth + Self.earWidth * 2 + TabShape.flare * 2 : Self.plainWidth
-        let pad = Self.glowPad
         self.height = height
         self.notchWidth = notchWidth
-        host.rootView = ControlTabView(state: state, stop: stop, notchWidth: notchWidth, height: height, active: active)
-        host.frame = NSRect(x: 0, y: 0, width: width + pad * 2, height: height + pad)
-        panel.setFrame(NSRect(x: centerX - width / 2 - pad, y: frame.maxY - height - pad, width: width + pad * 2, height: height + pad), display: true)
+        tabWidth = notchWidth > 0 ? notchWidth + Self.earWidth * 2 + TabShape.flare * 2 : Self.plainWidth
+        if state.promptVisible, let prompt = state.prompt {
+            cardHeight = measure(prompt)
+        }
+        host.rootView = ControlTabView(state: state, stop: stop, open: open, notchWidth: notchWidth, tabWidth: tabWidth, height: height)
+        applyFrame()
+    }
+
+    private func measure(_ prompt: IslandPrompt) -> CGFloat {
+        let probe = NSHostingView(rootView: IslandPromptCard(prompt: prompt, open: {}).environment(\.appReduceMotion, true))
+        return ceil(probe.fittingSize.height)
+    }
+
+    private func applyFrame() {
+        guard let screen = NSScreen.screens.first else { return }
+        let frame = screen.frame
+        var centerX = frame.midX
+        if let left = screen.auxiliaryTopLeftArea, notchWidth > 0 {
+            centerX = left.maxX + notchWidth / 2
+        }
+        let pad = Self.glowPad
+        let expanded = cardHeight > 0
+        let width = (expanded ? max(tabWidth, Self.cardWidth) : tabWidth) + pad * 2
+        let total = height + pad + (expanded ? Self.cardGap + cardHeight : 0)
+        host.frame = NSRect(x: 0, y: 0, width: width, height: total)
+        panel.setFrame(NSRect(x: centerX - width / 2, y: frame.maxY - total, width: width, height: total), display: true)
     }
 }
 
 struct ControlTabView: View {
     let state: ComputerOverlayState
     let stop: @MainActor () -> Void
+    let open: @MainActor (IslandPrompt) -> Void
     let notchWidth: CGFloat
+    let tabWidth: CGFloat
     let height: CGFloat
-    var active = true
     @State private var isHoveringStop = false
 
+    private var waiting: Bool { state.promptVisible && state.prompt != nil }
+
+    private var mood: CharacterMood {
+        if waiting { return .waiting }
+        return state.computerActive ? .thinking : .idle
+    }
+
     var body: some View {
+        VStack(spacing: ComputerControlTab.cardGap) {
+            tab
+            if waiting, let prompt = state.prompt {
+                IslandPromptCard(prompt: prompt) { open(prompt) }
+                    .id(prompt.id)
+                    .transition(state.reduceMotion ? .opacity : .asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .top)).combined(with: .offset(y: -12)),
+                        removal: .opacity.combined(with: .scale(scale: 0.92, anchor: .top))
+                    ))
+            }
+        }
+        .environment(\.appReduceMotion, state.reduceMotion)
+        .animation(Motion.animation(reduceMotion: state.reduceMotion), value: state.promptVisible)
+        .animation(Motion.animation(reduceMotion: state.reduceMotion), value: state.prompt?.id)
+        .padding(.horizontal, ComputerControlTab.glowPad)
+        .padding(.bottom, ComputerControlTab.glowPad)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var tab: some View {
         HStack(spacing: 0) {
             HStack(spacing: Spacing.s - 2) {
-                BotCharacter(botID: state.botID, glyph: state.glyph, accent: state.accent, mood: active ? .thinking : .idle, size: 16)
+                BotCharacter(botID: state.botID, glyph: state.glyph, accent: state.accent, mood: mood, size: 16)
                     .frame(width: 16, height: 16)
                 Text(state.botName)
                     .font(TypeScale.captionStrong)
@@ -116,27 +203,52 @@ struct ControlTabView: View {
             if notchWidth > 0 {
                 Color.clear.frame(width: notchWidth)
             }
-            stopButton
-                .frame(maxWidth: notchWidth > 0 ? ComputerControlTab.earWidth : nil, alignment: .trailing)
+            if state.computerActive {
+                stopButton
+                    .frame(maxWidth: notchWidth > 0 ? ComputerControlTab.earWidth : nil, alignment: .trailing)
+            } else if notchWidth > 0 {
+                Color.clear.frame(width: ComputerControlTab.earWidth)
+            }
         }
         .padding(.horizontal, TabShape.flare + Spacing.s)
-        .frame(height: height)
+        .frame(width: tabWidth, height: height)
         .background(tabFill)
-        .padding(.horizontal, ComputerControlTab.glowPad)
-        .padding(.bottom, ComputerControlTab.glowPad)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .help("\(state.botName) está usando o computador. Mexer no mouse ou no teclado também para o bot.")
+        .keyframeAnimator(initialValue: 1.0, trigger: state.attention) { content, scale in
+            content.scaleEffect(scale, anchor: .top)
+        } keyframes: { _ in
+            KeyframeTrack {
+                SpringKeyframe(state.reduceMotion ? 1 : 1.07, duration: 0.18, spring: .snappy)
+                SpringKeyframe(1, duration: 0.45, spring: .bouncy)
+            }
+        }
+        .help(state.computerActive ? "\(state.botName) está usando o computador. Mexer no mouse ou no teclado também para o bot." : "\(state.botName) está esperando sua resposta.")
     }
 
+    private var glowColor: Color { waiting ? Theme.attention : state.color }
+
+    @ViewBuilder
     private var tabFill: some View {
+        if waiting, !state.reduceMotion {
+            fill
+                .phaseAnimator([0.45, 1.0]) { content, phase in
+                    content.shadow(color: glowColor.opacity(0.6 * phase), radius: 6 + 6 * phase, y: 2)
+                } animation: { _ in
+                    .easeInOut(duration: 1.4)
+                }
+        } else {
+            fill
+                .shadow(color: glowColor.opacity(0.75), radius: 7, y: 2)
+        }
+    }
+
+    private var fill: some View {
         TabShape()
             .fill(Color.black)
             .overlay(
                 TabShape().fill(
-                    LinearGradient(colors: [.clear, .clear, state.color.opacity(0.28)], startPoint: .top, endPoint: .bottom)
+                    LinearGradient(colors: [.clear, .clear, glowColor.opacity(0.28)], startPoint: .top, endPoint: .bottom)
                 )
             )
-            .shadow(color: state.color.opacity(0.75), radius: 7, y: 2)
     }
 
     private var stopButton: some View {

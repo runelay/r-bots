@@ -2501,8 +2501,16 @@ final class AppModel {
         store.onSettingsChanged = { [weak self] areas in
             self?.applySettingsAreas(areas)
         }
-        store.onNotify = { [weak self] event in
+        store.onNotify = { [weak self, weak store] event in
             guard let self, let current = self.bot(id: bot.id) else { return }
+            switch event {
+            case .approval(let id, _), .question(let id, _, _):
+                if let store, ComputerExecutor.shared.surface(IslandPrompt(store: store, approvalID: id, bot: current)) {
+                    return
+                }
+            default:
+                break
+            }
             let visible = NSApp.isActive && self.selectedBotID == bot.id
                 && self.section == .conversations && !self.settingsPresented
             if case .approval = event {

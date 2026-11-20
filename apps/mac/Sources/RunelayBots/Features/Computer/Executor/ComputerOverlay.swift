@@ -13,6 +13,10 @@ final class ComputerOverlayState {
     var cursor = CGPoint.zero
     var pulse = 0
     var reduceMotion = false
+    var computerActive = false
+    var prompt: IslandPrompt?
+    var promptVisible = false
+    var attention = 0
 
     var color: Color { Theme.accent(accent) }
 
@@ -31,13 +35,91 @@ final class ComputerOverlay {
     private let tab: ComputerControlTab
     private var cursorHide: Task<Void, Never>?
     private var screenObserver: NSObjectProtocol?
+    private var activeObservers: [NSObjectProtocol] = []
+    private var pending: [IslandPrompt] = []
+    private var trackGeneration = 0
+    private var lingering: String?
+    private var lingerTask: Task<Void, Never>?
     private let glide = Animation.spring(response: 0.42, dampingFraction: 0.82)
 
-    init(stop: @escaping @MainActor () -> Void) {
-        tab = ComputerControlTab(state: state, stop: stop)
+    init(stop: @escaping @MainActor () -> Void, open: @escaping @MainActor (IslandPrompt) -> Void) {
+        tab = ComputerControlTab(state: state, stop: stop, open: open)
         screenObserver = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { _ in
             MainActor.assumeIsolated {
                 ComputerExecutor.shared.overlayScreensChanged()
+            }
+        }
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
+            activeObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated {
+                    ComputerExecutor.shared.overlayAppActivityChanged()
+                }
+            })
+        }
+    }
+
+    func present(_ prompt: IslandPrompt) -> Bool {
+        pending.removeAll { $0.id == prompt.id }
+        pending.append(prompt)
+        refreshPrompts()
+        return state.promptVisible && state.prompt?.id == prompt.id
+    }
+
+    func refreshPrompts() {
+        pending.removeAll { prompt in
+            guard let approval = prompt.approval else { return true }
+            if case .settled = approval.resolution { return true }
+            return false
+        }
+        if let current = state.prompt, state.promptVisible, !current.isOpen, lingering != current.id, !NSApp.isActive {
+            lingering = current.id
+            lingerTask?.cancel()
+            lingerTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(900))
+                guard let self, !Task.isCancelled else { return }
+                self.refreshPrompts()
+            }
+            track()
+            return
+        }
+        let next = NSApp.isActive ? nil : pending.last(where: \.isOpen)
+        let changed = next != nil && next?.id != state.prompt?.id
+        if let next, changed {
+            state.reduceMotion = Self.prefersReducedMotion
+            if !state.computerActive {
+                state.botID = next.bot.id
+                state.botName = next.bot.name
+                state.accent = next.bot.accent
+                state.glyph = next.bot.glyph
+            }
+        }
+        withAnimation(Motion.animation(reduceMotion: state.reduceMotion)) {
+            if let next {
+                state.prompt = next
+            }
+            state.promptVisible = next != nil
+        }
+        if changed {
+            lingering = nil
+            state.attention += 1
+        }
+        tab.update()
+        track()
+    }
+
+    private func track() {
+        trackGeneration += 1
+        let generation = trackGeneration
+        let watched = pending + (state.prompt.map { [$0] } ?? [])
+        guard !watched.isEmpty else { return }
+        withObservationTracking {
+            for prompt in watched {
+                _ = prompt.approval?.resolution
+            }
+        } onChange: {
+            Task { @MainActor [weak self] in
+                guard let self, self.trackGeneration == generation else { return }
+                self.refreshPrompts()
             }
         }
     }
@@ -60,7 +142,8 @@ final class ComputerOverlay {
         withAnimation(.easeOut(duration: 0.35)) {
             state.auraVisible = true
         }
-        tab.show()
+        state.computerActive = true
+        tab.update()
     }
 
     func end() {
@@ -69,7 +152,8 @@ final class ComputerOverlay {
             state.auraVisible = false
             state.cursorVisible = false
         }
-        tab.hide()
+        state.computerActive = false
+        tab.update()
         let panels = screenPanels
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(450))
@@ -81,12 +165,14 @@ final class ComputerOverlay {
     }
 
     func screensChanged() {
+        if tab.isVisible {
+            tab.reposition()
+        }
         guard state.auraVisible else { return }
         buildPanels()
         for panel in screenPanels {
             panel.orderFrontRegardless()
         }
-        tab.reposition()
     }
 
     func moveCursor(to point: CGPoint) async {

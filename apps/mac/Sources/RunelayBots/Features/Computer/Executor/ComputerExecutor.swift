@@ -45,6 +45,7 @@ final class ComputerExecutor {
     private var sawTurnRunning = false
     var botLookup: (@MainActor (String) -> Bot?)?
     var statusLookup: (@MainActor (String) -> BotStatus)?
+    var openPrompt: (@MainActor (IslandPrompt) -> Void)?
 
     private static let pointerTools: Set<String> = ["click", "type", "key", "scroll", "drag"]
 
@@ -53,7 +54,10 @@ final class ComputerExecutor {
         started = true
         activity.refreshPermissions()
         activity.executor = .running
-        overlay = ComputerOverlay { ComputerExecutor.shared.stopFromUser() }
+        overlay = ComputerOverlay(
+            stop: { ComputerExecutor.shared.stopFromUser() },
+            open: { ComputerExecutor.shared.openPrompt?($0) }
+        )
         installTakeoverMonitor()
         let legacyToken = FileManager.default.homeDirectoryForCurrentUser
             .appending(path: "Library/Application Support/runelay bots/executor.token")
@@ -63,10 +67,28 @@ final class ComputerExecutor {
     func attach(_ model: AppModel) {
         botLookup = { model.bot(id: $0) }
         statusLookup = { model.status(for: $0) }
+        openPrompt = { prompt in
+            model.openConversation(prompt.bot.id, sessionID: prompt.store.sessionId)
+            NSApp.activate()
+            if let window = NSApp.windows.first(where: { $0.canBecomeMain }) {
+                if window.isMiniaturized {
+                    window.deminiaturize(nil)
+                }
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
     }
 
     func overlayScreensChanged() {
         overlay?.screensChanged()
+    }
+
+    func overlayAppActivityChanged() {
+        overlay?.refreshPrompts()
+    }
+
+    func surface(_ prompt: IslandPrompt) -> Bool {
+        overlay?.present(prompt) ?? false
     }
 
     func stopFromUser() {
