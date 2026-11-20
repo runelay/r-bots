@@ -3,6 +3,7 @@ import { notFound, type Req, type Res, readBody, sendJson, validationResponse } 
 import { isPermissionMode } from "../../approvals/services/permissions.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { deliver } from "../../engine/services/engine.service";
+import { openSideThread } from "../../engine/services/side-threads.service";
 import { searchMessages } from "../repositories/sessions.repository";
 import {
   archiveConversation,
@@ -111,6 +112,25 @@ export async function handleConversations(
         return sendJson(res, 200, await publicConversation(session));
       }
       return sendJson(res, 200, await publicConversation(await markConversation(session, action === "read")));
+    }
+    if (action === "side") {
+      if (rejectInactiveBot(res, bot)) return;
+      for (const key of Object.keys(body))
+        if (!["title", "message"].includes(key))
+          return sendJson(res, 400, { ok: false, error: `Campo desconhecido: ${key}.`, field: key });
+      if (body.title !== undefined && (typeof body.title !== "string" || body.title.trim().length > 80))
+        return sendJson(res, 400, { ok: false, error: "O título precisa ter até 80 caracteres.", field: "title" });
+      const problem = checkFields(body.message !== undefined ? { message: body.message } : {});
+      if (problem) return sendJson(res, 400, { ok: false, error: problem });
+      const { session: side, deliveryId } = await openSideThread(session, {
+        ...(typeof body.message === "string" ? { text: body.message } : {}),
+        ...(typeof body.title === "string" ? { title: body.title } : {}),
+      });
+      return sendJson(res, 201, {
+        ...(await publicConversation(side)),
+        sessionBasePath: `/bots/${bot.id}/eve/v1`,
+        ...(deliveryId ? { deliveryId } : {}),
+      });
     }
     if (action === "move") {
       const moved = await moveConversation(session, body.botId);

@@ -266,6 +266,55 @@ describe("single conversation", () => {
   });
 });
 
+describe("side thread route", () => {
+  test("opens a child conversation and sends the first message", async () => {
+    const parent = await createConversation(bot.id, { title: "Mãe" });
+    const path = `${base()}/${parent.meta.sessionId}/side`;
+    const created = await request<Conversation & { parentSessionId?: string }>(path, {
+      method: "POST",
+      body: { message: "roda os testes" },
+    });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({
+      botId: bot.id,
+      title: "↳ Roda os testes",
+      parentSessionId: parent.meta.sessionId,
+      sessionBasePath: `/bots/${bot.id}/eve/v1`,
+      deliveryId: expect.any(String),
+    });
+    await settled(created.body.sessionId);
+
+    const empty = await request<Conversation>(path, { method: "POST", body: { title: "Paralela" } });
+    expect(empty.status).toBe(201);
+    expect(empty.body.title).toBe("↳ Paralela");
+    expect(empty.body.deliveryId).toBeUndefined();
+    const plain = await request<Conversation>(path, { method: "POST" });
+    expect(plain.body.title).toBe("↳ Mãe");
+  });
+
+  test("rejects bad bodies, deep nesting and inactive bots", async () => {
+    const parent = await createConversation(bot.id, {});
+    const path = `${base()}/${parent.meta.sessionId}/side`;
+    const unknown = await request<{ field: string }>(path, { method: "POST", body: { skills: [] } });
+    expect(unknown.status).toBe(400);
+    expect(unknown.body.field).toBe("skills");
+    const longTitle = await request<{ field: string }>(path, { method: "POST", body: { title: "x".repeat(81) } });
+    expect(longTitle.body.field).toBe("title");
+    const badMessage = await request(path, { method: "POST", body: { message: 3 } });
+    expect(badMessage.status).toBe(400);
+    const child = await request<Conversation>(path, { method: "POST" });
+    const grandchild = await request<Conversation>(`${base()}/${child.body.sessionId}/side`, { method: "POST" });
+    expect(grandchild.status).toBe(201);
+    const deep = await request<{ code: string }>(`${base()}/${grandchild.body.sessionId}/side`, { method: "POST" });
+    expect(deep.status).toBe(400);
+    expect(deep.body.code).toBe("depth_limit");
+    await setArchived(bot.id, true);
+    const archived = await request<{ code: string }>(path, { method: "POST" });
+    expect(archived.status).toBe(409);
+    expect(archived.body.code).toBe("bot_archived");
+  });
+});
+
 describe("main thread routes", () => {
   test("marks, resets and restores the thread", async () => {
     const path = `/bots/${bot.id}/thread`;

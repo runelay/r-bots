@@ -9,9 +9,11 @@ import { getBot, isActive, permissionOfBot } from "../../bots/services/bots.serv
 import { activeWorkspace } from "../../code/services/workspace.service";
 import { conversationStatus, isBusy } from "../../engine/services/engine.service";
 import {
+  allStoredSessions,
   type ConversationInfo,
   createStoredSession,
   getStoredSession,
+  type SessionMeta,
   type StoredSession,
   sessionsOf,
 } from "./sessions.service";
@@ -69,6 +71,7 @@ export async function publicConversation(session: StoredSession) {
     permission: meta.permission ?? null,
     effectivePermission: effectivePermission(meta.permission, bot ? permissionOfBot(bot) : undefined),
     ...(details.delegatedBy ? { delegatedBy: details.delegatedBy } : {}),
+    ...(meta.parentSessionId ? { parentSessionId: meta.parentSessionId } : {}),
     code: workspace ? { repoName: workspace.repoName, branch: workspace.branch } : null,
   };
 }
@@ -129,6 +132,17 @@ export function conversationSessions(botId: string, archived = false) {
   );
 }
 
+export function childConversations(sessionId: string) {
+  return allStoredSessions()
+    .filter(
+      (session) =>
+        session.meta.kind === "conversation" &&
+        !session.meta.conversation?.archivedAt &&
+        (session.meta.parentSessionId === sessionId || session.meta.spawnedBy === sessionId),
+    )
+    .sort((a, b) => a.meta.startedAt.localeCompare(b.meta.startedAt));
+}
+
 export function delegationConversation(botId: string, fromBotId: string, originSessionId: string) {
   return conversationSessions(botId)
     .filter((session) => {
@@ -177,6 +191,7 @@ export async function createConversation(
     permission?: PermissionMode;
     delegatedBy?: ConversationInfo["delegatedBy"];
     firstMessage?: string;
+    meta?: Partial<SessionMeta>;
   } = {},
 ) {
   const typed = input.title?.trim() ? input.title.trim().slice(0, 80) : "";
@@ -193,6 +208,7 @@ export async function createConversation(
     ...(input.delegatedBy ? { delegatedBy: input.delegatedBy } : {}),
   };
   if (input.permission) session.meta.permission = input.permission;
+  if (input.meta) Object.assign(session.meta, input.meta);
   session.log.emit({
     type: "session.started",
     data: { runtime: { agentId: botId, agentName: botId, engine: "claude-agent-sdk", model }, conversation: true },

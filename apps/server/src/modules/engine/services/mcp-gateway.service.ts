@@ -61,6 +61,7 @@ import {
   registerVaultTools,
 } from "../../vault/services/vault-tools.service";
 import type { ApprovalDetails, BotTool } from "./bot-tools.service";
+import { registerSideThreadTools } from "./side-threads.service";
 
 export interface ApprovalResult {
   choice: "approve" | "deny";
@@ -1639,6 +1640,7 @@ export function buildServer(context: ToolContext) {
   registerServerTools(server, context);
   registerSettingsTools(server, context);
   registerThreadTools(server, context);
+  registerSideThreadTools(server, context);
   registerQuestionTools(server, context);
   if (context.groupMembers.length > 0) {
     const ids = context.groupMembers.map((member) => member.id) as [string, ...string[]];

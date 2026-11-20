@@ -259,6 +259,16 @@ describe("runClaude", () => {
     });
     expect(options.effort).toBe("high");
     expect(options.resume).toBe("s-0");
+    expect(options.forkSession).toBeUndefined();
+  });
+
+  test("a fork resumes the parent session without mutating it", async () => {
+    replay([success]);
+    const { emit } = recorder();
+    await runClaude(turnRequest({ resume: "s-parent", fork: true }), fakeCli.home, signal(), emit);
+    const options = fakeSdk.calls[0].options ?? {};
+    expect(options.resume).toBe("s-parent");
+    expect(options.forkSession).toBe(true);
   });
 
   test("code turns without hooks stay in chat mode", async () => {

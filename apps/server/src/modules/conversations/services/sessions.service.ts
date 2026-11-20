@@ -53,6 +53,9 @@ export interface SessionMeta {
   lastEngine?: { account: string; model: string };
   permission?: PermissionMode;
   conversation?: ConversationInfo;
+  parentSessionId?: string;
+  spawnedBy?: string;
+  forkPending?: string[];
 }
 
 export interface ConversationInfo {

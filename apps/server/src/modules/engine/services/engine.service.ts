@@ -107,6 +107,7 @@ import { noteSessionAccount } from "../../usage/services/usage-scan.service";
 import { vaultGuide } from "../../vault/services/vault-tools.service";
 import { type ApprovalDetails, toolsFor } from "./bot-tools.service";
 import { type ApprovalResult, newToken, registerContext, type ToolContext } from "./mcp-gateway.service";
+import { sideContext } from "./side-threads.service";
 import { acquireTurnSlot, maxTurns, type SlotPriority, type TurnSlot } from "./turn-slots.service";
 
 export interface DelegatedFile {
@@ -146,6 +147,7 @@ export interface Delivery {
   skills?: LoadedSkill[];
   attachments?: UploadMeta[];
   asked?: DeliveryAsk;
+  side?: { sessionId: string; title: string; outcome: DelegationResult["outcome"] };
 }
 
 export type RunStatus = "working" | "awaiting" | "idle";
@@ -328,6 +330,13 @@ function workspaceGuide(code: CodePrompt) {
     .join("\n");
 }
 
+const sideThreadsGuide = [
+  "## Conversas secundárias",
+  "`thread_side` abre uma conversa filha desta, com todo o contexto daqui e a mesma worktree, e roda uma subtarefa em paralelo; quando ela termina, o resultado (texto final e arquivos) chega aqui como mensagem nova. Use só para frentes independentes e demoradas (duas investigações, pesquisar enquanto implementa). Coisa curta ou que depende do passo anterior você faz direto, sem abrir conversa.",
+  "No máximo 3 filhas rodando ao mesmo tempo por conversa (o servidor recusa acima de 5). Cada filha ocupa uma vaga de turno (o `max` de turnos simultâneos no /status): com as vagas cheias ela espera na fila. Depois de abrir, não fique esperando em loop: diga em uma linha o que deixou rodando e termine; o resultado chega sozinho.",
+  "`thread_create` abre uma conversa nova e independente (sua ou de outro bot), sem o contexto daqui e sem devolver resultado. `thread_list` mostra as filhas desta conversa com o status; `thread_read` com `threadId` lê as últimas mensagens de uma delas. Filha de filha pode; mais fundo que isso o servidor recusa.",
+].join("\n");
+
 function clip(text: string, max: number) {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
@@ -396,6 +405,7 @@ function systemPromptFor(
       "- Se a ferramenta disser COMPUTER_UNAVAILABLE, avise que o app r/bots precisa estar aberto no Mac.",
     );
   }
+  parts.push("", sideThreadsGuide);
   parts.push("", artifactGuide);
   parts.push("", codeGuide());
   const openGuide = code ? workspaceGuide(code) : "";
@@ -577,6 +587,7 @@ function steerTurn(session: StoredSession, runtime: Runtime, delivery: Delivery)
   if (delivery.source !== "chat" || delivery.voice || delivery.delegation) return false;
   if (!delivery.text.trim() && !delivery.attachments?.length && !delivery.skills?.length) return false;
   const paused = Boolean(turn.stopRun) && turn.interactions.size > 0;
+  if (paused && delivery.side) return false;
   if (!paused && turn.priority !== "chat") return false;
   const scope = { turnId: turn.turnId };
   const message = steerMessage(turn, delivery);
@@ -609,6 +620,7 @@ function steerTurn(session: StoredSession, runtime: Runtime, delivery: Delivery)
         turnId: turn.turnId,
         source: "chat",
         steer: true,
+        ...(delivery.side ? { side: delivery.side } : {}),
         ...(delivery.skills?.length
           ? { skills: delivery.skills.map((skill) => ({ slug: skill.slug, name: skill.name })) }
           : {}),
@@ -907,6 +919,7 @@ interface ProviderRun {
   prompt: string;
   images?: PreparedImage[];
   resume: string | null;
+  fork?: boolean;
   origin: string | null;
   isSchedule: boolean;
   onEvent: (event: ProviderEvent) => void;
@@ -1055,6 +1068,7 @@ async function executeProvider(run: ProviderRun) {
         prompt: run.prompt,
         ...(run.images?.length ? { images: run.images } : {}),
         resume: run.resume,
+        ...(run.fork ? { fork: true } : {}),
         mcp: { url: `${mcpBaseFor()}/mcp/${bot.id}/${session.meta.sessionId}`, token },
         workKey: `${bot.id}/${session.meta.sessionId}`,
         code:
@@ -1391,6 +1405,12 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
   }
 }
 
+function dropFork(meta: StoredSession["meta"], key: string) {
+  if (!meta.forkPending?.includes(key)) return;
+  meta.forkPending = meta.forkPending.filter((item) => item !== key);
+  if (meta.forkPending.length === 0) delete meta.forkPending;
+}
+
 function collectSent(line: string, turnId: string, botId: string, sent: DelegatedFile[]) {
   if (!line.includes('"file.sent"')) return;
   const parsed = JSON.parse(line) as {
@@ -1478,6 +1498,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           : {}),
         ...(delivery.scheduleId ? { scheduleId: delivery.scheduleId } : {}),
         ...(delivery.voice ? { voice: true } : {}),
+        ...(delivery.side ? { side: delivery.side } : {}),
         ...(delivery.skills?.length
           ? { skills: delivery.skills.map((skill) => ({ slug: skill.slug, name: skill.name })) }
           : {}),
@@ -1711,6 +1732,10 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     };
 
     const resume = isSchedule || group ? null : (meta.providerSessions?.[sessionKey] ?? null);
+    const forkFrom = new Set(
+      (meta.forkPending ?? []).map((key) => meta.providerSessions?.[key]).filter((id): id is string => Boolean(id)),
+    );
+    const side = group || isSchedule ? null : await sideContext(session, !resume);
     const memorySettings = memoryOf(bot);
     let recalled: RecallItem[] = [];
     let extraSystem = "";
@@ -1734,7 +1759,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     if (connectorsOf(bot).memory && runelayEnabled())
       extraSystem = [await skillsIndex(), extraSystem].filter(Boolean).join("\n\n");
     if (delivery.voice) extraSystem = [extraSystem, voiceNote].filter(Boolean).join("\n\n");
-    extraSystem = [extraSystem, nowNote(await userTimezone())].filter(Boolean).join("\n\n");
+    extraSystem = [extraSystem, side?.note ?? "", nowNote(await userTimezone())].filter(Boolean).join("\n\n");
     const liveBots = [bot, ...delegatesOf(bot)]
       .filter((item) => item.capabilities.browser || (item.id === bot.id && activeWorkspace(session)))
       .map((item) => item.id);
@@ -1778,6 +1803,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         log,
         group,
         resume: resumeFrom,
+        fork: Boolean(resumeFrom && forkFrom.has(resumeFrom)),
         codeRun: codeWorkspace && codeLive ? { workspace: codeWorkspace, live: codeLive, router } : null,
         onEndRun: () => {
           switching = true;
@@ -1889,7 +1915,9 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         scope: turnScope,
       });
     }
-    const basePrompt = group ? group.prompt : promptFor(session, delivery, carry, connectorsOf(bot).memory);
+    const basePrompt = group
+      ? group.prompt
+      : promptFor(session, delivery, [side?.carry ?? "", carry].filter(Boolean).join("\n\n"), connectorsOf(bot).memory);
     await runProvider(withAttachments(basePrompt), resume, attachmentImages);
     for (let hop = 0; hop < 3; hop++) {
       const limitText =
@@ -2006,6 +2034,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     if (!isSchedule && !group && providerSession) {
       meta.providerSessions = { ...meta.providerSessions, [sessionKey]: providerSession };
       meta.providerSynced = { ...meta.providerSynced, [sessionKey]: turnId };
+      dropFork(meta, sessionKey);
     }
     if (turn.guardStop && !turn.cancelled) {
       const tried = turn.calls
@@ -2046,6 +2075,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       if (!isSchedule && resume && !replyText) {
         meta.providerSessions = { ...meta.providerSessions };
         delete meta.providerSessions[sessionKey];
+        dropFork(meta, sessionKey);
       }
       settle("failed", {
         error: { code: "MODEL_CALL_FAILED", id: randomUUID(), message: String(failure).slice(0, 2000) },

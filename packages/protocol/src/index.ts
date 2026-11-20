@@ -22,6 +22,7 @@ export interface TurnRequest {
   prompt: string;
   images?: Array<{ path: string; mime: string; label: string }>;
   resume: string | null;
+  fork?: boolean;
   mcp: McpTarget | null;
   workKey: string;
   code?: { cwd: string; readOnly?: boolean } | null;

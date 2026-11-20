@@ -285,3 +285,55 @@ Servidor na :2100 com o banco de produção importado (cópia):
 - `GET /bots/boss/notes/search?q=VENDER` → `{"items":[{"id":"note_01m7v4pnybq83j6n32ne1hnr7x","title":"Metas","folder":"","snippet":"vender mais","ranges":[[0,6]]}],"total":1,"nextCursor":null}`
 - `GET /bots/boss/notes/search?q=met&mode=title` → `{"items":[{"id":"note_01m7v4pnybq83j6n32ne1hnr7x","title":"Metas","folder":"","snippet":"","ranges":[[0,5]]}],"total":1,"nextCursor":null}`
 - Mesmos hits, na mesma ordem e com a mesma paginação da :2000 (SQLite/FTS5) em 14 buscas de 2 bots; a conversa de 1361 eventos sai idêntica nas duas.
+
+## v55 (20/11): conversas secundárias (`/side`) e ferramentas de thread
+
+### `POST /bots/:id/conversations/:sessionId/side`
+
+Abre uma conversa filha (secundária) da conversa `:sessionId`, do mesmo bot. Corpo opcional:
+
+```json
+{ "message": "roda os testes", "title": "Paralela" }
+```
+
+- `message` (opcional): vira a primeira mensagem da filha, enviada na hora.
+- `title` (opcional, até 80): sem ele, o título é o da mensagem (`autoTitle`) ou o da conversa mãe. Sempre com o prefixo `↳ `.
+- Resposta `201`: a conversa pública (mesmo formato de `POST /bots/:id/conversations`) com `parentSessionId`, `sessionBasePath` e `deliveryId` quando houve mensagem.
+- Erros: `400` campo desconhecido, título longo ou `message` que não é texto; `400 {code:"depth_limit"}` quando a mãe já é filha de uma filha (2 níveis no máximo); `409 {code:"too_many_threads"}` com 5 filhas rodando; `409 bot_archived`/`bot_deleted`; `404` conversa que não existe ou é de grupo.
+
+Toda conversa pública (`GET /bots`, `GET /bots/:id/conversations`, evento `conversation` do `/status/stream`) passa a trazer `parentSessionId` quando é filha. O app aninha a filha embaixo da mãe na barra lateral.
+
+O que a filha herda:
+
+- Contexto: conta Claude faz fork da sessão da mãe (`resume` + `forkSession`, a sessão da mãe não muda); Codex, Grok e Cursor recebem no primeiro turno o handoff inteiro da mãe (`## Contexto da conversa principal`). Itens herdados são lidos com `thread_read({itemId})` na própria filha.
+- Worktrees: as mesmas da mãe (cópia do estado, mesmo caminho). O prompt da filha avisa que a principal pode estar editando os mesmos arquivos.
+- Permissão: a da mãe.
+
+### Ferramentas novas no MCP `bots`
+
+Sem card de aprovação em nenhum modo:
+
+- `thread_side({message, title?})`: abre uma filha da conversa atual com a tarefa e volta na hora (`{sessionId, title, status, note}`). Quando o turno da filha termina, o resultado vai para a mãe como mensagem `source:"chat"`: entra no turno em curso da mãe pelo mesmo caminho da mensagem mandada no meio do turno ou abre um turno novo. Card aberto na mãe não é fechado por esse resultado; ele espera na fila.
+- `thread_create({message, title?, bot?})`: conversa nova e independente (do próprio bot ou de outro, por id ou nome), marcada com `spawnedBy`, sem contexto e sem devolver resultado.
+- `thread_list()`: `{threads:[{sessionId, botId, title, kind:"side"|"thread", status, lastMessage, createdAt}]}` das filhas da conversa atual.
+- `thread_read({threadId, limit?})`: status e últimas mensagens (`messages:[{itemId, role, at, text}]`) de uma conversa do mesmo bot ou filha da atual; com `itemId` também lê um item dela.
+
+Limites: 2 níveis (filha de filha pode, mais fundo recusa), 5 filhas rodando por conversa, grupo não abre filha.
+
+### Evento
+
+O `delivery.consumed` do resultado na mãe traz `side`:
+
+```json
+{"type":"delivery.consumed","data":{"deliveryId":"…","parts":[{"kind":"text","text":"Resultado da conversa secundária “↳ Investiga” (wrun_…):\nachei o bug"}],"source":"chat","side":{"sessionId":"wrun_…","title":"↳ Investiga","outcome":"completed"}}}
+```
+
+`attachments` vem junto quando a filha mandou arquivos.
+
+### Verificado
+
+Servidor de teste (`conversation-routes.test.ts`, `side-threads.test.ts`, `handoff-tools.test.ts`):
+
+- `POST …/conversations/:id/side {"message":"roda os testes"}` → `201` com `title:"↳ Roda os testes"`, `parentSessionId` da mãe, `sessionBasePath:"/bots/<id>/eve/v1"` e `deliveryId`.
+- Filha de filha → `201`; neta → `400 {"code":"depth_limit"}`; bot arquivado → `409 {"code":"bot_archived"}`; `{"skills":[]}` → `400 {"field":"skills"}`.
+- Turno da filha com conta Claude: `resume` = sessão da mãe e `fork: true`; a mãe fica com a mesma sessão.

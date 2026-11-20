@@ -250,7 +250,7 @@ export async function runClaude(
             },
           }
         : {}),
-      ...(request.resume ? { resume: request.resume } : {}),
+      ...(request.resume ? { resume: request.resume, ...(request.fork ? { forkSession: true } : {}) } : {}),
     },
   });
 

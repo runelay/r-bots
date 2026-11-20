@@ -128,7 +128,17 @@ describe("MCP route", () => {
   test("lists the built-in tools for the bot", async () => {
     const { client } = await open();
     const names = (await client.listTools()).tools.map((tool) => tool.name);
-    for (const name of ["set_role", "update_instructions", "add_schedule", "create_bot", "create_group", "thread_read"])
+    for (const name of [
+      "set_role",
+      "update_instructions",
+      "add_schedule",
+      "create_bot",
+      "create_group",
+      "thread_read",
+      "thread_side",
+      "thread_create",
+      "thread_list",
+    ])
       expect(names).toContain(name);
     expect(names).not.toContain("handoff");
     expect(names).not.toContain("delegate");
