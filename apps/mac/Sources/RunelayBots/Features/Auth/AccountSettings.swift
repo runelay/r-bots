@@ -8,15 +8,16 @@ struct AccountSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xl) {
             if let user = session.user {
-                PhotoGroup(hasPhoto: user.image != nil)
+                AccountPhotoGroup(hasPhoto: user.image != nil)
                 ProfileGroup(user: user)
+                SetupAgainGroup()
                 PasswordGroup()
             }
         }
     }
 }
 
-private struct PhotoGroup: View {
+struct AccountPhotoGroup: View {
     let hasPhoto: Bool
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var busy = false
@@ -163,6 +164,30 @@ private struct ProfileGroup: View {
                 }
                 .buttonStyle(.brandSecondary)
                 .disabled(leaving)
+            }
+        }
+    }
+}
+
+private struct SetupAgainGroup: View {
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        SettingsGroup(caption: "Primeiros passos") {
+            SettingsRow(title: "Configurar de novo", detail: "Refaça o passo a passo: perfil, bot, contas de IA, integrações, conectores e Mac.") {
+                Button {
+                    model.closeSettings()
+                    OnboardingStore.shared.restart()
+                } label: {
+                    HStack(spacing: Spacing.xs + 2) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text("Abrir")
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .buttonStyle(.brandSecondary)
             }
         }
     }

@@ -31,7 +31,6 @@ struct AuthGate: ViewModifier {
         .task(id: serverURL) {
             session.onSignIn {
                 RunnerConnection.shared.restart()
-                OnboardingStore.shared.signedIn()
                 Task { await model.reloadAfterSignIn() }
             }
             await session.bootstrap()
