@@ -280,6 +280,73 @@ struct SelectFace: View {
     }
 }
 
+struct GlassConfirm: View {
+    let title: String
+    var message: String? = nil
+    let confirmTitle: String
+    var destructive = false
+    let onConfirm: () -> Void
+
+    @Environment(\.glassPopupDismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.m) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
+                Text(title)
+                    .font(TypeScale.captionStrong)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .fixedSize()
+                if let message {
+                    Text(message)
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            HStack(spacing: Spacing.s) {
+                Spacer(minLength: 0)
+                Button {
+                    dismiss()
+                } label: {
+                    Text("Cancelar")
+                        .font(TypeScale.captionStrong)
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, Spacing.m)
+                        .frame(height: 28)
+                        .background(Theme.hover, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .keyboardShortcut(.cancelAction)
+                Button {
+                    dismiss()
+                    onConfirm()
+                } label: {
+                    Text(confirmTitle)
+                        .font(TypeScale.captionStrong)
+                        .foregroundStyle(Theme.onAccent)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, Spacing.m)
+                        .frame(height: 28)
+                        .background(destructive ? Theme.danger : Theme.brandAccent, in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(Spacing.m)
+        .frame(minWidth: 240, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(title)
+    }
+}
+
 private struct LiveGlassMenu: View {
     let items: () -> [GlassMenuItem]
     let title: String?

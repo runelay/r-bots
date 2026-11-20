@@ -201,14 +201,6 @@ struct BlockPanelHeader: View {
         .padding(.horizontal, Spacing.m)
         .frame(height: 44)
         .springAnimation(value: status)
-        .confirmationDialog(deleteTitle, isPresented: $confirmingDelete) {
-            Button("Apagar", role: .destructive) {
-                delete()
-            }
-            Button("Cancelar", role: .cancel) {}
-        } message: {
-            Text("Vai para a lixeira do bot.")
-        }
     }
 
     private var isNote: Bool {
@@ -290,43 +282,43 @@ struct BlockPanelHeader: View {
     }
 
     private var moreMenu: some View {
-        Menu {
-            if let botID = center.route?.botID {
-                if case .files = center.route {} else {
-                    Button {
-                        center.navigate(to: .files(botID: botID))
-                    } label: {
-                        Label("Todos os arquivos", systemImage: "square.stack")
-                    }
-                }
-            }
-            if deletable != nil {
-                Divider()
-                Button(role: .destructive) {
-                    confirmingDelete = true
-                } label: {
-                    Label("Apagar", systemImage: "trash")
-                }
-            }
-        } label: {
-            BlockHeaderIcon(systemImage: "ellipsis", isActive: false)
+        GlassMenuButton(edge: .trailing, help: "Mais", items: { moreItems }) { isOpen in
+            BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen || confirmingDelete)
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
         .fixedSize()
-        .clickable()
         .blockTooltip("Mais")
+        .glassPopup(isPresented: $confirmingDelete, edge: .trailing) {
+            GlassConfirm(title: deleteTitle, message: "Vai para a lixeira do bot.", confirmTitle: "Apagar", destructive: true) {
+                delete()
+            }
+        }
+    }
+
+    private var moreItems: [GlassMenuItem] {
+        var items: [GlassMenuItem] = []
+        if let botID = center.route?.botID {
+            if case .files = center.route {} else {
+                items.append(GlassMenuItem("Todos os arquivos", systemImage: "square.stack") {
+                    center.navigate(to: .files(botID: botID))
+                })
+            }
+        }
+        if deletable != nil {
+            items.append(GlassMenuItem("Apagar", systemImage: "trash", destructive: true) {
+                confirmingDelete = true
+            })
+        }
+        return items
     }
 
     private func exportMenu(_ kind: BlockKind) -> some View {
-        Menu {
-            ForEach(ExportFormat.formats(for: kind)) { format in
-                Button(format.label) {
+        GlassMenuButton(edge: .trailing, help: "Baixar como arquivo", items: {
+            ExportFormat.formats(for: kind).map { format in
+                GlassMenuItem(format.label, systemImage: "arrow.down.doc") {
                     center.export(format: format)
                 }
             }
-        } label: {
+        }) { _ in
             HStack(spacing: Spacing.xs) {
                 if center.exporting {
                     ProgressView()
@@ -345,11 +337,7 @@ struct BlockPanelHeader: View {
             .frame(height: 28)
             .glassSurface(Capsule(), interactive: true)
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
         .fixedSize()
-        .clickable()
         .disabled(center.exporting)
         .blockTooltip("Baixar como arquivo")
     }
