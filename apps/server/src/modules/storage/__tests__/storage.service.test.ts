@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, spyOn, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDb } from "../../../../test/db-helpers";
@@ -29,7 +29,19 @@ describe("storage service", () => {
     expect(createBlobStore({ BLOB_DRIVER: "fs", BLOB_FS_DIR: "/tmp/x" }, "/tmp/y")).toBeInstanceOf(FsBlobStore);
     expect((createBlobStore({ BLOB_DRIVER: "fs" }, "/tmp/y") as FsBlobStore).root).toBe("/tmp/y");
     expect(createBlobStore({ S3_ACCESS_KEY_ID: "a", S3_SECRET_ACCESS_KEY: "b" })).toBeInstanceOf(S3BlobStore);
-    expect(() => createBlobStore({})).toThrow("S3_ACCESS_KEY_ID");
+    expect(() => createBlobStore({ BOTS_DATA_DIR: dir })).toThrow("storage keys");
+  });
+
+  test("reads the storage keys from the secrets folder", async () => {
+    const root = join(dir, "keys");
+    mkdirSync(join(root, "secrets"), { recursive: true });
+    writeFileSync(join(root, "secrets", "s3.access-key-id"), "GKfile\n");
+    writeFileSync(join(root, "secrets", "s3.secret-access-key"), "secret-from-file\n");
+    const settings = s3Settings({ BOTS_DATA_DIR: root });
+    expect(settings.accessKeyId).toBe("GKfile");
+    expect(settings.secretAccessKey).toBe("secret-from-file");
+    expect(s3Settings({ BOTS_DATA_DIR: root, S3_ACCESS_KEY_ID: "GKenv" }).accessKeyId).toBe("GKenv");
+    expect(createBlobStore({ BOTS_DATA_DIR: root })).toBeInstanceOf(S3BlobStore);
   });
 
   test("keeps one shared store", async () => {

@@ -37,11 +37,13 @@ services:
       HOST_HOME: ${HOME}
       POSTGRES_PORT: ${BOTS_POSTGRES_PORT:-5432}
       REDIS_URL: redis://127.0.0.1:${BOTS_REDIS_PORT:-6379}
+    env_file:
+      - path: .env.local
+        required: false
     volumes:
       - ${HOME}:${HOME}
       - ${HOME}/.local/share/runelay-bots:/data
       - ${HOME}/.local/share/runelay-bots-backups:/backups
-      - ./.env.local:/app/apps/server/.env.local:ro
       - ${HOME}/.claude:/home/app/.claude
       - ${HOME}/.claude.json:/home/app/.claude.json
       - ${HOME}/.codex:/home/app/.codex
@@ -178,14 +180,16 @@ services:
     depends_on:
       storage:
         condition: service_healthy
+      data-secrets:
+        condition: service_completed_successfully
     environment:
       GARAGE_ADMIN_URL: http://storage:3903
-      BOTS_ENV_FILE_PATH: /env/.env.local
+      BOTS_SECRETS_DIR: /data/secrets
       GARAGE_CAPACITY_GB: ${BOTS_STORAGE_CAPACITY_GB:-100}
     volumes:
       - ./deploy/garage:/bootstrap:ro
       - ${HOME}/.local/share/runelay-bots/storage/secrets:/var/lib/garage/secrets:ro
-      - .:/env
+      - ${HOME}/.local/share/runelay-bots/secrets:/data/secrets
     restart: "no"
 
 volumes:

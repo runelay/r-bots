@@ -1,10 +1,12 @@
-import { chmod, chown, mkdir, rename, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { chmod, chown, mkdir, rename } from "node:fs/promises";
+import { join } from "node:path";
 
 const root = process.env.GARAGE_ROOT ?? "/var/lib/garage";
 const secretsDir = join(root, "secrets");
 const adminUrl = process.env.GARAGE_ADMIN_URL ?? "http://storage:3903";
-const envFile = process.env.BOTS_ENV_FILE_PATH ?? "/repo/.env.local";
+const dataSecretsDir = process.env.BOTS_SECRETS_DIR ?? "/data/secrets";
+const accessKeyFile = join(dataSecretsDir, "s3.access-key-id");
+const secretKeyFile = join(dataSecretsDir, "s3.secret-access-key");
 const bucketName = process.env.S3_BUCKET ?? "runelay-bots";
 const keyName = process.env.GARAGE_KEY_NAME ?? "runelay-bots-server";
 const capacity = Number(process.env.GARAGE_CAPACITY_GB ?? 100) * 1_000_000_000;
@@ -94,20 +96,16 @@ interface KeyInfo {
   name: string;
 }
 
-function parseEnv(text: string) {
-  const values = new Map<string, string>();
-  for (const line of text.split("\n")) {
-    const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
-    if (match?.[1]) values.set(match[1], match[2]?.replace(/^["']|["']$/g, "") ?? "");
-  }
-  return values;
+async function readText(path: string) {
+  const file = Bun.file(path);
+  return (await file.exists()) ? (await file.text()).trim() : "";
 }
 
-async function ensureKey(token: string, current: Map<string, string>) {
-  const knownId = current.get("S3_ACCESS_KEY_ID");
+async function ensureKey(token: string) {
+  const knownId = await readText(accessKeyFile);
   if (knownId) {
     const known = await admin<KeyInfo>(token, "GET", `/v2/GetKeyInfo?id=${knownId}&showSecretKey=true`);
-    if (known?.secretAccessKey && known.secretAccessKey === current.get("S3_SECRET_ACCESS_KEY"))
+    if (known?.secretAccessKey && known.secretAccessKey === (await readText(secretKeyFile)))
       return { key: known, state: "kept" };
   }
   const byName = await admin<KeyInfo>(token, "GET", `/v2/GetKeyInfo?search=${keyName}&showSecretKey=true`);
@@ -117,19 +115,13 @@ async function ensureKey(token: string, current: Map<string, string>) {
   return { key: created, state: "created" };
 }
 
-async function writeEnv(text: string, updates: Record<string, string>) {
-  const lines = text ? text.replace(/\n$/, "").split("\n") : [];
-  for (const [name, value] of Object.entries(updates)) {
-    const index = lines.findIndex((line) => new RegExp(`^\\s*${name}\\s*=`).test(line));
-    if (index >= 0) lines[index] = `${name}=${value}`;
-    else lines.push(`${name}=${value}`);
-  }
-  const next = `${lines.join("\n")}\n`;
-  if (next === text) return false;
-  const temp = `${envFile}.tmp`;
-  await Bun.write(temp, next);
+async function writeSecret(path: string, value: string) {
+  if ((await readText(path)) === value) return false;
+  const temp = `${path}.tmp`;
+  await Bun.write(temp, value);
   await chmod(temp, 0o600);
-  await rename(temp, envFile);
+  await chown(temp, uid, gid);
+  await rename(temp, path);
   return true;
 }
 
@@ -141,22 +133,19 @@ async function setup() {
   console.log(`layout: ${await ensureLayout(token, node.id)}`);
   const bucket = await ensureBucket(token);
   console.log(`bucket ${bucketName}: ${bucket.state}`);
-  const envText = (await Bun.file(envFile).exists()) ? await Bun.file(envFile).text() : "";
-  const { key, state } = await ensureKey(token, parseEnv(envText));
+  const { key, state } = await ensureKey(token);
   console.log(`key ${keyName}: ${state}`);
   await admin(token, "POST", "/v2/AllowBucketKey", {
     bucketId: bucket.id,
     accessKeyId: key.accessKeyId,
     permissions: { read: true, write: true, owner: true },
   });
-  const changed = await writeEnv(envText, {
-    S3_ACCESS_KEY_ID: key.accessKeyId,
-    S3_SECRET_ACCESS_KEY: key.secretAccessKey ?? "",
-  });
-  await chmod(envFile, 0o600);
-  const owner = await stat(dirname(envFile));
-  await chown(envFile, owner.uid, owner.gid);
-  console.log(`env file: ${changed ? "updated" : "kept"}`);
+  await mkdir(dataSecretsDir, { recursive: true });
+  await chmod(dataSecretsDir, 0o700);
+  await chown(dataSecretsDir, uid, gid);
+  const wroteId = await writeSecret(accessKeyFile, key.accessKeyId);
+  const wroteSecret = await writeSecret(secretKeyFile, key.secretAccessKey ?? "");
+  console.log(`storage keys: ${wroteId || wroteSecret ? "written" : "kept"}`);
 }
 
 const mode = process.argv[2];

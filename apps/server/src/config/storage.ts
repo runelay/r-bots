@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { dataDir } from "./env";
@@ -21,13 +22,25 @@ export function blobDriver(env: Record<string, string | undefined> = process.env
   return env.BLOB_DRIVER === "fs" ? "fs" : "s3";
 }
 
+export function s3SecretsDir(env: Record<string, string | undefined> = process.env) {
+  return join(env.BOTS_DATA_DIR ?? dataDir, "secrets");
+}
+
+function secretFile(env: Record<string, string | undefined>, name: string) {
+  try {
+    return readFileSync(join(s3SecretsDir(env), name), "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
 export function s3Settings(env: Record<string, string | undefined> = process.env): S3Settings {
   return {
     endpoint: env.S3_ENDPOINT ?? "http://127.0.0.1:3900",
     bucket: env.S3_BUCKET ?? "runelay-bots",
     region: env.S3_REGION ?? "garage",
-    accessKeyId: env.S3_ACCESS_KEY_ID ?? "",
-    secretAccessKey: env.S3_SECRET_ACCESS_KEY ?? "",
+    accessKeyId: env.S3_ACCESS_KEY_ID || secretFile(env, "s3.access-key-id"),
+    secretAccessKey: env.S3_SECRET_ACCESS_KEY || secretFile(env, "s3.secret-access-key"),
     forcePathStyle: env.S3_FORCE_PATH_STYLE !== "false",
   };
 }

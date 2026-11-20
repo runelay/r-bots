@@ -11,7 +11,7 @@ export function createBlobStore(env: Record<string, string | undefined> = proces
   if (blobDriver(env) === "fs") return new FsBlobStore(env.BLOB_FS_DIR ?? root);
   const settings = s3Settings(env);
   if (!settings.accessKeyId || !settings.secretAccessKey)
-    throw new Error("BLOB_DRIVER=s3 needs S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY");
+    throw new Error("BLOB_DRIVER=s3 needs the storage keys in <data>/secrets (run the storage-init service)");
   return new S3BlobStore(settings);
 }
 

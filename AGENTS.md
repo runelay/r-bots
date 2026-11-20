@@ -53,7 +53,7 @@ Production (Docker, repo root):
 
 ```sh
 docker compose up -d --build        # rebuild after changing apps/server or packages
-docker compose restart              # picks up .env.local, not code
+docker compose restart              # restarts without rebuilding; .env.local is optional and nothing needs it
 docker compose logs -f --tail 200
 docker compose ps
 curl -s -H "Authorization: Bearer $RUNNER_TOKEN" 127.0.0.1:2000/status  # check before any restart
@@ -107,7 +107,7 @@ swift run                   # run from the terminal
 
 ## Security
 
-- Never log, return or write a secret. Console output is redacted by `installConsoleRedaction()` from `src/shared/redact.ts`; any secret value the server handles must be registered there (`rememberSecretValue`) before it can appear anywhere. Never print tokens from `.env.local` (`RUNELAY_MCP_TOKEN`, `JEV_API_KEY`, `ELEVENLABS_API_KEY`, ...).
+- Never log, return or write a secret. Console output is redacted by `installConsoleRedaction()` from `src/shared/redact.ts`; any secret value the server handles must be registered there (`rememberSecretValue`) before it can appear anywhere. Never print generated secrets from `<data>/secrets/`, `<data>/auth.secret`, `<data>/runner.token` or integration keys.
 - Vault: tools and the model get aliases only. Values live in the Mac keychain, with an optional AES-256-GCM copy on the server whose key (`VAULT_KEY_FILE`) lives outside the repo. Secrets reach a command only through `bin/rb-secret-run.mjs`.
 - `ANTHROPIC_API_KEY` and `ANTHROPIC_AUTH_TOKEN` are deleted at boot (`src/index.ts`), and `start.sh` also unsets `OPENAI_API_KEY`, `CURSOR_API_KEY`, `XAI_API_KEY`. This is deliberate: turns run on the logged-in subscriptions. Do not reintroduce API keys.
 - The server listens on `127.0.0.1` (`GATEWAY_HOST`) and is reached only through `tailscale serve` on the tailnet (`:10447`). Never bind `0.0.0.0` or expose a port publicly.
