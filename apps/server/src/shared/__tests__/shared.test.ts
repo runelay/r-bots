@@ -10,6 +10,7 @@ import { ValidationError } from "../errors";
 import { notFound, Req, Res, readBody, runelayFailure, sendFile, sendJson, validationResponse } from "../http";
 import { readJson, updateJson, writeJson } from "../json-file";
 import {
+  forgetAllSecretValues,
   forgetSecretValue,
   installConsoleRedaction,
   redactDeep,
@@ -391,6 +392,7 @@ describe("json-file", () => {
 });
 
 describe("redact", () => {
+  beforeEach(() => forgetAllSecretValues());
   afterEach(() => {
     forgetSecretValue("api");
     forgetSecretValue("other");

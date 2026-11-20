@@ -101,3 +101,12 @@ The app owns turn taking, because only it sees partials, mic energy and whether 
 - Dispositivo escolhido sumiu → volta ao padrão com "O <nome> não está mais conectado. Voltei para o padrão do sistema." (chamada e ditado).
 - Chamada: nos primeiros 3 s ouvindo, pico < 0,002 → "Não estou te ouvindo pelo <nome> · Trocar" na barra e abre o seletor. Ditado: o mesmo aviso no composer, com "Trocar".
 - `scripts/voice-e2e` agora precisa de `Features/Voice/Microphones.swift` na lista do swiftc.
+
+## v44 (20/11): endurecimento do cofre, egress e deploy
+
+- `POST /bots/:id/voice/session` e `POST /bots/:id/voice/session/:callId/tokens`: no máximo 30 tokens de uso único por pessoa por minuto (cada tipo, `stt` ou `tts`, conta um) e 4 pedidos de token em andamento por pessoa. Acima disso: `429 {"ok":false,"error":"Muitos pedidos de token de voz agora. Espere um minuto e tente de novo."}`. A pessoa é o `userId` do principal autenticado.
+- `ELEVENLABS_API_URL` só vale com `https://` (ou `http://` em loopback); fora disso o servidor usa `https://api.elevenlabs.io`.
+
+### Verificado
+
+- `bun test src/modules/voice/__tests__/voice.service.test.ts`: 31 pass (limite por pessoa, teto em andamento, URL insegura ignorada); `voice.routes.test.ts`: 10 pass.

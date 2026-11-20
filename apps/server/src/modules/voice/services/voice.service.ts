@@ -17,9 +17,36 @@ import { getStoredSession } from "../../conversations/services/sessions.service"
 import { ensureThread } from "../../conversations/services/threads.service";
 import { deliver } from "../../engine/services/engine.service";
 import { integrationSecret, onIntegrationChange } from "../../integrations/services/integration-store.service";
+import { trustedServiceUrl } from "../../integrations/services/integrations.service";
 
 function apiBase() {
-  return process.env.ELEVENLABS_API_URL ?? "https://api.elevenlabs.io";
+  return trustedServiceUrl(process.env.ELEVENLABS_API_URL, "https://api.elevenlabs.io");
+}
+
+export const tokenLimit = { perMinute: 30, concurrent: 4 };
+const mintWindows = new Map<string, number[]>();
+const mintsInFlight = new Map<string, number>();
+
+function reserveMint(who: string, count: number) {
+  const now = Date.now();
+  const recent = (mintWindows.get(who) ?? []).filter((at) => at > now - 60_000);
+  const running = mintsInFlight.get(who) ?? 0;
+  if (recent.length + count > tokenLimit.perMinute || running + 1 > tokenLimit.concurrent) {
+    mintWindows.set(who, recent);
+    throw new VoiceError("Muitos pedidos de token de voz agora. Espere um minuto e tente de novo.", 429);
+  }
+  mintWindows.set(who, [...recent, ...Array(count).fill(now)]);
+  mintsInFlight.set(who, running + 1);
+  return () => {
+    const left = (mintsInFlight.get(who) ?? 1) - 1;
+    if (left > 0) mintsInFlight.set(who, left);
+    else mintsInFlight.delete(who);
+  };
+}
+
+export function resetTokenLimits() {
+  mintWindows.clear();
+  mintsInFlight.clear();
 }
 const wsBase = "wss://api.elevenlabs.io";
 export const fastModel = process.env.VOICE_FAST_MODEL ?? "claude-haiku-5-5";
@@ -773,12 +800,13 @@ export async function startCall(bot: BotDefinition) {
   return call;
 }
 
-export async function credentials(bot: BotDefinition, types: Array<"stt" | "tts">) {
+export async function credentials(bot: BotDefinition, types: Array<"stt" | "tts">, who = "local") {
   const voice = voiceOf(bot);
+  const release = reserveMint(who, types.length);
   const [stt, tts] = await Promise.all([
     types.includes("stt") ? mintToken("realtime_scribe") : Promise.resolve(null),
     types.includes("tts") ? mintToken("tts_websocket") : Promise.resolve(null),
-  ]);
+  ]).finally(release);
   return {
     voice,
     ...(stt

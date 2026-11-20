@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { rememberSecretValue } from "../shared/redact";
 import { dataDir } from "./env";
 
 export const backupDir = process.env.BOTS_BACKUP_DIR ?? join(homedir(), ".local", "share", "runelay-bots-backups");
@@ -35,12 +36,14 @@ function secretFile(env: Record<string, string | undefined>, name: string) {
 }
 
 export function s3Settings(env: Record<string, string | undefined> = process.env): S3Settings {
+  const secretAccessKey = env.S3_SECRET_ACCESS_KEY || secretFile(env, "s3.secret-access-key");
+  if (secretAccessKey) rememberSecretValue("storage:s3", secretAccessKey, { pinned: true });
   return {
     endpoint: env.S3_ENDPOINT ?? "http://127.0.0.1:3900",
     bucket: env.S3_BUCKET ?? "runelay-bots",
     region: env.S3_REGION ?? "garage",
     accessKeyId: env.S3_ACCESS_KEY_ID || secretFile(env, "s3.access-key-id"),
-    secretAccessKey: env.S3_SECRET_ACCESS_KEY || secretFile(env, "s3.secret-access-key"),
+    secretAccessKey,
     forcePathStyle: env.S3_FORCE_PATH_STYLE !== "false",
   };
 }

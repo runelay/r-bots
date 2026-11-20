@@ -13,10 +13,23 @@ import { getSecretMeta, issueExecTicket, loadVault, readAudit, saveSecretMeta } 
 
 const keyFile = process.env.VAULT_KEY_FILE as string;
 
+let device: { id: string; name: string; registeredAt: string } | null = {
+  id: "mac-1",
+  name: "Mac",
+  registeredAt: "2026-11-01T00:00:00.000Z",
+};
+
 const fakeAuth = {
   authenticate: async () => ({
     kind: "principal",
-    principal: { userId: "u1", email: "person@example.com", name: "Person", role: "owner", method: "session" },
+    principal: {
+      userId: "u1",
+      email: "person@example.com",
+      name: "Person",
+      role: "owner",
+      method: "session",
+      ...(device ? { device } : {}),
+    },
   }),
   handle: async () => null,
 } as unknown as AuthModule;
@@ -46,7 +59,7 @@ async function call(method: string, path: string, options: CallOptions = {}) {
 
 beforeAll(async () => {
   useAuthModule(fakeAuth);
-  await writeFile(keyFile, randomBytes(32));
+  await writeFile(keyFile, randomBytes(32).toString("hex"), { mode: 0o600 });
 });
 
 afterAll(async () => {
@@ -63,17 +76,25 @@ beforeEach(async () => {
 
 describe("exec tickets", () => {
   test("a local caller gets the env once", async () => {
-    const ticket = issueExecTicket({ SEGREDO_A: "value-1234" }, ["value-1234"]);
+    const grant = {
+      argv: ["gh", "api", "user"],
+      env: { GH_TOKEN: "value-1234" },
+      stdin: null,
+      tempHome: true,
+      redact: ["value-1234"],
+      path: "/usr/bin",
+    };
+    const ticket = issueExecTicket(grant);
     const first = await call("POST", `/vault/exec/${ticket}`, { authorized: false });
     expect(first.status).toBe(200);
-    expect(first.body).toEqual({ env: { SEGREDO_A: "value-1234" }, redact: ["value-1234"] });
+    expect(first.body).toEqual(grant);
     expect(first.headers.get("cache-control")).toBe("no-store");
     const again = await call("POST", `/vault/exec/${ticket}`, { authorized: false });
     expect(again.status).toBe(410);
   });
 
   test("proxied callers never see the ticket route", async () => {
-    const ticket = issueExecTicket({}, []);
+    const ticket = issueExecTicket({ argv: [], env: {}, stdin: null, tempHome: false, redact: [], path: "" });
     const forwarded = await call("POST", `/vault/exec/${ticket}`, { headers: { "x-forwarded-for": "1.2.3.4" } });
     expect(forwarded.status).toBe(404);
     const tailscale = await call("POST", `/vault/exec/${ticket}`, { headers: { "tailscale-user-login": "a@b" } });
@@ -194,6 +215,19 @@ describe("audit", () => {
     expect((await readAudit("a", 1))[0]).toMatchObject({ outcome: "revealed", by: "person" });
     await call("POST", "/vault/audit", { body: { name: "a", outcome: "used", tool: "x" } });
     expect(getSecretMeta("a")?.lastUsedAt).toBeNull();
+  });
+
+  test("POST is only for a registered Mac device", async () => {
+    await saveSecretMeta("a", {});
+    const saved = device;
+    device = null;
+    try {
+      const response = await call("POST", "/vault/audit", { body: { name: "a", outcome: "revealed" } });
+      expect(response.status).toBe(403);
+      expect(await readAudit("a", 5)).toHaveLength(1);
+    } finally {
+      device = saved;
+    }
   });
 
   test("POST validates name and outcome", async () => {

@@ -1,25 +1,40 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { dataDir } from "../../../config/env";
-import { forgetSecretValue, redactDeep, rememberSecretValue } from "../../../shared/redact";
+import { forgetSecretValue, minSecretLength, redactDeep, rememberSecretValue } from "../../../shared/redact";
 import { MacRunnerUnavailable, macRunnerSupports, macSecretResolve } from "../../accounts/services/mac-runner.service";
 import {
   addAudit,
   loadSecretMetas,
   readAuditRows,
   readSealed,
+  type Sealed,
   saveSecretMetas,
   writeSealed,
+  writeSealedMany,
 } from "../repositories/vault.repository";
+import { isPublicSuffix } from "./public-suffix";
+import {
+  assertKeyFileSafe,
+  deriveKey,
+  KeyFileUnsafe,
+  keyFileCandidates,
+  loadMasterKey,
+  openGcm,
+  policyDigest,
+  sealV2,
+  sealVersionOf,
+  vaultInfo,
+  writableKeyFile,
+} from "./vault-key.service";
 
-const keyFile = process.env.VAULT_KEY_FILE ?? join(dataDir, "vault.key");
-const legacyKeyFiles = [
+const legacyKeyFiles = () => [
   join(process.env.HOST_HOME?.trim() || homedir(), ".config", "runelay-bots", "vault.key"),
   join(homedir(), ".config", "runelay-bots", "vault.key"),
   "/run/runelay-bots/vault.key",
 ];
+const hostTools = new Set(["http_request", "Bash", "browser_fill"]);
 
 export const secretNamePattern = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 export const secretRefPattern = /segredo:([a-z0-9][a-z0-9_-]{0,63})/g;
@@ -81,9 +96,14 @@ let index: Record<string, SecretMeta> = {};
 let loaded = false;
 
 function ensureKeyFile() {
-  if (existsSync(keyFile)) return;
+  const present = keyFileCandidates().find((file) => existsSync(file));
+  if (present) {
+    assertKeyFileSafe(present);
+    return;
+  }
+  const keyFile = writableKeyFile();
   mkdirSync(dirname(keyFile), { recursive: true });
-  const legacy = legacyKeyFiles.find((file) => file !== keyFile && existsSync(file));
+  const legacy = legacyKeyFiles().find((file) => file !== keyFile && existsSync(file));
   if (legacy) {
     copyFileSync(legacy, keyFile);
     chmodSync(keyFile, 0o600);
@@ -104,8 +124,10 @@ export async function loadVault() {
   try {
     ensureKeyFile();
   } catch (error) {
+    if (error instanceof KeyFileUnsafe) throw error;
     console.warn(`vault key setup failed: ${error instanceof Error ? error.message : String(error)}`);
   }
+  await migrateServerCopies();
 }
 
 async function saveIndex() {
@@ -124,60 +146,106 @@ export function getSecretMeta(name: string) {
   return index[name] ?? null;
 }
 
-function loadKey() {
-  let raw: Buffer;
-  try {
-    raw = readFileSync(keyFile);
-  } catch {
-    return null;
-  }
-  if (raw.length === 32) return raw;
-  const text = raw.toString("utf8").trim();
-  if (/^[0-9a-f]{64}$/i.test(text)) return Buffer.from(text, "hex");
-  const decoded = Buffer.from(text, "base64");
-  return decoded.length === 32 ? decoded : null;
-}
-
 export function serverStorageAvailable() {
-  return loadKey() !== null;
+  return loadMasterKey() !== null;
 }
 
-function aad(name: string) {
+type Policy = Pick<SecretMeta, "bots" | "domains" | "expiresAt">;
+
+function aadV1(name: string) {
   return Buffer.from(`runelay-bots:vault:v1:${name}`, "utf8");
 }
 
-async function writeServerCopy(name: string, value: string) {
-  const key = loadKey();
-  if (!key)
-    throw new VaultError("no_key", "O servidor não tem a chave do cofre, então não dá para guardar uma cópia aqui.");
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  cipher.setAAD(aad(name));
-  const ct = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  key.fill(0);
-  await saveSecretMetas(index);
-  await writeSealed(name, { iv, tag, ct });
+function aadV2(name: string, policy: Policy) {
+  return Buffer.from(`runelay-bots:vault:v2:${name}:${policyDigest(policy)}`, "utf8");
 }
 
-async function readServerCopy(name: string) {
-  const key = loadKey();
-  if (!key)
+function sealCopy(master: Buffer, name: string, value: string, policy: Policy) {
+  const key = deriveKey(master, vaultInfo);
+  try {
+    return sealV2(key, value, aadV2(name, policy));
+  } finally {
+    key.fill(0);
+  }
+}
+
+function openCopy(master: Buffer, name: string, sealed: Sealed, policy: Policy) {
+  if (sealVersionOf(sealed) === 1) return openGcm(master, sealed, aadV1(name));
+  const key = deriveKey(master, vaultInfo);
+  try {
+    return openGcm(key, sealed, aadV2(name, policy));
+  } finally {
+    key.fill(0);
+  }
+}
+
+async function writeServerCopy(name: string, value: string, policy: Policy) {
+  const master = loadMasterKey();
+  if (!master)
+    throw new VaultError("no_key", "O servidor não tem a chave do cofre, então não dá para guardar uma cópia aqui.");
+  const sealed = sealCopy(master, name, value, policy);
+  master.fill(0);
+  await saveSecretMetas(index);
+  await writeSealed(name, sealed);
+}
+
+async function readServerCopy(name: string, policy: Policy) {
+  const master = loadMasterKey();
+  if (!master)
     throw new VaultError("no_key", "O servidor perdeu a chave do cofre e não consegue abrir a cópia guardada aqui.");
   try {
     const sealed = await readSealed(name);
     if (!sealed) throw new Error("missing");
-    const decipher = createDecipheriv("aes-256-gcm", key, sealed.iv);
-    decipher.setAAD(aad(name));
-    decipher.setAuthTag(sealed.tag);
-    return Buffer.concat([decipher.update(sealed.ct), decipher.final()]).toString("utf8");
+    return openCopy(master, name, sealed, policy);
   } catch {
     throw new VaultError(
       "server_copy_broken",
       `A cópia do segredo:${name} no servidor não abriu. Peça à pessoa para salvar o segredo de novo no Cofre.`,
     );
   } finally {
-    key.fill(0);
+    master.fill(0);
+  }
+}
+
+export async function migrateServerCopies() {
+  const master = loadMasterKey();
+  if (!master) return 0;
+  const updates: { name: string; sealed: Sealed }[] = [];
+  try {
+    for (const meta of Object.values(index)) {
+      if (meta.storage !== "mac+server") continue;
+      const sealed = await readSealed(meta.name);
+      if (!sealed || sealVersionOf(sealed) !== 1) continue;
+      try {
+        const value = openGcm(master, sealed, aadV1(meta.name));
+        updates.push({ name: meta.name, sealed: sealCopy(master, meta.name, value, meta) });
+      } catch {
+        console.warn(`vault: server copy of ${meta.name} did not open with the current key, left as is`);
+      }
+    }
+  } finally {
+    master.fill(0);
+  }
+  if (updates.length) {
+    await writeSealedMany(updates);
+    console.log(`vault: re-encrypted ${updates.length} server copies to v2`);
+  }
+  return updates.length;
+}
+
+async function resealForPolicy(name: string, before: Policy, after: Policy) {
+  if (policyDigest(before) === policyDigest(after)) return;
+  const master = loadMasterKey();
+  if (!master) return;
+  try {
+    const sealed = await readSealed(name);
+    if (!sealed) return;
+    const value = openCopy(master, name, sealed, before);
+    await writeSealed(name, sealCopy(master, name, value, after));
+  } catch {
+    console.warn(`vault: server copy of ${name} could not be re-encrypted for the new policy`);
+  } finally {
+    master.fill(0);
   }
 }
 
@@ -230,6 +298,12 @@ export function normalizeDomains(list: unknown) {
       throw new VaultError(
         "bad_domains",
         `“${String(item)}” não é um site válido. Use algo como github.com ou *.github.com.`,
+      );
+    const base = value.replace(/^\*\./, "");
+    if (base.split(".").length < 2 || isPublicSuffix(base))
+      throw new VaultError(
+        "bad_domains",
+        `“${String(item)}” é amplo demais (vale para sites de qualquer dono). Use o site exato, como api.exemplo.com.br ou *.exemplo.com.`,
       );
     if (!out.includes(value)) out.push(value);
   }
@@ -299,7 +373,14 @@ export async function resolveSecret(request: ResolveRequest): Promise<string> {
       `Não existe segredo:${request.name} no cofre. Veja os nomes com list_secrets ou peça à pessoa com request_secret.`,
     );
   }
-  const denied = policyError(meta, request.botId, request.host);
+  const denied =
+    policyError(meta, request.botId, request.host) ??
+    (meta.domains.length === 0 && hostTools.has(request.tool)
+      ? new VaultError(
+          "no_domains",
+          `O segredo:${meta.name} não tem sites liberados, então não pode sair por ${request.tool}. Peça para a pessoa colocar os sites dele no Cofre (por exemplo api.github.com).`,
+        )
+      : null);
   if (denied) {
     await audit({ ...base, outcome: "denied", reason: denied.code });
     throw denied;
@@ -347,8 +428,15 @@ export async function resolveSecret(request: ResolveRequest): Promise<string> {
         `O segredo:${request.name} fica só no Mac da pessoa, e o Mac está offline (${macFailure?.message ?? "app fechado"}). Diga isso à pessoa: ela pode abrir o app runelay bots ou ligar “usar com o Mac fechado” nesse segredo no Cofre.`,
       );
     }
-    value = await readServerCopy(request.name);
+    value = await readServerCopy(request.name, meta);
     source = "server";
+  }
+  if (value.length < minSecretLength) {
+    await audit({ ...base, outcome: "denied", reason: "too_short", source });
+    throw new VaultError(
+      "too_short",
+      `O segredo:${request.name} tem menos de ${minSecretLength} caracteres e não dá para escondê-lo das saídas. Peça para a pessoa salvar um valor maior.`,
+    );
   }
   rememberSecretValue(request.name, value);
   await audit({ ...base, outcome: "used", source });
@@ -389,20 +477,46 @@ export function envRefsIn(command: string) {
   return { names: [...names], unknown: [...new Set(unknown)] };
 }
 
-const tickets = new Map<string, { env: Record<string, string>; redact: string[]; until: number }>();
+export interface ExecGrant {
+  argv: string[];
+  env: Record<string, string>;
+  stdin: string | null;
+  tempHome: boolean;
+  redact: string[];
+  path: string;
+}
 
-export function issueExecTicket(env: Record<string, string>, redact: string[]) {
+interface TicketEntry {
+  grant: ExecGrant;
+  until: number;
+  signal: AbortSignal | null;
+}
+
+export const execTicketTtlMs = 30_000;
+const tickets = new Map<string, TicketEntry>();
+const spentTickets = new Map<string, number>();
+
+export function issueExecTicket(grant: ExecGrant, signal: AbortSignal | null = null) {
   const ticket = randomBytes(32).toString("base64url");
-  tickets.set(ticket, { env, redact, until: Date.now() + 60_000 });
-  setTimeout(() => tickets.delete(ticket), 61_000).unref();
+  tickets.set(ticket, { grant, until: Date.now() + execTicketTtlMs, signal });
+  const drop = () => tickets.delete(ticket);
+  setTimeout(drop, execTicketTtlMs + 1000).unref();
+  signal?.addEventListener("abort", drop, { once: true });
   return ticket;
 }
 
 export function takeExecTicket(ticket: string) {
   const entry = tickets.get(ticket);
-  if (!entry) return null;
+  if (!entry) {
+    if (spentTickets.has(ticket)) console.warn("vault: an exec ticket was presented twice");
+    return null;
+  }
   tickets.delete(ticket);
-  return entry.until >= Date.now() ? entry : null;
+  const now = Date.now();
+  for (const [key, until] of spentTickets) if (until < now) spentTickets.delete(key);
+  spentTickets.set(ticket, now + execTicketTtlMs);
+  if (entry.until < now || entry.signal?.aborted) return null;
+  return entry.grant;
 }
 
 export async function saveSecretMeta(name: string, body: Record<string, unknown>) {
@@ -448,6 +562,7 @@ export async function saveSecretMeta(name: string, body: Record<string, unknown>
   };
   index[name] = meta;
   await saveIndex();
+  if (current && meta.storage === "mac+server" && body.rotated !== true) await resealForPolicy(name, current, meta);
   if (body.rotated === true && meta.storage === "mac+server") {
     await writeSealed(name, null);
     meta.storage = "mac";
@@ -475,7 +590,12 @@ export async function setServerCopy(name: string, value: string | null) {
     await writeSealed(name, null);
     meta.storage = "mac";
   } else {
-    await writeServerCopy(name, value);
+    if (value.length < minSecretLength)
+      throw new VaultError(
+        "too_short",
+        `Valor curto demais: use pelo menos ${minSecretLength} caracteres para o servidor conseguir escondê-lo.`,
+      );
+    await writeServerCopy(name, value, meta);
     meta.storage = "mac+server";
   }
   meta.updatedAt = new Date().toISOString();

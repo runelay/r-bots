@@ -1,9 +1,10 @@
 import { afterAll, afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
-import { randomBytes } from "node:crypto";
+import { createCipheriv, randomBytes } from "node:crypto";
 import * as fs from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { eq } from "drizzle-orm";
 import { resetData } from "../../../../test/helpers";
 import { connectFakeRunner } from "../../../../test/media-helpers";
 import { getDb } from "../../../db";
@@ -14,6 +15,7 @@ import * as repository from "../repositories/vault.repository";
 import {
   audit,
   deleteSecret,
+  type ExecGrant,
   ensureVaultLoaded,
   envNameOf,
   envRefsIn,
@@ -24,6 +26,7 @@ import {
   listSecretMeta,
   loadVault,
   markUsed,
+  migrateServerCopies,
   normalizeDomains,
   normalizeHost,
   onlyRefs,
@@ -43,12 +46,25 @@ import {
 
 const keyFile = process.env.VAULT_KEY_FILE as string;
 const testKey = randomBytes(32);
-const request = { botId: "bot-a", botName: "Bot A", tool: "browser_fill", host: "github.com", sessionId: "s1" };
+const request = { botId: "bot-a", botName: "Bot A", tool: "computer_type", host: "github.com", sessionId: "s1" };
 const remembered = new Set<string>();
 
-async function useKey(content: Buffer | string | null) {
-  if (content === null) await rm(keyFile, { force: true });
-  else await writeFile(keyFile, content);
+async function useKey(content: Buffer | string | null, mode = 0o600) {
+  if (content === null) return await rm(keyFile, { force: true });
+  await writeFile(keyFile, content, { mode });
+  await chmod(keyFile, mode);
+}
+
+function grant(extra: Partial<ExecGrant> = {}): ExecGrant {
+  return { argv: ["curl"], env: {}, stdin: null, tempHome: false, redact: [], path: "/usr/bin", ...extra };
+}
+
+function sealV1(name: string, value: string) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", testKey, iv);
+  cipher.setAAD(Buffer.from(`runelay-bots:vault:v1:${name}`, "utf8"));
+  const ct = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  return { iv, tag: cipher.getAuthTag(), ct };
 }
 
 async function resolveOk(name: string, extra: Partial<typeof request> = {}) {
@@ -72,7 +88,7 @@ async function auditRows() {
 
 beforeEach(async () => {
   await resetData();
-  await useKey(testKey);
+  await useKey(testKey.toString("hex"));
   await getDb().delete(vaultAudit);
   await getDb().delete(vaultSecrets);
   await loadVault();
@@ -151,6 +167,12 @@ describe("hosts and domains", () => {
     expect(() => normalizeDomains(["http://[bad"])).toThrow("não é um site válido");
     expect(() => normalizeDomains(["bad domain"])).toThrow("não é um site válido");
     expect(() => normalizeDomains([`${"a".repeat(250)}.com`])).toThrow("não é um site válido");
+    for (const broad of ["com", "*.com", "com.br", "*.com.br", "co.uk", "*.github.io", "localhost"])
+      expect(() => normalizeDomains([broad])).toThrow("amplo demais");
+    expect(normalizeDomains(["*.exemplo.com.br", "api.exemplo.co.uk"])).toEqual([
+      "*.exemplo.com.br",
+      "api.exemplo.co.uk",
+    ]);
     const many = Array.from({ length: 31 }, (_, index) => `site${index}.com`);
     expect(() => normalizeDomains(many)).toThrow("no máximo 30 sites");
   });
@@ -260,12 +282,14 @@ describe("metadata", () => {
 });
 
 describe("server copy and key", () => {
-  test("serverStorageAvailable accepts raw, hex and base64 keys", async () => {
-    expect(serverStorageAvailable()).toBe(true);
-    await useKey(testKey.toString("hex"));
+  test("serverStorageAvailable accepts only hex and base64 keys", async () => {
     expect(serverStorageAvailable()).toBe(true);
     await useKey(`${testKey.toString("base64")}\n`);
     expect(serverStorageAvailable()).toBe(true);
+    await useKey(testKey.toString("base64url"));
+    expect(serverStorageAvailable()).toBe(true);
+    await useKey(testKey);
+    expect(serverStorageAvailable()).toBe(false);
     await useKey("short");
     expect(serverStorageAvailable()).toBe(false);
     await useKey(null);
@@ -277,7 +301,8 @@ describe("server copy and key", () => {
     const on = await setServerCopy("a", "plain-secret-value");
     expect(on.storage).toBe("mac+server");
     const sealed = await repository.readSealed("a");
-    expect(sealed?.iv).toHaveLength(12);
+    expect(sealed?.iv).toHaveLength(17);
+    expect(sealed?.iv[0]).toBe(2);
     expect(sealed?.tag).toHaveLength(16);
     expect(sealed?.ct.toString("utf8")).not.toContain("plain-secret-value");
     const off = await setServerCopy("a", null);
@@ -291,6 +316,7 @@ describe("server copy and key", () => {
   test("setServerCopy fails for unknown secrets and without a key", async () => {
     expect(await vaultCode(setServerCopy("missing", "x"))).toBe("not_found");
     await saveSecretMeta("a", {});
+    expect(await vaultCode(setServerCopy("a", "abc"))).toBe("too_short");
     await useKey(null);
     expect(await vaultCode(setServerCopy("a", "value-1234"))).toBe("no_key");
   });
@@ -301,7 +327,7 @@ describe("key file setup", () => {
   const legacyKey = join(process.env.HOST_HOME as string, ".config", "runelay-bots", "vault.key");
 
   function hideMachineKeys() {
-    const machine = [join(homedir(), ".config", "runelay-bots"), "/run/runelay-bots"];
+    const machine = [join(homedir(), ".config", "runelay-bots"), "/run/runelay-bots", "/run/secrets"];
     return spyOn(fs, "existsSync").mockImplementation((path) =>
       machine.some((dir) => String(path).startsWith(dir)) ? false : realExists(path),
     );
@@ -338,6 +364,13 @@ describe("key file setup", () => {
       warn.mockRestore();
       await rm(legacyKey, { force: true });
     }
+  });
+
+  test("a key file readable by group or others stops the vault from loading", async () => {
+    await useKey(testKey.toString("hex"), 0o644);
+    await expect(loadVault()).rejects.toThrow("chmod 600");
+    await useKey(testKey.toString("hex"));
+    await loadVault();
   });
 
   test("a key setup failure is only a warning and the vault still loads", async () => {
@@ -439,7 +472,7 @@ describe("resolveSecret", () => {
     expect(await resolveOk("a", { sessionId: undefined })).toBe("server-secret-value");
     expect(redactText("leak server-secret-value")).toBe("leak ••••");
     expect((await auditRows())[0]).toMatchObject({ outcome: "used", source: "server", sessionId: null });
-    expect(getSecretMeta("a")).toMatchObject({ lastUsedBy: "bot-a", lastTool: "browser_fill" });
+    expect(getSecretMeta("a")).toMatchObject({ lastUsedBy: "bot-a", lastTool: "computer_type" });
   });
 
   test("a lost key or a broken copy is reported", async () => {
@@ -447,7 +480,7 @@ describe("resolveSecret", () => {
     await setServerCopy("a", "server-secret-value");
     await useKey(null);
     expect(await vaultCode(resolveOk("a"))).toBe("no_key");
-    await useKey(testKey);
+    await useKey(testKey.toString("hex"));
     const sealed = await repository.readSealed("a");
     await repository.writeSealed("a", { iv: sealed?.iv as Buffer, tag: Buffer.alloc(16), ct: sealed?.ct as Buffer });
     expect(await vaultCode(resolveOk("a"))).toBe("server_copy_broken");
@@ -466,7 +499,7 @@ describe("resolveSecret", () => {
     expect(runner.requests.filter((request) => request.op === "secret.resolve")).toEqual([
       {
         op: "secret.resolve",
-        body: { name: "a", botId: "bot-a", botName: "Bot A", tool: "browser_fill", domain: "github.com" },
+        body: { name: "a", botId: "bot-a", botName: "Bot A", tool: "computer_type", domain: "github.com" },
       },
     ]);
     expect((await auditRows())[0]).toMatchObject({ outcome: "used", source: "mac" });
@@ -567,22 +600,146 @@ describe("resolveSecret", () => {
   });
 });
 
+describe("hardening", () => {
+  test("secrets without sites are refused for tools that leave the server", async () => {
+    await saveSecretMeta("a", {});
+    await setServerCopy("a", "server-secret-value");
+    for (const tool of ["http_request", "Bash", "browser_fill"])
+      expect(await vaultCode(resolveOk("a", { tool }))).toBe("no_domains");
+    expect((await auditRows())[0]).toMatchObject({ outcome: "denied", reason: "no_domains" });
+    expect(await resolveOk("a")).toBe("server-secret-value");
+  });
+
+  test("values shorter than the mask minimum are never used", async () => {
+    registerSecretSource({
+      id: "short-source",
+      handles: (meta) => meta.description === "vault-test-short",
+      read: async () => "abc",
+    });
+    await saveSecretMeta("tiny", { description: "vault-test-short" });
+    expect(await vaultCode(resolveOk("tiny"))).toBe("too_short");
+    expect((await auditRows())[0]).toMatchObject({ outcome: "denied", reason: "too_short" });
+  });
+
+  test("v1 copies are re-encrypted to v2 at boot once and keep opening", async () => {
+    await saveSecretMeta("old", {});
+    await saveSecretMeta("plain", {});
+    await setServerCopy("old", "placeholder-value");
+    await repository.writeSealed("old", sealV1("old", "legacy-secret-value"));
+    const log = spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      await loadVault();
+      expect(log).toHaveBeenCalledWith("vault: re-encrypted 1 server copies to v2");
+    } finally {
+      log.mockRestore();
+    }
+    const sealed = await repository.readSealed("old");
+    expect(sealed?.iv[0]).toBe(2);
+    expect(await migrateServerCopies()).toBe(0);
+    expect(await resolveOk("old")).toBe("legacy-secret-value");
+  });
+
+  test("a v1 copy that does not open is left alone", async () => {
+    await saveSecretMeta("old", {});
+    await setServerCopy("old", "placeholder-value");
+    const broken = sealV1("old", "legacy-secret-value");
+    await repository.writeSealed("old", { ...broken, tag: Buffer.alloc(16) });
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(await migrateServerCopies()).toBe(0);
+      expect(warn).toHaveBeenCalledWith("vault: server copy of old did not open with the current key, left as is");
+    } finally {
+      warn.mockRestore();
+    }
+    await useKey(null);
+    expect(await migrateServerCopies()).toBe(0);
+  });
+
+  test("changing the policy columns in the database breaks the copy", async () => {
+    await saveSecretMeta("a", { domains: ["api.github.com"] });
+    await setServerCopy("a", "server-secret-value");
+    await getDb()
+      .update(vaultSecrets)
+      .set({ domains: ["evil.example.com"] })
+      .where(eq(vaultSecrets.name, "a"));
+    await loadVault();
+    expect(await vaultCode(resolveOk("a", { host: "evil.example.com" }))).toBe("server_copy_broken");
+  });
+
+  test("a policy change through the vault re-encrypts the copy", async () => {
+    await saveSecretMeta("a", { domains: ["api.github.com"] });
+    await setServerCopy("a", "server-secret-value");
+    const before = await repository.readSealed("a");
+    await saveSecretMeta("a", { description: "same policy" });
+    expect((await repository.readSealed("a"))?.ct.equals(before?.ct as Buffer)).toBe(true);
+    await saveSecretMeta("a", { domains: ["uploads.github.com"], bots: ["bot-a"] });
+    expect(await resolveOk("a", { host: "uploads.github.com" })).toBe("server-secret-value");
+    await repository.writeSealed("a", null);
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      await saveSecretMeta("a", { domains: ["github.com"] });
+      expect(warn).not.toHaveBeenCalled();
+      await setServerCopy("a", "server-secret-value");
+      await repository.writeSealed("a", {
+        ...((await repository.readSealed("a")) as repository.Sealed),
+        tag: Buffer.alloc(16),
+      });
+      await saveSecretMeta("a", { domains: ["gist.github.com"] });
+      expect(warn).toHaveBeenCalledWith("vault: server copy of a could not be re-encrypted for the new policy");
+      await useKey(null);
+      await saveSecretMeta("a", { domains: ["api.github.com"] });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("audit entries are hash chained and tampering is detected", async () => {
+    await audit({ name: "a", outcome: "used" });
+    await audit({ name: "b", outcome: "denied", reason: "x" });
+    await audit({ name: "a", outcome: "revealed" });
+    const rows = await auditRows();
+    expect(rows[0].prevHash).toBe(rows[1].hash);
+    expect(rows[2].prevHash).toBe(repository.auditGenesis);
+    expect(await repository.verifyAuditChain()).toEqual({ ok: true, brokenAt: null });
+    const [middle] = await getDb().select().from(vaultAudit).where(eq(vaultAudit.name, "b"));
+    await getDb().update(vaultAudit).set({ outcome: "used" }).where(eq(vaultAudit.id, middle.id));
+    expect(await repository.verifyAuditChain()).toEqual({ ok: false, brokenAt: middle.id });
+  });
+});
+
 describe("exec tickets", () => {
   test("a ticket is taken once and expires", async () => {
-    const ticket = issueExecTicket({ SEGREDO_A: "v" }, ["v"]);
-    expect(takeExecTicket(ticket)).toMatchObject({ env: { SEGREDO_A: "v" }, redact: ["v"] });
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const ticket = issueExecTicket(grant({ env: { GH_TOKEN: "v" }, redact: ["v"] }));
+      expect(takeExecTicket(ticket)).toMatchObject({ env: { GH_TOKEN: "v" }, redact: ["v"] });
+      expect(takeExecTicket(ticket)).toBeNull();
+      expect(warn).toHaveBeenCalledWith("vault: an exec ticket was presented twice");
+      expect(takeExecTicket("unknown")).toBeNull();
+      const late = issueExecTicket(grant());
+      setSystemTime(new Date(Date.now() + 120_000));
+      expect(takeExecTicket(late)).toBeNull();
+      expect(takeExecTicket(issueExecTicket(grant()))).not.toBeNull();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("a ticket dies with its turn", async () => {
+    const turn = new AbortController();
+    const ticket = issueExecTicket(grant(), turn.signal);
+    turn.abort();
     expect(takeExecTicket(ticket)).toBeNull();
-    expect(takeExecTicket("unknown")).toBeNull();
-    const late = issueExecTicket({}, []);
-    setSystemTime(new Date(Date.now() + 120_000));
-    expect(takeExecTicket(late)).toBeNull();
+    const aborted = new AbortController();
+    aborted.abort();
+    expect(takeExecTicket(issueExecTicket(grant(), aborted.signal))).toBeNull();
   });
 
   test("an unused ticket is dropped by its timer", async () => {
     const real = globalThis.setTimeout;
     const held: Array<() => void> = [];
     const timer = spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, ms?: number) => {
-      if (ms === 61_000) {
+      if (ms === 31_000) {
         held.push(callback);
         return real(() => undefined, 0);
       }
@@ -590,7 +747,7 @@ describe("exec tickets", () => {
     }) as unknown as typeof setTimeout);
     let ticket = "";
     try {
-      ticket = issueExecTicket({}, []);
+      ticket = issueExecTicket(grant());
     } finally {
       timer.mockRestore();
     }

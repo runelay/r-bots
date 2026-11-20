@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { rememberSecretValue } from "../shared/redact";
 import { dataDir } from "./env";
 
 const cache = new Map<string, string>();
@@ -16,12 +17,14 @@ export function readOrCreateSecret(name: string, bytes = 32, directory = dataDir
     const stored = readFileSync(file, "utf8").trim();
     if (stored.length >= 24) {
       cache.set(file, stored);
+      rememberSecretValue(`runtime:${file}`, stored, { pinned: true });
       return stored;
     }
   }
   const secret = randomBytes(bytes).toString("base64url");
   persist(directory, file, secret);
   cache.set(file, secret);
+  rememberSecretValue(`runtime:${file}`, secret, { pinned: true });
   return secret;
 }
 
@@ -35,6 +38,17 @@ export function runnerTokenFile() {
   return join(dataDir, "runner.token");
 }
 
+let runner: string | null = null;
+
+export function rotateRunnerToken() {
+  runner = randomBytes(32).toString("base64url");
+  persist(dataDir, runnerTokenFile(), runner);
+  rememberSecretValue("runner", runner, { pinned: true });
+  return runner;
+}
+
 export function runnerToken() {
-  return readOrCreateSecret("runner.token");
+  if (!runner) return rotateRunnerToken();
+  if (!existsSync(runnerTokenFile())) persist(dataDir, runnerTokenFile(), runner);
+  return runner;
 }
