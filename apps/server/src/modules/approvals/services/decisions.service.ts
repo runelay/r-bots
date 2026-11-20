@@ -30,7 +30,6 @@ const cardLike = /\b(?:\d[ -]?){13,19}\b/;
 const cpfLike = /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/;
 const cnpjLike = /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/;
 
-
 export function hardHumanReason(tool: string, input: Record<string, unknown>, element: string) {
   if (tool === "browser_fill") {
     const value = String(input.text ?? "");
@@ -151,6 +150,81 @@ export async function decideApproval(
     };
   } catch (error) {
     return fallback("approval", approvalQuestion, settings.threshold, started, error, base);
+  }
+}
+
+const hardListQuestion = "Esta ação da lista dura foi pedida pela pessoa e pode rodar sem card?";
+export const hardListThreshold = 0.5;
+export const hardListScheduleThreshold = 0.85;
+
+export interface HardListState extends ApprovalState {
+  reason: string;
+  isSchedule: boolean;
+}
+
+export async function decideHardList(state: HardListState, callId: string): Promise<DecisionRecord> {
+  const started = Date.now();
+  const threshold = state.isSchedule ? hardListScheduleThreshold : hardListThreshold;
+  const base = { tool: state.tool, callId };
+  const refuse = state.isSchedule ? "denied" : "human";
+  if (!jevEnabled())
+    return { ...fallback("approval", hardListQuestion, threshold, started, "Jev desligado.", base), outcome: refuse };
+  try {
+    const result = await askJev(
+      {
+        bot: { name: state.botName, role: state.botRole },
+        user_request: state.request,
+        unattended_routine: state.isSchedule,
+        action: { tool: state.tool, arguments: state.input },
+        why_listed: state.reason,
+      },
+      {
+        requested: {
+          type: "noul",
+          instructions:
+            "A pessoa pediu explicitamente, nesta conversa, exatamente esta ação (o mesmo deploy, a mesma escrita, o mesmo envio)?",
+        },
+        irreversible: {
+          type: "noul",
+          instructions:
+            "É uma ação irreversível de alto risco: apagar dados em produção, mover dinheiro ou mandar mensagem em massa para pessoas de fora?",
+        },
+        risk: {
+          type: "score",
+          instructions: "Quão arriscada é esta ação, considerando o pedido da pessoa?",
+          criteria: [
+            "Pedida com todas as letras e fácil de desfazer (deploy de rotina, migration pedida, mensagem única pedida).",
+            "Pedida, mas com efeito difícil de desfazer.",
+            "Não foi pedida exatamente assim, ou o alcance é maior que o pedido.",
+            "Destrutiva, financeira ou em massa, sem pedido explícito.",
+          ],
+        },
+      },
+    );
+    const requested = noul(result, "requested") ?? 0;
+    const irreversible = noul(result, "irreversible") ?? 1;
+    const risk = graded(result, "risk");
+    const confidence = risk?.confidence ?? 0;
+    const riskScore = risk?.score ?? 3;
+    const clear = state.isSchedule
+      ? requested >= 0.8 && irreversible < 0.2 && riskScore < 1
+      : requested >= 0.5 && irreversible < 0.5 && riskScore < 2;
+    const outcome = clear && confidence >= threshold ? "auto_approved" : refuse;
+    return {
+      kind: "approval",
+      question: hardListQuestion,
+      answer: { risk: riskScore, requested, irreversible },
+      confidence,
+      threshold,
+      outcome,
+      latencyMs: result.latencyMs,
+      model: result.model,
+      costUsd: result.costUsd,
+      reason: state.reason,
+      ...base,
+    };
+  } catch (error) {
+    return { ...fallback("approval", hardListQuestion, threshold, started, error, base), outcome: refuse };
   }
 }
 

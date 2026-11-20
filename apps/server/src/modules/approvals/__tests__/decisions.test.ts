@@ -3,6 +3,7 @@ import { fakeJev, stopJev } from "../../../../test/engine-helpers";
 import {
   type ApprovalState,
   decideApproval,
+  decideHardList,
   decideProgress,
   decideRoute,
   decideTriage,
@@ -298,5 +299,56 @@ describe("delivery intent", () => {
     expect(askedReason("pr")).toBe("Você pediu o PR.");
     expect(askedReason("push")).toBe("Você pediu o push.");
     expect(askedReason("commit")).toBe("Você pediu o commit.");
+  });
+});
+
+describe("decideHardList", () => {
+  function hard(isSchedule: boolean) {
+    return { ...state({ tool: "Bash", input: { command: "wrangler deploy" } }), reason: "Deploy", isSchedule };
+  }
+  function answers(requested: number, irreversible: number, risk: number, confidence: number) {
+    return {
+      answers: {
+        requested: { type: "noul", noul: requested },
+        irreversible: { type: "noul", noul: irreversible },
+        risk: score(risk, confidence),
+      },
+    };
+  }
+
+  test("asks a person, or denies in a routine, when Jev is off or fails", async () => {
+    expect(await decideHardList(hard(false), "c1")).toMatchObject({ outcome: "human", reason: "Jev desligado." });
+    expect(await decideHardList(hard(true), "c1")).toMatchObject({ outcome: "denied", threshold: 0.85 });
+    fakeJev(() => new Response("x", { status: 500 }));
+    expect(await decideHardList(hard(false), "c1")).toMatchObject({ outcome: "human", threshold: 0.5 });
+  });
+
+  test("clears an explicitly requested action and holds a high-risk or unrequested one", async () => {
+    let reply = answers(0.9, 0.1, 0.3, 0.6);
+    fakeJev(() => reply);
+    const cleared = await decideHardList(hard(false), "c1");
+    expect(cleared).toMatchObject({
+      outcome: "auto_approved",
+      answer: { requested: 0.9, irreversible: 0.1, risk: 0.3 },
+      reason: "Deploy",
+      tool: "Bash",
+      callId: "c1",
+    });
+    reply = answers(0.9, 0.8, 0.3, 0.9);
+    expect((await decideHardList(hard(false), "c1")).outcome).toBe("human");
+    reply = answers(0.2, 0.1, 0.3, 0.9);
+    expect((await decideHardList(hard(false), "c1")).outcome).toBe("human");
+    reply = answers(0.9, 0.1, 0.3, 0.4);
+    expect((await decideHardList(hard(false), "c1")).outcome).toBe("human");
+  });
+
+  test("a routine only runs it with high confidence", async () => {
+    let reply = answers(0.9, 0.1, 0.5, 0.9);
+    fakeJev(() => reply);
+    expect((await decideHardList(hard(true), "c1")).outcome).toBe("auto_approved");
+    reply = answers(0.9, 0.1, 0.5, 0.7);
+    expect((await decideHardList(hard(true), "c1")).outcome).toBe("denied");
+    reply = { answers: {} } as never;
+    expect((await decideHardList(hard(true), "c1")).outcome).toBe("denied");
   });
 });

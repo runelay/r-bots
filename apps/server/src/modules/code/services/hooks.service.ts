@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { NativeToolHooks } from "@runelay-bots/protocol";
-import { decideApproval } from "../../approvals/services/decisions.service";
+import { decideApproval, decideHardList } from "../../approvals/services/decisions.service";
 import { type ActionClass, applyCodePermission, permissionLabels } from "../../approvals/services/permissions.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
@@ -214,7 +214,37 @@ export async function beginCall(
     const before = gate.kind;
     gate = applyCodePermission(mode, action, gate, fixed, spec.label);
     const critical = mode === "full" && bashCommand && gate.kind === "allow" ? criticalCommand(bashCommand) : null;
-    if (critical) gate = { kind: "human", prompt: critical.prompt, reason: critical.reason, hard: true };
+    if (critical) {
+      const decision = await decideHardList(
+        {
+          botName: context.bot.name,
+          botRole: context.bot.role,
+          request: context.request,
+          tool: spec.name,
+          input: spec.input,
+          page: null,
+          element: "",
+          reason: critical.reason,
+          isSchedule: context.isSchedule,
+        },
+        callId,
+      );
+      context.emitDecision(decision);
+      if (decision.outcome === "auto_approved") {
+        log.emit({
+          type: "call.started",
+          data: { callId, clearedBy: { decision: "jev", model: decision.model, hardList: true } },
+          scope: scope(context),
+        });
+        return { allowed: true, callId };
+      }
+      if (decision.outcome === "denied")
+        return reject(
+          null,
+          `Lista dura numa rotina, sem ninguém para aprovar: o Jev não liberou com confiança alta (${critical.reason}). Não rode; registre no resumo da rotina.`,
+        );
+      gate = { kind: "human", prompt: critical.prompt, reason: critical.reason, hard: true };
+    }
     if (gate.kind === "allow" && before !== "allow") {
       humanRecord(context, spec.name, callId, `Modo ${permissionLabels[mode]}: liberado sem card.`, "granted");
       log.emit({ type: "call.started", data: { callId, clearedBy: { permission: mode } }, scope: scope(context) });

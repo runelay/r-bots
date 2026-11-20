@@ -389,7 +389,7 @@ describe("beginCall", () => {
         `Rodar SQL no banco remoto sem --read-only: supabase db query --remote=abc update t set a=1?`,
         write.result.callId,
         null,
-        { reason: "Escrita em produção só com o seu ok, mesmo em Acesso total.", timeoutMs: approvalTimeoutMs },
+        { reason: "Escrita em produção está na lista dura: sem pedido claro seu, passa por você.", timeoutMs: approvalTimeoutMs },
       );
       const deploy = await start("full", "Bash", { command: "wrangler deploy" }, hard);
       expect(deploy.requestApproval).toHaveBeenCalledTimes(1);
@@ -402,6 +402,36 @@ describe("beginCall", () => {
         workspace: workspace(),
       });
       expect(refused.allowed).toBe(false);
+    });
+
+    test("full access lets Jev clear a requested production action and denies an unclear one in a routine", async () => {
+      const hardList = spyOn(decisions, "decideHardList").mockResolvedValue(decision("auto_approved"));
+      try {
+        const cleared = await start("full", "Bash", { command: "wrangler deploy" }, { kind: "allow" });
+        expect(cleared.result.allowed).toBe(true);
+        expect(cleared.requestApproval).not.toHaveBeenCalled();
+        expect(cleared.events.at(-1)?.data.clearedBy).toEqual({ decision: "jev", model: "jev-1", hardList: true });
+        expect(hardList.mock.calls[0]?.[0]).toMatchObject({
+          tool: "Bash",
+          isSchedule: false,
+          reason: "Deploy está na lista dura: sem pedido claro seu, passa por você.",
+        });
+        hardList.mockResolvedValue(decision("denied"));
+        const routine = makeContext({ permission: "full", isSchedule: true });
+        const refused = await beginCall(routine.context, {
+          name: "Bash",
+          label: "x",
+          input: { command: "wrangler deploy" },
+          gate: { kind: "allow" },
+          workspace: workspace(),
+        });
+        expect(refused.allowed).toBe(false);
+        expect(refused.message).toContain("registre no resumo da rotina");
+        expect(routine.requestApproval).not.toHaveBeenCalled();
+        expect(routine.settled.at(-1)).toContain("negado");
+      } finally {
+        hardList.mockRestore();
+      }
     });
 
     test("read-only production queries run without a card in every mode", async () => {
