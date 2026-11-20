@@ -18,9 +18,11 @@ import type { BotDefinition } from "../../bots/services/bots.service";
 import {
   forgetServer,
   getServer,
+  listensEverywhere,
   listServers,
   stopAllDevServers,
   stopDevServer,
+  wildcardListeners,
 } from "../../code/services/dev-server.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
@@ -70,13 +72,29 @@ function serving(call: ProcessCall): ProcessReply {
   return { hang: true };
 }
 
+const children: FakeChild[] = [];
+
+function routeKill() {
+  return spyOn(process, "kill").mockImplementation(((pid: number, signal?: NodeJS.Signals) => {
+    const child = children.find((item) => item.pid === Math.abs(pid));
+    if (!child) throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
+    child.kill(signal);
+    return true;
+  }) as typeof process.kill);
+}
+
 const fakeKill = () =>
   spyOn(process, "kill").mockImplementation((() => {
     throw Object.assign(new Error("ESRCH"), { code: "ESRCH" });
   }) as typeof process.kill);
 
 function processes(reply: (call: ProcessCall) => ProcessReply | undefined = serving) {
-  return codeProcesses((call) => (call.command === "bash" ? reply(call) : undefined));
+  routeKill();
+  return codeProcesses((call) => {
+    if (call.command !== "bash") return undefined;
+    children.push(call.child);
+    return reply(call);
+  });
 }
 
 async function project(files: Record<string, string> = {}) {
@@ -111,8 +129,8 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  routeKill();
   stopAllDevServers();
-  spyOn(process, "kill").mockRestore();
   for (const item of listServers()) {
     const live = getServer(item.id);
     if (!live) continue;
@@ -121,6 +139,8 @@ afterEach(async () => {
     forgetServer(live);
   }
   await Promise.all(listeners.splice(0).map((item) => new Promise((done) => item.close(done))));
+  children.splice(0);
+  spyOn(process, "kill").mockRestore();
 });
 
 describe("projects", () => {
@@ -284,7 +304,7 @@ describe("project servers", () => {
     expect((await again.ready).status).toBe("running");
     expect(again.server.id).toBe(launched.id);
     await expect(Promise.resolve().then(() => forget(launched.id))).rejects.toThrow("Pare o servidor");
-    kill.mockRestore();
+    routeKill();
     const stopped = await stopServer(launched.id);
     expect(stopped.status).toBe("stopped");
     await getServer(launched.id)?.done;
@@ -310,10 +330,39 @@ describe("project servers", () => {
     expect(seen.FORCE_COLOR).toBe("1");
   });
 
+  test("stops a project server that listens on every interface", async () => {
+    processes((call) => {
+      const env = call.options.env as Record<string, string>;
+      const item = net.createServer((socket) => socket.end());
+      item.listen({ port: Number(env.PORT), host: "0.0.0.0" }, () => listeners.push(item));
+      return { hang: true };
+    });
+    const repo = await project();
+    const result = await (await startProjectServer({ path: repo.path, script: "dev", startedBy: "user" })).ready;
+    expect(result.status).toBe("exited");
+    expect(result.logs).toContain("para todas as redes");
+    expect(
+      wildcardListeners(
+        "sl local\n 0: 00000000:1F90 00000000:0000 0A\n 1: 0100007F:1F91 00000000:0000 0A\n 2: 00000000:1F92 0:0 01\nshort",
+      ),
+    ).toEqual(new Set([8080]));
+    const fs = await import("node:fs/promises");
+    const read = spyOn(fs, "readFile").mockRejectedValue(new Error("no proc"));
+    try {
+      expect(await listensEverywhere(8080)).toBe(false);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   test("starts from a profile or a command and validates input", async () => {
     processes();
     const repo = await project();
     await saveProfile({ id: "api", name: "API", path: repo.path, script: "api" });
+    const viaCmd = await startProjectServer({ path: repo.path, cmd: "npm run api -- --x", startedBy: "user" });
+    expect(viaCmd.server.tool).toBe("wrangler");
+    expect(viaCmd.server.command).toBe(`npm run api -- --x --port ${viaCmd.server.port} --ip 127.0.0.1`);
+    await viaCmd.ready;
     const fromProfile = await startProjectServer({ profile: "api", startedBy: "bot", botId: "b", sessionId: "s" });
     expect(fromProfile.server).toMatchObject({
       profileId: "api",

@@ -140,6 +140,10 @@ export async function startProjectServer(input: StartInput, onExit?: (server: Pu
     scriptBody = script.command;
   }
   if (!cmd) throw new ValidationError("Diga o script ou o comando.", "script");
+  if (!scriptBody) {
+    const named = cmd.match(/^(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?([\w:.-]+)/)?.[1];
+    scriptBody = scripts.find((item) => item.name === named)?.command ?? null;
+  }
   const env = await loadEnv(project);
   await linkEnvFiles(project);
   const { server, ready } = await launchServer(

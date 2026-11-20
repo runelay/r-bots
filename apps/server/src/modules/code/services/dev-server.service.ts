@@ -98,11 +98,15 @@ function probe(port: number, host: string) {
   });
 }
 
+async function usable(port: number) {
+  return (await portFree(port)) && !(await portOpen(port));
+}
+
 async function freePort(preferred?: number) {
-  if (preferred && !reserved.has(preferred) && (await portFree(preferred))) return preferred;
+  if (preferred && !reserved.has(preferred) && (await usable(preferred))) return preferred;
   for (let port = portBase; port < portLimit; port++) {
     if (reserved.has(port)) continue;
-    if (await portFree(port)) return port;
+    if (await usable(port)) return port;
   }
   throw new Error("Não achei porta livre para o servidor.");
 }
@@ -328,6 +332,36 @@ function spawnInto(server: DevServer, out: WriteStream) {
   });
 }
 
+export function wildcardListeners(text: string) {
+  const ports = new Set<number>();
+  for (const line of text.split("\n").slice(1)) {
+    const fields = line.trim().split(/\s+/);
+    if (fields.length < 4 || fields[3] !== "0A") continue;
+    const [address, port] = fields[1].split(":");
+    if (/^0+$/.test(address)) ports.add(Number.parseInt(port, 16));
+  }
+  return ports;
+}
+
+export async function listensEverywhere(port: number) {
+  for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    const text = await readFile(file, "utf8").catch(() => "");
+    if (wildcardListeners(text).has(port)) return true;
+  }
+  return false;
+}
+
+async function guardExposure(server: DevServer) {
+  if (server.target.kind !== "project" || !(await listensEverywhere(server.port))) return;
+  pushLines(
+    server,
+    `runelay bots: parei o servidor porque ele abriu a porta ${server.port} para todas as redes. Rode com --host 127.0.0.1 (ou o equivalente da ferramenta).`,
+  );
+  await stopDevServer(server);
+  server.status = "exited";
+  notify(server);
+}
+
 async function waitReady(server: DevServer, timeoutMs = 120_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -343,6 +377,7 @@ async function waitReady(server: DevServer, timeoutMs = 120_000) {
     server.status = "running";
     notify(server);
   }
+  if (server.status === "running") await guardExposure(server);
   return { ...publicServer(server), logs: server.tail.slice(-25).join("\n") };
 }
 
