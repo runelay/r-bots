@@ -16,15 +16,32 @@ type PreviewSession = { token: string; expiresAt: number };
 
 const sessions = new Map<string, PreviewSession>();
 const consumed = new Set<string>();
+const tickets = new Map<string, { token: string; expiresAt: number }>();
+const ticketMs = 2 * 60_000;
 let clock: () => number = Date.now;
 
 export function usePreviewClock(now: (() => number) | null) {
   clock = now ?? Date.now;
 }
 
+export function issuePreviewTicket(token: string) {
+  const at = clock();
+  for (const [id, ticket] of tickets) if (ticket.expiresAt <= at) tickets.delete(id);
+  const id = randomBytes(18).toString("base64url");
+  tickets.set(id, { token, expiresAt: at + ticketMs });
+  return id;
+}
+
+function ticketMatches(given: string | null, token: string) {
+  if (!given) return false;
+  const ticket = tickets.get(given);
+  return ticket !== undefined && ticket.token === token && ticket.expiresAt > clock();
+}
+
 export function resetPreviewSessions() {
   sessions.clear();
   consumed.clear();
+  tickets.clear();
 }
 
 export function previewOrigin(env: Record<string, string | undefined> = Bun.env) {
@@ -161,7 +178,7 @@ function exchange(req: Req, res: Res, url: URL, parts: string[]) {
   if (!target) return denied(res);
   const origin = previewOrigin();
   if (origin && !onPreviewHost(req.raw)) {
-    if (given !== target.token) return denied(res);
+    if (given !== target.token && !ticketMatches(given, target.token)) return denied(res);
     const next = new URL(url.pathname, origin);
     next.search = url.search;
     res.writeHead(302, { location: next.toString(), "cache-control": "no-store" });
@@ -169,7 +186,9 @@ function exchange(req: Req, res: Res, url: URL, parts: string[]) {
     return true;
   }
   const current = sessionTarget(req.headers.cookie);
-  if (given !== target.token || consumed.has(target.token)) {
+  const viaTicket = ticketMatches(given, target.token);
+  if (viaTicket && given) tickets.delete(given);
+  if (!viaTicket && (given !== target.token || consumed.has(target.token))) {
     if (current?.token === target.token) {
       res.writeHead(302, { location: rest, "cache-control": "no-store" });
       res.end();
@@ -179,7 +198,7 @@ function exchange(req: Req, res: Res, url: URL, parts: string[]) {
   }
   const at = clock();
   prune(at);
-  consumed.add(target.token);
+  if (!viaTicket) consumed.add(target.token);
   const id = randomBytes(24).toString("base64url");
   sessions.set(id, { token: target.token, expiresAt: at + previewSessionMs });
   const secure = isHttps(req.raw) ? "; Secure" : "";

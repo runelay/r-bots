@@ -1,6 +1,14 @@
 import { ValidationError } from "../../../shared/errors";
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
-import { listServers, onServerChange, onServerLog, rawLines, viewServer } from "../../code/services/dev-server.service";
+import { issuePreviewTicket } from "../../code/routes/preview.routes";
+import {
+  listServers,
+  onServerChange,
+  onServerLog,
+  previewTarget,
+  rawLines,
+  viewServer,
+} from "../../code/services/dev-server.service";
 import { listProjects } from "../services/projects.service";
 import {
   deleteProfile,
@@ -102,6 +110,13 @@ export async function handleServers(req: Req, res: Res, url: URL, method: string
     }
     if (first && second === "stop" && method === "POST")
       return sendJson(res, 200, { ok: true, server: await stopServer(first) });
+    if (first && second === "preview-link" && method === "POST") {
+      const server = requireServer(first);
+      const target = previewTarget(server.workspaceId, server.port);
+      if (!target) return sendJson(res, 409, { ok: false, error: "O servidor não está no ar." });
+      const ticket = issuePreviewTicket(target.token);
+      return sendJson(res, 200, { ok: true, path: `/preview/${server.workspaceId}/${server.port}/?t=${ticket}` });
+    }
     if (first && second === "restart" && method === "POST") {
       const { server } = await restart(first);
       return sendJson(res, 202, { ok: true, server });
