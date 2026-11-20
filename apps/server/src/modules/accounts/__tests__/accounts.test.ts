@@ -53,7 +53,7 @@ function runnerSocketFake(key = "mac-a-device", name = "MacBook", rank = 1) {
   const sent: Array<{ type: string; id: string; op?: string }> = [];
   const ws = {
     readyState: 1,
-    data: { kind: "runner", deviceKey: key, rank, deviceName: name, userId: "u1" },
+    data: { kind: "runner", deviceKey: key, rank, deviceName: name, userId: "u1", owner: true },
     send: (raw: string) => {
       sent.push(JSON.parse(raw));
     },
@@ -255,26 +255,28 @@ describe("accounts", () => {
   test("shows a registered Mac that is closed as disconnected and reports a failing probe", async () => {
     const listed = spyOn(devices, "listRegisteredDevices").mockResolvedValue([
       {
+        id: "member-device",
+        keyId: "k0",
+        userId: "u2",
+        name: "Mac do membro",
+        registeredAt: "2025-01-01T00:00:00.000Z",
+        owner: false,
+      },
+      {
         id: "off-device",
         keyId: "k1",
         userId: "u1",
         name: "iMac",
-        model: null,
-        osVersion: null,
-        appVersion: null,
-        machineId: null,
         registeredAt: "2026-01-01T00:00:00.000Z",
+        owner: true,
       },
       {
         id: "on-device",
         keyId: "k2",
         userId: "u1",
         name: "MacBook",
-        model: null,
-        osVersion: null,
-        appVersion: null,
-        machineId: null,
         registeredAt: "2026-02-01T00:00:00.000Z",
+        owner: true,
       },
     ]);
     restores.push(() => listed.mockRestore());
@@ -287,10 +289,32 @@ describe("accounts", () => {
       device: { id: "off-device", name: "iMac", connected: false },
     });
     expect(accounts.find((account) => account.id === "mac-ondevice:claude")?.detail).toBe("Mac fora do ar: quebrou");
+    expect(accounts.find((account) => account.id === "mac-memberde:claude")).toMatchObject({
+      device: { id: "member-device", name: "Mac do membro" },
+    });
     const events: ProviderEvent[] = [];
     await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => events.push(event));
     expect(events).toEqual([{ type: "done", ok: false, message: "Mac desconectado." }]);
     runner.close();
+  });
+
+  test("keeps the default Mac slot empty when only a member registered a Mac", async () => {
+    const listed = spyOn(devices, "listRegisteredDevices").mockResolvedValue([
+      {
+        id: "member-only",
+        keyId: "k0",
+        userId: "u2",
+        name: "Mac do membro",
+        registeredAt: "2025-01-01T00:00:00.000Z",
+        owner: false,
+      },
+    ]);
+    restores.push(() => listed.mockRestore());
+    const accounts = await refreshWith([]);
+    expect(accounts.find((account) => account.id === "mac:claude")).toMatchObject({ status: "offline", device: null });
+    expect(accounts.find((account) => account.id === "mac-memberon:claude")?.device).toMatchObject({
+      id: "member-only",
+    });
   });
 
   test("gives colliding short ids distinct prefixes and a fallback for odd keys", async () => {

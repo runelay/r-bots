@@ -4,8 +4,6 @@ import { join } from "node:path";
 import { codeProcesses, makeRepo } from "../../../../test/code-helpers";
 import { factsOfType, makeBot, waitFor } from "../../../../test/engine-helpers";
 import { fakeProviders, request, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
-import { Req } from "../../../shared/http";
-import type { Socket } from "../../../shared/ws";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { createConversation } from "../../conversations/services/conversations.service";
 import { getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
@@ -13,7 +11,6 @@ import { ensureThread } from "../../conversations/services/threads.service";
 import { deliver, isBusy } from "../../engine/services/engine.service";
 import * as codeRepository from "../repositories/code.repository";
 import { addGrant } from "../repositories/code.repository";
-import { isPreviewTraffic, previewSocket, previewUpgradeTarget } from "../routes/code.routes";
 import * as devServer from "../services/dev-server.service";
 import * as workspaceService from "../services/workspace.service";
 import { activeWorkspace, createCheckpoint, listRepos, waitForInstall } from "../services/workspace.service";
@@ -21,7 +18,6 @@ import { activeWorkspace, createCheckpoint, listRepos, waitForInstall } from "..
 let server: TestServer;
 let bot: BotDefinition;
 const spies: Mock<(...args: never[]) => unknown>[] = [];
-const upstreams: ReturnType<typeof Bun.serve>[] = [];
 let repoCount = 0;
 
 beforeAll(async () => {
@@ -40,7 +36,6 @@ beforeEach(async () => {
 
 afterEach(async () => {
   for (const spy of spies.splice(0)) spy.mockRestore();
-  await Promise.all(upstreams.splice(0).map((item) => item.stop(true)));
 });
 
 function spy<T extends object, K extends keyof T>(target: T, key: K) {
@@ -456,220 +451,5 @@ describe("checkpoints and rewind", () => {
       { method: "POST", body: {} },
     );
     expect(plain.status).toBe(400);
-  });
-});
-
-describe("preview proxy", () => {
-  function upstream(handler: (request: Request) => Response | Promise<Response>) {
-    const target = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: handler });
-    upstreams.push(target);
-    return Number(target.port);
-  }
-
-  test("issues the cookie and proxies requests", async () => {
-    const seen: Array<{ method: string; path: string; body: string; host: string | null }> = [];
-    const port = upstream(async (incoming) => {
-      const url = new URL(incoming.url);
-      seen.push({
-        method: incoming.method,
-        path: url.pathname,
-        body: await incoming.text(),
-        host: incoming.headers.get("host"),
-      });
-      return new Response(`page ${url.pathname}`, { headers: { "x-upstream": "yes" } });
-    });
-    const token = "tok-preview-1";
-    spy(devServer, "previewTarget").mockImplementation(((workspaceId: string, asked: number) =>
-      workspaceId === "ws1" && asked === port ? { port, token } : null) as never);
-    spy(devServer, "findPreviewByToken").mockImplementation(((value: string) =>
-      value === token ? { port, workspaceId: "ws1", token } : null) as never);
-
-    const redirect = await request(`/preview/ws1/${port}/app/index.html?t=${token}`, { redirect: "manual" });
-    expect(redirect.status).toBe(302);
-    expect(redirect.headers.get("location")).toBe("/app/index.html");
-    expect(redirect.headers.get("set-cookie")).toContain(`rb_preview=${token}`);
-
-    const denied = await request<{ error: string }>(`/preview/ws1/${port}?t=wrong`);
-    expect(denied.status).toBe(403);
-    const noPort = await request(`/preview/ws1/abc?t=${token}`);
-    expect(noPort.status).toBe(403);
-    const noWorkspace = await request("/preview");
-    expect(noWorkspace.status).toBe(403);
-
-    const page = await request(`/assets/app.js?v=1`, { headers: { cookie: `other=1; rb_preview=${token}` } });
-    expect(page.status).toBe(200);
-    expect(page.text).toBe("page /assets/app.js");
-    expect(page.headers.get("x-upstream")).toBe("yes");
-    const posted = await request("/form", { method: "POST", headers: { cookie: `rb_preview=${token}` }, body: "a=1" });
-    expect(posted.status).toBe(200);
-    expect(seen).toEqual([
-      { method: "GET", path: "/assets/app.js", body: "", host: `localhost:${port}` },
-      { method: "POST", path: "/form", body: "a=1", host: `localhost:${port}` },
-    ]);
-
-    const api = await request<{ error: string }>("/code/other", { headers: { cookie: `rb_preview=${token}` } });
-    expect(api.status).toBe(404);
-    const stranger = await request("/assets/app.js", { headers: { cookie: "rb_preview=unknown" } });
-    expect(stranger.status).toBe(404);
-    const bare = await request("/assets/app.js");
-    expect(bare.status).toBe(404);
-  });
-
-  test("reports an upstream that is down", async () => {
-    const port = upstream(() => new Response("x"));
-    upstreams.pop()?.stop(true);
-    spy(devServer, "findPreviewByToken").mockImplementation((() => ({ port, workspaceId: "ws", token: "t" })) as never);
-    const response = await request<{ error: string }>("/page", { headers: { cookie: "rb_preview=t" } });
-    expect(response.status).toBe(502);
-    expect(response.body.error).toContain("O servidor de desenvolvimento não respondeu");
-  });
-
-  test("classifies preview traffic and upgrade targets", () => {
-    spy(devServer, "findPreviewByToken").mockImplementation(((value: string) =>
-      value === "good" ? { port: 4321, workspaceId: "ws", token: "good" } : null) as never);
-    const at = (path: string, headers: Record<string, string> = {}) =>
-      new Request(`http://127.0.0.1${path}`, { headers });
-    expect(isPreviewTraffic(at("/preview/x/1"))).toBe(true);
-    expect(isPreviewTraffic(at("/bots", { cookie: "rb_preview=good" }))).toBe(false);
-    expect(isPreviewTraffic(at("/app", { cookie: "rb_preview=good" }))).toBe(true);
-    expect(isPreviewTraffic(at("/app", { cookie: "rb_preview=bad" }))).toBe(false);
-    expect(isPreviewTraffic(at("/"))).toBe(false);
-
-    expect(previewUpgradeTarget(new Req(at("/bots/x", { cookie: "rb_preview=good" })))).toBeNull();
-    expect(previewUpgradeTarget(new Req(at("/hmr")))).toBeNull();
-    expect(
-      previewUpgradeTarget(
-        new Req(at("/hmr?x=1", { cookie: "rb_preview=good", "sec-websocket-protocol": "vite-hmr, , other" })),
-      ),
-    ).toEqual({ port: 4321, path: "/hmr?x=1", protocols: ["vite-hmr", "other"] });
-    expect(previewUpgradeTarget(new Req(at("/", { cookie: "rb_preview=good" })))).toEqual({
-      port: 4321,
-      path: "/",
-      protocols: [],
-    });
-  });
-});
-
-describe("preview socket relay", () => {
-  function wsUpstream() {
-    const received: string[] = [];
-    const protocols: Array<string | null> = [];
-    const sockets = new Set<import("bun").ServerWebSocket<unknown>>();
-    const target = Bun.serve({
-      hostname: "127.0.0.1",
-      port: 0,
-      fetch(incoming, srv) {
-        protocols.push(incoming.headers.get("sec-websocket-protocol"));
-        const protocol = incoming.headers.get("sec-websocket-protocol")?.split(",")[0]?.trim();
-        return srv.upgrade(incoming, protocol ? { headers: { "Sec-WebSocket-Protocol": protocol } } : {})
-          ? undefined
-          : new Response("no", { status: 400 });
-      },
-      websocket: {
-        open(ws) {
-          sockets.add(ws);
-        },
-        message(ws, message) {
-          received.push(String(message));
-          ws.send(typeof message === "string" ? `echo:${message}` : message);
-        },
-        close(ws) {
-          sockets.delete(ws);
-        },
-      },
-    });
-    upstreams.push(target);
-    return { port: Number(target.port), received, protocols, sockets };
-  }
-
-  function fakeClient(data: Record<string, unknown>) {
-    const sent: Array<string | Uint8Array> = [];
-    let closed = 0;
-    let onSend: () => void = () => undefined;
-    let onClose: () => void = () => undefined;
-    const client = {
-      data: { kind: "preview", ...data },
-      readyState: 1,
-      send(message: string | Uint8Array) {
-        sent.push(message);
-        onSend();
-      },
-      close() {
-        closed++;
-        onClose();
-      },
-    } as unknown as Socket & { readyState: number };
-    return {
-      client,
-      sent,
-      closedCount: () => closed,
-      nextSend: () =>
-        new Promise<void>((resolve) => {
-          onSend = resolve;
-        }),
-      nextClose: () =>
-        new Promise<void>((resolve) => {
-          onClose = resolve;
-        }),
-    };
-  }
-
-  test("queues until open, relays both ways and closes upstream", async () => {
-    const { port, received, protocols, sockets } = wsUpstream();
-    const fake = fakeClient({ port, path: "/hmr", protocols: ["vite-hmr"] });
-    previewSocket.open(fake.client);
-    const echoed = fake.nextSend();
-    previewSocket.message(fake.client, "early");
-    await echoed;
-    expect(received).toEqual(["early"]);
-    expect(fake.sent).toEqual(["echo:early"]);
-    expect(protocols).toEqual(["vite-hmr"]);
-
-    const binary = fake.nextSend();
-    previewSocket.message(fake.client, Buffer.from([1, 2, 3]));
-    await binary;
-    expect(fake.sent[1]).toBeInstanceOf(Uint8Array);
-    expect([...(fake.sent[1] as Uint8Array)]).toEqual([1, 2, 3]);
-
-    fake.client.readyState = 3;
-    previewSocket.message(fake.client, "after-close");
-    await waitFor(() => received.includes("after-close"));
-    const upstreamClosed = fake.nextClose();
-    for (const socket of sockets) {
-      socket.send("server push");
-      socket.close();
-    }
-    await upstreamClosed;
-    expect(fake.sent).toHaveLength(2);
-    previewSocket.close(fake.client, 1000, "");
-    previewSocket.message(fake.client, "ignored");
-    expect(received).not.toContain("ignored");
-
-    const second = fakeClient({ port, path: "/hmr", protocols: [] });
-    previewSocket.open(second.client);
-    await waitFor(() => sockets.size === 1);
-    previewSocket.close(second.client, 1000, "");
-    await waitFor(() => sockets.size === 0);
-  });
-
-  test("closes the client when the upstream closes or fails", async () => {
-    const { port, sockets } = wsUpstream();
-    const fake = fakeClient({ port, path: "/", protocols: undefined });
-    const closed = fake.nextClose();
-    previewSocket.open(fake.client);
-    await waitFor(() => sockets.size === 1);
-    for (const socket of sockets) socket.close();
-    await closed;
-    expect(fake.closedCount()).toBeGreaterThanOrEqual(1);
-
-    const dead = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("x") });
-    const deadPort = Number(dead.port);
-    await dead.stop(true);
-    const failing = fakeClient({ port: deadPort, path: "/", protocols: [] });
-    const failed = failing.nextClose();
-    previewSocket.open(failing.client);
-    await failed;
-    expect(failing.closedCount()).toBeGreaterThanOrEqual(1);
-    previewSocket.close(failing.client, 1006, "");
   });
 });

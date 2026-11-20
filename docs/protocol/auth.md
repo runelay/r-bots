@@ -390,3 +390,180 @@ POST /auth/invites/accept {"password":"1234567",…} -> 400 {"field":"password",
 ```
 
 Mac de teste pelo tailnet: `POST /devices` com a sessão, `mac runner connected`, turno em `mac:claude` concluído.
+
+## v44 (20/11): endurecimento de segurança
+
+Todas as mudanças são do servidor. O app atual continua funcionando, com duas exceções avisadas abaixo: o primeiro acesso numa instalação nova pede o código `setup.token` e uma sessão de mais de 90 dias pede login de novo.
+
+### Caminho normalizado uma vez
+
+O caminho é decodificado uma vez só, antes do portão, e o mesmo valor serve para portão, política, prévia e roteador. Um segmento com `/`, `\` ou `.`/`..` codificado, com codificação dupla (`%25..`), com caractere de controle ou que não decodifica derruba a requisição:
+
+```
+GET /%62ots/..%2Fvault -> 400 {"ok":false,"error":"Caminho inválido.","code":"bad_path"}
+GET /%68ealth -> 200 {"ok":true}
+```
+
+### `Host` desconhecido: 421
+
+Antes de montar qualquer instância do better-auth, o `Host` (ou o `X-Forwarded-Host`, quando a requisição veio do `tailscale serve`) precisa estar na lista: `127.0.0.1`, `localhost` e `[::1]` na porta do servidor, os nomes `*.ts.net` quando a requisição veio do `tailscale serve`, os hosts de `BOTS_ALLOWED_HOSTS` (lista separada por vírgula, aceita `host:porta` ou origem completa), o host de `BOTS_PREVIEW_ORIGIN` e as origens já lembradas. Fora disso:
+
+```
+421 {"ok":false,"error":"Endereço não reconhecido por este servidor.","code":"misdirected"}
+```
+
+### Proxy confiável e IP do cliente
+
+`X-Forwarded-For/Proto/Host` só valem quando o par TCP é loopback **e** a requisição traz `Tailscale-User-Login` ou `Tailscale-Headers-Info` (o `tailscale serve` manda esses cabeçalhos). Sem isso, a origem sai do `Host` (casada com uma origem lembrada para pegar o esquema certo) e o IP é o do socket. O IP do cliente vai para o better-auth em `X-Rb-Client-Ip`, que o servidor sempre sobrescreve.
+
+### Origens lembradas
+
+`POST /devices` só grava a origem quando quem registra é o dono (sessão, papel `owner`). A lista guarda no máximo 16 origens; `BOTS_ALLOWED_HOSTS` com origem completa também conta como origem confiável.
+
+### Rotas só do dono
+
+Depois do portão, uma tabela de rotas decide o papel. Membro recebe:
+
+```
+403 {"ok":false,"error":"Só o dono da conta pode fazer isso.","code":"forbidden"}
+```
+
+| Método | Rota |
+|---|---|
+| `POST`, `PUT`, `PATCH`, `DELETE` | `/integrations/**` |
+| todos | `/vault/**` (exceto `/vault/exec/:ticket`, ver abaixo) |
+| todos | `/code/grants` |
+| todos | `/jobs/**` |
+| `POST`, `PUT`, `PATCH`, `DELETE` | `/connectors/**` (refresh, install, reconnect, remover) |
+| `POST` | `/bots` |
+| `PATCH` | `/bots/:id` (instruções, papel, motor) |
+| `POST` | `/bots/:id/delete`, `/bots/:id/restore` |
+| `POST` | `/accounts/refresh`; `GET /accounts?refresh=1` |
+
+Membro continua usando bots e conversas (mensagens, arquivar, barra lateral, blocos, anexos), `GET /status`, `GET /status/stream` e os próprios dispositivos. `/status/stream` não tem dono por bot: qualquer conta logada vê o estado de todos os bots, como antes.
+
+O roteador também recusa (`401`) uma rota protegida que chegou sem principal, mesmo se o portão deixasse passar.
+
+### Token interno (`runner.token`)
+
+`Authorization: Bearer <runner.token>` agora só abre `GET /status` e `GET /health`. Em qualquer outra rota:
+
+```
+403 {"ok":false,"error":"O token interno não tem acesso a esta rota.","code":"forbidden"}
+```
+
+### `/vault/exec/:ticket`
+
+Fora da autenticação só quando o par TCP é loopback e a requisição não tem `X-Forwarded-*`, `Forwarded`, `X-Real-Ip` nem `Tailscale-*`; o tíquete é a credencial. Qualquer outra forma recebe `404 {"ok":false,"error":"Rota não encontrada."}`.
+
+### Chaves de API
+
+- `/api/auth/api-key/*` (criar, atualizar, listar, apagar) não existe para clientes: `404 {"ok":false,"error":"Rota não encontrada.","code":"not_found"}`. Só o servidor cria chave (`POST /devices`, `POST /auth/runner-key`).
+- A identidade do dispositivo saiu do `metadata` da chave e foi para a tabela `device` (`id`, `api_key_id`, `user_id`, `name`, `model`, `os_version`, `app_version`, `machine_id`, `registered_at`). O servidor acha o dispositivo pelo id da chave. A migration `0002_devices` copia os dispositivos das chaves antigas. Uma chave com `metadata.kind = "device"` forjado não vira dispositivo e não abre `/runner/connect`.
+- Chaves novas vencem em 180 dias. A migration põe 180 dias nas chaves que não venciam. Cada conexão do Mac em `/runner/connect` empurra o vencimento de novo para 180 dias quando faltam menos de 150, então um Mac em uso não perde a chave.
+- Banir, mudar o papel ou apagar uma conta apaga as sessões, as chaves e os dispositivos dela e derruba as conexões do Mac.
+
+### Sessões
+
+Teto absoluto de 90 dias desde o login, além dos 30 dias renováveis: depois disso o portão responde `401` e o app pede login. Tokens OAuth dos provedores sociais ficam cifrados no banco (`encryptOAuthTokens`); linhas antigas em texto continuam valendo.
+
+### Primeiro acesso com `setup.token`
+
+Sem nenhuma conta, o servidor grava um código aleatório (32 bytes) em `<dados>/setup.token` (0600) e só registra o caminho no log (`auth: waiting for the owner, first-run code in <dados>/setup.token`). `POST /auth/setup` exige o código no cabeçalho `X-Setup-Token` ou no campo `setupToken` do corpo e apaga o arquivo quando cria o dono.
+
+```
+GET /auth/setup -> {"ok":true,"needsOwner":true,"required":true,"setupTokenRequired":true,"methods":{"password":true,"passkey":true,"device":true,"invites":true,"passwordReset":false}}
+POST /auth/setup sem código -> 403 {"ok":false,"error":"Informe o código de primeiro acesso que está no arquivo setup.token do servidor.","code":"setup_token_required"}
+POST /auth/setup com X-Setup-Token -> 201 (o arquivo some)
+```
+
+A página `/device` mostra o formulário "Criar a conta do dono" (código, nome, e-mail, senha) quando ainda não há dono, então o primeiro acesso funciona pelo botão "Entrar com Touch ID" do app enquanto a tela de primeiro acesso do app não manda o código.
+
+### Limites de tentativa
+
+- `POST /auth/setup` e `POST /auth/invites/accept`: 5 por minuto por IP, numa tabela com expiração e teto de entradas.
+- better-auth (memória compartilhada entre todas as instâncias, chave pelo IP confiável): `/sign-in/*` 5/min, `/device/code` 10/min, `/device/token` 30/min, `/device/approve` e `/device/deny` 10/min, `/device` 30/min, `/request-password-reset` 3 a cada 5 min.
+- Bloqueio por conta: 5 senhas erradas em 15 minutos bloqueiam o e-mail por 1 minuto, dobrando a cada novo bloqueio até 30 minutos, de qualquer IP:
+
+```
+429 {"ok":false,"error":"Muitas tentativas erradas nesta conta. Espere um pouco.","code":"account_locked"} + Retry-After
+```
+
+### Página `/device`
+
+- CSP com nonce novo a cada resposta: `default-src 'none'; script-src 'nonce-…'; style-src 'nonce-…' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:; connect-src 'self'; frame-ancestors 'none'; form-action 'self'; base-uri 'none'`.
+- Apaga o cookie `rb_preview` (`Set-Cookie: rb_preview=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`).
+- Antes de "Liberar", mostra quem pediu, o endereço e a hora, com o aviso "Só libere se foi você que pediu agora, no seu Mac. Se alguém te mandou este link, recuse." Os dados vêm de `GET /auth/device/info?user_code=…` (precisa de sessão):
+
+```
+GET /auth/device/info?user_code=<código> -> {"ok":true,"clientName":"app runelay bots para Mac","ip":"100.64.1.2","requestedAt":"…"}
+GET /auth/device/info?user_code=NOPE -> 404 {"ok":false,"error":"Pedido não encontrado ou vencido.","code":"not_found"}
+```
+
+O código continua valendo 10 minutos (`expires_in` ≤ 600).
+
+### Prévia do modo código
+
+- O link `/preview/:workspace/:porta/…?t=<token>` é trocado uma vez por um cookie e redireciona para o caminho limpo, sem o token. O cookie é um id aleatório, não o token: `rb_preview=<id>; Path=/; HttpOnly; SameSite=Lax; Max-Age=7200` (+ `Secure` quando a requisição veio em https). Reusar o link sem o cookie dá `403`; com o cookie da mesma prévia só redireciona.
+- O proxy tira `Cookie`, `Authorization`, `X-Api-Key`, `Proxy-*`, `Tailscale-*` e `X-Forwarded-*` antes de mandar ao servidor de desenvolvimento e tira `Set-Cookie`, `Clear-Site-Data` e `Service-Worker-Allowed` da resposta. `Service-Worker: script` recebe `403`. Erro do proxy: `502 {"ok":false,"error":"O servidor de desenvolvimento não respondeu."}`.
+- Uma requisição com `rb_preview` nunca autentica por cookie de sessão (só `Authorization`/`X-Api-Key`), e o cookie é tirado antes do better-auth. Assim o JavaScript da prévia não chama a API com a sessão da pessoa.
+- As raízes da API que a prévia não sombreia saem da tabela do roteador (agora inclui `vault`, `integrations`, `devices`, `usage`, `jobs`, `status`), mais `api`, `auth`, `device`, `runner` e `preview`.
+- `BOTS_PREVIEW_ORIGIN` (opcional, ex.: `https://preview.exemplo.ts.net`): o link no endereço da API redireciona para o mesmo caminho nesse host, a prévia só roda lá (lá todo caminho é da prévia) e a API responde `404` nesse host.
+
+### Cabeçalhos e erros
+
+- Toda resposta da API leva `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Resource-Policy: same-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()` e `Cache-Control: no-store` em JSON, `/auth/*`, `/api/auth/*` e `/device`. Um cabeçalho que a rota já pôs (artefatos, anexos, foto) fica como está; em `/bots/:id/artifacts/**` e `/bots/:id/uploads/**` o servidor não põe `Cross-Origin-Resource-Policy`, para os artefatos em sandbox carregarem os próprios arquivos. A prévia não recebe esses cabeçalhos.
+- Erro inesperado não devolve mais a mensagem interna; o detalhe vai para o log com o mesmo id:
+
+```
+500 {"ok":false,"error":"Algo deu errado no servidor. Tente de novo.","errorId":"1a2b3c4d"}
+```
+
+### Tamanho do corpo e conexões
+
+Limite pelo `Content-Length`, antes de ler o corpo; sem `Content-Length` e com `Transfer-Encoding` numa rota com limite: `411`.
+
+| Rota | Limite |
+|---|---|
+| `/bots/:id/uploads/**` | o de anexos (100 MB, em streaming) |
+| `/mcp/**`, `/voice/**`, `/bots/:id/voice/**` | 32 MB |
+| `/auth/me/avatar` | 2 MB |
+| `/api/auth/**`, `/auth/setup`, `/auth/invites/**` | 16 KB |
+| `/bots/**`, `/groups/**` | 4 MB |
+| `/code/**` | 1 MB |
+| o resto | 64 KB |
+
+```
+413 {"ok":false,"error":"O corpo da requisição passa do limite desta rota.","code":"too_large"}
+```
+
+HTTP ocioso fecha em 30 s para quem não se autenticou; requisição autenticada, MCP, prévia e `/vault/exec` não têm limite de ociosidade (streams e turnos longos seguem como antes). WebSocket: upgrade por cookie precisa de `Origin` confiável; mensagens acima de 1 MB fecham com `1009` em todo socket que não seja o do Mac (o do Mac segue com 32 MB).
+
+### O que o app precisa
+
+- Primeiro acesso numa instalação nova: pedir o código do `setup.token` e mandar em `X-Setup-Token` no `POST /auth/setup` (ou usar o fluxo da página `/device`). Hoje o app recebe `403 setup_token_required`.
+- `bearer({ requireSignature: true })` não foi ligado: o fluxo de dispositivo (`/api/auth/device/token`) devolve o token de sessão sem assinatura e o app usa esse valor no `Authorization`. Para ligar, o app precisa trocar o `access_token` pelo token assinado (`GET /auth/me` já devolve o `cookie.value` assinado) e usar esse valor.
+- Renovação: quando a chave do Mac vencer (180 dias sem conectar), o socket recebe `401` e o app já mostra "Conecte de novo em Ajustes › Dispositivos".
+
+### Verificado
+
+Corpos capturados nos testes que rodam os handlers (`hardening.test.ts`, `auth.test.ts`, `auth-gate.test.ts`, `policy.test.ts`, `app-security.test.ts`, `preview.routes.test.ts`, `devices.test.ts`):
+
+```
+GET /%62ots/..%2Fvault -> 400 {"ok":false,"error":"Caminho inválido.","code":"bad_path"}
+GET /health (Host: evil.example) -> 421 {"ok":false,"error":"Endereço não reconhecido por este servidor.","code":"misdirected"}
+POST /bots (membro) -> 403 {"ok":false,"error":"Só o dono da conta pode fazer isso.","code":"forbidden"}
+GET /bots (runner.token) -> 403
+GET /status (runner.token) -> passa
+POST /vault/exec/ticket-1 (loopback, sem proxy) -> passa; com X-Forwarded-For ou Tailscale-User-Login -> 404
+POST /api/auth/api-key/create (dono) -> 404
+GET /bots (Cookie: rb_preview=…; sessão válida) -> 401
+POST /auth/setup sem código -> 403 {"ok":false,"error":"Informe o código de primeiro acesso que está no arquivo setup.token do servidor.","code":"setup_token_required"}
+POST /api/auth/sign-in/email (6ª tentativa depois de 5 senhas erradas, outro IP) -> 429 {"code":"account_locked"}, Retry-After > 0
+GET /device -> Content-Security-Policy com nonce, Set-Cookie: rb_preview=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0
+GET /preview/ws1/<porta>/app/index%20x.html?t=<token>&q=1 -> 302 Location: /app/index%20x.html, Set-Cookie: rb_preview=<id>; Path=/; HttpOnly; SameSite=Lax; Max-Age=7200
+mesmo link de novo, sem cookie -> 403
+PUT /integrations/jev com 65 KB -> 413 {"ok":false,"error":"O corpo da requisição passa do limite desta rota.","code":"too_large"}
+GET /meta com handler quebrado -> 500 {"ok":false,"error":"Algo deu errado no servidor. Tente de novo.","errorId":"<8 hex>"}
+chave criada por POST /devices -> vence em 180 dias; chave com metadata de dispositivo forjado -> principal sem device, /runner/connect recusado
+```

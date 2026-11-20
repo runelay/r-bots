@@ -15,6 +15,9 @@ export const appClientId = "runelay-bots-mac";
 export const apiKeyPrefix = "rbk_";
 export const ownerRole = "owner";
 export const memberRole = "member";
+export const clientIpHeader = "x-rb-client-ip";
+export const apiKeyLifetimeSeconds = 180 * 24 * 60 * 60;
+export const sessionMaxAgeMs = 90 * 24 * 60 * 60_000;
 
 export const socialProviderIds = ["apple", "google", "github"] as const;
 export type SocialProviderId = (typeof socialProviderIds)[number];
@@ -45,6 +48,13 @@ export interface AuthConfig {
   appName?: string;
   trustedOrigins?: () => string[];
   social?: SocialConfig;
+  onUserRevoked?: (userId: string) => void | Promise<void>;
+}
+
+async function revokeQuietly(config: AuthConfig, userId: string) {
+  await Promise.resolve(config.onUserRevoked?.(userId)).catch((error) =>
+    console.error("auth: could not revoke the user's credentials", error),
+  );
 }
 
 export function createAuth(config: AuthConfig) {
@@ -63,6 +73,24 @@ export function createAuth(config: AuthConfig) {
     database: drizzleAdapter(config.db, { provider: "pg", schema: authSchema }),
     trustedOrigins: () => [origin, ...socialOrigins, ...(config.trustedOrigins?.() ?? [])],
     socialProviders,
+    account: { encryptOAuthTokens: true },
+    databaseHooks: {
+      user: {
+        update: {
+          after: async (updated, context) => {
+            const body = (context?.body ?? {}) as Record<string, unknown>;
+            const changedRole =
+              typeof body.role === "string" && (updated as { role?: string | null }).role !== ownerRole;
+            if ((updated as { banned?: boolean | null }).banned || changedRole) await revokeQuietly(config, updated.id);
+          },
+        },
+        delete: {
+          after: async (deleted) => {
+            await revokeQuietly(config, deleted.id);
+          },
+        },
+      },
+    },
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,
@@ -79,16 +107,22 @@ export function createAuth(config: AuthConfig) {
       enabled: true,
       window: 60,
       max: 120,
+      storage: "memory",
       customRules: {
-        "/sign-in/email": { window: 60, max: 5 },
+        "/sign-in/*": { window: 60, max: 5 },
         "/change-password": { window: 60, max: 5 },
         "/passkey/verify-authentication": { window: 60, max: 10 },
+        "/passkey/generate-authenticate-options": { window: 60, max: 20 },
         "/device/code": { window: 60, max: 10 },
+        "/device/token": { window: 60, max: 30 },
         "/device/approve": { window: 60, max: 10 },
+        "/device/deny": { window: 60, max: 10 },
+        "/device": { window: 60, max: 30 },
+        "/request-password-reset": { window: 300, max: 3 },
       },
     },
     advanced: {
-      ipAddress: { ipAddressHeaders: ["x-forwarded-for", "x-real-ip"] },
+      ipAddress: { ipAddressHeaders: [clientIpHeader] },
       useSecureCookies: base.protocol === "https:",
       disableOriginCheck: false,
       disableCSRFCheck: false,
@@ -111,7 +145,7 @@ export function createAuth(config: AuthConfig) {
         defaultKeyLength: 48,
         enableMetadata: true,
         rateLimit: { enabled: false },
-        keyExpiration: { defaultExpiresIn: null },
+        keyExpiration: { defaultExpiresIn: apiKeyLifetimeSeconds, maxExpiresIn: 180 },
         apiKeyHeaders: ["x-api-key"],
         deferUpdates: true,
       }),

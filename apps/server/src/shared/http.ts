@@ -174,3 +174,131 @@ export function runelayFailure(res: Res, error: unknown) {
     error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
   });
 }
+
+type WebHeaders = globalThis.Headers;
+
+export interface RequestContext {
+  pathname: string;
+  parts: string[];
+  peer: string;
+  viaProxy: boolean;
+  clientIp: string;
+  listenPort: number | null;
+}
+
+const contexts = new WeakMap<Request, RequestContext>();
+const encodedHex = /%[0-9a-f]{2}/i;
+const loopbackAddresses = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"]);
+const proxyHeaderPrefixes = ["x-forwarded-", "tailscale-"];
+const proxyHeaderNames = new Set(["forwarded", "x-real-ip"]);
+
+export function normalizePath(pathname: string): { pathname: string; parts: string[] } | null {
+  if (pathname.includes("\\")) return null;
+  const parts: string[] = [];
+  for (const raw of pathname.split("/")) {
+    if (!raw) continue;
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(raw);
+    } catch {
+      return null;
+    }
+    if (decoded === "." || decoded === "..") return null;
+    if (decoded.includes("/") || decoded.includes("\\") || encodedHex.test(decoded)) return null;
+    if (Array.from(decoded).some((char) => (char.codePointAt(0) ?? 0) < 0x20)) return null;
+    parts.push(decoded);
+  }
+  return { pathname: `/${parts.join("/")}`, parts };
+}
+
+export function isLoopback(address: string) {
+  return loopbackAddresses.has(address) || address.startsWith("127.");
+}
+
+export function hasProxyHeaders(headers: WebHeaders) {
+  for (const name of headers.keys()) {
+    const lower = name.toLowerCase();
+    if (proxyHeaderNames.has(lower) || proxyHeaderPrefixes.some((prefix) => lower.startsWith(prefix))) return true;
+  }
+  return false;
+}
+
+export function viaTrustedProxy(headers: WebHeaders, peer: string) {
+  if (!isLoopback(peer)) return false;
+  return headers.has("tailscale-user-login") || headers.has("tailscale-headers-info");
+}
+
+export function clientIpOf(headers: WebHeaders, peer: string) {
+  if (viaTrustedProxy(headers, peer)) {
+    const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+    if (forwarded) return forwarded;
+  }
+  return peer || "unknown";
+}
+
+export function buildRequestContext(request: Request, peer: string, listenPort: number | null = null) {
+  const normalized = normalizePath(new URL(request.url).pathname);
+  if (!normalized) return null;
+  const context: RequestContext = {
+    ...normalized,
+    peer,
+    viaProxy: viaTrustedProxy(request.headers, peer),
+    clientIp: clientIpOf(request.headers, peer),
+    listenPort,
+  };
+  return context;
+}
+
+export function setRequestContext(request: Request, context: RequestContext) {
+  contexts.set(request, context);
+  return context;
+}
+
+export function requestContext(request: Request): RequestContext {
+  const known = contexts.get(request);
+  if (known) return known;
+  const built = buildRequestContext(request, "") ?? {
+    pathname: "/",
+    parts: [],
+    peer: "",
+    viaProxy: false,
+    clientIp: "unknown",
+    listenPort: null,
+  };
+  contexts.set(request, built);
+  return built;
+}
+
+const baseSecurityHeaders: Record<string, string> = {
+  "x-content-type-options": "nosniff",
+  "referrer-policy": "no-referrer",
+  "cross-origin-opener-policy": "same-origin",
+  "cross-origin-resource-policy": "same-origin",
+  "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+};
+
+function needsNoStore(headers: WebHeaders, pathname: string) {
+  const type = headers.get("content-type") ?? "";
+  if (type.includes("json")) return true;
+  return pathname === "/device" || pathname.startsWith("/auth/") || pathname.startsWith("/api/auth");
+}
+
+const embeddablePath = /^\/bots\/[^/]+\/(artifacts|uploads)(\/|$)/;
+
+export function withSecurityHeaders(response: Response, pathname: string) {
+  const headers = new globalThis.Headers(response.headers);
+  const embeddable = embeddablePath.test(pathname);
+  for (const [name, value] of Object.entries(baseSecurityHeaders))
+    if (!headers.has(name) && !(embeddable && name === "cross-origin-resource-policy")) headers.set(name, value);
+  if (!headers.has("cache-control") && needsNoStore(headers, pathname)) headers.set("cache-control", "no-store");
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+export function internalError(res: Res, error: unknown) {
+  const errorId = crypto.randomUUID().slice(0, 8);
+  console.error(`request failed (${errorId})`, error);
+  if (!res.headersSent)
+    sendJson(res, 500, { ok: false, error: "Algo deu errado no servidor. Tente de novo.", errorId });
+  else res.end();
+  return errorId;
+}

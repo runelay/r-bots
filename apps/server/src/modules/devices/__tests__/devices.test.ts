@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDb } from "../../../../test/db-helpers";
@@ -7,7 +7,6 @@ import { request, startTestServer, type TestServer } from "../../../../test/help
 import { macRunnerConnected, revokedCloseCode } from "../../accounts/services/mac-runner.service";
 import { type AuthModule, createAuthModule, type Principal } from "../../auth";
 import { useAuthModule } from "../../auth/gate";
-import { dateText, parseKeyMetadata } from "../../auth/services/auth.middleware";
 import type { AuthDatabase } from "../../auth/services/auth.service";
 import {
   DevicesError,
@@ -74,11 +73,10 @@ beforeAll(async () => {
     host: "127.0.0.1",
     port: 2999,
   });
-  const owner = await mod.access.setupOwner({
-    name: "Dona",
-    email: "dona@example.com",
-    password: "correct horse battery",
-  });
+  const owner = await mod.access.setupOwner(
+    { name: "Dona", email: "dona@example.com", password: "correct horse battery" },
+    readFileSync(mod.setupToken.issue(), "utf8").trim(),
+  );
   ownerToken = owner.token;
   ownerId = owner.user.id;
   const invite = (await mod.access.createInvite(ownerId, {})) as { code: string };
@@ -108,6 +106,10 @@ describe("devices", () => {
     expect(created.body.token).toStartWith("rbk_");
     expect(created.body.device).toMatchObject({ name: "MacBook Air", userId: ownerId, connected: false });
     expect(mod.origins.list()).toContain(new URL(server.url).origin);
+    const memberCreated = await register(memberToken, mac("Mac do membro", "machine-8"));
+    expect(memberCreated.status).toBe(201);
+    expect(mod.origins.remembered()).toEqual([new URL(server.url).origin]);
+    await revokeDevice({ userId: memberId, role: "member" } as Principal, memberCreated.body.device.id);
     const fromDevice = await register(created.body.token, mac("Outro", "machine-9"));
     expect(fromDevice.status).toBe(403);
     expect(fromDevice.body).toMatchObject({ code: "forbidden" });
@@ -180,35 +182,40 @@ describe("devices", () => {
     await revokeDevice({ userId: ownerId, role: "owner" } as Principal, ownerMac.body.device.id);
   });
 
-  test("ignores keys that are not devices and fills missing fields", async () => {
-    await mod.auth.api.createApiKey({ body: { name: deviceKeyName, userId: ownerId, metadata: { kind: "other" } } });
-    await mod.auth.api.createApiKey({ body: { name: "mac-runner", userId: ownerId, metadata: { kind: "device" } } });
-    await mod.auth.api.createApiKey({
-      body: { name: deviceKeyName, userId: ownerId, metadata: { kind: "device", deviceId: "raw" } },
-    });
-    await mod.auth.api.createApiKey({
-      body: { name: deviceKeyName, userId: ownerId, metadata: { kind: "device", deviceId: "raw" } },
-    });
-    const listed = await listRegisteredDevices();
-    expect(listed).toEqual([
-      {
-        id: "raw",
-        keyId: expect.any(String),
-        userId: ownerId,
-        name: "Mac",
-        model: null,
-        osVersion: null,
-        appVersion: null,
-        machineId: null,
-        registeredAt: new Date(0).toISOString(),
+  test("a key with forged device metadata is not a device and new keys expire", async () => {
+    const forged = await mod.auth.api.createApiKey({
+      body: {
+        name: deviceKeyName,
+        userId: memberId,
+        expiresIn: 86_400,
+        metadata: { kind: "device", deviceId: "owner-mac", registeredAt: "2000-01-01T00:00:00.000Z" },
       },
-    ]);
+    });
+    const outcome = await mod.authenticate(
+      new Request("http://127.0.0.1:2999/runner/connect", { headers: bearer(forged.key) }),
+    );
+    expect(outcome).toMatchObject({ kind: "principal", principal: { method: "api-key", userId: memberId } });
+    expect((outcome as { principal: Principal }).principal.device).toBeUndefined();
+    expect(await openSocket(forged.key).opened).toBe(false);
+    const blocked = await request("/api/auth/api-key/create", {
+      method: "POST",
+      headers: { ...bearer(memberToken), origin: server.url },
+      body: JSON.stringify({ name: "device", metadata: { kind: "device", deviceId: "x" } }),
+    });
+    expect(blocked.status).toBe(404);
     const owner = { userId: ownerId, role: "owner", method: "session" } as Principal;
-    expect((await listDevices(owner)).map((item) => item.id)).toEqual(["raw"]);
     const unnamed = await registerDevice(owner, { name: "Sem id" });
     expect(unnamed.device).toMatchObject({ model: null, osVersion: null, appVersion: null });
+    const key = (await mod.devices.list()).find((item) => item.id === unnamed.device.id);
+    const verified = await mod.auth.api.verifyApiKey({ body: { key: unnamed.token } });
+    const expires = new Date((verified.key as { expiresAt: Date }).expiresAt).getTime();
+    expect(Math.round((expires - Date.now()) / 86_400_000)).toBe(180);
+    expect(key?.apiKeyId).toBe(verified.key?.id);
+    expect((await listRegisteredDevices()).find((item) => item.id === unnamed.device.id)).toMatchObject({
+      owner: true,
+      userId: ownerId,
+    });
     await revokeDevice(owner, unnamed.device.id);
-    await revokeDevice(owner, "raw");
   });
 
   test("answers 401 without auth and lists nothing", async () => {
@@ -221,28 +228,13 @@ describe("devices", () => {
       const principal = { userId: "u", role: "owner", method: "session" } as Principal;
       await expect(listDevices(principal)).rejects.toBeInstanceOf(DevicesError);
       useAuthModule({
-        auth: {
-          get $context() {
-            return Promise.reject(new Error("db down"));
-          },
+        devices: {
+          roles: () => Promise.reject(new Error("db down")),
         },
       } as unknown as AuthModule);
       expect(await listRegisteredDevices()).toEqual([]);
     } finally {
       useAuthModule(mod);
     }
-  });
-
-  test("reads key metadata stored as an object, a string or twice encoded", () => {
-    expect(parseKeyMetadata({ kind: "device" })).toEqual({ kind: "device" });
-    expect(parseKeyMetadata('{"kind":"device"}')).toEqual({ kind: "device" });
-    expect(parseKeyMetadata(JSON.stringify('{"kind":"device"}'))).toEqual({ kind: "device" });
-    expect(parseKeyMetadata("{broken")).toEqual({});
-    expect(parseKeyMetadata("[1]")).toEqual({});
-    expect(parseKeyMetadata(null)).toEqual({});
-    expect(dateText(new Date("2026-11-19T10:00:00.000Z"))).toBe("2026-11-19T10:00:00.000Z");
-    expect(dateText(new Date("nope"))).toBe("");
-    expect(dateText("2026")).toBe("2026");
-    expect(dateText(3)).toBe("");
   });
 });
