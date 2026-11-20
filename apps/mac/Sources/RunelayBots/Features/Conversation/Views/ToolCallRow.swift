@@ -101,36 +101,24 @@ struct CompactToolRow: View {
                 ActionShotPreview(call: call, phrase: phrase)
             }
 
-            Menu {
+            GlassMenuIconButton(systemImage: "ellipsis", help: "Mais opções", iconSize: 11, size: 22, weight: .semibold, edge: .trailing) {
+                var items: [GlassMenuItem] = []
                 if let url = phrase.url {
-                    Button("Abrir no meu navegador") { NSWorkspace.shared.open(url) }
-                    Button("Copiar link") {
+                    items.append(GlassMenuItem("Abrir no meu navegador", systemImage: "safari") { NSWorkspace.shared.open(url) })
+                    items.append(GlassMenuItem("Copiar link", systemImage: "link") {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                    }
+                    })
                 }
                 if hasTechnical {
-                    if phrase.url != nil {
-                        Divider()
-                    }
-                    Button(showsTechnical ? "Ocultar detalhes técnicos" : "Detalhes técnicos") {
+                    items.append(GlassMenuItem(showsTechnical ? "Ocultar detalhes técnicos" : "Detalhes técnicos", id: "technical", systemImage: "curlybraces", startsSection: phrase.url != nil) {
                         showsTechnical.toggle()
-                    }
+                    })
                 }
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.textTertiary)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
+                return items
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .clickable()
             .opacity(isHovering || showsTechnical ? 1 : 0)
             .disabled(phrase.url == nil && !hasTechnical)
-            .accessibilityLabel("Mais opções")
         }
         .padding(.leading, visual ? 6 : Spacing.m)
         .padding(.trailing, visual ? Spacing.s : Spacing.xs)

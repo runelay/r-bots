@@ -205,12 +205,11 @@ private struct CatalogSearchField: View {
 private struct AddConnectorButton: View {
     @Environment(AppModel.self) private var model
     @State private var isHovering = false
-
-    private var isOpen: Bool { model.floatingMenu == .connectorsAdd }
+    @State private var isOpen = false
 
     var body: some View {
         Button {
-            model.floatingMenu = isOpen ? nil : .connectorsAdd
+            isOpen.toggle()
         } label: {
             HStack(spacing: Spacing.xs + 2) {
                 Image(systemName: "plus")
@@ -232,7 +231,9 @@ private struct AddConnectorButton: View {
         .onHover { isHovering = $0 }
         .springAnimation(value: isHovering)
         .springAnimation(value: isOpen)
-        .anchorPreference(key: FloatingMenuAnchorKey.self, value: .bounds) { [.connectorsAdd: $0] }
+        .glassMenu(isPresented: $isOpen, edge: .trailing) {
+            model.catalog.addMenuItems(model: model)
+        }
         .accessibilityLabel("Adicionar")
     }
 }
@@ -462,29 +463,11 @@ private struct InstallConnectorButton: View {
 private struct ConnectorOptionsButton: View {
     @Environment(AppModel.self) private var model
     let connector: CatalogConnector
-    @State private var isHovering = false
-
-    private var menuID: FloatingMenuID { .connectorOptions(connector.id) }
-    private var isOpen: Bool { model.floatingMenu == menuID }
 
     var body: some View {
-        Button {
-            model.floatingMenu = isOpen ? nil : menuID
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(isOpen || isHovering ? Theme.textPrimary : Theme.textSecondary)
-                .frame(width: 30, height: 30)
-                .background(isOpen ? Theme.selection : isHovering ? Theme.hover : Theme.maskHidden, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
+        GlassMenuIconButton(systemImage: "ellipsis", help: "Opções de \(connector.name)", size: 30, weight: .medium, edge: .trailing) {
+            model.catalog.optionItems(for: connector.id, model: model)
         }
-        .buttonStyle(PressableButtonStyle())
-        .onHover { isHovering = $0 }
-        .springAnimation(value: isHovering)
-        .springAnimation(value: isOpen)
-        .anchorPreference(key: FloatingMenuAnchorKey.self, value: .bounds) { [menuID: $0] }
-        .help("Opções de \(connector.name)")
-        .accessibilityLabel("Opções de \(connector.name)")
     }
 }
 

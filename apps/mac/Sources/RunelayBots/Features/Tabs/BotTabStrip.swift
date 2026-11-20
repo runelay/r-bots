@@ -280,31 +280,18 @@ struct BotTabItem: View {
 
 struct NewTabButton: View {
     @Environment(AppModel.self) private var model
-    @State private var isHovering = false
-
-    private var isOpen: Bool {
-        model.floatingMenu == .tabPicker
-    }
 
     var body: some View {
+        @Bindable var model = model
         Button {
-            model.floatingMenu = isOpen ? nil : .tabPicker
+            model.tabPickerOpen.toggle()
         } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(isOpen || isHovering ? Theme.textPrimary : Theme.textSecondary)
-                .frame(width: 26, height: 26)
-                .background(isOpen ? Theme.selection : isHovering ? Theme.hover : Theme.maskHidden, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-                .contentShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
+            IconButtonFace(systemImage: "plus", iconSize: 12, size: 26, weight: .medium, isActive: model.tabPickerOpen)
         }
         .buttonStyle(PressableButtonStyle())
-        .clickable()
-        .onHover { hovering in
-            isHovering = hovering
+        .glassPopup(isPresented: $model.tabPickerOpen) {
+            BotQuickPicker()
         }
-        .springAnimation(value: isHovering)
-        .springAnimation(value: isOpen)
-        .anchorPreference(key: FloatingMenuAnchorKey.self, value: .bounds) { [.tabPicker: $0] }
         .help("Nova aba (⌘T)")
         .accessibilityLabel("Nova aba")
     }
@@ -381,8 +368,6 @@ struct BotQuickPicker: View {
         }
         .padding(Spacing.xs + 1)
         .frame(width: 272, alignment: .leading)
-        .glassSurface(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous), fallback: Theme.surfaceRaised)
-        .softElevation(lifted: true)
         .onAppear {
             focused = true
         }
@@ -438,7 +423,7 @@ struct BotQuickPicker: View {
 
     private func choose(_ bot: Bot?) {
         guard let bot else { return }
-        model.floatingMenu = nil
+        model.tabPickerOpen = false
         model.open(bot.id, placement: .new)
     }
 }

@@ -487,24 +487,19 @@ struct ModelPickerPanel: View {
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize()
             Spacer(minLength: 0)
-            Menu {
-                ForEach(fallbackChoices) { account in
-                    Button(fallbackName(account.id)) {
-                        setFallback(EngineFallback(account: account.id, model: nil))
+            GlassSelect(
+                options: fallbackChoices.map { GlassSelectOption(fallbackName($0.id), value: Optional($0.id)) }
+                    + [GlassSelectOption("Não trocar, só avisar", value: String?.none, startsSection: !fallbackChoices.isEmpty)],
+                selection: Binding(
+                    get: { bot.engine?.fallback?.account },
+                    set: { account in
+                        setFallback(account.map { EngineFallback(account: $0, model: nil) })
                     }
-                }
-                Divider()
-                Button("Não trocar, só avisar") {
-                    setFallback(nil)
-                }
-            } label: {
-                Text(bot.engine?.fallback.map { fallbackName($0.account) } ?? "Só avisar")
-                    .font(TypeScale.rowSubtitle)
-                    .foregroundStyle(Theme.textPrimary)
-            }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .clickable()
+                ),
+                title: bot.engine?.fallback.map { fallbackName($0.account) } ?? "Só avisar",
+                help: "Se acabar o limite",
+                edge: .trailing
+            )
             .help("Quando a conta principal bater no limite, o mesmo pedido continua nesta conta, com o contexto da conversa. Volta sozinho depois do reset.")
         }
         .padding(.horizontal, Spacing.l)

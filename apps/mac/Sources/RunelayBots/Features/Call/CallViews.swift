@@ -52,7 +52,7 @@ struct CallBar: View {
             CallIconButton(systemImage: "gearshape", help: "Voz, idioma e microfone", isActive: call.settingsOpen) {
                 call.settingsOpen.toggle()
             }
-            .popover(isPresented: $call.settingsOpen, arrowEdge: .bottom) {
+            .glassPopup(isPresented: $call.settingsOpen) {
                 VStack(alignment: .leading, spacing: Spacing.m) {
                     VoiceSettingsForm(botID: bot.id)
                     MicrophonePicker { _ in
@@ -476,35 +476,28 @@ struct VoiceSettingsForm: View {
                 Button {
                     voicePickerOpen.toggle()
                 } label: {
-                    SettingPill(text: voiceSummary, isOpen: voicePickerOpen)
+                    SelectFace(text: voiceSummary, isOpen: voicePickerOpen)
                 }
                 .buttonStyle(PressableButtonStyle())
                 .disabled(settings == nil)
-                .popover(isPresented: $voicePickerOpen, arrowEdge: .bottom) {
+                .help("Escolher a voz")
+                .accessibilityLabel("Voz")
+                .accessibilityValue(voiceSummary)
+                .glassPopup(isPresented: $voicePickerOpen, edge: .trailing) {
                     voicePicker
                 }
             }
             settingRow("Idioma") {
-                Menu {
-                    ForEach(BotVoiceSettings.languages, id: \.id) { language in
-                        Button {
-                            save { $0.language = language.id }
-                        } label: {
-                            if settings?.language == language.id {
-                                Label(language.label, systemImage: "checkmark")
-                            } else {
-                                Text(language.label)
-                            }
-                        }
-                    }
-                } label: {
-                    SettingPill(text: languageLabel, isOpen: false)
-                }
-                .menuStyle(.button)
-                .buttonStyle(.plain)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .clickable()
+                GlassSelect(
+                    options: BotVoiceSettings.languages.map { GlassSelectOption($0.label, value: $0.id) },
+                    selection: Binding(
+                        get: { settings?.language ?? "pt" },
+                        set: { language in save { $0.language = language } }
+                    ),
+                    help: "Idioma da chamada",
+                    edge: .trailing,
+                    minWidth: 160
+                )
                 .disabled(settings == nil)
             }
             if let loadError {
@@ -535,10 +528,6 @@ struct VoiceSettingsForm: View {
     private var voiceSummary: String {
         let name = voices.first { $0.voiceId == settings?.voiceId }?.shortName ?? (settings == nil ? "…" : "Voz")
         return "\(name) \(speed.formatted(.number.precision(.fractionLength(1))))×"
-    }
-
-    private var languageLabel: String {
-        BotVoiceSettings.languages.first { $0.id == settings?.language }?.label ?? "Português"
     }
 
     private var voicePicker: some View {
@@ -639,32 +628,6 @@ struct VoiceSettingsForm: View {
                 loadError = "Não consegui salvar a voz. Tenta de novo."
             }
         }
-    }
-}
-
-struct SettingPill: View {
-    let text: String
-    let isOpen: Bool
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: Spacing.xs) {
-            Text(text)
-                .font(TypeScale.rowSubtitle)
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(1)
-            Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(Theme.textTertiary)
-                .rotationEffect(.degrees(isOpen ? 180 : 0))
-        }
-        .padding(.horizontal, Spacing.m)
-        .frame(height: 30)
-        .background(isOpen || isHovering ? Theme.surfaceRaised : Theme.hover, in: Capsule())
-        .contentShape(Capsule())
-        .onHover { isHovering = $0 }
-        .springAnimation(value: isHovering)
-        .springAnimation(value: isOpen)
     }
 }
 

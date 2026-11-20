@@ -729,54 +729,30 @@ struct CanvasToolbar: View {
         let hasNodes = !editor.selection.isEmpty
         let hasEdges = !editor.targetEdges.isEmpty
         HStack(spacing: Spacing.xxs) {
-            Menu {
-                ForEach(CanvasShapeKind.allCases, id: \.self) { kind in
-                    Button {
+            GlassMenuButton(help: "Forma", items: {
+                CanvasShapeKind.allCases.map { kind in
+                    GlassMenuItem(kind.label, systemImage: kind.symbol, isOn: editor.selectionShape == kind.rawValue) {
                         editor.setShape(kind)
-                    } label: {
-                        Label(kind.label, systemImage: editor.selectionShape == kind.rawValue ? "checkmark" : kind.symbol)
                     }
                 }
-            } label: {
+            }) { _ in
                 CanvasToolIcon(systemImage: CanvasShapeKind(rawValue: editor.selectionShape ?? "box")?.symbol ?? "square")
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
             .disabled(!hasNodes)
             .opacity(hasNodes ? 1 : 0.4)
-            .clickable()
-            .help("Forma")
 
-            Menu {
-                Button {
-                    editor.setColor(nil)
-                } label: {
-                    Label("Cor da forma", systemImage: "circle.dashed")
-                }
-                ForEach(["neutral"] + CanvasPalette.colors, id: \.self) { name in
-                    Button {
-                        editor.setColor(name)
-                    } label: {
-                        Label {
-                            Text(CanvasPalette.label(name))
-                        } icon: {
-                            Image(nsImage: Self.swatch(name))
+            GlassMenuButton(help: "Cor", items: {
+                [GlassMenuItem("Cor da forma", systemImage: "circle.dashed") { editor.setColor(nil) }]
+                    + (["neutral"] + CanvasPalette.colors).map { name in
+                        GlassMenuItem(CanvasPalette.label(name), id: name, leading: AnyView(Image(nsImage: Self.swatch(name)))) {
+                            editor.setColor(name)
                         }
                     }
-                }
-            } label: {
+            }) { _ in
                 CanvasToolIcon(systemImage: "circle.lefthalf.filled")
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
             .disabled(!hasNodes)
             .opacity(hasNodes ? 1 : 0.4)
-            .clickable()
-            .help("Cor")
 
             CanvasToolButton(systemImage: editor.edgesDashed == true ? "line.diagonal" : "ellipsis", help: editor.edgesDashed == true ? "Linha contínua" : "Linha tracejada") {
                 editor.setEdgeStyle(dashed: editor.edgesDashed != true)

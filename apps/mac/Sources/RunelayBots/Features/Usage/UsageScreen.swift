@@ -134,44 +134,14 @@ private struct UsageFilterMenu: View {
     let options: [(String?, String)]
     @Binding var selection: String?
 
-    private var current: String {
-        options.first { $0.0 == selection }?.1 ?? "Todos"
-    }
-
     var body: some View {
-        Menu {
-            ForEach(options, id: \.1) { option in
-                Button {
-                    selection = option.0
-                } label: {
-                    if option.0 == selection {
-                        Label(option.1, systemImage: "checkmark")
-                    } else {
-                        Text(option.1)
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: Spacing.xs) {
-                Text(title)
-                    .foregroundStyle(Theme.textTertiary)
-                Text(current)
-                    .foregroundStyle(Theme.textPrimary)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .font(TypeScale.captionStrong)
-            .padding(.horizontal, Spacing.m)
-            .frame(height: 34)
-            .background(Theme.surface, in: Capsule())
-            .contentShape(Capsule())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .clickable()
+        GlassSelect(
+            options: options.map { GlassSelectOption($0.1, value: $0.0) },
+            selection: $selection,
+            prefix: title,
+            help: title,
+            minWidth: 160
+        )
     }
 }
 

@@ -263,35 +263,30 @@ final class ConnectorCatalogStore {
         }
     }
 
-    func addMenuItems(model: AppModel) -> [FloatingMenuItem] {
+    func addMenuItems(model: AppModel) -> [GlassMenuItem] {
         [
-            FloatingMenuItem(id: "custom", title: "Conexão personalizada", systemImage: "powerplug") {
-                model.floatingMenu = nil
+            GlassMenuItem("Conexão personalizada", systemImage: "powerplug") {
                 Self.openDashboard()
             },
-            FloatingMenuItem(id: "import", title: "Importar de outro cliente", systemImage: "square.and.arrow.down") {
-                model.floatingMenu = nil
+            GlassMenuItem("Importar de outro cliente", systemImage: "square.and.arrow.down") {
                 Self.openDashboard()
             },
         ]
     }
 
-    func optionItems(for id: String, model: AppModel) -> [FloatingMenuItem] {
+    func optionItems(for id: String, model: AppModel) -> [GlassMenuItem] {
         guard let item = item(id: id) else { return [] }
         var items = [
-            FloatingMenuItem(id: "open", title: "Abrir", systemImage: "arrow.up.forward.square") { [weak self] in
-                model.floatingMenu = nil
+            GlassMenuItem("Abrir", systemImage: "arrow.up.forward.square") { [weak self] in
                 self?.detail = item.connectionName
             }
         ]
         if item.auth == "oauth" {
-            items.append(FloatingMenuItem(id: "reconnect", title: "Reconectar", systemImage: "arrow.clockwise") { [weak self] in
-                model.floatingMenu = nil
+            items.append(GlassMenuItem("Reconectar", systemImage: "arrow.clockwise") { [weak self] in
                 self?.reconnect(item, model: model)
             })
         }
-        items.append(FloatingMenuItem(id: "remove", title: "Remover", systemImage: "trash", destructive: true) { [weak self] in
-            model.floatingMenu = nil
+        items.append(GlassMenuItem("Remover", systemImage: "trash", destructive: true) { [weak self] in
             self?.pendingRemoval = item
         })
         return items

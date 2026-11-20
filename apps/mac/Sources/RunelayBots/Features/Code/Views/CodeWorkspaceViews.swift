@@ -62,7 +62,7 @@ struct CodeStrip: View {
         .clickable()
         .onHover { hovering = $0 }
         .help("\(workspace.repoName) · \(workspace.branch)\(counts.map { " · \($0.files) arquivo\($0.files == 1 ? "" : "s") alterado\($0.files == 1 ? "" : "s")" } ?? "")\(workspace.pr.map { " · " + PullRequestPillBadge(pr: $0).helpText } ?? "")")
-        .popover(isPresented: $showsPopover, arrowEdge: .bottom) {
+        .glassPopup(isPresented: $showsPopover) {
             CodeWorkspacePopover(store: store, workspace: workspace) {
                 showsPopover = false
                 openChanges()
@@ -267,32 +267,20 @@ struct CodeWorkspacePopover: View {
             RoundIconButton(systemImage: copied == "path" ? "checkmark" : "doc.on.doc", help: "Copiar o caminho", size: 26) {
                 copy(workspace.path, tag: "path")
             }
-            Menu {
-                ForEach(CodeEditorApp.installed) { editor in
-                    Button {
+            GlassMenuIconButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Abrir no editor", iconSize: 11, size: 26, weight: .semibold, edge: .trailing) {
+                CodeEditorApp.installed.map { editor in
+                    GlassMenuItem(
+                        editor.name,
+                        leading: AnyView(Image(nsImage: editor.icon).resizable().frame(width: 18, height: 18))
+                    ) {
                         editor.open(absolutePath: workspace.path)
-                    } label: {
-                        Label {
-                            Text(editor.name)
-                        } icon: {
-                            Image(nsImage: editor.icon)
-                        }
                     }
-                }
-                Divider()
-                Button("Copiar caminho") { copy(workspace.path, tag: "path") }
-            } label: {
-                Image(systemName: "chevron.left.forwardslash.chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 26, height: 26)
-                    .contentShape(Rectangle())
+                } + [
+                    GlassMenuItem("Copiar caminho", systemImage: "doc.on.doc", startsSection: !CodeEditorApp.installed.isEmpty) {
+                        copy(workspace.path, tag: "path")
+                    },
+                ]
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .clickable()
-            .help("Abrir no editor")
         }
         .padding(.leading, PopoverMetrics.inset)
         .padding(.trailing, PopoverMetrics.inset - 5)

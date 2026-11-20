@@ -326,65 +326,32 @@ struct ArtifactViewer: View {
     }
 
     private var versionMenu: some View {
-        Menu {
-            ForEach(center.versions.reversed(), id: \.n) { version in
-                Button {
-                    center.select(version: version.n)
-                } label: {
-                    if version.n == center.selectedVersion {
-                        Label("Versão \(version.n)", systemImage: "checkmark")
-                    } else {
-                        Text("Versão \(version.n)")
-                    }
-                }
-            }
-        } label: {
-            Text("v\(center.selectedVersion)")
-                .font(TypeScale.captionStrong)
-                .monospacedDigit()
-                .foregroundStyle(Theme.textPrimary)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.visible)
-        .fixedSize()
-        .padding(.horizontal, Spacing.m)
-        .frame(height: 32)
-        .background(Theme.surface, in: Capsule())
-        .clickable()
-        .help("Escolher versão")
+        GlassSelect(
+            options: center.versions.reversed().map { GlassSelectOption("Versão \($0.n)", value: $0.n) },
+            selection: Binding(
+                get: { center.selectedVersion },
+                set: { center.select(version: $0) }
+            ),
+            title: "v\(center.selectedVersion)",
+            help: "Escolher versão",
+            edge: .trailing,
+            minWidth: 160
+        )
     }
 
     private var moreMenu: some View {
-        Menu {
+        GlassMenuIconButton(systemImage: "ellipsis", help: "Mais", iconSize: 13, size: 32, weight: .medium, shape: .circle, edge: .trailing) {
+            var items: [GlassMenuItem] = []
             if ref.kind == "canvas" {
-                Button("Exportar PNG") {
-                    center.exportCanvas(pdf: false)
-                }
-                Button("Exportar PDF") {
-                    center.exportCanvas(pdf: true)
-                }
-                Button("Copiar como Mermaid") {
-                    center.copyMermaid()
-                }
-                Divider()
+                items += [
+                    GlassMenuItem("Exportar PNG", systemImage: "photo") { center.exportCanvas(pdf: false) },
+                    GlassMenuItem("Exportar PDF", systemImage: "doc.richtext") { center.exportCanvas(pdf: true) },
+                    GlassMenuItem("Copiar como Mermaid", systemImage: "chevron.left.forwardslash.chevron.right") { center.copyMermaid() },
+                ]
             }
-            Button("Copiar link desta versão") {
-                center.copyLink()
-            }
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .frame(width: 32, height: 32)
-                .background(Theme.surface, in: Circle())
+            items.append(GlassMenuItem("Copiar link desta versão", systemImage: "link", startsSection: !items.isEmpty) { center.copyLink() })
+            return items
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .clickable()
-        .help("Mais")
     }
 
     @ViewBuilder

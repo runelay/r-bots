@@ -82,7 +82,16 @@ struct SidebarHeader: View {
             .frame(height: 32)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.small + 1, style: .continuous))
 
-            FloatingMenuButton(id: .sidebarFilter, systemImage: "line.3.horizontal.decrease", help: "Filtrar", size: 32)
+            GlassMenuIconButton(systemImage: "line.3.horizontal.decrease", help: "Filtrar", size: 32) {
+                [
+                    GlassMenuItem("Agrupar por seção", systemImage: "rectangle.3.group", isOn: model.groupBySection, keepsOpen: true) {
+                        model.groupBySection.toggle()
+                    },
+                    GlassMenuItem("Mostrar ocultos", systemImage: "eye", isOn: model.showHiddenBots, keepsOpen: true) {
+                        model.showHiddenBots.toggle()
+                    },
+                ]
+            }
         }
     }
 }

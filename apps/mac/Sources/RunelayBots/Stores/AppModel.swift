@@ -217,7 +217,7 @@ final class AppModel {
     private(set) var liveSession: BrowserLiveSession?
     var browserReplay: BrowserReplay?
     var modelPickerOpen = false
-    var floatingMenu: FloatingMenuID?
+    var tabPickerOpen = false
     let catalog = ConnectorCatalogStore()
     var groupBySection = UserDefaults.standard.object(forKey: "sidebar.groupBySection") as? Bool ?? true {
         didSet { UserDefaults.standard.set(groupBySection, forKey: "sidebar.groupBySection") }
@@ -983,7 +983,7 @@ final class AppModel {
 
     func openTabPicker() {
         revealConversations()
-        floatingMenu = .tabPicker
+        tabPickerOpen = true
     }
 
     func cycleTab(by offset: Int) {

@@ -28,28 +28,17 @@ struct BotsSettings: View {
                 ForEach(model.loadedBots) { bot in
                     SettingsBotRow(bot: bot) {
                         AutoApproveToggle(bot: bot, compact: true)
-                        Menu {
-                            Button("Editar", systemImage: "pencil") {
-                                model.openEditor(for: bot)
-                            }
-                            Divider()
-                            Button("Arquivar", systemImage: "archivebox", role: .destructive) {
-                                archiving = bot
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.textSecondary)
-                                .frame(width: 24, height: 22)
-                                .contentShape(Rectangle())
+                        GlassMenuIconButton(systemImage: "ellipsis", help: "Mais ações", iconSize: 12, size: 24, weight: .semibold, edge: .trailing) {
+                            [
+                                GlassMenuItem("Editar", systemImage: "pencil") {
+                                    model.openEditor(for: bot)
+                                },
+                                GlassMenuItem("Arquivar", systemImage: "archivebox", destructive: true) {
+                                    archiving = bot
+                                },
+                            ]
                         }
-                        .menuStyle(.button)
-                        .buttonStyle(.plain)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-                        .clickable()
                         .disabled(bot.isPending)
-                        .help("Mais ações")
                     }
                     .transition(.opacity)
                 }

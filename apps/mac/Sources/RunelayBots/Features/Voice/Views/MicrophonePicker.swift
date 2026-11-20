@@ -106,8 +106,6 @@ struct MicrophoneSettingRow: View {
     private let catalog = MicrophoneCatalog.shared
     @State private var meter = MicrophoneMeter()
     @State private var isVisible = false
-    @State private var isHovering = false
-
     var body: some View {
         SettingsRow(
             title: "Microfone",
@@ -152,53 +150,26 @@ struct MicrophoneSettingRow: View {
     }
 
     private var menu: some View {
-        Menu {
-            Toggle(systemTitle, isOn: binding(for: nil))
-            if !catalog.devices.isEmpty {
-                Divider()
-            }
-            ForEach(catalog.devices) { microphone in
-                Toggle(microphone.name, isOn: binding(for: microphone))
-            }
-        } label: {
-            HStack(spacing: Spacing.xs + 2) {
-                Text(currentTitle)
-                    .font(BrandFonts.sans(12.5, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .contentTransition(.opacity)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            .padding(.horizontal, Spacing.s + 2)
-            .frame(height: 26)
-            .frame(maxWidth: 240)
-            .background(isHovering ? Theme.selection : Theme.surfaceRaised, in: Capsule())
-            .contentShape(Capsule())
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .menuIndicator(.hidden)
-        .fixedSize(horizontal: false, vertical: true)
-        .onHover { isHovering = $0 }
-        .springAnimation(value: isHovering)
-        .springAnimation(value: currentTitle)
-        .clickable()
-        .help("Escolher o microfone")
-        .accessibilityLabel("Microfone: \(currentTitle)")
-    }
-
-    private func binding(for microphone: Microphone?) -> Binding<Bool> {
-        Binding(
-            get: { microphone?.uid == catalog.selectedUID },
-            set: { isOn in
-                guard isOn, microphone?.uid != catalog.selectedUID else { return }
-                catalog.select(microphone)
-                meter.watch(microphone)
-                onSelect()
-            }
+        GlassSelect(
+            options: [GlassSelectOption(systemTitle, value: String?.none)]
+                + catalog.devices.enumerated().map { index, microphone in
+                    GlassSelectOption(microphone.name, value: Optional(microphone.uid), startsSection: index == 0)
+                },
+            selection: Binding(
+                get: { catalog.selectedUID },
+                set: { uid in
+                    guard uid != catalog.selectedUID else { return }
+                    let microphone = catalog.devices.first { $0.uid == uid }
+                    catalog.select(microphone)
+                    meter.watch(microphone)
+                    onSelect()
+                }
+            ),
+            title: currentTitle,
+            help: "Escolher o microfone",
+            maxWidth: 240,
+            edge: .trailing
         )
+        .accessibilityLabel("Microfone")
     }
 }

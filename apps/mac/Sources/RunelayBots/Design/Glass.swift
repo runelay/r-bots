@@ -27,6 +27,18 @@ struct GlassSurface<S: Shape>: ViewModifier {
     }
 }
 
+struct GlassPane<S: Shape>: ViewModifier {
+    let shape: S
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content.background(.regularMaterial, in: shape)
+        }
+    }
+}
+
 struct GlassGroup<Content: View>: View {
     var spacing: CGFloat = Spacing.s
     @ViewBuilder let content: Content
@@ -58,6 +70,10 @@ struct GlassMorphID: ViewModifier {
 extension View {
     func glassSurface<S: Shape>(_ shape: S, interactive: Bool = false, tint: Color? = nil, fallback: Color = Theme.surface) -> some View {
         modifier(GlassSurface(shape: shape, interactive: interactive, tint: tint, fallback: fallback))
+    }
+
+    func glassPane<S: Shape>(_ shape: S) -> some View {
+        modifier(GlassPane(shape: shape))
     }
 
     func glassMorphID(_ id: String, in namespace: Namespace.ID) -> some View {

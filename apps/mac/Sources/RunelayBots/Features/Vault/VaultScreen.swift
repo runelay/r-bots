@@ -520,38 +520,20 @@ private struct VaultEditor: View {
     }
 
     private func moreMenu(_ secret: VaultSecret) -> some View {
-        Menu {
-            Button {
-                rotating.toggle()
-                newValue = ""
-            } label: {
-                Label("Trocar valor", systemImage: "arrow.triangle.2.circlepath")
-            }
-            .disabled(busy || !secret.onMac)
-            Button {
-                copyReference(secret)
-            } label: {
-                Label("Copiar referência", systemImage: "doc.on.doc")
-            }
-            Divider()
-            Button(role: .destructive) {
-                confirmDelete = true
-            } label: {
-                Label("Apagar", systemImage: "trash")
-            }
-            .disabled(busy)
-        } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .frame(width: 32, height: 32)
-                .contentShape(Rectangle())
+        GlassMenuIconButton(systemImage: "ellipsis", help: "Mais ações", iconSize: 13, size: 32, weight: .medium, edge: .trailing) {
+            [
+                GlassMenuItem("Trocar valor", systemImage: "arrow.triangle.2.circlepath", isEnabled: !busy && secret.onMac) {
+                    rotating.toggle()
+                    newValue = ""
+                },
+                GlassMenuItem("Copiar referência", systemImage: "doc.on.doc") {
+                    copyReference(secret)
+                },
+                GlassMenuItem("Apagar", systemImage: "trash", destructive: true, isEnabled: !busy) {
+                    confirmDelete = true
+                },
+            ]
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .pointerStyle(.link)
-        .help("Mais ações")
     }
 
     private var rotateRow: some View {

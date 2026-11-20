@@ -64,10 +64,6 @@ struct RootView: View {
             ArtifactViewerLayer()
                 .zIndex(2.5)
         }
-        .overlayPreferenceValue(FloatingMenuAnchorKey.self) { anchors in
-            FloatingMenuLayer(anchors: anchors)
-                .environment(\.appReduceMotion, reduceMotion)
-        }
         .authGate()
         .background(WindowConfigurator())
         .ignoresSafeArea()
@@ -181,7 +177,16 @@ struct TopStrip: View {
             ) {
                 sidebarCollapsed.toggle()
             }
-            FloatingMenuButton(id: .sidebarNew, systemImage: "plus", help: "Novo bot ou grupo", iconSize: 15, size: 28)
+            GlassMenuIconButton(systemImage: "plus", help: "Novo bot ou grupo", iconSize: 15, size: 28) {
+                [
+                    GlassMenuItem("Novo bot", systemImage: "person.badge.plus") {
+                        model.openEditor(for: nil)
+                    },
+                    GlassMenuItem("Novo grupo", systemImage: "person.3") {
+                        model.openGroupEditor(for: nil)
+                    },
+                ]
+            }
         }
         .padding(.leading, FrameMetrics.titleLeading)
         .frame(width: FrameMetrics.sidebarContentTrailing, alignment: .leading)

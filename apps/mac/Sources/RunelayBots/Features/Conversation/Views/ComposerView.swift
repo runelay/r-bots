@@ -16,6 +16,30 @@ struct ComposerView: View {
     private let voice = VoiceInput.shared
     private let skillCatalog = SkillCatalog.shared
 
+    private var composerActions: [GlassMenuItem] {
+        var items: [GlassMenuItem] = []
+        if !bot.isGroup {
+            items.append(GlassMenuItem("Trabalhar num repositório…", systemImage: "arrow.triangle.branch") {
+                model.activeSheet = .repoPicker(bot.id)
+            })
+            if store.codeState?.workspace != nil {
+                items.append(GlassMenuItem("Ver mudanças", systemImage: "plusminus") {
+                    model.activeSheet = .changes(bot.id)
+                })
+            }
+            items.append(GlassMenuItem("Anexar arquivo…", systemImage: "paperclip", startsSection: true) {
+                AttachmentPicker.choose(for: store)
+            })
+        }
+        items.append(GlassMenuItem("Perfil de \(bot.name)", id: "profile", systemImage: "person.crop.circle", startsSection: !items.isEmpty) {
+            store.onOpenProfile?()
+        })
+        items.append(GlassMenuItem("Limpar campo", systemImage: "eraser", isEnabled: !(store.draft.isEmpty && store.composerAttachments.isEmpty)) {
+            store.clearDraft()
+        })
+        return items
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
         if !store.composerAttachments.isEmpty {
@@ -24,50 +48,9 @@ struct ComposerView: View {
                 .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 6)))
         }
         HStack(alignment: .bottom, spacing: Spacing.s) {
-            Menu {
-                if !bot.isGroup {
-                    Button {
-                        model.activeSheet = .repoPicker(bot.id)
-                    } label: {
-                        Label("Trabalhar num repositório…", systemImage: "arrow.triangle.branch")
-                    }
-                    if store.codeState?.workspace != nil {
-                        Button {
-                            model.activeSheet = .changes(bot.id)
-                        } label: {
-                            Label("Ver mudanças", systemImage: "plusminus")
-                        }
-                    }
-                    Divider()
-                }
-                if !bot.isGroup {
-                    Button {
-                        AttachmentPicker.choose(for: store)
-                    } label: {
-                        Label("Anexar arquivo…", systemImage: "paperclip")
-                    }
-                    Divider()
-                }
-                Button {
-                    store.onOpenProfile?()
-                } label: {
-                    Label("Perfil de \(bot.name)", systemImage: "person.crop.circle")
-                }
-                Button {
-                    store.clearDraft()
-                } label: {
-                    Label("Limpar campo", systemImage: "eraser")
-                }
-                .disabled(store.draft.isEmpty && store.composerAttachments.isEmpty)
-            } label: {
+            GlassMenuButton(help: "Mais ações", items: { composerActions }) { _ in
                 ComposerIcon(systemName: "plus")
             }
-            .menuStyle(.button)
-            .buttonStyle(PressableButtonStyle())
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .clickable()
-            .help("Mais ações")
 
             VStack(alignment: .leading, spacing: 0) {
             if !store.attachedSkills.isEmpty {
@@ -166,7 +149,7 @@ struct ComposerView: View {
         .padding(.vertical, Spacing.s)
         }
         .springAnimation(value: store.composerAttachments.isEmpty)
-        .modifier(ComposerGlass(shape: RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)))
+        .glassPane(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous))
         .background {
             GeometryReader { proxy in
                 Color.clear.preference(key: ComposerHeightKey.self, value: proxy.size.height)
@@ -488,8 +471,7 @@ struct MentionList: View {
         }
         .padding(Spacing.xs + 2)
         .frame(width: 260)
-        .background(Theme.inspectorBackground, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-        .softElevation(lifted: true)
+        .glassMenuSurface()
     }
 }
 
@@ -498,18 +480,6 @@ struct ComposerHeightKey: PreferenceKey {
 
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = max(value, nextValue())
-    }
-}
-
-struct ComposerGlass<S: Shape>: ViewModifier {
-    let shape: S
-
-    func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content.glassEffect(.regular, in: shape)
-        } else {
-            content.background(.regularMaterial, in: shape)
-        }
     }
 }
 
