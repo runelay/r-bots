@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import SwiftUI
 import WebKit
 
@@ -31,6 +32,7 @@ struct ArtifactWebView: View {
     var zoom: CGFloat = 1
     var focusToken = 0
     var sameOrigin = false
+    var navigator: WebNavigator?
     var onLoad: () -> Void = {}
 
     @State private var ready = false
@@ -48,6 +50,7 @@ struct ArtifactWebView: View {
                     focusToken: focusToken,
                     reloadToken: reloadToken,
                     sameOrigin: sameOrigin,
+                    navigator: navigator,
                     onLoad: onLoad,
                     onFailure: handle
                 )
@@ -119,6 +122,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
     var focusToken = 0
     var reloadToken = 0
     var sameOrigin = false
+    var navigator: WebNavigator?
     var onLoad: () -> Void = {}
     var onFailure: (WebPageFailure) -> Void = { _ in }
 
@@ -136,6 +140,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
         context.coordinator.loadedURL = url
         context.coordinator.focusToken = focusToken
         context.coordinator.reloadToken = reloadToken
+        navigator?.attach(view)
         view.load(URLRequest(url: url))
         return view
     }
@@ -143,6 +148,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
     func updateNSView(_ view: ArtifactWKWebView, context: Context) {
         view.interactive = interactive
         context.coordinator.sync(self)
+        navigator?.attach(view)
         if view.pageZoom != zoom {
             view.pageZoom = zoom
         }
@@ -166,6 +172,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
         var focusToken = 0
         var reloadToken = 0
         var sameOrigin = false
+        weak var navigator: WebNavigator?
         var onLoad: () -> Void = {}
         var onFailure: (WebPageFailure) -> Void = { _ in }
         private var refused = false
@@ -173,6 +180,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
         func sync(_ parent: AuthenticatedWebView) {
             interactive = parent.interactive
             sameOrigin = parent.sameOrigin
+            navigator = parent.navigator
             onLoad = parent.onLoad
             onFailure = parent.onFailure
         }
@@ -187,6 +195,10 @@ struct AuthenticatedWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
             guard let target = navigationAction.request.url else {
                 decisionHandler(.cancel)
+                return
+            }
+            if let navigator, navigator.permits(target, type: navigationAction.navigationType) {
+                decisionHandler(.allow)
                 return
             }
             if Self.sameDocument(target, loadedURL) || (sameOrigin && Self.sameOrigin(target, loadedURL)) {
@@ -240,5 +252,67 @@ struct AuthenticatedWebView: NSViewRepresentable {
             if refused, nsError.domain == "WebKitErrorDomain", nsError.code == 102 { return }
             onFailure(.network)
         }
+    }
+}
+
+@MainActor
+@Observable
+final class WebNavigator {
+    private(set) var url: URL?
+    private(set) var canGoBack = false
+    private(set) var canGoForward = false
+    private(set) var isLoading = false
+    private(set) var progress: Double = 0
+
+    @ObservationIgnored private weak var webView: WKWebView?
+    @ObservationIgnored private var observations: [NSKeyValueObservation] = []
+    @ObservationIgnored private var requested: URL?
+
+    var isAttached: Bool { webView != nil }
+
+    func attach(_ view: WKWebView) {
+        guard view !== webView else { return }
+        webView = view
+        observations = [
+            view.observe(\.url, options: [.initial, .new]) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.url = view.url }
+            },
+            view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.canGoBack = view.canGoBack }
+            },
+            view.observe(\.canGoForward, options: [.initial, .new]) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.canGoForward = view.canGoForward }
+            },
+            view.observe(\.isLoading, options: [.initial, .new]) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.isLoading = view.isLoading }
+            },
+            view.observe(\.estimatedProgress, options: [.initial, .new]) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.progress = view.estimatedProgress }
+            },
+        ]
+    }
+
+    func goBack() {
+        webView?.goBack()
+    }
+
+    func goForward() {
+        webView?.goForward()
+    }
+
+    func reload() {
+        webView?.reload()
+    }
+
+    func load(_ target: URL) {
+        requested = target
+        webView?.load(URLRequest(url: target))
+    }
+
+    func permits(_ target: URL, type: WKNavigationType) -> Bool {
+        if type == .backForward || type == .reload { return true }
+        guard let requested, requested.absoluteString == target.absoluteString else { return false }
+        self.requested = nil
+        return true
     }
 }

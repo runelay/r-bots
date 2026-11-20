@@ -5,6 +5,7 @@ struct ServerPanel: View {
 
     @State private var logs: ServerLogStore
     @State private var reloadToken = 0
+    @State private var navigator = WebNavigator()
 
     private var store: ServerStore { .shared }
     private var presentation: BlockPresentation { .shared }
@@ -82,7 +83,7 @@ struct ServerPanel: View {
             Spacer(minLength: Spacing.s)
             if let server, server.status == .running, !server.isMobile {
                 BlockHeaderButton(systemImage: "safari", help: "Abrir no navegador") {
-                    store.openInBrowser(server)
+                    store.openInBrowser(server, location: navigator.url.map { PreviewAddress.location(of: $0) })
                 }
             }
             BlockHeaderButton(
@@ -123,8 +124,13 @@ struct ServerPanel: View {
     @ViewBuilder
     private func preview(_ server: DevServerInfo) -> some View {
         if server.status == .running, let url = store.previewURL(for: server) {
-            ArtifactWebView(url: url, focusToken: reloadToken, sameOrigin: true)
-                .id("\(url.absoluteString)#\(reloadToken)")
+            VStack(spacing: 0) {
+                PreviewAddressBar(navigator: navigator, server: server, root: url) {
+                    reloadToken += 1
+                }
+                ArtifactWebView(url: url, focusToken: reloadToken, sameOrigin: true, navigator: navigator)
+                    .id("\(url.absoluteString)#\(reloadToken)")
+            }
         } else if server.status == .starting {
             VStack(spacing: Spacing.m) {
                 ProgressView()

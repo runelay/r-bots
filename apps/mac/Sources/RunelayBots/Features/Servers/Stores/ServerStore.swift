@@ -98,8 +98,12 @@ final class ServerStore {
         )
     }
 
-    func openInBrowser(_ server: DevServerInfo) {
-        guard let url = previewURL(for: server) else { return }
+    func openInBrowser(_ server: DevServerInfo, location: String? = nil) {
+        guard let root = previewURL(for: server) else { return }
+        guard let location, let url = PreviewAddress.proxyURL(root: root, location: location) else {
+            NSWorkspace.shared.open(root)
+            return
+        }
         NSWorkspace.shared.open(url)
     }
 
