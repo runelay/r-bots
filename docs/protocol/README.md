@@ -23,6 +23,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 - [usage-status-limits.md](usage-status-limits.md): uso e limites do Claude e do Codex, fila global de turnos, processos e limites do container.
 - [integrations.md](integrations.md): ElevenLabs, Jev e runelay configurados pelo app (chave cifrada, validação, fallback sem cada uma) e tokens internos gerados no primeiro boot.
 - [auth.md](auth.md): autenticação (better-auth): primeiro dono, convites, login por senha e Touch ID, chaves de API do runner e rotas livres.
+- [servers.md](servers.md): servidores de desenvolvimento dos projetos liberados (lista, logs ao vivo, perfis, prévia) e as ferramentas `server_*` do bot.
 
 ## Versão → arquivo
 
@@ -77,6 +78,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v45 | desligar a chamada por voz (`call.hangup`, `action:"hangup"`), agradecimento sem ack duplicado, fuso da pessoa no prompt (`X-Timezone`) | [voice](voice.md) |
 | v46 | agenda no fuso da pessoa (`user.timezone`), sem `-03:00` fixo | [blocks](blocks.md) |
 | v47 | contas de IA por diretório no servidor (`~/.claude*`, `~/.codex*`), sem contas de modelo do Mac, `PATCH/DELETE /accounts/:id`, `POST /accounts/dirs`, `GET /accounts/login-guide`, uso e limites por conta (`account`), failover outra Claude → reserva também com a conta fora do ar | [accounts](accounts.md), [usage-status-limits](usage-status-limits.md) |
+| v48 | servidores de desenvolvimento: `GET/POST /servers`, stop/restart/logs (NDJSON ao vivo), `/servers/projects`, `/servers/scripts`, perfis em `/servers/profiles`, linhas `server` no `/status/stream`, ferramentas `server_*` e evento `server.card` | [servers](servers.md) |
 
 ## Contrato
 
