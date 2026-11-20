@@ -82,19 +82,123 @@ struct MicrophonePicker: View {
 
 struct MicrophoneLevelBar: View {
     let meter: MicrophoneMeter
+    var width: CGFloat = 56
+    var isActive = true
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !AppActivity.shared.isLive)) { _ in
-            let value = MicrophoneMeter.display(meter.level)
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !isActive || !AppActivity.shared.isLive)) { _ in
+            let value = isActive ? MicrophoneMeter.display(meter.level) : 0
             Capsule()
                 .fill(Theme.hover)
-                .frame(width: 56, height: 6)
+                .frame(width: width, height: 6)
                 .overlay(alignment: .leading) {
                     Capsule()
                         .fill(Theme.brandAccent)
-                        .frame(width: max(6, 56 * value), height: 6)
+                        .frame(width: max(6, width * value), height: 6)
                 }
         }
         .accessibilityHidden(true)
+    }
+}
+
+struct MicrophoneSettingRow: View {
+    var onSelect: () -> Void = {}
+    private let catalog = MicrophoneCatalog.shared
+    @State private var meter = MicrophoneMeter()
+    @State private var isVisible = false
+    @State private var isHovering = false
+
+    var body: some View {
+        SettingsRow(
+            title: "Microfone",
+            icon: SettingsIcon("mic.fill", SettingsTint.red),
+            detail: catalog.lostName.map(Microphones.lostNotice),
+            info: "Fale algo: a barra do microfone escolhido tem que mexer."
+        ) {
+            HStack(spacing: Spacing.m) {
+                MicrophoneLevelBar(meter: meter, width: 64, isActive: isVisible)
+                menu
+            }
+        }
+        .onAppear {
+            isVisible = true
+            catalog.reload()
+            meter.watch(selected)
+        }
+        .onDisappear {
+            isVisible = false
+            meter.stop()
+        }
+        .onChange(of: catalog.devices.map(\.uid)) {
+            guard isVisible else { return }
+            meter.watch(selected)
+        }
+        .onChange(of: catalog.systemName) {
+            guard isVisible, catalog.selectedUID == nil else { return }
+            meter.watch(nil)
+        }
+    }
+
+    private var selected: Microphone? {
+        catalog.devices.first { $0.uid == catalog.selectedUID }
+    }
+
+    private var systemTitle: String {
+        catalog.systemName.isEmpty ? "Padrão do sistema" : "Padrão do sistema (\(catalog.systemName))"
+    }
+
+    private var currentTitle: String {
+        selected?.name ?? systemTitle
+    }
+
+    private var menu: some View {
+        Menu {
+            Toggle(systemTitle, isOn: binding(for: nil))
+            if !catalog.devices.isEmpty {
+                Divider()
+            }
+            ForEach(catalog.devices) { microphone in
+                Toggle(microphone.name, isOn: binding(for: microphone))
+            }
+        } label: {
+            HStack(spacing: Spacing.xs + 2) {
+                Text(currentTitle)
+                    .font(BrandFonts.sans(12.5, weight: .medium))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .contentTransition(.opacity)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .padding(.horizontal, Spacing.s + 2)
+            .frame(height: 26)
+            .frame(maxWidth: 240)
+            .background(isHovering ? Theme.selection : Theme.surfaceRaised, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize(horizontal: false, vertical: true)
+        .onHover { isHovering = $0 }
+        .springAnimation(value: isHovering)
+        .springAnimation(value: currentTitle)
+        .clickable()
+        .help("Escolher o microfone")
+        .accessibilityLabel("Microfone: \(currentTitle)")
+    }
+
+    private func binding(for microphone: Microphone?) -> Binding<Bool> {
+        Binding(
+            get: { microphone?.uid == catalog.selectedUID },
+            set: { isOn in
+                guard isOn, microphone?.uid != catalog.selectedUID else { return }
+                catalog.select(microphone)
+                meter.watch(microphone)
+                onSelect()
+            }
+        )
     }
 }

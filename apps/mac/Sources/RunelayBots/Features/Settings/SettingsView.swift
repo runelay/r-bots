@@ -847,11 +847,9 @@ struct ShortcutsSettings: View {
                 SettingsRow(title: "Enviar ao terminar de falar", icon: SettingsIcon("waveform", SettingsTint.red), info: "Manda a mensagem sozinha depois de 1,2 s de silêncio.") {
                     SettingsToggle(title: "Enviar ao terminar de falar", isOn: $voiceAutoSend)
                 }
-                MicrophonePicker { _ in
+                MicrophoneSettingRow {
                     VoiceCall.shared.microphoneChanged()
                 }
-                .padding(.horizontal, Spacing.s)
-                .padding(.vertical, Spacing.xxs)
             }
             SettingsGroup(caption: "Teclado") {
                 ForEach(shortcuts, id: \.0) { shortcut in
