@@ -334,3 +334,52 @@ $ touch /app/apps/server/x
 touch: cannot touch '/app/apps/server/x': Permission denied
 $ … --timeout 2 -- 'sleep 30'   (sai em 2,0 s, código 124)
 ```
+
+## v54 (20/11): vários repositórios na mesma conversa e diff pela base de merge
+
+### Diff pela base de merge
+
+- O diff da worktree (contagem da pílula, `GET …/code/files`, `…/diff`, `code.status`, desfazer arquivo) é `merge-base(<base>, HEAD)` → árvore de trabalho, sem arquivos ignorados (`git ls-files --others --exclude-standard`). `<base>` é a ref de onde a branch saiu (`origin/develop`, `origin/main`…) ou a base do PR, quando o PR é da branch atual (`alignBase`).
+- O `baseCommit` é recalculado sempre que o `HEAD` muda (memo por worktree com `HEAD` + base). Antes ele só mudava na troca de branch: um `git reset --hard <commit antigo>` na mesma branch fazia o diff incluir ao contrário tudo o que a develop ganhou depois (caso real: conty-whitelabel com 890 arquivos +7.281 −29.974 em vez de ~60 arquivos +4,3k).
+- Base `HEAD` (repositório sem remoto nem main/develop) continua com o commit de quando abriu.
+
+### Sessão com vários repositórios
+
+- `session.meta.workspaces: WorkspaceState[]` guarda todos os repositórios da conversa (abertos e fechados, até 8). `session.meta.workspace` continua existindo e aponta para o principal (o diretório de trabalho do bot). Conversa antiga só com `workspace` vira `workspaces: [workspace]` na leitura.
+- `workspace_open` de outro repositório **adiciona** e vira o principal; o anterior continua ativo, com a própria branch, base, PR, diff e servidores. Abrir de novo um repositório que já está na lista reaproveita a worktree e só troca o principal.
+- Adoção: se o bot ler, editar ou citar no Bash (`~/.local/share/runelay-bots-worktrees/<repo>/<id>`) uma worktree registrada em `code_workspaces` para esta mesma conversa e bot (status `alive` ou `delivered`), ela entra na lista sem trocar o principal. Evento `code.workspace {action:"adopted", …workspace}`.
+- Cada repositório ativo ganha checkpoint no começo do turno e seu próprio diff ao vivo; ferramentas nativas usam o portão da worktree dona do caminho (Bash pelo `cd` inicial). Voltar um pedido restaura todos os repositórios que têm checkpoint daquele turno.
+- PR e CI: o polling roda por repositório (chave `<sessão>:<workspaceId>`), cada um segue o `HEAD` da sua worktree. URL de PR vista no Bash é casada com o `origin` de cada repositório.
+- Prompt e handoff listam todos os repositórios abertos, com branch, PR e arquivos mudados de cada um.
+
+### Ferramentas
+
+- `workspace_open`: texto novo diz que abrir outro repositório não fecha o anterior; a resposta lista os que continuam abertos.
+- `workspace_close {repo?}`, `workspace_deliver {…, repo?}`, `dev_server_start {…, repo?}`, `dev_server_stop {port?, repo?}`, `dev_server_logs {…, repo?}`: `repo` é nome, id, caminho do repositório ou caminho dentro da worktree; sem `repo`, vale o principal. Repositório que não está aberto: "`<repo>` não está aberto nesta conversa. Abertos: conty-api, conty-whitelabel."
+
+### Rotas (`?sessionId=` e `?workspaceId=` opcionais)
+
+- `GET /bots/:id/code` ganha `workspaces` (ativos, por ordem de abertura); `workspace`, `files` e `servers` continuam sendo os do principal:
+
+```json
+{"workspace":{"id","repoName","branch","base","primary":true,"files":60,"added":4280,"removed":6,"pr":null,…},
+ "workspaces":[{"id":"conty-api-…","repoName":"conty-api","primary":false,"files","added","removed","pr","changes":[{"path","status","added","removed","binary"}],"servers":[…]},
+               {"id":"conty-whitelabel-…","repoName":"conty-whitelabel","primary":true,…}],
+ "files":[…],"servers":[…],"checkpoints":[{"turnId","at","workspaceId","request"}],"running":false}
+```
+
+- `checkpoints` sai uma vez por turno, de qualquer repositório ativo.
+- `?workspaceId=` escolhe o repositório em `GET files`, `GET diff`, `POST revert`, `POST deliver`, `POST finish`, `GET pr`, `POST pr/reopen`, `GET servers`, `POST servers/stop` e `DELETE workspace`. Id que não está ativo: `404 {"error":"Esta conversa não tem esse repositório aberto."}`. Sem o parâmetro, o principal, como antes.
+- Eventos `code.status`, `code.pr`, `code.branch`, `code.edit`, `code.bulk`, `code.ci`, `code.review`, `code.delivered` e `code.workspace` já levavam `workspaceId` (ou o workspace inteiro); o app agora roteia cada um pelo id.
+
+### App
+
+- A faixa do topo mostra uma pílula por repositório aberto, lado a lado (nome, arquivos, +/−, PR com ponto de CI). Cada pílula abre o próprio popover: branch, PR, Mudanças, Abrir o app (servidor daquele repositório), Fechar o repositório (manda `workspaceId`). O Histórico é o mesmo em todas.
+- Mudanças abre no repositório da pílula; com mais de um, o cabeçalho tem abas por repositório. "Ver no visualizador" de um diff da conversa abre no repositório que tem aquele arquivo.
+- Linha na conversa para `adopted`: "Juntou conty-api a esta conversa, na branch feat/…".
+
+### Verificado (20/11, servidor :2000 com a imagem nova)
+
+- Conversa `wrun_01M7TC13GN5A38VB2QWDG5GD58` (Engenheiro de Software): linha salva antes em `runelay-bots-backups/manual/`, `meta.workspaces` gravado com a worktree da conty-api (que um `workspace_open` antigo tinha substituído) + a da conty-whitelabel, principal mantido.
+- `changedFiles` com o código novo nas worktrees reais: conty-whitelabel 60 arquivos +4280 −6 (base `6115b472`, a de merge com `origin/develop`; antes 890 +7281 −29974 contra `aabff93c`); conty-api 305 arquivos +14059 −2449 (base `8ecf5823`; 254 desses arquivos são reformatação não commitada na worktree).
+- Rotas com `workspaceId`, adoção, migração do campo antigo, base de merge depois de `reset --hard` e `CodeLives` cobertos em `code.routes.test.ts`, `workspace.test.ts`, `hooks.test.ts`, `code-tools.test.ts` e `live-diff.test.ts`.
