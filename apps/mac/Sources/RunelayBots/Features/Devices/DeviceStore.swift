@@ -52,7 +52,8 @@ enum DeviceIdentity {
     }
 
     private static func key(_ suffix: String) -> String {
-        "device.\(suffix).\(AuthStore.origin(of: ServerConfig.currentURL()) ?? "default")"
+        let scope = ServerConfig.activeProfile.keychainScope.map { "\($0)." } ?? ""
+        return "device.\(suffix).\(scope)\(AuthStore.origin(of: ServerConfig.currentURL()) ?? "default")"
     }
 
     static var currentId: String? {

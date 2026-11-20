@@ -1123,6 +1123,27 @@ final class AppModel {
         }
     }
 
+    func shutdown() {
+        refreshTask?.cancel()
+        statusTask?.cancel()
+        noticeTask?.cancel()
+        searchTask?.cancel()
+        for store in threads.values {
+            store.stop()
+        }
+        for store in parkedStores.values {
+            store.stop()
+        }
+        for store in draftReturns.values {
+            store.stop()
+        }
+        threads = [:]
+        parkedStores = [:]
+        draftReturns = [:]
+        browser.reset(botID: nil)
+        NSApp?.dockTile.badgeLabel = nil
+    }
+
     func conversations(for botID: String) -> [BotConversation] {
         conversationLists[botID] ?? []
     }

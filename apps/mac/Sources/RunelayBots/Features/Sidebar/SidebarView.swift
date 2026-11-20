@@ -43,6 +43,17 @@ struct SidebarHeader: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.s) {
+            ServerProfileSwitcher()
+                .padding(.horizontal, -Spacing.xs)
+            searchRow
+        }
+        .padding(.horizontal, Spacing.m)
+        .padding(.top, Spacing.m)
+        .padding(.bottom, Spacing.s)
+    }
+
+    private var searchRow: some View {
         HStack(spacing: Spacing.xs + 2) {
             HStack(spacing: Spacing.s) {
                 Image(systemName: "magnifyingglass")
@@ -75,9 +86,6 @@ struct SidebarHeader: View {
             FloatingMenuButton(id: .sidebarFilter, systemImage: "line.3.horizontal.decrease", help: "Filtrar")
             FloatingMenuButton(id: .sidebarNew, systemImage: "plus", help: "Novo bot ou grupo", iconSize: 15)
         }
-        .padding(.horizontal, Spacing.m)
-        .padding(.top, Spacing.m)
-        .padding(.bottom, Spacing.s)
     }
 }
 
@@ -369,6 +377,11 @@ struct BotChatList: View {
             }
         ) {
             model.selectConversation(botID: bot.id, sessionID: conversation.sessionId)
+        }
+        .onHover { hovering in
+            if hovering {
+                model.prefetchConversation(botID: bot.id, sessionID: conversation.sessionId)
+            }
         }
         .contextMenu {
             conversationMenu(bot, conversation)

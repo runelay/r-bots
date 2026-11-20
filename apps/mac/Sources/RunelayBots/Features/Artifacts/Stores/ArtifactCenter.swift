@@ -136,6 +136,13 @@ final class ArtifactCenter {
         status = nil
     }
 
+    func forgetServer() {
+        close()
+        libraries = [:]
+        versions = []
+        busy = nil
+    }
+
     func openFiles(botID: String, client: BotsClient) {
         open(ArtifactRef(botID: botID, id: BlockKind.filesKind, title: "Arquivos do bot", kind: BlockKind.filesKind, version: 1), client: client)
     }

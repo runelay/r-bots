@@ -161,6 +161,16 @@ final class BlockCenter {
         filesStore = nil
     }
 
+    func forgetServer() {
+        close()
+        latest = [:]
+        previews = [:]
+        titles = [:]
+        deleted = []
+        status = nil
+        listRevision += 1
+    }
+
     func title(for route: BlockRoute) -> String {
         switch route {
         case .files: "Arquivos do bot"

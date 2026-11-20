@@ -42,6 +42,14 @@ final class SkillCatalog {
         load(query, client: client)
     }
 
+    func forgetServer() {
+        close()
+        prefetchTask?.cancel()
+        prefetchTask = nil
+        cache = [:]
+        results = []
+    }
+
     func close() {
         task?.cancel()
         query = nil

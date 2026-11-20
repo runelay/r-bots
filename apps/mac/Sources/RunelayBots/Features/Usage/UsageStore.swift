@@ -66,6 +66,18 @@ final class UsageStore {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
+    func forgetServer() {
+        summaryTask?.cancel()
+        accounts = []
+        limitsError = nil
+        limitsLoaded = false
+        summary = nil
+        summaryError = nil
+        provider = nil
+        environment = nil
+        Task { await refreshLimits(force: true) }
+    }
+
     func refreshLimits(force: Bool = false) async {
         lastLimitsAt = Date()
         do {

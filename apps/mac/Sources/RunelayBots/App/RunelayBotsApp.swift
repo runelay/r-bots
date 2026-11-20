@@ -28,15 +28,20 @@ struct RunelayBotsApp: App {
         WindowGroup("runelay bots") {
             RootView()
                 .environment(model)
+                .id(ObjectIdentifier(model))
                 .frame(minWidth: 820, minHeight: 620)
                 .onAppear {
                     ComputerExecutor.shared.attach(model)
+                    ServerProfiles.shared.onActivate = { [self] in
+                        reloadForActiveProfile()
+                    }
                 }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1320, height: 840)
         .commands {
             AppCommands(model: model)
+            ServerProfileCommands(model: model)
         }
 
         WindowGroup("Conversa", for: String.self) { $botID in
@@ -44,6 +49,51 @@ struct RunelayBotsApp: App {
                 .environment(model)
         }
         .defaultSize(width: 720, height: 780)
+    }
+}
+
+extension RunelayBotsApp {
+    @MainActor
+    private func reloadForActiveProfile() {
+        let previous = model
+        previous.shutdown()
+        ArtifactCenter.shared.forgetServer()
+        BlockCenter.shared.forgetServer()
+        SkillCatalog.shared.forgetServer()
+        UsageStore.shared.forgetServer()
+        DeviceStore.shared.items = []
+        DeviceStore.shared.state = .loading
+        DeviceStore.shared.error = nil
+        let fresh = AppModel()
+        if previous.settingsPresented {
+            fresh.settingsSection = previous.settingsSection
+            fresh.settingsPresented = true
+        }
+        model = fresh
+        ComputerExecutor.shared.attach(fresh)
+        RunnerConnection.shared.restart()
+        Task { await AuthSession.shared.bootstrap(force: true) }
+    }
+}
+
+struct ServerProfileCommands: Commands {
+    let model: AppModel
+    private let profiles = ServerProfiles.shared
+
+    var body: some Commands {
+        CommandMenu("Servidor") {
+            ForEach(Array(profiles.profiles.enumerated()), id: \.element.id) { index, profile in
+                Toggle(profile.name, isOn: Binding(
+                    get: { profiles.active.id == profile.id },
+                    set: { if $0 { profiles.activate(profile.id) } }
+                ))
+                .keyboardShortcut(index < 9 ? KeyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.control, .command]) : nil)
+            }
+            Divider()
+            Button("Gerenciar servidores…") {
+                model.openSettings(.server)
+            }
+        }
     }
 }
 
@@ -56,6 +106,7 @@ struct BotWindowView: View {
             if let botID, let bot = model.bot(id: botID) {
                 if let store = model.conversation(for: botID) {
                     ConversationView(store: store, bot: bot, focusToken: 0)
+                        .id(ObjectIdentifier(store))
                 } else {
                     ProgressView()
                         .controlSize(.small)
