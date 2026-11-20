@@ -210,6 +210,21 @@ struct CellFormat: Codable, Hashable, Sendable {
     var decimals: Int?
     var bold: Bool?
     var align: String?
+
+    init(type: CellFormatType, decimals: Int? = nil, bold: Bool? = nil, align: String? = nil) {
+        self.type = type
+        self.decimals = decimals
+        self.bold = bold
+        self.align = align
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = (try? container.decodeIfPresent(CellFormatType.self, forKey: .type)) ?? .general
+        decimals = try? container.decodeIfPresent(Int.self, forKey: .decimals)
+        bold = try? container.decodeIfPresent(Bool.self, forKey: .bold)
+        align = try? container.decodeIfPresent(String.self, forKey: .align)
+    }
 }
 
 struct SheetCell: Codable, Hashable, Sendable {
@@ -507,8 +522,13 @@ struct BlockEvent: Sendable {
 
 enum BlockJSON {
     static func decode<T: Decodable>(_ type: T.Type, from value: JSONValue) -> T? {
-        guard let data = try? JSONEncoder().encode(value) else { return nil }
-        return try? JSONDecoder().decode(type, from: data)
+        do {
+            let data = try JSONEncoder().encode(value)
+            return try JSONDecoder().decode(type, from: data)
+        } catch {
+            BlocksLog.failure("decode \(T.self)", error)
+            return nil
+        }
     }
 }
 

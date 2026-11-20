@@ -1,4 +1,13 @@
 import Foundation
+import OSLog
+
+enum BlocksLog {
+    static let logger = Logger(subsystem: "runelay.bots", category: "blocks")
+
+    static func failure(_ what: String, _ error: any Error) {
+        logger.error("\(what, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+    }
+}
 
 enum BlocksError: LocalizedError {
     case stale(Int)
@@ -190,9 +199,22 @@ struct RemoteBlocksClient: BlocksClient {
 
     func download(botID: String, job: ExportJob) async throws -> DownloadedFile {
         guard let path = job.url else { throw BlocksError.message("O arquivo ainda não está pronto.") }
-        let request = try client.request(path: path)
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw BlocksError.message("Não consegui baixar o arquivo.") }
+        var request = try client.request(path: path)
+        request.timeoutInterval = 120
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
+            BlocksLog.failure("download \(path)", error)
+            throw BlocksError.message("Não consegui baixar o arquivo.")
+        }
+        AuthStore.reportUnauthorized(response)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            BlocksLog.logger.error("download \(path, privacy: .public) returned HTTP \(status)")
+            throw BlocksError.message("Não consegui baixar o arquivo.")
+        }
         return DownloadedFile(data: data, fileName: job.fileName)
     }
 
@@ -213,7 +235,16 @@ struct RemoteBlocksClient: BlocksClient {
     }
 
     private func perform<T: Decodable>(_ request: URLRequest) async throws -> T {
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let label = "\(request.httpMethod ?? "GET") \(request.url?.path ?? "")"
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
+            BlocksLog.failure(label, error)
+            throw BlocksError.message("Não consegui falar com o servidor.")
+        }
+        AuthStore.reportUnauthorized(response)
         guard let http = response as? HTTPURLResponse else { throw BotsClient.ClientError.invalidResponse }
         if http.statusCode == 409, let value = try? JSONDecoder().decode(JSONValue.self, from: data) {
             if value["code"]?.stringValue == "stale" {
@@ -225,9 +256,15 @@ struct RemoteBlocksClient: BlocksClient {
         }
         guard (200..<300).contains(http.statusCode) else {
             let message = (try? JSONDecoder().decode(JSONValue.self, from: data))?["error"]?.stringValue
+            BlocksLog.logger.error("\(label, privacy: .public) returned HTTP \(http.statusCode)")
             throw BotsClient.ClientError.http(http.statusCode, message)
         }
-        return try JSONDecoder().decode(T.self, from: data)
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            BlocksLog.failure("decode \(T.self) from \(label)", error)
+            throw BlocksError.message("Não consegui ler a resposta do servidor.")
+        }
     }
 
     private static func escape(_ component: String) -> String {

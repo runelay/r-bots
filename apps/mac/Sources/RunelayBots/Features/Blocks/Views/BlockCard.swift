@@ -5,6 +5,7 @@ struct BlockCard: View {
     let ref: ArtifactRef
 
     @State private var hovering = false
+    @State private var previewFailed = false
 
     private var center: BlockCenter { .shared }
     private var kind: BlockKind { BlockKind(rawValue: ref.kind) ?? .note }
@@ -101,6 +102,11 @@ struct BlockCard: View {
             SheetPreviewGrid(preview: preview)
         case .agenda(let preview):
             AgendaPreviewList(preview: preview)
+        case nil where previewFailed:
+            Text("Não consegui carregar a prévia. Clique para abrir.")
+                .font(TypeScale.caption)
+                .foregroundStyle(Theme.textTertiary)
+                .padding(.vertical, Spacing.xs)
         case nil:
             VStack(alignment: .leading, spacing: Spacing.s) {
                 ForEach(0..<3, id: \.self) { index in
@@ -127,16 +133,28 @@ struct BlockCard: View {
 
     private func loadPreviewIfNeeded() async {
         guard center.preview(for: ref) == nil, !center.isSuperseded(ref) else { return }
+        do {
+            try await loadPreview()
+            previewFailed = false
+        } catch is CancellationError {
+            return
+        } catch {
+            BlocksLog.failure("preview \(kind.rawValue)", error)
+            previewFailed = true
+        }
+    }
+
+    private func loadPreview() async throws {
         let client = center.client
         switch kind {
         case .note:
-            guard let note = try? await client.note(botID: ref.botID, id: ref.id) else { return }
+            let note = try await client.note(botID: ref.botID, id: ref.id)
             let excerpt = note.content.split(separator: "\n", omittingEmptySubsequences: false).prefix(14).joined(separator: "\n")
             center.storePreview(.note(NotePreview(folder: note.folder, excerpt: String(excerpt.prefix(600)), words: note.content.split(whereSeparator: \.isWhitespace).count)), for: ref)
         case .sheet:
-            guard let sheet = try? await client.sheet(botID: ref.botID, id: ref.id), let tab = sheet.tabs.first,
-                  let range = try? await client.sheetRange(botID: ref.botID, sheetID: sheet.id, tabID: tab.id, range: "A1:F8")
-            else { return }
+            let sheet = try await client.sheet(botID: ref.botID, id: ref.id)
+            guard let tab = sheet.tabs.sorted(by: { $0.index < $1.index }).first else { return }
+            let range = try await client.sheetRange(botID: ref.botID, sheetID: sheet.id, tabID: tab.id, range: "A1:F8")
             let map = Dictionary(range.cells.map { ($0.a, $0) }, uniquingKeysWith: { first, _ in first })
             let rows = (0..<min(8, max(tab.rowCount, 1))).map { row in
                 (0..<min(6, max(tab.colCount, 1))).map { col -> SheetPreviewCell in
@@ -149,9 +167,8 @@ struct BlockCard: View {
         case .agenda:
             let start = Calendar.current.startOfDay(for: Date())
             let end = start.addingTimeInterval(86400)
-            guard let accounts = try? await client.agendaAccounts(botID: ref.botID),
-                  let list = try? await client.agendaEvents(botID: ref.botID, start: start, end: end, accounts: nil)
-            else { return }
+            let accounts = try await client.agendaAccounts(botID: ref.botID)
+            let list = try await client.agendaEvents(botID: ref.botID, start: start, end: end, accounts: nil)
             let preview = AgendaPreview(
                 view: "day",
                 start: BlockDates.string(start),

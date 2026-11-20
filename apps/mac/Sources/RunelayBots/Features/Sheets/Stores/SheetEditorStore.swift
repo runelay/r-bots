@@ -89,7 +89,8 @@ final class SheetEditorStore {
             await ensureLoaded(rows: 0...Self.chunkRows - 1, cols: 0...Self.chunkCols - 1)
             syncFormula()
         } catch {
-            failed = error.localizedDescription
+            BlocksLog.failure("sheet load", error)
+            failed = "Não consegui abrir a planilha."
         }
     }
 
@@ -527,7 +528,15 @@ final class SheetEditorStore {
                 continue
             }
             let range = SheetAddress.range(rows: startRow...(startRow + Self.chunkRows - 1), cols: startCol...(startCol + Self.chunkCols - 1))
-            guard let result = try? await client.sheetRange(botID: botID, sheetID: sheetID, tabID: tabID, range: range), tabID == self.tabID else { continue }
+            let result: SheetRangeResult
+            do {
+                result = try await client.sheetRange(botID: botID, sheetID: sheetID, tabID: tabID, range: range)
+            } catch {
+                BlocksLog.failure("sheet range \(range)", error)
+                failed = "Não consegui carregar a planilha."
+                continue
+            }
+            guard tabID == self.tabID else { continue }
             for cell in result.cells {
                 let position = CellPosition(row: cell.r, col: cell.c)
                 if !pending.contains(position) {

@@ -237,9 +237,13 @@ actor AttachmentFileCache {
             return try await running.value
         }
         let task = Task<URL, Error> {
-            let (temporary, response) = try await URLSession.shared.download(from: remote)
+            var request = URLRequest(url: remote)
+            request.timeoutInterval = 120
+            AuthStore.authorize(&request)
+            let (temporary, response) = try await URLSession.shared.download(for: request)
+            AuthStore.reportUnauthorized(response)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                throw URLError(.badServerResponse)
+                throw URLError(.badServerResponse, userInfo: ["status": (response as? HTTPURLResponse)?.statusCode ?? 0])
             }
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try? FileManager.default.removeItem(at: target)
