@@ -33,7 +33,7 @@ Captured from `apps/server/` (Claude Agent SDK 0.3.328, Claude Code 2.1.327, mod
 
 ### Gateway MCP endpoint
 
-`POST /mcp/:botId/:sessionId` (streamable HTTP, stateless, JSON responses). `Authorization: Bearer <per-turn token>`; the token is minted for one turn and revoked when it ends, and must match the bot and session in the path (else `401`). Tools: the bot's `prod_query`, `browser_*`, plus `delegate` when it has delegates. `browser_click` / `browser_fill` block inside the handler until the answer route resolves the approval (`interaction.opened` → answer → `interaction.settled`), the same events as v2. VPS providers call `http://127.0.0.1:2000/mcp/…`; Mac providers call `PUBLIC_MCP_BASE/mcp/…` (e.g. `https://<servidor>:10447/mcp/…`).
+`POST /mcp/:botId/:sessionId` (streamable HTTP, stateless, JSON responses). `Authorization: Bearer <per-turn token>`; the token is minted for one turn and revoked when it ends, and must match the bot and session in the path (else `401`). Tools: the bot's `prod_query`, `browser_*`, plus `delegate` when it has delegates. `browser_click` / `browser_fill` block inside the handler until the answer route resolves the approval (`interaction.opened` → answer → `interaction.settled`), the same events as v2. VPS providers call `http://127.0.0.1:2000/mcp/…`; Mac providers call the app's local MCP proxy, which forwards over `/runner/connect` (v38).
 
 ## v10
 

@@ -145,7 +145,7 @@ Verified 19/11 on a test bot `desk-teste`. Lia had been deleted from the app, so
 
 ### Wire path
 
-Bot MCP tool → server `POST {MAC_RUNNER_URL}/computer/<tool>` (runner bearer) → runner reads `~/Library/Application Support/runelay bots/executor.token` and calls the app's executor at `http://127.0.0.1:4791`.
+Bot MCP tool → server → `computer.tool` request over the app's `/runner/connect` connection → the app's executor (since v21; the HTTP runner path was removed in v38, see [accounts](accounts.md)).
 
 **Executor protocol (what the app must implement):**
 - `GET /health` → `{"ok":true,"permissions":{"accessibility":bool,"screenRecording":bool,"automation":bool},…}`

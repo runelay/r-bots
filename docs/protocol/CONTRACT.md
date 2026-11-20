@@ -75,7 +75,7 @@ Each bot picks an **account + model**; the server routes the turn to that accoun
 ## Runners
 - A runner is a small Node service (`runner/`) that runs on a machine, detects installed+logged-in CLIs, and executes turns headless, streaming normalized events back.
 - `vps` runner: in-process in apps/server (claude via Agent SDK, codex).
-- `mac` runner: on the user's Mac (`~/runelay-bots/runner`, launchd agent, port 4790 on the Mac's tailnet IP only, bearer token shared with the server via `RUNNER_TOKEN`). Has claude, codex, grok, cursor-agent.
+- `mac` runner: the runelay bots app on each Mac signed in to the account (a device). The app opens `wss://<server>/runner/connect` with its device token and runs claude, codex, grok, cursor-agent; MCP calls go back through the same connection (v38, [accounts](accounts.md)).
 - Providers: `claude` (Claude Code / Agent SDK, Claude subscription), `codex` (Codex CLI, ChatGPT subscription), `grok` (Grok CLI), `cursor` (cursor-agent, Cursor subscription).
 
 ## Tools for every provider

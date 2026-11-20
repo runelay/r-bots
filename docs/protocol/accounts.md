@@ -94,3 +94,70 @@ O processo Node `~/runelay-bots/runner` (launchd `com.runelay.bots.runner`) saiu
   - `suggest` é a reserva configurada ou a sugestão, só se estiver pronta.
 - Grupos não fazem failover.
 - **Teste:** `BOTS_FAULTS_FILE=<json {"vps:claude":"mensagem"}>` faz o `runOnRunner` responder com o texto e a falha, sem chamar o provider. Só é lido se a variável existir.
+
+## v38 (19/11): dispositivos e conexão reversa (o Mac chama o servidor)
+
+`MAC_RUNNER_URL`, `PUBLIC_MCP_BASE` e `RUNNER_TOKEN` saíram: nenhuma é lida. O servidor nunca chama o Mac; o app abre uma conexão de saída com o servidor no mesmo endereço configurado nele e tudo passa por ela. Login é obrigatório: o Mac só conecta com um token de dispositivo emitido para uma sessão do better-auth. A chave interna que sobrou (`<data>/runner.token`) é gerada sozinha no primeiro boot.
+
+### Dispositivos
+
+Cada Mac é um dispositivo da conta. O token é uma chave `rbk_` do better-auth (`name: "device"`, `metadata: {kind:"device", deviceId, name, model, osVersion, appVersion, machineId, registeredAt}`), guardada no Keychain do Mac (`com.runelay.bots.auth`, conta `<origem>|device`).
+
+- `POST /devices` (só com a sessão; token de dispositivo ou chave dá 403) `{name, model?, osVersion?, appVersion?, machineId?}` → 201 `{ok, device, token}`. Mesmo `machineId` do mesmo usuário reaproveita o `id` e o `registeredAt` e troca o token (o antigo deixa de valer). Erros: 400 `{field}` (`name` obrigatório até 80, `model` até 80, `osVersion`/`appVersion` até 40, `machineId` até 128).
+- `GET /devices` → 200 `{ok, devices:[{id, name, model, osVersion, appVersion, userId, registeredAt, connected, connectedAt, lastSeenAt}]}`. O dono vê todos; membro vê os dele.
+- `DELETE /devices/:id` → 200 `{ok, id, revoked:true, disconnected}`. Apaga o token e fecha a conexão viva com o código `4001 revoked`. Membro só remove os dele (404 nos outros).
+- Sem sessão: 401 `unauthorized`.
+
+### Conexão (`GET wss://<servidor>/runner/connect`)
+
+- `Authorization: Bearer <token do dispositivo>`. Sessão, chave `rbk_` comum ou a chave interna dão 401; um socket sem dispositivo fecha com `4003`.
+- Uma conexão por dispositivo (a nova do mesmo Mac fecha a antiga com `4000 replaced`); vários Macs ao mesmo tempo.
+- Ping do servidor a cada 15 s, do app a cada 20 s; o app reconecta com espera de 1 s a 15 s. Ao receber 401/403 ou `4001`, o app apaga o token, mostra "Este Mac foi desconectado da conta" e não volta sozinho; "Conectar este Mac" em Ajustes › Dispositivos registra de novo.
+- `hello.capabilities` ganha `mcp-proxy`. Os frames da v21 (contas, turnos, computador, arquivos, gravação, cofre, uso) continuam iguais.
+- Proxy MCP: o app sobe um servidor HTTP em `127.0.0.1:<porta aleatória>`. Para um Mac com `mcp-proxy`, o servidor manda `turn.mcp.url` só com o caminho (`/mcp/<bot>/<sessão>`) e o app troca por `http://127.0.0.1:<porta>/mcp/…` antes de abrir a CLI. Cada chamada da CLI vira:
+  - app → servidor: `{"type":"mcp.request","id","method":"POST"|"GET"|"DELETE","path":"/mcp/<bot>/<sessão>","headers":{authorization, content-type, accept, mcp-session-id, mcp-protocol-version},"body":"<json>"}`
+  - servidor → app: `{"type":"mcp.response","id","status","headers":{content-type, mcp-session-id},"body":"<json>"}`
+  - O servidor só aceita esse caminho (outros dão 404) e repassa ao próprio `/mcp`, que continua exigindo o token do turno.
+
+### Contas por Mac
+
+- O primeiro Mac registrado (ordem de `registeredAt`) usa `mac:<provedor>`; os outros, `mac-<8 primeiros caracteres do id>:<provedor>`. `runner` continua `"mac"` e cada conta traz `device: {id, name, connected}`; o rótulo vira `Claude · <nome do Mac>`.
+- Mac registrado e app fechado: `status:"offline"`, `detail:"Mac desconectado: abra o app runelay bots nele."`. Nenhum Mac na conta: `mac:*` com `device:null` e `detail:"Nenhum Mac na conta: entre no app runelay bots no Mac."`.
+- Turno para um Mac fora da conexão termina com `done {ok:false, message:"Mac desconectado."}`. Computador, cofre, uso e arquivos usam o Mac conectado mais antigo.
+
+### Runner Node antigo
+
+Já não roda desde a v21 e nada depende dele. Para tirar do Mac (a pasta de trabalho `~/runelay-bots/runner/data/work` é usada pelo app no `--resume` do Claude; não apague):
+
+```sh
+launchctl bootout gui/$(id -u)/com.runelay.bots.runner 2>/dev/null
+rm -f ~/Library/LaunchAgents/com.runelay.bots.runner.plist ~/runelay-bots/backup/com.runelay.bots.runner.plist.bak
+find ~/runelay-bots/runner -mindepth 1 -maxdepth 1 ! -name data -exec rm -rf {} +
+rm -f ~/Library/Application\ Support/runelay\ bots/runner.token
+```
+
+### Verificado
+
+Instância separada (`GATEWAY_PORT=2110`, `BOTS_SCHEDULES=off`, banco novo, dono criado), exposta só no tailnet, com o app de teste no Mac:
+
+```
+POST /devices (pelo app, sessão)          -> registrou "MacBook Air de Anderson (2)", Mac17,3, 26.6.2
+log: mac runner connected (7619b352-…)
+GET /accounts?refresh=1
+  mac:claude ready  "Claude · MacBook Air de Anderson (2)"  device {id:"7619b352-…", name:"MacBook Air de Anderson (2)", connected:true}
+  mac:codex ready · mac:grok logged_out · mac:cursor ready
+servidor reiniciado -> o app reconectou sozinho
+turno em mac:claude (claude-haiku-5-5): call.requested computer_apps -> call.settled completed (apps do Mac)
+  -> "São 12 apps abertos. Um deles é o Finder."  (CLI no Mac -> proxy local -> conexão -> /mcp -> computer.tool -> executor)
+DELETE /devices/7619b352-…  -> {"ok":true,"revoked":true,"disconnected":true}
+log: mac runner disconnected (7619b352-…); 25 s sem reconexão
+GET /accounts: mac:claude offline "Nenhum Mac na conta: entre no app runelay bots no Mac."
+
+POST /devices {"name":"Mac de teste",…,"machineId":"doc-capture"} -> 201
+  {"ok":true,"device":{"id":"60f5b9fb-…","name":"Mac de teste","model":"Mac17,3","osVersion":"26.6.2","appVersion":"0.5.0","userId":"fZtW…","registeredAt":"2026-11-19T23:59:23.137Z","connected":false,"connectedAt":null,"lastSeenAt":null},"token":"rbk_…"}
+POST /devices com o token do dispositivo -> 403 {"ok":false,"code":"forbidden","error":"Entre pelo app para registrar este Mac."}
+POST /devices {} -> 400 {"ok":false,"error":"Falta name.","field":"name"}
+GET /devices sem credencial -> 401 {"ok":false,"error":"Entre de novo para continuar.","code":"unauthorized"}
+WS /runner/connect: sessão 401 · token do dispositivo 101
+DELETE /devices/60f5b9fb-… -> {"ok":true,"id":"60f5b9fb-…","revoked":true,"disconnected":false}; de novo -> 404 {"ok":false,"code":"not_found","error":"Dispositivo não encontrado."}
+```
