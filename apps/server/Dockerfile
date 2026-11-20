@@ -95,6 +95,22 @@ RUN printf '%s\n' \
     done \
  && rm /tmp/runelay-policy.json
 
+ARG CUTOUT_MODEL_MD5=fc16ebd8b0c10d971d3513d564d01e29
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    --mount=type=cache,target=/root/.cache/pip \
+    apt-get update \
+ && apt-get install -y --no-install-recommends python3-venv \
+ && python3 -m venv /opt/runelay-cutout \
+ && /opt/runelay-cutout/bin/pip install --disable-pip-version-check \
+      onnxruntime==1.32.0 numpy==2.4.6 pillow==13.0.0 scipy==1.17.1 \
+ && mkdir -p /opt/runelay-cutout/models \
+ && curl -fsSL -o /opt/runelay-cutout/models/isnet-general-use.onnx \
+      https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx \
+ && echo "${CUTOUT_MODEL_MD5}  /opt/runelay-cutout/models/isnet-general-use.onnx" | md5sum -c - \
+ && find /opt/runelay-cutout -name __pycache__ -prune -exec rm -rf {} + \
+ && chmod -R a+rX /opt/runelay-cutout
+
 ENV HOME=/home/app \
     USER=app \
     LANG=C.UTF-8 \

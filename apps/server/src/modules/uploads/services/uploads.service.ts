@@ -1,6 +1,6 @@
 import { createWriteStream } from "node:fs";
-import { chmod, copyFile, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
+import { chmod, copyFile, mkdir, open, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
@@ -22,6 +22,7 @@ import {
   macTranscribeFile,
 } from "../../accounts/services/mac-runner.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
+import { cutoutImage } from "../../images/services/cutout.service";
 import { integrationSecret } from "../../integrations/services/integration-store.service";
 import { defineJob, enqueue, jobsActive } from "../../jobs/services/jobs.service";
 import { blobKeys, blobToFile, putBlob } from "../../storage/services/storage.service";
@@ -1186,6 +1187,30 @@ export async function shareUpload(fromBotId: string, uploadId: string, toBotId: 
   return { path, readable, upload: publicUpload(toBotId, copied) };
 }
 
+const cutoutImageFile = /\.(png|jpe?g|webp)$/i;
+
+async function cutoutSource(botId: string, input: Record<string, unknown>) {
+  if (typeof input.uploadId === "string" && input.uploadId) {
+    const meta = await readUpload(botId, input.uploadId);
+    if (!meta || meta.kind !== "image") throw new Error("Anexo de imagem não encontrado.");
+    return { path: uploadPath(botId, meta), name: meta.name, dir: join(outboxDir(botId), "imagens") };
+  }
+  const raw = typeof input.path === "string" ? input.path.trim() : "";
+  if (!raw) throw new Error("Mande o caminho da imagem ou o uploadId do anexo.");
+  if (!cutoutImageFile.test(raw)) throw new Error("O recorte aceita PNG, JPEG ou WebP.");
+  if (generatedImage.test(raw)) {
+    const real = await realpath(raw).catch(() => null);
+    if (!real || !generatedImage.test(real)) throw new Error(`Não achei ${raw}.`);
+    return { path: real, name: generatedImageName(real), dir: join(outboxDir(botId), "imagens") };
+  }
+  if (!lexicallyInOutbox(botId, raw))
+    throw new Error("O recorte só lê imagens da sua pasta de saída, imagens geradas agora ou anexos da conversa.");
+  const confined = await openConfined(botId, raw);
+  if (!confined) throw new Error(`Não achei ${raw}.`);
+  await confined.handle.close();
+  return { path: confined.path, name: basename(confined.path), dir: dirname(confined.path) };
+}
+
 export function uploadTools(botId: string): BotTool[] {
   return [
     {
@@ -1259,8 +1284,37 @@ export function uploadTools(botId: string): BotTool[] {
         };
       },
     },
+    {
+      name: "image_cutout",
+      description: `Recorta o fundo de uma imagem com um modelo de recorte de verdade e devolve um PNG transparente com borda suave, sem halo e sem sujeira em volta. Use em ícone, sticker, logo e produto que precisam de fundo transparente. Aceita o caminho de uma imagem da sua pasta de saída (${outboxDir(botId)}), o caminho que a geração de imagem acabou de devolver, ou o uploadId de um anexo. Salva <nome>-recorte.png na pasta de saída e já anexa na conversa: não use send_file para ele. trim corta a sobra transparente e deixa uma margem pequena. Leva de 5 a 20 segundos.`,
+      shape: {
+        path: z.string().min(1).max(1000).optional(),
+        uploadId: z.string().min(1).max(64).optional(),
+        trim: z.boolean().optional(),
+      },
+      approval: null,
+      label: (input) =>
+        `Recortar o fundo de ${basename(String(input.path ?? labels.get(String(input.uploadId)) ?? "imagem"))}`,
+      run: async (input, signal) => {
+        const source = await cutoutSource(botId, input);
+        await mkdir(source.dir, { recursive: true });
+        const name = `${basename(source.name, extname(source.name))}-recorte.png`;
+        const target = join(source.dir, name);
+        const stats = await cutoutImage(source.path, target, input.trim === true, signal);
+        const meta = await importBotFile(botId, target, name);
+        const attachment = publicUpload(botId, meta);
+        return {
+          uploadId: meta.uploadId,
+          name: meta.name,
+          path: target,
+          width: stats.width,
+          height: stats.height,
+          fileEvent: { type: "file.sent", data: { attachment } },
+        };
+      },
+    },
   ];
 }
 
 export const uploadGuide =
-  '## Arquivos\nA pessoa pode anexar imagem, vídeo, áudio e arquivos. Imagens chegam junto da mensagem; áudio chega transcrito como "[áudio: …]"; vídeo chega com a transcrição e quadros-chave; PDF e texto chegam com o conteúdo extraído. Para devolver um arquivo que você gerou (imagem, PDF, CSV…), salve na sua pasta de saída (`outbox` dentro da pasta do bot) e use `send_file` com o caminho; não cole o caminho na resposta.';
+  '## Arquivos\nA pessoa pode anexar imagem, vídeo, áudio e arquivos. Imagens chegam junto da mensagem; áudio chega transcrito como "[áudio: …]"; vídeo chega com a transcrição e quadros-chave; PDF e texto chegam com o conteúdo extraído. Para devolver um arquivo que você gerou (imagem, PDF, CSV…), salve na sua pasta de saída (`outbox` dentro da pasta do bot) e use `send_file` com o caminho; não cole o caminho na resposta.\n\n## Fundo transparente\nPara ícone, sticker, logo ou recorte de produto, não peça transparência nativa na geração: o recorte sai serrilhado, com halo branco e sujeira em volta. Gere com 1024 px ou mais, objeto inteiro e centralizado, com folga, sobre um fundo liso e sólido que contraste com o objeto (cinza claro para objeto escuro ou colorido; verde puro ou azul-escuro para objeto branco ou claro), sem sombra no chão nem degradê. Depois chame `image_cutout` com a imagem e entregue o `-recorte.png`.';
