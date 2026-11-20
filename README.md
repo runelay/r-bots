@@ -148,13 +148,13 @@ Install an app that calls a new route only after the server with that route is u
 
 | Path | What it is |
 |---|---|
-| [`apps/server`](apps/server/README.md) | Bun gateway: `src/{index,app}.ts`, `config/`, `db/` (SQLite + Drizzle), `shared/`, `modules/<domain>/{routes,services,repositories}` |
+| [`apps/server`](apps/server/README.md) | Bun gateway: `src/{index,app}.ts`, `config/`, `db/` (Postgres + Drizzle), `shared/`, `modules/<domain>/{routes,services,repositories}` |
 | [`apps/mac`](apps/mac/README.md) | SwiftUI app: `App/`, `Features/<domain>/`, `Common/`, `Design/`, `Networking/`, `Stores/`, `Models/` |
 | `packages/providers` | Claude, Codex, Cursor and Grok adapters, process tree helpers |
 | `packages/protocol` | Provider, event and turn types shared by server and providers |
 | [`docs/protocol`](docs/protocol/README.md) | The verified contract, split by topic (v1 to v30) |
 | `docs/research` | Notes behind design decisions |
-| `data/` | SQLite database and local blobs; default `~/.local/share/runelay-bots`, set by `BOTS_DATA_DIR` (git-ignored) |
+| `data/` | Postgres and Redis data, generated secrets and local blobs; default `~/.local/share/runelay-bots`, set by `BOTS_DATA_DIR` (git-ignored) |
 | `compose.yaml` | Production stack: server, Postgres, Redis, Garage and the secret bootstrap (`deploy/`) |
 
 ## 📖 Docs

@@ -69,6 +69,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v37 | foto da conta: `PUT/DELETE /auth/me/avatar`, `GET /auth/avatars/:userId/:arquivo`, `user.image` no `/auth/me` | [auth](auth.md) |
 | v38 | dispositivos (`POST/GET/DELETE /devices`), o Mac chama o servidor, proxy MCP pela conexão, contas por Mac, sem `MAC_RUNNER_URL`/`PUBLIC_MCP_BASE`/`RUNNER_TOKEN` | [accounts](accounts.md) |
 | v39 | fila de jobs no Redis (turnos, rotinas, exportações, captura, anexos), `GET /jobs`, `POST /jobs/:id/retry`, `/status` da fila | [usage-status-limits](usage-status-limits.md) |
+| v40 | banco no Postgres; busca de conversas e notas com `tsvector` + `unaccent` (mesmas rotas e corpos) | [conversations](conversations.md) |
 
 ## Contrato
 

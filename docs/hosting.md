@@ -43,3 +43,17 @@ Hoje os bots rodam Bash, navegador, desktop virtual e worktrees no mesmo contain
 - Postgres gerenciado com backup e réplica; Redis gerenciado com AOF; S3 de verdade.
 - Vários servidores atrás de um balanceador. A fila já distribui; o que ainda é estado em memória (streams de conversa, cards de aprovação abertos, chamadas de voz) precisa de afinidade por conversa ou de pub/sub no Redis.
 - Observabilidade por workspace: falhos da fila, turnos por minuto, custo de IA.
+
+## Banco externo (Neon)
+
+O servidor fala com qualquer Postgres 15+ que tenha `unaccent` e `pg_trgm` (o Neon tem as duas). Trocar o banco local pelo Neon é só configurar a URL; nada no código muda.
+
+- `DATABASE_URL`: quando existe, substitui o banco local do compose. Use a URL do pooler do Neon (`…-pooler….neon.tech/…?sslmode=require`).
+- `DATABASE_URL_UNPOOLED`: URL direta, sem pooler. Migrations e o import do SQLite usam esta; sem ela, caem no `DATABASE_URL`.
+- TLS: `sslmode` da URL vale. `require` liga TLS sem checar o certificado (igual ao libpq); `verify-ca`/`verify-full` checam.
+- Pooler em modo transação (PgBouncer do Neon): o servidor não usa `SET`, advisory lock de sessão, `LISTEN/NOTIFY` nem tabela temporária; as travas são `pg_advisory_xact_lock`, presas à transação. Prepared statements desligam sozinhos quando o host tem `-pooler` ou a URL traz `pgbouncer=true`/`prepare=false`; `DATABASE_PREPARE=on|off` força.
+- `DATABASE_POOL_MAX`: conexões por processo (padrão 10; 2 para migrations e import).
+- Extensões: a migration roda `CREATE EXTENSION IF NOT EXISTS unaccent` e `pg_trgm`, e cria a configuração de busca `rb_search`.
+- Backup: com banco local o servidor faz `pg_dump` diário (formato custom, compactado, 7 dias em `BOTS_BACKUP_DIR/db/<dia>/runelay-bots.dump`). Com banco externo o dump desliga e o log diz que o backup é do provedor (no Neon: histórico e branches de restauração).
+- Compose: o serviço `postgres` continua no `depends_on` do server. Com Neon ele sobe e fica ocioso; para não subir, remova-o com um `compose.override.yaml` que tire o `depends_on`.
+- Migrar os dados de um banco para o outro: `pg_dump --format=custom` do local e `pg_restore --no-owner -d "$DATABASE_URL_UNPOOLED"` no Neon, com o server parado.

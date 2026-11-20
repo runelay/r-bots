@@ -10,8 +10,8 @@ runelay bots is a self-hosted team of bots: a TypeScript server (Bun) that runs 
 |---|---|
 | `apps/server/src/index.ts` | Boot: load data, timers, signals, `listen` |
 | `apps/server/src/app.ts` | Central router (path → module route) and WebSocket upgrades |
-| `apps/server/src/config/env.ts`, `config/storage.ts` | Port, host, model, data dir, SQLite file, blob driver (S3 or filesystem) |
-| `apps/server/src/db/` | SQLite client (Drizzle), schema, migrations, settings table, legacy JSON import |
+| `apps/server/src/config/env.ts`, `config/storage.ts` | Port, host, model, data dir, database URL (`config/database.ts`), blob driver (S3 or filesystem) |
+| `apps/server/src/db/` | Postgres client (Bun.SQL + Drizzle), schema, migrations, settings table, text search helpers, SQLite import |
 | `apps/server/src/shared/` | HTTP helpers, `ValidationError`, JSON file store, secret redaction (`redact.ts`) |
 | `apps/server/src/modules/<domain>/` | One folder per domain: `routes/` (HTTP handlers), `services/` (logic and stores), `repositories/`, `types/`, `constants/` only where needed |
 | `apps/server/bin/rb-secret-run.mjs` | Bash helper that injects vault secrets into a command and masks them in its output |
@@ -23,10 +23,10 @@ runelay bots is a self-hosted team of bots: a TypeScript server (Bun) that runs 
 | `packages/providers/` | Claude, Codex, Cursor and Grok adapters; process helpers (`proc.ts`, `proc-tree.ts`) |
 | `docs/protocol/` | The verified HTTP/WS contract, one file per topic |
 | `docs/research/` | Notes behind design decisions |
-| `data/` (`BOTS_DATA_DIR`, default `~/.local/share/runelay-bots`) | Runtime state: the SQLite database `runelay-bots.db`, blobs (uploads, artifacts) when `BLOB_DRIVER=fs`, workspaces. Git-ignored, never commit, never edit by hand from code changes |
+| `data/` (`BOTS_DATA_DIR`, default `~/.local/share/runelay-bots`) | Runtime state: Postgres and Redis data, generated secrets, blobs (uploads, artifacts) when `BLOB_DRIVER=fs`, workspaces. Git-ignored, never commit, never edit by hand from code changes |
 | `compose.yaml`, `deploy/` | Production stack: server, Postgres, Redis, Garage; `deploy/secrets` generates the Postgres and Redis passwords into `<data>/secrets/` |
 
-Server domains: `accounts`, `agenda`, `approvals`, `artifacts`, `auth`, `blocks`, `bots`, `browser`, `canvas`, `code`, `computer`, `connectors`, `conversations`, `engine`, `exports`, `groups`, `integrations`, `jobs`, `memory`, `notes`, `schedules`, `sections`, `sheets`, `skills`, `status`, `storage`, `uploads`, `usage`, `vault`, `voice`. Persistence goes through the domain's `repositories/` on the SQLite database; files go through the blob store in `storage`. Put new code in the domain that owns it; create a new module only for a new domain.
+Server domains: `accounts`, `agenda`, `approvals`, `artifacts`, `auth`, `blocks`, `bots`, `browser`, `canvas`, `code`, `computer`, `connectors`, `conversations`, `engine`, `exports`, `groups`, `integrations`, `jobs`, `memory`, `notes`, `schedules`, `sections`, `sheets`, `skills`, `status`, `storage`, `uploads`, `usage`, `vault`, `voice`. Persistence goes through the domain's `repositories/` on the Postgres database; files go through the blob store in `storage`. Put new code in the domain that owns it; create a new module only for a new domain.
 
 ## Commands
 
