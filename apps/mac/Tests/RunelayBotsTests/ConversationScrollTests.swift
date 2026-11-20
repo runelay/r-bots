@@ -369,4 +369,66 @@ final class ConversationScrollTests: XCTestCase {
         host.close()
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
+
+    func testLongMessagesFoldAndKeepAnchor() throws {
+        let fixture = try fixture(ProcessInfo.processInfo.environment["RB_HARNESS_FOLD"] ?? "davi")
+        let store = try makeStore(fixture, cached: true)
+        let host = HarnessHost(size: Self.size) {
+            ConversationView(store: store, bot: store.bot, focusToken: 0)
+        }
+        store.start()
+        _ = openReport(host, store: store, label: "fold")
+        guard let list = host.transcriptScrollView as? TranscriptListView else { return XCTFail("sem lista") }
+        var failures: [String] = []
+        let folded = store.entries.filter { entry in
+            if let message = store.userMessages[entry.id] { return MessageFolding.plan(message.text, keepsTail: true) != nil }
+            if let part = store.textParts[entry.id] { return MessageFolding.plan(part.text, keepsTail: false) != nil }
+            return false
+        }
+        log("fold candidates \(folded.count) of \(store.entries.count) entries=\(folded.map { store.userMessages[$0.id] != nil ? "user" : "bot" })")
+        guard let target = folded.last else { return XCTFail("nenhuma mensagem longa") }
+        var steps = 0
+        while host.rowFrames[target.id].map({ !$0.intersects(host.visibleBand(list)) }) ?? true, steps < 400 {
+            host.scrollTo(y: list.contentView.bounds.origin.y - 200)
+            host.pump(0.03)
+            steps += 1
+        }
+        host.pump(0.5)
+        guard let collapsed = host.rowFrames[target.id] else { return XCTFail("linha longa não montou") }
+        let band = host.visibleBand(list)
+        host.scrollTo(y: collapsed.minY - band.minY + list.contentView.bounds.origin.y - 120)
+        host.pump(0.5)
+        let y0 = host.viewportY(of: target.id) ?? .nan
+        let key = "\(store.sessionId ?? store.bot.id)|\(target.id)"
+        list.noteToggle(row: target.id, collapsing: false)
+        MessageFolds.shared.set(key, expanded: true)
+        host.pump(1.0)
+        let expanded = host.rowFrames[target.id]
+        let y1 = host.viewportY(of: target.id) ?? .nan
+        log("fold expand height \(Int(collapsed.height))→\(Int(expanded?.height ?? -1)) y \(Int(y0))→\(Int(y1))")
+        if (expanded?.height ?? 0) < collapsed.height + 40 { failures.append("expandir não cresceu a mensagem") }
+        if abs(y1 - y0) > 2 { failures.append("expandir moveu o topo \(Int(y1 - y0))pt") }
+        if let expanded {
+            host.scrollTo(y: expanded.maxY - list.contentView.bounds.height + list.contentInsets.bottom + 40)
+            host.pump(0.5)
+        }
+        list.noteToggle(row: target.id, collapsing: true)
+        MessageFolds.shared.set(key, expanded: false)
+        host.pump(1.0)
+        let after = host.rowFrames[target.id]
+        let visible = after.map { $0.intersects(host.visibleBand(list)) } ?? false
+        log("fold collapse height \(Int(after?.height ?? -1)) visible=\(visible) y=\(Int(host.viewportY(of: target.id) ?? .nan))")
+        if abs((after?.height ?? 0) - collapsed.height) > 2 { failures.append("recolher não voltou à altura comprimida") }
+        if !visible { failures.append("recolher deixou a mensagem fora da tela") }
+        host.scrollTo(y: list.contentView.bounds.origin.y - 1200)
+        host.pump(0.5)
+        _ = host.pressJump()
+        host.pump(1.2)
+        let end = host.measure(ink: true)
+        log("fold jump \(end.map(String.init(describing:)) ?? "nil")")
+        if (end?.distanceToBottom ?? 99) > 2 || (end?.inkRatio ?? 0) <= 0.01 { failures.append("↓ depois de dobrar falhou") }
+        store.stop()
+        host.close()
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
 }
