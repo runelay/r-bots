@@ -334,7 +334,7 @@ export async function loginGuide(provider: string): Promise<LoginGuide> {
     steps: [
       `Abra um terminal no servidor onde o runelay bots roda, com o mesmo usuário dele.`,
       `Rode o comando abaixo e entre com a outra conta do ${title} no navegador.`,
-      `O diretório fica dentro da sua pasta pessoal, então o servidor já enxerga. Volte aqui e toque em Procurar contas.`,
+      `O diretório fica dentro da sua pasta pessoal, então o servidor já enxerga. Volte aqui e toque em Procurar de novo.`,
     ],
   };
 }

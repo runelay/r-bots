@@ -56,6 +56,8 @@ describe("probe", () => {
     expect(await probe("claude")).toMatchObject({ status: "logged_out", detail: "not json" });
     fakeCli.reply("claude", { stdout: "" });
     expect(await probe("claude")).toMatchObject({ status: "logged_out", detail: "Sem login no Claude Code." });
+    fakeCli.reply("claude", { stdout: JSON.stringify({ loggedIn: false, authMethod: "none" }) });
+    expect(await probe("claude")).toMatchObject({ status: "logged_out", detail: "Sem login no Claude Code." });
   });
 
   test("codex lists visible models when logged in", async () => {

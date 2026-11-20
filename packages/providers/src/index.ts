@@ -43,8 +43,10 @@ function clean(text: string) {
 
 async function probeClaude(bin: string, extra: Record<string, string>): Promise<AccountProbe> {
   const { stdout, stderr } = await capture(bin, ["auth", "status"], 20_000, extra);
+  let parsed = false;
   try {
     const status = JSON.parse(stdout) as { loggedIn?: boolean; email?: string; subscriptionType?: string };
+    parsed = true;
     if (status.loggedIn) {
       return {
         provider: "claude",
@@ -57,7 +59,7 @@ async function probeClaude(bin: string, extra: Record<string, string>): Promise<
   return {
     provider: "claude",
     status: "logged_out",
-    detail: clean(stderr || stdout).slice(0, 200) || "Sem login no Claude Code.",
+    detail: clean(stderr || (parsed ? "" : stdout)).slice(0, 200) || "Sem login no Claude Code.",
     models: claudeModels,
   };
 }
