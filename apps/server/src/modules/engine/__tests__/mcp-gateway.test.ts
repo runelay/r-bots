@@ -492,6 +492,7 @@ describe("connector tools", () => {
     expect((await call("memory_read", { slug: "m" })).text).toBe("memória m");
     expect((await call("skill_read", { slug: "s" })).text).toBe("skill s");
     expect((await call("skill_read", { slug: "s", path: "a.md" })).text).toBe("arquivo a.md");
+    expect((await factsOfType(session, "decision.made")).filter((fact) => fact.data.tool === "skill_read")).toEqual([]);
     expect((await call("memory_write", { slug: "m", body: "b", name: "N" })).text).toBe("salvo");
     expect((await factsOfType(session, "call.requested")).at(-1)?.data).toMatchObject({
       input: { slug: "m", name: "N" },
