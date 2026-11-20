@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CellFormat, ExportFormat, ExportJob, SheetCell } from "@runelay-bots/protocol";
@@ -15,7 +15,7 @@ import {
 } from "docx";
 import { and, eq } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { type Lexer, marked, type Token, type Tokens } from "marked";
+import { type Lexer, Marked, marked, type Token, type Tokens } from "marked";
 import { env } from "../../../config/env";
 import { getDb } from "../../../db";
 import { exports } from "../../../db/tables";
@@ -188,26 +188,87 @@ export async function noteDocx(title: string, markdown: string) {
 }
 
 function escapeHtml(text: string) {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const safeImageData = /^data:image\/(png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i;
+
+export function safeUrl(raw: string, image: boolean) {
+  const href = raw.trim();
+  if (image) return safeImageData.test(href) ? href : null;
+  if (href.startsWith("#")) return href;
+  try {
+    const protocol = new URL(href).protocol;
+    return ["http:", "https:", "mailto:"].includes(protocol) ? href : null;
+  } catch {
+    return null;
+  }
+}
+
+const printMarked = new Marked({
+  gfm: true,
+  renderer: {
+    html(token) {
+      return escapeHtml(token.text);
+    },
+    link(token) {
+      const label = this.parser.parseInline(token.tokens);
+      const href = safeUrl(token.href, false);
+      if (!href) return label;
+      return `<a href="${escapeHtml(href)}"${token.title ? ` title="${escapeHtml(token.title)}"` : ""}>${label}</a>`;
+    },
+    image(token) {
+      const src = safeUrl(token.href, true);
+      if (!src) return escapeHtml(token.text);
+      return `<img src="${escapeHtml(src)}" alt="${escapeHtml(token.text)}">`;
+    },
+  },
+});
+
+export const printCsp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:";
+
+function printPage(title: string, css: string, body: string) {
+  return `<!doctype html><html lang="pt-BR"><head><meta http-equiv="Content-Security-Policy" content="${printCsp}"><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${css}</style></head><body>${body}</body></html>`;
 }
 
 const printCss =
   "body{font:14px/1.55 -apple-system,'Inter','Helvetica Neue',Arial,sans-serif;color:#1d1d1f;margin:0;padding:0}h1,h2,h3{line-height:1.25}code,pre{font-family:Menlo,monospace;font-size:12px}pre{background:#f4f4f5;padding:10px;border-radius:6px;white-space:pre-wrap}table{border-collapse:collapse}td,th{border:1px solid #d4d4d8;padding:4px 8px;font-size:12px}th{background:#f4f4f5}blockquote{color:#52525b;border-left:3px solid #d4d4d8;margin:0;padding-left:12px}@page{margin:18mm}";
 
+export const pdfChromeFlags = [
+  "--headless=new",
+  "--no-sandbox",
+  "--disable-gpu",
+  "--disable-dev-shm-usage",
+  "--no-pdf-header-footer",
+  "--blink-settings=scriptEnabled=false",
+  "--host-resolver-rules=MAP * ~NOTFOUND",
+  "--proxy-server=127.0.0.1:9",
+  "--proxy-bypass-list=<-loopback>",
+  "--disable-background-networking",
+  "--disable-component-update",
+  "--disable-default-apps",
+  "--disable-extensions",
+  "--disable-sync",
+  "--no-first-run",
+  "--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication",
+];
+
 export async function htmlToPdf(html: string) {
   const dir = await mkdtemp(join(tmpdir(), "runelay-export-"));
   try {
+    await chmod(dir, 0o700);
     const input = join(dir, "page.html");
     const output = join(dir, "page.pdf");
-    await writeFile(input, html);
+    await writeFile(input, html, { mode: 0o600 });
     const proc = Bun.spawn(
       [
         chromeBinary,
-        "--headless=new",
-        "--no-sandbox",
-        "--disable-gpu",
-        "--disable-dev-shm-usage",
-        "--no-pdf-header-footer",
+        ...pdfChromeFlags,
         `--user-data-dir=${join(dir, "profile")}`,
         `--print-to-pdf=${output}`,
         `file://${input}`,
@@ -225,12 +286,14 @@ export async function htmlToPdf(html: string) {
   }
 }
 
-export async function notePdf(title: string, markdown: string) {
-  const body = await marked.parse(wikiText(markdown), { async: true, gfm: true });
+export function noteHtml(title: string, markdown: string) {
+  const body = printMarked.parse(wikiText(markdown), { async: false });
   const heading = /^\s*#\s/.test(markdown) ? "" : `<h1>${escapeHtml(title)}</h1>`;
-  return htmlToPdf(
-    `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(title)}</title><style>${printCss}</style></head><body>${heading}${body}</body></html>`,
-  );
+  return printPage(title, printCss, `${heading}${body}`);
+}
+
+export async function notePdf(title: string, markdown: string) {
+  return htmlToPdf(noteHtml(title, markdown));
 }
 
 function numFmt(format: CellFormat | undefined) {
@@ -252,6 +315,13 @@ function plainValue(cell: SheetCell) {
   return cell.v;
 }
 
+const networkFunctions =
+  /\b(WEBSERVICE|HYPERLINK|IMPORTXML|IMPORTDATA|IMPORTHTML|IMPORTFEED|IMPORTRANGE|IMAGE|FILTERXML|RTD|DDE|DDEAUTO|CALL|REGISTER(?:\.ID)?|EXEC)\s*\(/i;
+
+export function reachesNetwork(formula: string) {
+  return networkFunctions.test(formula) || formula.includes("|");
+}
+
 export async function sheetXlsx(botId: string, sheetId: string) {
   const { sheet, tabs, rows } = await bookFor(botId, sheetId);
   const workbook = new ExcelJS.Workbook();
@@ -268,6 +338,11 @@ export async function sheetXlsx(botId: string, sheetId: string) {
     for (const row of rows.filter((item) => item.tabId === tab.id)) {
       const cell = cellOf(row);
       const target = worksheet.getCell(row.row + 1, row.col + 1);
+      if (cell.input.trim().startsWith("=") && reachesNetwork(cell.input)) {
+        target.value = cell.input.trim();
+        target.numFmt = "@";
+        continue;
+      }
       if (cell.input.trim().startsWith("=")) {
         const result =
           cell.t === "d" && typeof cell.v === "string"
@@ -312,10 +387,17 @@ function displayValue(cell: SheetCell) {
   return String(cell.v);
 }
 
+export const maxExportCells = 200_000;
+
 async function tabGrid(botId: string, sheetId: string, tabId?: string | null) {
   const { sheet, tabs, rows } = await bookFor(botId, sheetId);
   const tab = tabs.find((item) => item.id === tabId) ?? tabs[0];
   if (tabId && tab.id !== tabId) throw new BlockError("Aba não encontrada.", 404);
+  if (tab.rowCount * tab.colCount > maxExportCells)
+    throw new BlockError(
+      `A aba tem ${tab.rowCount} linhas por ${tab.colCount} colunas em uso; o limite para exportar é de ${maxExportCells.toLocaleString("pt-BR")} células. Divida a aba ou exporte em xlsx.`,
+      413,
+    );
   const cells = rows.filter((item) => item.tabId === tab.id).map(cellOf);
   const grid: string[][] = Array.from({ length: tab.rowCount }, () => Array.from({ length: tab.colCount }, () => ""));
   const styles = new Map<string, CellFormat>();
@@ -326,9 +408,19 @@ async function tabGrid(botId: string, sheetId: string, tabId?: string | null) {
   return { sheet, tab, grid, styles };
 }
 
+const numberLike = /^-[\d.,\s\u00a0]+%?$/;
+
+export function csvSafe(value: string) {
+  if (!/^[=+\-@\t\r]/.test(value) || numberLike.test(value)) return value;
+  return `'${value}`;
+}
+
 export async function sheetCsv(botId: string, sheetId: string, tabId?: string | null) {
   const { grid } = await tabGrid(botId, sheetId, tabId);
-  const quote = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+  const quote = (raw: string) => {
+    const value = csvSafe(raw);
+    return /[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+  };
   return `﻿${grid.map((row) => row.map(quote).join(",")).join("\r\n")}\r\n`;
 }
 
@@ -348,7 +440,11 @@ export async function sheetPdf(botId: string, sheetId: string, tabId?: string | 
     )
     .join("");
   return htmlToPdf(
-    `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escapeHtml(sheet.title)}</title><style>${printCss}@page{size:A4 landscape}</style></head><body><h2>${escapeHtml(sheet.title)} · ${escapeHtml(tab.name)}</h2><table>${head}${body}</table></body></html>`,
+    printPage(
+      sheet.title,
+      `${printCss}@page{size:A4 landscape}`,
+      `<h2>${escapeHtml(sheet.title)} · ${escapeHtml(tab.name)}</h2><table>${head}${body}</table>`,
+    ),
   );
 }
 

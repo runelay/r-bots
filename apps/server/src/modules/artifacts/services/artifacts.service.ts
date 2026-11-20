@@ -52,6 +52,8 @@ export const artifactCsp = [
   "object-src 'none'",
   "form-action 'none'",
   "base-uri 'none'",
+  "frame-ancestors 'self'",
+  "sandbox allow-scripts allow-downloads",
 ].join("; ");
 
 const kindLabel: Record<ArtifactKind, string> = {
@@ -261,7 +263,7 @@ export function artifactTools(botId: string): BotTool[] {
 export const artifactGuide = [
   "## Artefatos visuais",
   "Quando a resposta fica melhor vista do que lida (apresentação, dashboard, relatório visual), monte um artefato com `artifact_create` e ajuste com `artifact_update`. A pessoa vê o resultado renderizado no app; na conversa, diga em uma frase o que montou, sem colar o HTML.",
-  "- HTML único e autocontido: CSS e JS inline. Scripts só de cdnjs.cloudflare.com ou cdn.jsdelivr.net, com versão exata (ex.: https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js). Fontes só do Google Fonts. Nada de fetch, imagens externas ou iframes: a página roda bloqueada para fora. Imagem só como SVG inline ou data: URI.",
+  "- HTML único e autocontido: CSS e JS inline. Scripts só de cdnjs.cloudflare.com ou cdn.jsdelivr.net, com versão exata (ex.: https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js). Fontes só do Google Fonts. Nada de fetch, imagens externas ou iframes: a página roda bloqueada para fora. Imagem só como SVG inline ou data: URI. A página roda isolada, sem origem própria: nada de localStorage, sessionStorage, cookies, IndexedDB, window.open ou popups; guarde o estado em variáveis do script.",
   "- Tema escuro elegante: fundo quase preto (#0b0d10), texto #e8eaed, texto secundário #9aa0a6, uma cor de destaque só. Fonte Inter (Google Fonts) ou system-ui. Responsivo do celular a 1920px.",
   '- slides: cada slide é um `<section class="slide">` de 16:9 que ocupa a tela inteira, um slide por seção do conteúdo, só um visível por vez. Navegação por setas ←/→ (e espaço, PageUp/PageDown), contador discreto "2 / 6" num canto. Exponha `window.slideCount` (número de slides) e `window.goToSlide(i)` (índice a partir de 0): o app usa isso para exportar um PDF com uma página por slide. Nada de animação longa.',
   "- dashboard: números-chave grandes no topo (KPI com rótulo curto), gráficos com Chart.js abaixo, legenda só quando houver mais de uma série. Grade que vira uma coluna no estreito.",

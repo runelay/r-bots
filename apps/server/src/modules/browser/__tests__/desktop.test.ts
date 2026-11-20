@@ -185,6 +185,29 @@ describe("desktop actions", () => {
     expect((xcall?.options.env as Record<string, string> | undefined)?.DISPLAY).toBe(`:${desktop.display}`);
   });
 
+  test("hands xdotool only the allowlisted environment plus the X authority", async () => {
+    const previous = { secret: process.env.SECRET_FOR_DESKTOP, xauth: process.env.XAUTHORITY };
+    process.env.SECRET_FOR_DESKTOP = "nao-pode-vazar";
+    process.env.XAUTHORITY = "/tmp/xauth-test";
+    try {
+      const desktop = getDesktop(botId());
+      await desktop.click(1, 2);
+      const env = calls.filter((call) => call.command === "xdotool").at(-1)?.options.env as Record<string, string>;
+      expect(env.SECRET_FOR_DESKTOP).toBeUndefined();
+      expect(env.XAUTHORITY).toBe("/tmp/xauth-test");
+      expect(env.DISPLAY).toBe(`:${desktop.display}`);
+      delete process.env.XAUTHORITY;
+      await desktop.click(1, 2);
+      const plain = calls.filter((call) => call.command === "xdotool").at(-1)?.options.env as Record<string, string>;
+      expect(plain.XAUTHORITY).toBeUndefined();
+    } finally {
+      if (previous.secret === undefined) delete process.env.SECRET_FOR_DESKTOP;
+      else process.env.SECRET_FOR_DESKTOP = previous.secret;
+      if (previous.xauth === undefined) delete process.env.XAUTHORITY;
+      else process.env.XAUTHORITY = previous.xauth;
+    }
+  });
+
   test("opens a browser and a terminal", async () => {
     const desktop = getDesktop(botId());
     await desktop.openBrowser("https://a.test/");

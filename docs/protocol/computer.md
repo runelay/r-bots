@@ -180,3 +180,27 @@ A computer-capable bot's system prompt gets a section: prefer `computer_ui_tree`
 The executor isn't live yet. `~/Library/Application Support/runelay bots/` doesn't exist on the Mac and nothing listens on 4791, so `/computer/health` and `files_list ~/Downloads` both return `COMPUTER_UNAVAILABLE (sem token do executor)`. No real Lia turn was run.
 
 ---
+
+## v44 (20/11): conteúdo do usuário isolado (uploads, artefatos, exportações, navegador)
+
+### `browser_open` e `desktop_open`
+
+- Esquema: `url` precisa ser `http://` ou `https://` (`file:`, `view-source:`, `chrome:`, `javascript:` são recusados antes de rodar).
+- Antes de abrir, o servidor resolve o nome (`resolvePublic` do `shared/net-guard`): loopback, redes privadas, CGNAT/tailnet (`100.64/10`, `*.ts.net`), link-local/metadados (`169.254.169.254`), `.internal`, `.local` e nomes sem ponto são recusados. `localhost` conta como `127.0.0.1`. Exceção: porta de um servidor de dev rodando num worktree `alive` do próprio bot (`previewTarget`), nunca a porta do gateway, 3900, 3903, 5432 ou 6379.
+- As rotas do app (pessoa no controle) não mudam.
+
+### Proxy por bot no Chromium
+
+Cada bot ganha um proxy HTTP em `127.0.0.1:<porta efêmera>` dentro do servidor. O `agent-browser` passa a subir o Chromium com:
+
+```
+--args --no-sandbox,--proxy-server=http://127.0.0.1:<porta>,--proxy-bypass-list=<-loopback>,--disable-quic,--force-webrtc-ip-handling-policy=disable_non_proxied_udp
+```
+
+O proxy aplica a mesma regra a cada `CONNECT` e a cada requisição `http://` (redirecionamentos, subrecursos e navegação por JS incluídos): destino interno → `HTTP/1.1 403 Forbidden`, pedido malformado → `400 Bad Request`, destino fora do ar → `502 Bad Gateway`. A requisição HTTP sai em forma de origem, sem `Proxy-Connection`, `Proxy-Authorization`, `Keep-Alive` e com `Connection: close`. Uma sessão do `agent-browser` que já existia antes do processo atual é fechada no primeiro uso para voltar a subir atrás do proxy.
+
+O `desktop_open` do bot passa pela mesma checagem do endereço, mas o Chromium do computador virtual ainda sobe sem o proxy (a pessoa também usa esse navegador). `file://` dentro do Chromium não tem bloqueio por política (o `agent-browser` não aceita política do Chrome); páginas `http(s)` já não podem navegar para `file://`.
+
+### Verificado 20/11
+
+Por testes: `browser-guard.test.ts` (7), `egress-proxy.test.ts` (6), `browser.service.test.ts` (28). Sem Chromium real.

@@ -8,9 +8,10 @@ enum RunnerFiles {
         let url = URL(fileURLWithPath: expanded).standardizedFileURL.resolvingSymlinksInPath()
         let path = url.path(percentEncoded: false)
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.resolvingSymlinksInPath().path(percentEncoded: false)
-        let roots = [home, "/tmp", "/private/tmp"].map { $0.hasSuffix("/") ? String($0.dropLast()) : $0 }
-        guard roots.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else {
-            return failure("\(path) está fora da pasta pessoal e de /tmp no Mac.")
+        let base = home.hasSuffix("/") ? String(home.dropLast()) : home
+        let roots = ["\(base)/Downloads", "\(base)/Desktop", "\(base)/Documents", "/tmp", "/private/tmp"]
+        guard roots.contains(where: { path.hasPrefix($0 + "/") }) else {
+            return failure("\(path) está fora de Downloads, Mesa, Documentos e /tmp no Mac.")
         }
         guard path.range(of: protectedPattern, options: .regularExpression) == nil else {
             return failure("Esse arquivo é protegido.")

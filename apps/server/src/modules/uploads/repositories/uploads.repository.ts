@@ -1,7 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { type Db, getDb } from "../../../db";
 import { present } from "../../../db/rows";
-import { uploads } from "../../../db/tables";
+import { codeWorkspaces, uploads } from "../../../db/tables";
 import type { UploadKind, UploadMeta } from "../services/uploads.service";
 
 type UploadRow = typeof uploads.$inferSelect;
@@ -85,4 +85,20 @@ export async function readUploadRow(botId: string, uploadId: string, db: Db = ge
 
 export async function listUploadRows(botId: string, db: Db = getDb()) {
   return db.select().from(uploads).where(eq(uploads.botId, botId)).orderBy(desc(uploads.createdAt), desc(uploads.id));
+}
+
+export async function uploadBytesOf(botId: string, db: Db = getDb()) {
+  const [row] = await db
+    .select({ total: sql<string | number | null>`coalesce(sum(${uploads.size}), 0)` })
+    .from(uploads)
+    .where(eq(uploads.botId, botId));
+  return Number(row?.total ?? 0);
+}
+
+export async function botWorktreePaths(botId: string, db: Db = getDb()) {
+  const rows = await db
+    .select({ path: codeWorkspaces.path })
+    .from(codeWorkspaces)
+    .where(and(eq(codeWorkspaces.botId, botId), eq(codeWorkspaces.status, "alive")));
+  return rows.map((row) => row.path);
 }

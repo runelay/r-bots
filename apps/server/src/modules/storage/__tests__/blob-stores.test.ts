@@ -158,6 +158,15 @@ describe("helpers", () => {
     expect(() => validKey("/a")).toThrow();
     expect(() => validKey("a/./b")).toThrow();
     expect(validKey("a/b")).toBe("a/b");
+    for (const bad of ["a/../b", "..", "a/b/..", "a//b", "a/", "a\0b", "a/\u0000", "a\\..\\b", "a\nb", "a\u007fb"])
+      expect(() => validKey(bad)).toThrow("invalid blob key");
+    expect(() => validKey("x".repeat(1025))).toThrow();
+    expect(validKey("a/%2e%2e/b")).toBe("a/%2e%2e/b");
+    const fsStore = new FsBlobStore(join(dir, "validkey"));
+    await fsStore.put("a/%2e%2e/b", "x");
+    expect(await fsStore.head("a/%2e%2e/b")).toMatchObject({ size: 1 });
+    await expect(fsStore.put("a/../../escape", "x")).rejects.toThrow("invalid blob key");
+    await expect(fsStore.put("a/b\u0000c", "x")).rejects.toThrow("invalid blob key");
     const stream = toStream("x");
     expect(toStream(stream)).toBe(stream);
     const hashed = hashing(new ArrayBuffer(2));

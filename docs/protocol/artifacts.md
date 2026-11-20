@@ -94,3 +94,19 @@ Before each chat turn (not schedules or groups), canvases whose latest version i
 Bot "Teste Canvas" (Sonnet 5.5): a 3-level mind map (17 boxes, radial) and an approval flow with a "Valor acima de R$ 500?" diamond (sim/não). PUT on the flow renamed "Pagamento" → "Pagar reembolso", moved "Análise do pedido" and added "Aprovação do gestor" → "Fim" ("recusa"): a new user version, a second PUT merged into it, and `artifact.updated` with `author:"user"` appeared on the thread. Next message: the bot called `canvas_read` (`editedByPerson` listed the rename, the new connection and the moves), then `canvas_update` with ops and kept every edit (v4, `author:"bot"`). Layout preview of v4: sim on the left, não on the right, 0 overlaps. Bot deleted with `POST /bots/teste-canvas/delete`. Mac build + `make-app.sh` signed "runelay bots Local".
 
 ---
+
+## v44 (20/11): conteúdo do usuário isolado (uploads, artefatos, exportações, navegador)
+
+`GET /bots/:id/artifacts/:artifactId/v/:n.html` ganhou duas diretivas no fim do CSP:
+
+```
+… form-action 'none'; base-uri 'none'; frame-ancestors 'self'; sandbox allow-scripts allow-downloads
+```
+
+Sem `allow-same-origin`, `allow-popups` nem `allow-top-navigation`: a página roda com origem opaca, então `localStorage`, `sessionStorage`, cookies e IndexedDB não existem, e `window.open('/health')` ou navegar o topo não saem do quadro. Os scripts e fontes dos CDNs liberados continuam carregando (o Google Fonts responde com CORS aberto). `window.slideCount`/`window.goToSlide` e o PDF do app seguem funcionando: o PDF é feito no Mac (`ArtifactPDFRenderer`, `evaluateJavaScript` do próprio WebKit), não no servidor. O guia do bot (`artifactGuide`) agora diz para não usar armazenamento nem popups.
+
+App: o visualizador cancela qualquer navegação cujo endereço (sem o fragmento) não seja o do próprio artefato; link clicado (`linkActivated`) só abre no navegador do sistema quando é `http`/`https`.
+
+### Verificado 20/11
+
+Por testes: `artifacts.test.ts` (11). Swift alterado sem build (o Mac precisa de `make-app.sh`).
