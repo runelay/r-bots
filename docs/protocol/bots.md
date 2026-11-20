@@ -141,3 +141,100 @@ Verified 19/11 with one turn: a new bot "Clima Teste" was created with only name
 - Deleted bots leave `GET /bots` unless `?deleted=1`, their schedules are unloaded, and they are dropped from other bots' delegation. New messages get `409 {"ok":false,"code":"bot_deleted","error":"Esse bot foi excluído."}`. Archive and unarchive work as before.
 
 ---
+
+---
+
+## v52 (20/11): o bot faz tudo o que a tela de Ajustes faz
+
+O bot passa a mudar, por conversa ou voz, o que antes só a tela mudava. As ferramentas novas ficam no MCP `bots` (`apps/server/src/modules/settings/services/settings-tools.service.ts`) e chamam os mesmos services das rotas da tela (`updateBot`, `updateSidebar`, `setArchived`, `createSection`/`updateSection`, `saveProfile`/`deleteProfile`, `saveSecretMeta`, `usageLimits`, `updateAccount`, `installCatalogItem`/`reconnectSource`), sem regra duplicada. `bot` aceita nome ou id (com ou sem acento); sem `bot`, é o próprio.
+
+### Ferramentas
+
+| Ferramenta | O que faz | Card |
+|---|---|---|
+| `settings_get({bot?})` | Estado completo do bot (conta e modelo com nome legível, esforço, conta reserva, `autoSwitch`, modo do bot, da conversa e efetivo, cor, rosto, seção, fixado, voz, rotinas com `paused`) e do time (contas com modelos, seções, perfis de servidor, repositórios liberados, segredos só com nome/descrição/sites, integrações, conectores, notificações e microfones, opções válidas) | nunca |
+| `bot_update({bot?, name?, role?, accent?, glyph?, account?, model?, effort?, fallback?, autoSwitch?, voice?, pinned?, section?, permission?, permissionScope?})` | Um só `PATCH` por área: `/bots/:id`, `/bots/:id/sidebar` e, para o próprio modo, a conversa atual (`permissionScope` `conversation`, padrão para o próprio bot) ou o padrão do bot (`bot`, sempre que o alvo é outro bot). Conta e modelo aceitam nome ("Claude Anderson", "Sonnet"); `effort:"auto"` volta ao padrão; `fallback:"off"` desliga a reserva; `section` que não existe é criada; `glyph` só aceita `auto`, `crown`, `visor`, `antenna`, `face-1`…`face-11` | só ao **subir** o modo |
+| `bot_archive({bot, archived})` | Arquiva ou restaura um bot | nunca |
+| `section_update({name, section?})` | Cria seção ou renomeia `section` | nunca |
+| `schedule_update({bot?, name, paused?, cron?, timezone?, prompt?, description?, rename?})` | Muda uma rotina existente. `paused:true` tira a rotina do agendador (o job some de `scheduledJobs` e `runFireJob` devolve `{skipped:"paused"}`); `false` devolve | nunca |
+| `schedule_run({bot?, name})` | Mesmo efeito de `POST /bots/:id/schedules/:nome/run` | nunca |
+| `server_profile_save({name, project?, path?, cwd?, script?, cmd?, port?})` / `server_profile_delete({profile})` | Perfis do "Rodar projeto" (`servers.profiles`). Mesmo nome atualiza | só com `cmd` livre (como o `server_start`) |
+| `repo_remove({repo})` | Tira da lista de liberados (`code_repos`) | nunca |
+| `vault_update_meta({name, description?, domains?})` | Descrição e sites de um segredo que já existe; nunca o valor | só ao liberar site novo ou "qualquer site" |
+| `usage_get({refresh?})` | Limites de cada conta (`/usage/limits`) | nunca |
+| `account_update({account, name?, isDefault?})` | Renomeia conta de IA ou marca como padrão | nunca |
+| `integration_setup({integration, reason})` | Abre o formulário seguro da integração (veja abaixo) | é o próprio formulário |
+| `connector_connect({service})` | Acha o serviço no catálogo da runelay e instala (ou refaz o login), mostrando o botão "Conectar" com o `authorizationUrl` oficial | nunca; o login é da pessoa |
+| `preferences_set({notifications?, microphone?})` | Notificações (`replies`, `approvals`, `routines`, `failures`) e microfone padrão do Mac (`system` volta ao do sistema) | nunca |
+
+`add_schedule` e `remove_schedule` deixaram de passar pelo Jev: rodam direto, como o resto. Em **Somente leitura** toda escrita dessas ferramentas é negada (`decision.outcome:"blocked"`), menos `bot_update` só com `permission`, que abre o card para a pessoa sair do modo. `settings_get` e `usage_get` são leitura e rodam em qualquer modo.
+
+### Regra de aprovação
+
+Tudo roda direto, inclusive mudança em outro bot. A exceção: **subir** o modo de permissão (`readonly < edit < default < full`), do próprio bot ou de outro, abre card humano. Não passa pelo Jev, abre mesmo em Acesso total e em rotina é negado. O motivo vai no card: "Subir o modo de permissão sempre passa por você: um texto lido numa página não pode dar mais acesso a um bot." Sem essa trava, uma instrução escondida numa página ou num anexo faria o bot se dar Acesso total. Baixar o modo roda direto. Dois casos já tinham card antes e continuam: perfil com `cmd` livre (senão `server_start profile:` furaria o card do `cmd`) e liberar segredo para site novo (v51).
+
+### Evento `settings.changed`
+
+Cada mudança emite, na conversa onde o bot trabalhou, uma linha para o app desenhar:
+
+```json
+{"type":"settings.changed","data":{"callId":"call_…","botId":"teste-ajustes","by":"bot","area":"bots","areas":["bots","usage"],"text":"Trocou para Claude Anderson · Sonnet 5.5","target":{"id":"teste-ajustes","name":"Teste Ajustes"},"thumbnail":{"kind":"bot","id":"teste-ajustes"},"otherBot":false,"undo":[{"method":"PATCH","path":"/bots/teste-ajustes","body":{"engine":{"account":"vps:claude","model":"claude-sonnet-5-5","effort":null,"autoSwitch":false}}}]}}
+```
+
+- `undo`: passos REST que voltam ao estado anterior, chamados pelo app no botão "Desfazer" com a sessão da pessoa (rotas de dono). Some quando não dá para desfazer (rodar rotina, tirar repositório, integração, conector).
+- `thumbnail.kind`: `bot`, `provider` (`claude`, `codex`), `connector` (ícone do catálogo) ou `integration`.
+- `action`: `{label:"Conectar", url}` no `connector_connect` com login pendente.
+- `otherBot:true` quando o alvo não é o próprio bot; o texto vem com o nome dele na frente.
+- O tool call concluído some do transcript no app; a linha fica no lugar dele.
+
+### Integração pelo formulário seguro
+
+`integration_setup` abre `interaction.opened` com `kind:"integration"`, `display:"integration_form"`, opções `approve` ("Salvar") e `deny` ("Agora não") e:
+
+```json
+"integration":{"id":"jev","name":"Jev","description":"…","unlocks":"Aprovações automáticas","keyUrl":"https://typesafe.ai","needsUrl":false,"url":null,"status":"invalid","path":"/integrations/jev"}
+```
+
+O app mostra o campo, chama `PUT /integrations/:id` com a chave (a mesma rota da tela, que confere e grava cifrado) e só então responde `approve`. O servidor confirma pelo `validatedAt` do registro: se mudou, `Configurou Jev`; se não, falha com "O formulário fechou sem salvar a chave". A chave nunca passa pelo bot, pelo evento nem pelo log.
+
+### Preferências do app no servidor
+
+Notificações e microfone eram só `UserDefaults`; agora têm cópia no servidor para o bot ler e mudar.
+
+- `GET /preferences` → `{"notifications":{"replies":true,"approvals":true,"routines":true,"failures":true},"microphone":null,"microphones":["MacBook Air Microphone"],"updatedAt":"…"}` (`no-store`).
+- `PATCH /preferences` (dono) com qualquer subconjunto de `notifications`, `microphone` (nome ou `null`) e `microphones` (lista que o app informa ao abrir). Campo desconhecido, notificação desconhecida ou tipo errado → 400 com `field`.
+- O app aplica ao abrir e a cada linha `preferences` do `/status/stream`, e manda `PATCH` quando a pessoa muda o interruptor ou o microfone.
+
+### `/status/stream`
+
+Duas linhas novas para o app refletir a mudança na hora, venha ela do bot ou de outro Mac:
+
+```json
+{"type":"settings","areas":["bots","usage"]}
+{"type":"preferences","preferences":{"notifications":{…},"microphone":"Shure MV7","microphones":[…],"updatedAt":"…"}}
+```
+
+`areas` ∈ `bots`, `sections`, `schedules`, `servers`, `repos`, `vault`, `accounts`, `usage`, `integrations`, `connectors`, `preferences`, `conversations`. O app recarrega só o que a área pede (lista de bots com animação, seções, contas, anéis de uso, perfis, cofre, integrações).
+
+### Campos novos no bot
+
+- `schedules[].paused` (opcional, `true` ou ausente).
+- `engine.autoSwitch` (opcional, `true` ou ausente): a pessoa deixou o bot trocar de modelo sozinho. Sem isso, o prompt manda sugerir em uma linha e só trocar quando pedirem.
+
+### Prompt
+
+Seção "Seus ajustes" no prompt de todo bot: pode se configurar e faz direto; chama `settings_get` antes de responder sobre si; subir o modo abre card; chave só por formulário; sugere outro modelo em uma linha e só troca se pedirem (ou sozinho com `autoSwitch`).
+
+### Verificado (20/11, produção, bot de teste "Teste Ajustes", Claude Sonnet 5.5)
+
+- "Em que modelo e conta você está…?" → `settings_get` e a resposta "Sonnet 5.5, conta Claude AppConty, modo Padrão".
+- "Troca para a conta Claude Anderson no Sonnet." → `bot_update {"account":"Claude Anderson","model":"Sonnet 5.5"}`, linha `Trocou para Claude Anderson · Sonnet 5.5`, `GET /bots/teste-ajustes` → `engine.account:"claude-2:claude"`. A volta para "Claude AppConty" rodou já na conta nova (`context.handoff`) e devolveu `engine.account:"vps:claude"`.
+- Rotina criada com `add_schedule` sem card; "Pausa a rotina Ronda de teste." → `schedule_update {"paused":true}`, linha `Pausou a rotina Ronda de teste`, `schedules[0].paused:true` e o log `schedules loaded` sem `schedule.teste-ajustes.Ronda%20de%20teste`; "Retoma" → a chave voltou `@2026-11-20T06:00:00.000Z`.
+- "Quais repositórios estão liberados?" → `settings_get` e a lista conty-api, perf-demo-teste, conty-whitelabel, conty3.0.
+- "Salva um perfil… conty-whitelabel, script dev, porta 4999." → `server_profile_save`, perfil `teste-ajustes-wl` em `GET /servers/profiles`. O passo do "Desfazer" (`DELETE /servers/profiles/teste-ajustes-wl`) → `200 {"ok":true}` e a lista voltou aos três perfis de antes.
+- "Quais segredos existem no cofre?" → `list_secrets` (só nomes: `x-login-senha`, `x-login-usuario`).
+- "Como estão os limites de uso?" → `usage_get` e a tabela das três contas.
+- "Muda seu nome para Teste Ajustes 2 e o rosto para a viseira, na cor verde." → `bot_update {"name":"Teste Ajustes 2","accent":"green","glyph":"visor"}`; o "Desfazer" (`PATCH` com `name`, `accent:"blue"`, `glyph:"auto"`) → 200 e o bot voltou.
+- "Sobe o modo desta conversa para Acesso total." → `interaction.opened` `kind:"approval"` "Posso subir o modo de permissão desta conversa de Padrão para Acesso total?", sem decisão do Jev (`outcome:"human"`, `model:null`). Negado → `call.settled outcome:"rejected"` e a conversa seguiu `effectivePermission:"default"`.
+- "Quero trocar a chave do Jev. Abre o formulário." → `integration_setup`, `interaction.opened` `kind:"integration"`, `display:"integration_form"`; respondido `deny` sem colar nada → "A pessoa preferiu não configurar agora."
+- "Remove a rotina… e arquiva o bot" → `remove_schedule` e `bot_archive`, `archivedAt` preenchido e a rotina fora do agendador.

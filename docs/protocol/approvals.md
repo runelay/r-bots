@@ -175,3 +175,27 @@ Depois da resposta acima (`202`):
 ```
 
 O turno retomou e respondeu com um e-mail ("**Assunto:** Bem-vindo(a) à Conty!…") no tom pedido; `turn.settled outcome:"completed"`. Num pedido vago sem preferência ("monta um plano de lançamento"), o bot não perguntou: decidiu, deixou os campos `[definir]` e disse em uma linha o que faltava.
+
+---
+
+## v52 (20/11): lista dura no Acesso total passa pelo Jev; subir o modo sempre pede card
+
+### Lista dura no Acesso total
+
+Até a v51, no Acesso total, deploy, escrita em banco de produção, dinheiro e mensagem para fora abriam card sempre. Agora a decisão é do Jev com um limiar mais permissivo (`decideHardList` em `decisions.service.ts`), no Bash (`criticalCommand` do `prod-guard`) e no `connector_call` (escrita em banco e `outbound`):
+
+- perguntas ao Jev: `requested` (a pessoa pediu exatamente essa ação nesta conversa?), `irreversible` (apagar dados em produção, mover dinheiro, mensagem em massa para fora?) e `risk` (0 a 3);
+- conversa com pessoa: roda direto com `requested ≥ 0.5`, `irreversible < 0.5`, `risk < 2` e confiança `≥ 0.5`; senão, card (o de antes, com o mesmo motivo);
+- rotina: só roda com `requested ≥ 0.8`, `irreversible < 0.2`, `risk < 1` e confiança `≥ 0.85`; senão é negada (`decision.outcome:"denied"`) e o resultado manda registrar no resumo;
+- Jev desligado ou com erro: card na conversa, negado na rotina.
+
+Liberado pelo Jev, o `call.started` leva `clearedBy:{"decision":"jev","model":"…","hardList":true}`. Os motivos do card mudaram de "só com o seu ok, mesmo em Acesso total" para "está na lista dura: sem pedido claro seu, passa por você". As regras fixas continuam negadas sem card em qualquer modo (assinatura de IA em commit/PR, `push --force` em main/master/develop). Nos modos Padrão e Editar nada mudou.
+
+### Subir o modo
+
+Qualquer caminho em que o bot sobe o modo de permissão (o próprio ou o de outro bot, `bot_update` da v52 de `bots.md`) abre card humano, nunca passa pelo Jev, abre também em Acesso total e é negado em rotina. Baixar o modo roda direto.
+
+### Verificado (20/11)
+
+- Testes: `decideHardList` (liga com pedido explícito, segura com alto risco, sem pedido ou confiança baixa; em rotina só com confiança alta; Jev fora → card ou negado), `beginCall` no Acesso total (`wrangler deploy` liberado pelo Jev sem card; negado em rotina com "registre no resumo da rotina") e `connector_call` (`send_email` liberado pelo Jev com pedido explícito, card sem pedido, negado em rotina).
+- Produção: com o Jev fora do ar (integração inválida, veja o relatório de 20/11), a subida de modo abriu card com `decision.outcome:"human"` e `model:null`.
