@@ -7,7 +7,7 @@ import { resetUsageTables } from "../../../../test/usage-helpers";
 import { getDb } from "../../../db";
 import { writeSetting } from "../../../db/settings";
 import { usageBuckets, usageCursors, usageSeen, usageSessions } from "../../../db/tables";
-import { UsageScanner } from "../services/usage-scan.service";
+import { noteSessionAccount, sessionAccount, UsageScanner } from "../services/usage-scan.service";
 
 const root = await mkdtemp(join(tmpdir(), "rb-usage-scan-"));
 let claudeRoot = "";
@@ -261,6 +261,25 @@ describe("snapshot cache", () => {
     await put(join(claudeRoot, "b.jsonl"), [claudeRecord()]);
     expect(await scanner.snapshot()).toBe(a);
     expect((await scanner.snapshot(0)).files).toBe(2);
+  });
+
+  test("credits a session to the account that ran it and forgets the oldest owners", async () => {
+    noteSessionAccount("", "x:claude");
+    expect(sessionAccount("")).toBeNull();
+    noteSessionAccount("dono", "claude-2:claude");
+    noteSessionAccount("codex-dono", "codex-2:codex");
+    await put(join(claudeRoot, "a.jsonl"), [claudeRecord({ sessionId: "dono" }), claudeRecord({ sessionId: "outra" })]);
+    await put(join(codexRoot, "r.jsonl"), [
+      { type: "session_meta", payload: { id: "codex-dono", timestamp: recent(5) } },
+      tokenCount(recent(4), [5, 0, 0, 1, 0]),
+    ]);
+    const snap = await scannerFor().snapshot();
+    expect(snap.rows.map((row) => row.a).sort()).toEqual(["claude-2:claude", "codex-2:codex", "vps:claude"]);
+    for (let i = 0; i < 5001; i++) noteSessionAccount(`s-${i}`, "vps:claude");
+    expect(sessionAccount("dono")).toBeNull();
+    expect(sessionAccount("s-5000")).toBe("vps:claude");
+    noteSessionAccount("s-1", "claude-2:claude");
+    expect(sessionAccount("s-1")).toBe("claude-2:claude");
   });
 
   test("keeps each account apart and reads rows saved before accounts existed", async () => {

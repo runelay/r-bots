@@ -50,6 +50,7 @@ import { canvasEditNote, canvasGuide } from "../../canvas/services/canvas.servic
 import { touchWorktree } from "../../code/repositories/code.repository";
 import { mentionedRepo, openTaskWorkspace } from "../../code/services/actions.service";
 import { codeModeSupported } from "../../code/services/code-tools.service";
+import { noteSessionAccount } from "../../usage/services/usage-scan.service";
 import { devServersOf } from "../../code/services/dev-server.service";
 import { nativeHooks } from "../../code/services/hooks.service";
 import { CodeLive } from "../../code/services/live-diff.service";
@@ -1455,8 +1456,10 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           needsRun = true;
         },
         onEvent: (event) => {
-          if (event.type === "session") providerSession = event.id;
-          else if ((event.type === "text" || event.type === "text.delta") && turn.steer?.length) return;
+          if (event.type === "session") {
+            providerSession = event.id;
+            noteSessionAccount(event.id, account.id);
+          } else if ((event.type === "text" || event.type === "text.delta") && turn.steer?.length) return;
           else if (event.type === "text.delta") {
             log.progress({
               type: "content.delta",

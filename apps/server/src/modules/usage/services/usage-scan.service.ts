@@ -60,6 +60,23 @@ interface ScanIndex {
 }
 
 const indexVersion = 1;
+const maxOwners = 5000;
+const sessionOwners = new Map<string, string>();
+
+export function noteSessionAccount(sessionId: string, account: string) {
+  if (!sessionId) return;
+  sessionOwners.delete(sessionId);
+  sessionOwners.set(sessionId, account);
+  while (sessionOwners.size > maxOwners) {
+    const oldest = sessionOwners.keys().next().value;
+    if (oldest === undefined) break;
+    sessionOwners.delete(oldest);
+  }
+}
+
+export function sessionAccount(sessionId: string) {
+  return sessionOwners.get(sessionId) ?? null;
+}
 const keepSeconds = 100 * 86_400;
 const emptyCounters = (): Counters => [0, 0, 0, 0, 0, 0, 0];
 
@@ -167,7 +184,7 @@ export class UsageScanner {
     }
   }
 
-  private claudeLine(index: ScanIndex, account: string, line: string) {
+  private claudeLine(index: ScanIndex, source: string, line: string) {
     if (!line.includes('"usage"')) return;
     let record: Record<string, unknown>;
     try {
@@ -187,6 +204,7 @@ export class UsageScanner {
       .digest("base64url")
       .slice(0, 12);
     if (index.seen[dedupe] !== undefined) return;
+    const account = sessionAccount(String(record.sessionId ?? "")) ?? source;
     index.seen[dedupe] = hour;
     this.changes.seen.add(dedupe);
     const creation = usage.cache_creation as Record<string, unknown> | undefined;
@@ -205,7 +223,7 @@ export class UsageScanner {
     this.session(index, account, "claude", String(record.sessionId ?? ""), hour, model);
   }
 
-  private codexLine(index: ScanIndex, account: string, state: CodexFileState, line: string) {
+  private codexLine(index: ScanIndex, source: string, state: CodexFileState, line: string) {
     let record: Record<string, unknown>;
     try {
       record = JSON.parse(line) as Record<string, unknown>;
@@ -257,6 +275,7 @@ export class UsageScanner {
     const hour = hourOf(record.timestamp as string | undefined);
     if (hour === null) return;
     const model = state.model || "codex";
+    const account = sessionAccount(state.session) ?? source;
     const uncached = Math.max(0, delta[0] - delta[1] - delta[2]);
     this.add(index, account, hour, "codex", model, state.speed, [
       uncached,

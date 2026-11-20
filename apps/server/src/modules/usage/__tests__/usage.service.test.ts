@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, jest, spyOn, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, symlink } from "node:fs/promises";
 import * as os from "node:os";
 import { join } from "node:path";
 import { fakeProviders, resetData } from "../../../../test/helpers";
@@ -455,11 +455,26 @@ describe("usageSummary", () => {
     expect(bia.totals).toMatchObject({ input: 7, requests: 1, sessions: 1, costUsd: 7 });
     expect(bia.accounts.map((item) => item.id)).toEqual(["claude-2:claude"]);
     expect(bia.detail[0]).toMatchObject({ account: "claude-2:claude", model: "claude-a" });
+    await rm(join(home, ".claude-2", "projects"), { recursive: true, force: true });
+    await symlink(join(home, ".claude", "projects"), join(home, ".claude-2", "projects"));
+    expect((await service.usageSources()).map((source) => source.account)).toEqual([
+      "vps:claude+claude-2:claude",
+      "vps:codex",
+    ]);
+    await writeFixture(
+      join(home, ".claude", "projects", "p", "c.jsonl"),
+      `${claudeLine(now - 3_600_000, "claude-a", { input_tokens: 3 }, "s-shared")}\n`,
+    );
+    const shared = await (await fresh()).usageSummary("30d", null, null);
+    expect(shared.accounts.find((item) => item.id === "vps:claude+claude-2:claude")).toMatchObject({
+      label: "Claude + Claude Bia",
+      processed: 3,
+    });
     await rm(join(home, ".claude-2"), { recursive: true, force: true });
     await discover();
     const gone = await (await fresh()).usageSummary("30d", null, null);
     expect(gone.accounts.map((item) => [item.id, item.label])).toContainEqual(["claude-2:claude", "claude-2:claude"]);
-    expect(gone.accounts.at(-1)?.id).toBe("claude-2:claude");
+    expect(gone.accounts.slice(-2).map((item) => item.id)).toEqual(["claude-2:claude", "vps:claude+claude-2:claude"]);
     expect(summary.totals).toEqual({
       processed: 23 + 2 + 5 + 21 + 7,
       input: 10 + 1 + 5 + 20 + 7,

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { readSetting, writeSetting } from "../../../db/settings";
 import {
@@ -71,14 +71,35 @@ async function usageAccounts() {
   return (await listAccounts()).filter((account) => usageProviders.includes(account.provider));
 }
 
+async function physical(path: string) {
+  try {
+    return await realpath(path);
+  } catch {
+    return path;
+  }
+}
+
 export async function usageSources(): Promise<UsageSource[]> {
   const accounts = await usageAccounts();
-  return accounts.flatMap((account) => {
+  const groups = new Map<string, UsageSource>();
+  for (const account of accounts) {
     const dir = accountPath(account.id);
-    if (!dir) return [];
+    if (!dir) continue;
     const provider = account.provider as UsageProvider;
-    return [{ account: account.id, provider, root: join(dir, provider === "claude" ? "projects" : "sessions") }];
-  });
+    const root = join(dir, provider === "claude" ? "projects" : "sessions");
+    const key = await physical(root);
+    const shared = groups.get(key);
+    if (shared) shared.account = `${shared.account}+${account.id}`;
+    else groups.set(key, { account: account.id, provider, root });
+  }
+  return [...groups.values()];
+}
+
+function labelOf(id: string, known: Account[]) {
+  return id
+    .split("+")
+    .map((part) => known.find((item) => item.id === part)?.label ?? part)
+    .join(" + ");
 }
 
 const scanner = new UsageScanner(usageSources);
@@ -455,8 +476,7 @@ export async function usageSummary(rangeKey: string, provider: string | null, ac
   const accountEntry = (id: string, p: UsageProvider) => {
     let entry = perAccount.get(id);
     if (!entry) {
-      const found = known.find((item) => item.id === id);
-      entry = { id, provider: p, label: found?.label ?? id, processed: 0, requests: 0, sessions: 0, costUsd: 0 };
+      entry = { id, provider: p, label: labelOf(id, known), processed: 0, requests: 0, sessions: 0, costUsd: 0 };
       perAccount.set(id, entry);
     }
     return entry;
