@@ -484,14 +484,8 @@ private struct OrDivider: View {
 
 private struct SignInBadge: View {
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(Theme.surface.opacity(0.7))
-                .frame(width: 84, height: 84)
-            RunelayAppMark(size: 58)
-                .softElevation(lifted: true)
-        }
-        .accessibilityHidden(true)
+        RunelayAppMark(size: 76)
+            .accessibilityHidden(true)
     }
 }
 
