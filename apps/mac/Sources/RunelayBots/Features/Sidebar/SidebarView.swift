@@ -997,6 +997,30 @@ struct ConversationRow: View {
         isHovering && !isRenaming
     }
 
+    private var displayTitle: String {
+        var title = conversation.title
+        while title.hasPrefix("↳") {
+            title = String(title.dropFirst()).trimmingCharacters(in: .whitespaces)
+        }
+        return title.isEmpty ? conversation.title : title
+    }
+
+    private var actions: some View {
+        HStack(spacing: 0) {
+            if let toggleChildren {
+                RowActionButton(
+                    systemImage: childrenCollapsed ? "chevron.right" : "chevron.down",
+                    help: childrenCollapsed ? "Mostrar secundárias" : "Recolher secundárias",
+                    action: toggleChildren
+                )
+            }
+            RowActionButton(systemImage: "pencil", help: "Renomear", action: startRename)
+            if let archive {
+                RowActionButton(systemImage: "archivebox", help: "Arquivar", action: archive)
+            }
+        }
+    }
+
     var body: some View {
         Button(action: select) {
             HStack(spacing: ConversationTree.iconGap) {
@@ -1015,7 +1039,7 @@ struct ConversationRow: View {
                         .onExitCommand(perform: cancelRename)
                         .onAppear { renameFocused = true }
                 } else {
-                    Text(conversation.title)
+                    Text(displayTitle)
                         .font(TypeScale.rowSubtitle)
                         .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
                         .lineLimit(1)
@@ -1028,6 +1052,10 @@ struct ConversationRow: View {
                         .help(conversation.repoName ?? "")
                 }
                 Spacer(minLength: Spacing.xs)
+                if showsActions {
+                    actions
+                        .hidden()
+                }
                 if !showsActions {
                     if childrenCollapsed && childCount > 0 {
                         Text("+\(childCount)")
@@ -1066,21 +1094,9 @@ struct ConversationRow: View {
         .clickable()
         .overlay(alignment: .trailing) {
             if showsActions {
-                HStack(spacing: 0) {
-                    if let toggleChildren {
-                        RowActionButton(
-                            systemImage: childrenCollapsed ? "chevron.right" : "chevron.down",
-                            help: childrenCollapsed ? "Mostrar secundárias" : "Recolher secundárias",
-                            action: toggleChildren
-                        )
-                    }
-                    RowActionButton(systemImage: "pencil", help: "Renomear", action: startRename)
-                    if let archive {
-                        RowActionButton(systemImage: "archivebox", help: "Arquivar", action: archive)
-                    }
-                }
-                .padding(.trailing, Spacing.xs)
-                .transition(.opacity)
+                actions
+                    .padding(.trailing, Spacing.xs)
+                    .transition(.opacity)
             }
         }
         .overlay(alignment: .topLeading) {
