@@ -474,6 +474,7 @@ struct ServerMeta: Sendable, Decodable {
     var engineLabel: String? {
         switch engine {
         case "claude-agent-sdk": "Claude · assinatura"
+        case "multi-provider": "Vários provedores"
         case "eve": "eve"
         case .some(let value): value
         case .none: nil

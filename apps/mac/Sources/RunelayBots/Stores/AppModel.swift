@@ -435,6 +435,9 @@ final class AppModel {
             syncConversations(from: list)
             syncUnread(from: list)
             connection = .online(list.count)
+            if !metaLoaded {
+                applyMeta(await client.meta())
+            }
             if let selectedBotID, list.contains(where: { $0.id == selectedBotID }) {
                 selectBot(selectedBotID)
             } else if let first = sortedBots.first {
@@ -1996,7 +1999,13 @@ final class AppModel {
         isRefreshing = true
         defer { isRefreshing = false }
         await loadGroups()
+        let clock = ContinuousClock()
+        let started = clock.now
         guard let list = try? await client.bots() else { return }
+        lastLatencyMs = Self.milliseconds(started.duration(to: clock.now))
+        if !metaLoaded {
+            applyMeta(await client.meta())
+        }
         let fresh = list.filter { !$0.isArchived }
         let pending = loadedBots.filter(\.isPending)
         bots = .loaded(fresh + pending)
