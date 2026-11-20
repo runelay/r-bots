@@ -71,7 +71,7 @@ struct IconRail: View {
     private func help(for section: AppSection) -> String {
         switch section {
         case .conversations: "Conversas (⌥⌘1)"
-        case .git: "Git (⌥⌘2)"
+        case .git: "GitHub (⌥⌘2)"
         case .linear: "Linear (⌥⌘3)"
         default: section.title
         }

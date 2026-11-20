@@ -420,7 +420,7 @@ private struct LinearCardView: View {
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     if let assignee = card.assignee {
-                        RemoteAvatar(url: nil, name: assignee, size: 18)
+                        RemoteAvatar(url: store.avatar(for: assignee), name: assignee, size: 18)
                     }
                 }
             }

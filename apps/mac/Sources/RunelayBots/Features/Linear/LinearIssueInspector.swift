@@ -195,15 +195,30 @@ private struct LinearIssueContent: View {
             PropertyRow(label: "Responsável") {
                 if let assignee = card.assignee {
                     HStack(spacing: 6) {
-                        RemoteAvatar(url: nil, name: assignee, size: 18)
+                        RemoteAvatar(url: store.avatar(for: assignee), name: assignee, size: 18)
                         Text(assignee).propertyValue()
                     }
                 } else {
                     Text("Ninguém").propertyValue(muted: true)
                 }
             }
+            if let creator = detail.createdBy {
+                PropertyRow(label: "Criada por") {
+                    HStack(spacing: 6) {
+                        RemoteAvatar(url: store.avatar(for: creator), name: creator, size: 18)
+                        Text(creator).propertyValue()
+                    }
+                }
+            }
             if let team = card.team {
-                PropertyRow(label: "Time") { Text(team).propertyValue() }
+                PropertyRow(label: "Time") {
+                    HStack(spacing: 6) {
+                        if let view = store.views.first(where: { $0.kind == "team" && $0.name == team }) {
+                            LinearViewIcon(view: view, size: 14)
+                        }
+                        Text(team).propertyValue()
+                    }
+                }
             }
             if let project = card.project {
                 PropertyRow(label: "Projeto") {
@@ -341,7 +356,7 @@ private struct LinearChildRow: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if let assignee = card.assignee {
-                    RemoteAvatar(url: nil, name: assignee, size: 16)
+                    RemoteAvatar(url: LinearStore.shared.avatar(for: assignee), name: assignee, size: 16)
                 }
             }
             .padding(.horizontal, Spacing.s)
@@ -406,7 +421,7 @@ private struct LinearCommentView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.s) {
-            RemoteAvatar(url: nil, name: comment.author, size: 24)
+            RemoteAvatar(url: LinearStore.shared.avatar(for: comment.author), name: comment.author, size: 24)
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 HStack(spacing: 5) {
                     Text(comment.author)

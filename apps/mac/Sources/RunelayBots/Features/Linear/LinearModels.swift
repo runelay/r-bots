@@ -43,6 +43,18 @@ struct LNProjectsReply: Decodable, Sendable {
     let projects: [LNProject]
 }
 
+struct LNUser: Decodable, Hashable, Identifiable, Sendable {
+    let id: String
+    let name: String
+    let displayName: String?
+    let email: String?
+    let avatarUrl: String?
+}
+
+struct LNUsersReply: Decodable, Sendable {
+    let users: [LNUser]
+}
+
 struct LNViewsReply: Decodable, Sendable {
     let views: [LNView]
 }

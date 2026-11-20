@@ -13,6 +13,10 @@ extension BotsClient {
         try await boardRequest("/linear/labels", as: LNLabelsReply.self).labels
     }
 
+    func linearUsers() async throws -> [LNUser] {
+        try await boardRequest("/linear/users", as: LNUsersReply.self).users
+    }
+
     func linearProjects() async throws -> [LNProject] {
         try await boardRequest("/linear/projects", as: LNProjectsReply.self).projects
     }
@@ -68,6 +72,7 @@ final class LinearStore {
     private(set) var summary: LNSummary?
     private(set) var labels: [LNLabel] = []
     private(set) var projects: [LNProject] = []
+    private(set) var users: [LNUser] = []
     private(set) var labelFilter = UserDefaults.standard.string(forKey: "linear.label")
     private(set) var projectFilter = UserDefaults.standard.string(forKey: "linear.project")
     private(set) var summaryError: String?
@@ -88,6 +93,14 @@ final class LinearStore {
         return LinearPalette.color(hex: labels.first { $0.name.lowercased() == lowered }?.color)
     }
 
+    func avatar(for name: String?) -> String? {
+        guard let name, !name.isEmpty else { return nil }
+        let lowered = name.lowercased()
+        return users.first {
+            $0.name.lowercased() == lowered || $0.displayName?.lowercased() == lowered || $0.email?.lowercased() == lowered
+        }?.avatarUrl
+    }
+
     func project(named name: String) -> LNProject? {
         projects.first { $0.name == name }
     }
@@ -96,8 +109,10 @@ final class LinearStore {
         guard let client else { return }
         async let loadedLabels = try? client.linearLabels()
         async let loadedProjects = try? client.linearProjects()
+        async let loadedUsers = try? client.linearUsers()
         if let value = await loadedLabels { labels = value }
         if let value = await loadedProjects { projects = value }
+        if let value = await loadedUsers { users = value }
     }
 
     func setLabelFilter(_ name: String?) {
@@ -123,7 +138,7 @@ final class LinearStore {
     }
 
     func start() async {
-        if labels.isEmpty || projects.isEmpty { Task { await loadCatalogs() } }
+        if labels.isEmpty || projects.isEmpty || users.isEmpty { Task { await loadCatalogs() } }
         if views.isEmpty { await loadViews(refresh: false) }
         if phase == .idle || cards.isEmpty { await load() }
     }

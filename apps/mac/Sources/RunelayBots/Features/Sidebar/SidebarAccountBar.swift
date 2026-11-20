@@ -43,7 +43,7 @@ struct SidebarAccountBar: View {
             .onHover { isHovering = $0 }
             .springAnimation(value: isHovering)
             .springAnimation(value: model.launcherPresented)
-            .help("Atalhos: Git, Linear, Agenda e mais")
+            .help("Atalhos: GitHub, Linear, Agenda e mais")
             .accessibilityLabel("Atalhos")
         }
         .padding(.horizontal, Spacing.l)

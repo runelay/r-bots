@@ -13,7 +13,7 @@ enum LauncherDestination: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .git: "Git"
+        case .git: "GitHub"
         case .linear: "Linear"
         case .agenda: "Agenda"
         case .notes: "Notas e planilhas"

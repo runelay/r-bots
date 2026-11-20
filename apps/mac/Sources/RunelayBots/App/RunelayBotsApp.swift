@@ -234,7 +234,7 @@ struct AppCommands: Commands {
                 model.go(to: .conversations)
             }
             .keyboardShortcut("1", modifiers: [.command, .option])
-            Button("Git") {
+            Button("GitHub") {
                 model.go(to: .git)
             }
             .keyboardShortcut("2", modifiers: [.command, .option])

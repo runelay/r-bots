@@ -101,7 +101,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .routines: "Rotinas"
         case .connectors: "Conectores"
         case .usage: "Uso"
-        case .git: "Git"
+        case .git: "GitHub"
         case .linear: "Linear"
         }
     }
