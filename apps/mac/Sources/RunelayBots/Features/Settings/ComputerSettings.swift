@@ -5,42 +5,28 @@ struct ComputerSettings: View {
     private let activity = ComputerExecutor.shared.activity
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xl) {
-            Text("Bots com \"Seu Mac\" ligado podem ver a tela, clicar, digitar e mexer em arquivos nas pastas que você liberou. Toda ação passa pela sua aprovação ou pela do Jev, e o botão Parar aparece no topo da tela enquanto um bot age.")
-                .font(TypeScale.rowSubtitle)
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
+        VStack(alignment: .leading, spacing: Spacing.l) {
             SettingsGroup(caption: "Permissões do macOS") {
                 ForEach(ComputerPermission.allCases) { permission in
                     ComputerPermissionRow(permission: permission, isGranted: activity.permissions.isGranted(permission))
                 }
             }
 
-            SettingsGroup(caption: "Executor local") {
-                SettingsRow(title: "Estado", detail: executorDetail) {
-                    HStack(spacing: Spacing.s) {
-                        Image(systemName: "circle.fill")
-                            .font(.system(size: 8))
-                            .foregroundStyle(executorColor)
-                        Text(executorLabel)
-                            .font(TypeScale.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
+            SettingsGroup(caption: "Neste Mac") {
+                SettingsRow(title: "Executor local", icon: SettingsIcon("bolt.fill", SettingsTint.amber), info: executorInfo) {
+                    SettingsPill(text: executorLabel, color: executorColor, pulsing: isStarting)
                 }
-                SettingsRow(title: "Gravações", detail: "Os vídeos que os bots gravam ficam em ~/Movies/runelay bots.") {
-                    Button("Mostrar no Finder") {
+                SettingsRow(title: "Gravações", icon: SettingsIcon("film.fill", SettingsTint.red), info: "Os vídeos que os bots gravam ficam em ~/Movies/runelay bots.") {
+                    Button {
                         let folder = ScreenRecorder.folder
                         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                         NSWorkspace.shared.activateFileViewerSelecting([folder])
+                    } label: {
+                        Label("Mostrar no Finder", systemImage: "folder")
                     }
-                    .buttonStyle(.brandSecondary)
+                    .buttonStyle(SettingsButtonStyle(kind: .plain))
                 }
             }
-
-            Text("Depois de reinstalar o app, o macOS pode pedir as permissões de novo.")
-                .font(TypeScale.caption)
-                .foregroundStyle(Theme.textTertiary)
         }
         .springAnimation(value: activity.permissions)
         .task {
@@ -51,6 +37,11 @@ struct ComputerSettings: View {
         }
     }
 
+    private var isStarting: Bool {
+        if case .starting = activity.executor { return true }
+        return false
+    }
+
     private var executorLabel: String {
         switch activity.executor {
         case .starting: "Iniciando"
@@ -59,7 +50,7 @@ struct ComputerSettings: View {
         }
     }
 
-    private var executorDetail: String {
+    private var executorInfo: String {
         switch activity.executor {
         case .starting, .running: "Recebe as ações dos bots pela conexão com o servidor."
         case .failed(let message): message
@@ -79,22 +70,30 @@ struct ComputerPermissionRow: View {
     let permission: ComputerPermission
     let isGranted: Bool
 
+    private var icon: SettingsIcon {
+        switch permission {
+        case .accessibility: SettingsIcon("accessibility", SettingsTint.blue)
+        case .screenRecording: SettingsIcon("record.circle", SettingsTint.red)
+        case .automation: SettingsIcon("gearshape.2.fill", SettingsTint.graphite)
+        }
+    }
+
     var body: some View {
-        SettingsRow(title: permission.title, detail: permission.detail) {
-            HStack(spacing: Spacing.m) {
-                HStack(spacing: Spacing.xs + 2) {
-                    Image(systemName: isGranted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(isGranted ? Theme.success : Theme.warning)
-                    Text(isGranted ? "Liberada" : "Falta liberar")
-                        .font(TypeScale.captionStrong)
-                        .foregroundStyle(isGranted ? Theme.textSecondary : Theme.textPrimary)
+        SettingsRow(title: permission.title, icon: icon, info: permission.detail) {
+            HStack(spacing: Spacing.s) {
+                SettingsPill(text: isGranted ? "Liberada" : "Falta", color: isGranted ? Theme.success : Theme.warning)
+                if !isGranted {
+                    Button("Liberar") {
+                        Task { await ComputerPermissionsSnapshot.request(permission) }
+                    }
+                    .buttonStyle(SettingsButtonStyle(kind: .primary))
+                    .transition(.opacity)
                 }
-                .contentTransition(.opacity)
-                Button(isGranted ? "Abrir Ajustes" : "Liberar") {
-                    Task { await ComputerPermissionsSnapshot.request(permission) }
-                }
-                .buttonStyle(BrandButtonStyle(kind: isGranted ? .secondary : .primary))
+            }
+        }
+        .contextMenu {
+            Button("Abrir nos Ajustes do Sistema", systemImage: "gearshape") {
+                Task { await ComputerPermissionsSnapshot.request(permission) }
             }
         }
     }

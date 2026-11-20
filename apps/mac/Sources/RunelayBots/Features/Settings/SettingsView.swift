@@ -1,106 +1,400 @@
 import SwiftUI
 
+enum SettingsRoute: Hashable {
+    case profile(String)
+    case addProfile
+
+    @MainActor
+    var title: String {
+        switch self {
+        case .profile(let id): ServerProfiles.shared.profile(id: id)?.name ?? "Servidor"
+        case .addProfile: "Adicionar servidor"
+        }
+    }
+}
+
+@MainActor
+@Observable
+final class SettingsNavigator {
+    var path: [SettingsRoute] = []
+
+    func push(_ route: SettingsRoute) {
+        path.append(route)
+    }
+
+    func pop() {
+        _ = path.popLast()
+    }
+}
+
+enum SettingsSectionGroup: Int, CaseIterable, Identifiable {
+    case account
+    case app
+    case automation
+    case about
+
+    var id: Int { rawValue }
+
+    var title: String {
+        switch self {
+        case .account: "Conta e servidor"
+        case .app: "App"
+        case .automation: "Bots e automação"
+        case .about: "Sobre"
+        }
+    }
+}
+
+enum SettingsTint {
+    static let blue = Color(red: 0.04, green: 0.48, blue: 0.98)
+    static let graphite = Color(red: 0.46, green: 0.47, blue: 0.5)
+    static let slate = Color(red: 0.2, green: 0.21, blue: 0.24)
+    static let red = Color(red: 0.96, green: 0.27, blue: 0.27)
+    static let orange = Color(red: 0.98, green: 0.52, blue: 0.13)
+    static let purple = Color(red: 0.6, green: 0.36, blue: 0.93)
+    static let green = Color(red: 0.2, green: 0.74, blue: 0.4)
+    static let teal = Color(red: 0.1, green: 0.68, blue: 0.78)
+    static let indigo = Color(red: 0.36, green: 0.38, blue: 0.94)
+    static let amber = Color(red: 0.95, green: 0.65, blue: 0.1)
+    static let pink = Color(red: 0.93, green: 0.3, blue: 0.55)
+}
+
+extension SettingsSection {
+    var group: SettingsSectionGroup {
+        switch self {
+        case .server, .account, .devices: .account
+        case .appearance, .notifications, .shortcuts: .app
+        case .bots, .computer, .integrations: .automation
+        case .about: .about
+        }
+    }
+
+    var tileSymbol: String {
+        switch self {
+        case .server: "server.rack"
+        case .account: "person.crop.circle.fill"
+        case .appearance: "circle.lefthalf.filled"
+        case .notifications: "bell.badge.fill"
+        case .bots: "person.2.fill"
+        case .computer: "cursorarrow.rays"
+        case .integrations: "puzzlepiece.extension.fill"
+        case .shortcuts: "command"
+        case .about: "info"
+        case .devices: "laptopcomputer.and.iphone"
+        }
+    }
+
+    var tileColor: Color {
+        switch self {
+        case .server: SettingsTint.blue
+        case .account: SettingsTint.graphite
+        case .appearance: SettingsTint.slate
+        case .notifications: SettingsTint.red
+        case .bots: SettingsTint.orange
+        case .computer: SettingsTint.purple
+        case .integrations: SettingsTint.green
+        case .shortcuts: SettingsTint.graphite
+        case .about: SettingsTint.graphite
+        case .devices: SettingsTint.teal
+        }
+    }
+
+    var keywords: [String] {
+        switch self {
+        case .server: ["perfil", "endereço", "local", "vps", "conexão", "latência", "motor", "modelo", "padrão"]
+        case .account: ["senha", "foto", "sair", "login", "primeiros passos"]
+        case .appearance: ["tema", "escuro", "claro", "movimento", "texto", "fonte"]
+        case .notifications: ["avisos", "respostas", "aprovações", "rotinas", "erros"]
+        case .bots: ["arquivados", "ocultos", "excluídos", "restaurar", "novo bot", "editar"]
+        case .computer: ["acessibilidade", "gravação de tela", "automação", "permissões", "executor", "gravações"]
+        case .integrations: ["elevenlabs", "jev", "chave", "voz", "runelay"]
+        case .shortcuts: ["teclado", "voz", "microfone", "atalho"]
+        case .about: ["versão", "app"]
+        case .devices: ["mac", "aparelhos", "conectar", "desconectar"]
+        }
+    }
+
+    var info: String? {
+        switch self {
+        case .server: "Cada servidor guarda o próprio login neste Mac. Trocar de servidor recarrega o app sem misturar bots, conversas e caches. Atalho: ⌃⌘1 a ⌃⌘9."
+        case .computer: "Bots com \"Seu Mac\" ligado podem ver a tela, clicar, digitar e mexer nas pastas liberadas. O botão Parar aparece no topo da tela enquanto um bot age. Depois de reinstalar o app, o macOS pode pedir as permissões de novo."
+        case .integrations: "Serviços opcionais. Os bots funcionam sem eles; cada chave liga uma parte a mais. A chave fica cifrada no servidor e nunca volta para o app."
+        case .notifications: "O número no ícone do Dock mostra o total de mensagens não lidas."
+        default: nil
+        }
+    }
+
+    func matches(_ query: String) -> String? {
+        let needle = query.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        guard !needle.isEmpty else { return nil }
+        func folded(_ text: String) -> String {
+            text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        }
+        if folded(title).contains(needle) { return "" }
+        return keywords.first { folded($0).contains(needle) }
+    }
+}
+
 struct SettingsScreen: View {
     @Environment(AppModel.self) private var model
     @Environment(\.appReduceMotion) private var reduceMotion
+    @State private var navigator = SettingsNavigator()
+    @State private var query = ""
+
+    private var visibleSections: [(SettingsSectionGroup, [(SettingsSection, String?)])] {
+        SettingsSectionGroup.allCases.compactMap { group in
+            let items: [(SettingsSection, String?)] = SettingsSection.allCases
+                .filter { $0.group == group }
+                .compactMap { section in
+                    if query.isEmpty { return (section, nil) }
+                    guard let hit = section.matches(query) else { return nil }
+                    return (section, hit.isEmpty ? nil : hit)
+                }
+            return items.isEmpty ? nil : (group, items)
+        }
+    }
 
     var body: some View {
         HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text("Ajustes")
-                    .font(TypeScale.pageTitle)
-                    .tracking(Metrics.pageTitleTracking)
-                    .foregroundStyle(Theme.textPrimary)
-                    .padding(.horizontal, Spacing.m)
-                    .padding(.bottom, Spacing.l)
-                ForEach(SettingsSection.allCases) { section in
-                    SettingsNavRow(section: section, isSelected: model.settingsSection == section) {
-                        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                            model.settingsSection = section
-                        }
-                        if section == .bots {
-                            Task {
-                                await model.loadArchived()
-                                await model.loadExtraBots()
-                            }
-                        }
-                    }
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, Spacing.s)
-            .padding(.top, Spacing.xl)
-            .frame(width: 236)
-            .frame(maxHeight: .infinity)
-            .background(Theme.sidebarBackground)
+            sidebar
+                .frame(width: 232)
+                .frame(maxHeight: .infinity)
+                .background(Theme.sidebarBackground)
 
             VStack(spacing: 0) {
-                HStack {
-                    Spacer(minLength: 0)
-                    RoundIconButton(systemImage: "xmark", help: "Fechar ajustes (Esc)") {
-                        model.closeSettings()
-                    }
-                }
-                .padding(.horizontal, Spacing.xl)
-                .padding(.top, Spacing.l)
-                .frame(height: 52)
-
+                header
                 ScrollView {
-                    PageContainer(maxWidth: 860) {
-                        VStack(alignment: .leading, spacing: Spacing.xl) {
-                            Text(model.settingsSection.title)
-                                .font(TypeScale.pageTitle)
-                                .tracking(Metrics.pageTitleTracking)
-                                .foregroundStyle(Theme.textPrimary)
-                            switch model.settingsSection {
-                            case .server: ServerSettings()
-                            case .account: AccountSettings()
-                            case .appearance: AppearanceSettings()
-                            case .notifications: NotificationSettings()
-                            case .bots: BotsSettings()
-                            case .computer: ComputerSettings()
-                            case .devices: DevicesSettings()
-                            case .integrations: IntegrationsSettings()
-                            case .shortcuts: ShortcutsSettings()
-                            case .about: AboutSettings()
-                            }
-                        }
-                        .id(model.settingsSection)
-                        .transition(.opacity)
+                    VStack(alignment: .leading, spacing: Spacing.l) {
+                        titleLine
+                        content
                     }
+                    .frame(maxWidth: 660, alignment: .leading)
+                    .padding(.horizontal, Spacing.xxl)
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.bottom, Spacing.xxl)
+                    .id(contentID)
+                    .transition(.opacity)
                 }
                 .scrollEdgesHidden()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.background)
         }
+        .environment(navigator)
         .background {
             Button("Fechar") {
-                model.closeSettings()
+                if navigator.path.isEmpty {
+                    model.closeSettings()
+                } else {
+                    navigator.pop()
+                }
             }
             .keyboardShortcut(.cancelAction)
             .opacity(0)
             .accessibilityHidden(true)
         }
-        .springAnimation(value: model.settingsSection)
+        .springAnimation(value: contentID)
+        .onChange(of: model.settingsSection) {
+            navigator.path = []
+        }
+    }
+
+    private var contentID: String {
+        "\(model.settingsSection.rawValue)|\(navigator.path.last.map { "\($0)" } ?? "")"
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSearchField(text: $query)
+                .padding(.horizontal, Spacing.m)
+                .padding(.top, Spacing.xl + Spacing.s)
+                .padding(.bottom, Spacing.m)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Spacing.m) {
+                    ForEach(visibleSections, id: \.0) { group, items in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(group.title)
+                                .font(BrandFonts.sans(11, weight: .semibold))
+                                .foregroundStyle(Theme.textTertiary)
+                                .padding(.horizontal, Spacing.s + 2)
+                                .padding(.bottom, Spacing.xxs)
+                            ForEach(items, id: \.0) { section, hit in
+                                SettingsNavRow(section: section, hit: hit, isSelected: model.settingsSection == section) {
+                                    select(section)
+                                }
+                            }
+                        }
+                    }
+                    if visibleSections.isEmpty {
+                        Text("Nada encontrado")
+                            .font(TypeScale.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                            .padding(.horizontal, Spacing.s + 2)
+                    }
+                }
+                .padding(.horizontal, Spacing.s)
+                .padding(.bottom, Spacing.l)
+            }
+            .scrollEdgesHidden()
+        }
+    }
+
+    private func select(_ section: SettingsSection) {
+        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+            model.settingsSection = section
+            navigator.path = []
+        }
+        if section == .bots {
+            Task {
+                await model.loadArchived()
+                await model.loadExtraBots()
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: Spacing.s) {
+            if !navigator.path.isEmpty {
+                Button {
+                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                        navigator.pop()
+                    }
+                } label: {
+                    HStack(spacing: Spacing.xs) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(navigator.path.count > 1 ? navigator.path[navigator.path.count - 2].title : model.settingsSection.title)
+                            .font(TypeScale.captionStrong)
+                    }
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(.horizontal, Spacing.s)
+                    .frame(height: 26)
+                    .background(Theme.surface, in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(PressableButtonStyle())
+                .clickable()
+                .help("Voltar (Esc)")
+                .transition(.opacity)
+            }
+            Spacer(minLength: 0)
+            RoundIconButton(systemImage: "xmark", help: "Fechar ajustes", size: 28) {
+                model.closeSettings()
+            }
+        }
+        .padding(.horizontal, Spacing.l)
+        .padding(.top, Spacing.m)
+        .frame(height: 48)
+    }
+
+    private var titleLine: some View {
+        HStack(spacing: Spacing.s) {
+            if navigator.path.isEmpty {
+                SettingsTile(symbol: model.settingsSection.tileSymbol, color: model.settingsSection.tileColor, size: 26)
+            }
+            Text(navigator.path.last?.title ?? model.settingsSection.title)
+                .font(BrandFonts.sans(20, weight: .semibold))
+                .tracking(-0.3)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+            if navigator.path.isEmpty, let info = model.settingsSection.info {
+                SettingsInfoButton(text: info)
+            }
+            Spacer(minLength: 0)
+            if navigator.path.isEmpty, model.settingsSection == .bots {
+                Button {
+                    model.openEditor(for: nil)
+                } label: {
+                    Label("Novo bot", systemImage: "plus")
+                }
+                .buttonStyle(SettingsButtonStyle(kind: .primary))
+            }
+        }
+        .padding(.bottom, Spacing.xs)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let route = navigator.path.last {
+            switch route {
+            case .profile(let id): ServerProfileEditor(profileID: id)
+            case .addProfile: ServerProfileEditor(profileID: nil)
+            }
+        } else {
+            switch model.settingsSection {
+            case .server: ServerSettings()
+            case .account: AccountSettings()
+            case .appearance: AppearanceSettings()
+            case .notifications: NotificationSettings()
+            case .bots: BotsSettings()
+            case .computer: ComputerSettings()
+            case .devices: DevicesSettings()
+            case .integrations: IntegrationsSettings()
+            case .shortcuts: ShortcutsSettings()
+            case .about: AboutSettings()
+            }
+        }
     }
 }
 
-struct PageContainer<Content: View>: View {
-    var maxWidth: CGFloat = Metrics.pageWidth
-    @ViewBuilder let content: Content
+struct SettingsSearchField: View {
+    @Binding var text: String
+    @FocusState private var focused: Bool
 
     var body: some View {
-        content
-            .frame(maxWidth: maxWidth, alignment: .leading)
-            .padding(.horizontal, Spacing.xxl + Spacing.xs)
-            .frame(maxWidth: .infinity, alignment: .center)
+        HStack(spacing: Spacing.xs + 2) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Theme.textTertiary)
+            TextField("Buscar", text: $text)
+                .textFieldStyle(.plain)
+                .font(TypeScale.rowSubtitle)
+                .focused($focused)
+                .onKeyPress(.escape) {
+                    guard !text.isEmpty else { return .ignored }
+                    text = ""
+                    return .handled
+                }
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.textTertiary)
+                }
+                .buttonStyle(PressableButtonStyle())
+                .clickable()
+                .help("Limpar busca")
+            }
+        }
+        .padding(.horizontal, Spacing.s + 2)
+        .frame(height: 28)
+        .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+    }
+}
+
+struct SettingsTile: View {
+    let symbol: String
+    let color: Color
+    var size: CGFloat = 20
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.52, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(color.gradient, in: RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
+            .shadow(color: Theme.elevationShadow, radius: 1, y: 0.5)
+            .accessibilityHidden(true)
     }
 }
 
 struct SettingsNavRow: View {
     let section: SettingsSection
+    var hit: String?
     let isSelected: Bool
     let select: () -> Void
 
@@ -108,74 +402,284 @@ struct SettingsNavRow: View {
 
     var body: some View {
         Button(action: select) {
-            HStack(spacing: Spacing.m) {
-                Image(systemName: section.systemImage)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(isSelected ? Theme.brandText : Theme.textSecondary)
-                    .frame(width: 18)
-                Text(section.title)
-                    .font(TypeScale.rowTitle)
-                    .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+            HStack(spacing: Spacing.s + 1) {
+                SettingsTile(symbol: section.tileSymbol, color: section.tileColor)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(section.title)
+                        .font(BrandFonts.sans(13, weight: isSelected ? .semibold : .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    if let hit {
+                        Text(hit.prefix(1).uppercased() + hit.dropFirst())
+                            .font(BrandFonts.sans(11))
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, Spacing.m)
-            .frame(height: 38)
-            .background(isSelected ? Theme.selection : (isHovering ? Theme.hover : Theme.sidebarBackground), in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+            .padding(.horizontal, Spacing.s - 2)
+            .frame(height: hit == nil ? 30 : 38)
+            .background(isSelected ? Theme.selection : (isHovering ? Theme.hover : Color.clear), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
         }
         .buttonStyle(.plain)
         .clickable()
-        .onHover { hovering in
-            isHovering = hovering
-        }
+        .onHover { isHovering = $0 }
         .springAnimation(value: isHovering)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
 struct SettingsGroup<Content: View>: View {
-    let caption: String
+    var caption: String?
+    var trailing: AnyView?
     @ViewBuilder let content: Content
 
+    init(caption: String? = nil, @ViewBuilder content: () -> Content) {
+        self.caption = caption
+        self.trailing = nil
+        self.content = content()
+    }
+
+    init<Trailing: View>(caption: String?, @ViewBuilder trailing: () -> Trailing, @ViewBuilder content: () -> Content) {
+        self.caption = caption
+        self.trailing = AnyView(trailing())
+        self.content = content()
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.s) {
-            Text(caption)
-                .font(TypeScale.sectionCaption)
-                .foregroundStyle(Theme.textSecondary)
+        VStack(alignment: .leading, spacing: Spacing.xs + 2) {
+            if caption != nil || trailing != nil {
+                HStack(spacing: Spacing.s) {
+                    if let caption {
+                        Text(caption)
+                            .font(BrandFonts.sans(12, weight: .semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer(minLength: 0)
+                    trailing
+                }
                 .padding(.horizontal, Spacing.xs)
+                .frame(minHeight: 20)
+            }
             VStack(alignment: .leading, spacing: 0) {
                 content
             }
+            .padding(.vertical, Spacing.xxs)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .shadow(color: Theme.elevationShadow, radius: 2, y: 1)
         }
+    }
+}
+
+struct SettingsIcon: Equatable {
+    let symbol: String
+    let color: Color
+
+    init(_ symbol: String, _ color: Color) {
+        self.symbol = symbol
+        self.color = color
     }
 }
 
 struct SettingsRow<Trailing: View>: View {
     let title: String
+    var icon: SettingsIcon?
     var detail: String?
+    var info: String?
     @ViewBuilder let trailing: Trailing
 
     var body: some View {
-        HStack(spacing: Spacing.m) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(TypeScale.rowTitle)
-                    .foregroundStyle(Theme.textPrimary)
-                if let detail {
+        HStack(spacing: Spacing.s + 2) {
+            if let icon {
+                SettingsTile(symbol: icon.symbol, color: icon.color)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: Spacing.xs) {
+                    Text(title)
+                        .font(BrandFonts.sans(13, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                    if let info {
+                        SettingsInfoButton(text: info)
+                    }
+                }
+                if let detail, !detail.isEmpty {
                     Text(detail)
-                        .font(TypeScale.caption)
+                        .font(BrandFonts.sans(11.5))
                         .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: Spacing.m)
             trailing
         }
-        .padding(.horizontal, Spacing.l)
-        .padding(.vertical, Spacing.m)
-        .frame(minHeight: 52)
+        .padding(.horizontal, Spacing.m)
+        .padding(.vertical, Spacing.xs + 2)
+        .frame(minHeight: 40)
+    }
+}
+
+struct SettingsLinkRow<Trailing: View>: View {
+    let title: String
+    var icon: SettingsIcon?
+    var detail: String?
+    let action: () -> Void
+    @ViewBuilder var trailing: Trailing
+
+    @State private var isHovering = false
+
+    var body: some View {
+        SettingsRow(title: title, icon: icon, detail: detail) {
+            HStack(spacing: Spacing.s) {
+                trailing
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .background(isHovering ? Theme.hover : Color.clear, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .padding(.horizontal, Spacing.xxs)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: action)
+        .onHover { isHovering = $0 }
+        .clickable()
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { action() }
+    }
+}
+
+extension SettingsLinkRow where Trailing == EmptyView {
+    init(title: String, icon: SettingsIcon? = nil, detail: String? = nil, action: @escaping () -> Void) {
+        self.init(title: title, icon: icon, detail: detail, action: action) { EmptyView() }
+    }
+}
+
+struct SettingsInfoButton: View {
+    let text: String
+    @State private var shown = false
+
+    var body: some View {
+        Button {
+            shown.toggle()
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.textTertiary)
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .clickable()
+        .help(text)
+        .popover(isPresented: $shown, arrowEdge: .bottom) {
+            Text(text)
+                .font(TypeScale.caption)
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 260, alignment: .leading)
+                .padding(Spacing.m)
+        }
+    }
+}
+
+struct SettingsPill: View {
+    let text: String
+    let color: Color
+    var pulsing = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+                .symbolEffect(.pulse, options: .repeating, isActive: pulsing)
+            Text(text)
+                .font(BrandFonts.sans(11, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, Spacing.s)
+        .frame(height: 20)
+        .background(color.opacity(0.12), in: Capsule())
+        .contentTransition(.opacity)
+    }
+}
+
+struct SettingsValue: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(BrandFonts.sans(12.5))
+            .foregroundStyle(Theme.textSecondary)
+            .lineLimit(1)
+            .contentTransition(.numericText())
+    }
+}
+
+struct SettingsButtonStyle: ButtonStyle {
+    enum Kind {
+        case plain
+        case primary
+        case destructive
+    }
+
+    let kind: Kind
+
+    func makeBody(configuration: Configuration) -> some View {
+        SettingsButtonBody(kind: kind, configuration: configuration)
+    }
+}
+
+private struct SettingsButtonBody: View {
+    let kind: SettingsButtonStyle.Kind
+    let configuration: ButtonStyleConfiguration
+    @State private var isHovering = false
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        configuration.label
+            .labelStyle(SettingsButtonLabelStyle())
+            .font(BrandFonts.sans(12, weight: .medium))
+            .foregroundStyle(foreground)
+            .padding(.horizontal, Spacing.s + 2)
+            .frame(height: 24)
+            .background(background, in: Capsule())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+            .contentShape(Capsule())
+            .onHover { isHovering = $0 }
+            .clickable()
+            .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .plain: Theme.textPrimary
+        case .primary: Theme.onAccent
+        case .destructive: Theme.danger
+        }
+    }
+
+    private var background: Color {
+        switch kind {
+        case .plain: isHovering ? Theme.selection : Theme.surfaceRaised
+        case .primary: isHovering ? Theme.brandAccent.opacity(0.88) : Theme.brandAccent
+        case .destructive: Theme.danger.opacity(isHovering ? 0.16 : 0.1)
+        }
+    }
+}
+
+private struct SettingsButtonLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            configuration.icon
+                .font(.system(size: 10, weight: .semibold))
+            configuration.title
+        }
     }
 }
 
@@ -208,150 +712,49 @@ struct ChoicePills<Option: Hashable & Identifiable>: View {
     }
 }
 
-struct ServerSettings: View {
-    @Environment(AppModel.self) private var model
-    @AppStorage(ServerConfig.storageKey) private var serverURL = ServerConfig.defaultURL
-    @State private var appliedURL: String = UserDefaults.standard.string(forKey: ServerConfig.storageKey) ?? ServerConfig.defaultURL
-    @State private var busy: ServerAction?
-    @State private var feedback: String?
-
-    private enum ServerAction {
-        case connect
-        case test
-    }
-
-    private var isOffline: Bool {
-        if case .offline = model.connection { return true }
-        return false
-    }
-
-    private var canConnect: Bool {
-        busy == nil && (serverURL != appliedURL || isOffline)
-    }
-
-    private func run(_ action: ServerAction) {
-        busy = action
-        feedback = nil
-        if action == .connect {
-            model.serverURLChanged()
-            appliedURL = serverURL
-        }
-        Task {
-            let started = Date()
-            await model.checkConnection()
-            let elapsed = Date().timeIntervalSince(started)
-            if elapsed < 0.45 {
-                try? await Task.sleep(for: .milliseconds(Int((0.45 - elapsed) * 1000)))
-            }
-            busy = nil
-            switch model.connection {
-            case .online(let count):
-                let latency = model.lastLatencyMs.map { " em \($0) ms" } ?? ""
-                feedback = action == .connect ? "Conectado, \(count) bots" : "Respondeu\(latency)"
-            case .offline(let message):
-                feedback = "Sem resposta: \(message)"
-            default:
-                feedback = nil
-            }
-            try? await Task.sleep(for: .seconds(4))
-            feedback = nil
-        }
-    }
-
-    private func actionLabel(_ title: String, for action: ServerAction) -> some View {
-        HStack(spacing: Spacing.xs + 2) {
-            if busy == action {
-                ProgressView()
-                    .controlSize(.small)
-            }
-            Text(title)
-        }
-    }
+struct SettingsSegmented<Option: Hashable & Identifiable>: View {
+    let options: [Option]
+    @Binding var selection: Option
+    let title: (Option) -> String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xl) {
-            SettingsGroup(caption: "Endereço") {
-                VStack(alignment: .leading, spacing: Spacing.m) {
-                    TextField("Servidor", text: $serverURL, prompt: Text(ServerConfig.defaultURL))
-                        .textFieldStyle(.plain)
-                        .font(TypeScale.body)
-                        .autocorrectionDisabled()
-                        .padding(.horizontal, Spacing.m)
-                        .padding(.vertical, Spacing.s + 2)
-                        .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-                        .onSubmit {
-                            run(.connect)
-                        }
-                    HStack(spacing: Spacing.s) {
-                        if let feedback, busy == nil {
-                            Text(feedback)
-                                .font(TypeScale.rowSubtitle)
-                                .foregroundStyle(isOffline ? Theme.danger : Theme.textSecondary)
-                                .transition(.opacity)
-                        } else {
-                            ConnectionStatusLine(status: model.connection)
-                        }
-                        Spacer(minLength: Spacing.s)
-                        if serverURL != ServerConfig.defaultURL {
-                            Button("Usar o padrão") {
-                                serverURL = ServerConfig.defaultURL
-                                run(.connect)
-                            }
-                            .buttonStyle(.brandSecondary)
-                            .transition(.opacity)
-                        }
-                        if canConnect || busy == .connect {
-                            Button {
-                                run(.connect)
-                            } label: {
-                                actionLabel(isOffline && serverURL == appliedURL ? "Reconectar" : "Conectar", for: .connect)
-                            }
-                            .buttonStyle(.brandPrimary)
-                            .disabled(busy != nil)
-                            .transition(.opacity)
-                        }
-                    }
-                    .springAnimation(value: canConnect)
-                    .springAnimation(value: feedback)
-                    .springAnimation(value: serverURL == ServerConfig.defaultURL)
+        HStack(spacing: 2) {
+            ForEach(options) { option in
+                let isSelected = option == selection
+                Button {
+                    selection = option
+                } label: {
+                    Text(title(option))
+                        .font(BrandFonts.sans(11.5, weight: .medium))
+                        .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+                        .padding(.horizontal, Spacing.s + 2)
+                        .frame(height: 22)
+                        .background(isSelected ? Theme.background : Color.clear, in: Capsule())
+                        .shadow(color: isSelected ? Theme.elevationShadow : .clear, radius: 1.5, y: 0.5)
+                        .contentShape(Capsule())
                 }
-                .padding(Spacing.l)
-            }
-
-            SettingsGroup(caption: "Conexão") {
-                SettingsRow(title: "Motor", detail: nil) {
-                    Text(model.meta.engineLabel ?? (model.metaLoaded ? "Não informado" : "Indisponível"))
-                        .font(TypeScale.rowSubtitle)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                SettingsRow(title: "Modelo", detail: nil) {
-                    Text(model.meta.model.map(ModelNames.pretty) ?? "Indisponível")
-                        .font(TypeScale.rowSubtitle)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                SettingsRow(title: "Este Mac", detail: nil) {
-                    MacLinkStatus(state: RunnerConnection.shared.state)
-                }
-                SettingsRow(title: "Latência", detail: "Tempo da última leitura da lista de bots.") {
-                    Text(model.lastLatencyMs.map { "\($0) ms" } ?? "–")
-                        .font(TypeScale.counter)
-                        .foregroundStyle(Theme.textSecondary)
-                        .contentTransition(.numericText())
-                }
-                HStack {
-                    Spacer(minLength: 0)
-                    Button {
-                        run(.test)
-                    } label: {
-                        actionLabel("Testar conexão", for: .test)
-                    }
-                    .buttonStyle(.brandSecondary)
-                    .disabled(busy != nil)
-                }
-                .padding(.horizontal, Spacing.l)
-                .padding(.bottom, Spacing.l)
+                .buttonStyle(.plain)
+                .clickable()
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
+        .padding(2)
+        .background(Theme.surfaceRaised, in: Capsule())
+        .springAnimation(value: selection)
+    }
+}
+
+struct SettingsToggle: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Toggle(title, isOn: $isOn)
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .labelsHidden()
+            .tint(Theme.brandAccent)
+            .clickable()
     }
 }
 
@@ -361,9 +764,9 @@ struct AppearanceSettings: View {
     @AppStorage(PreferenceKeys.textSize) private var textSize = ConversationTextSize.regular.rawValue
 
     var body: some View {
-        SettingsGroup(caption: "Aparência do app") {
-            SettingsRow(title: "Tema", detail: "Claro, escuro ou igual ao macOS.") {
-                ChoicePills(
+        SettingsGroup {
+            SettingsRow(title: "Tema", icon: SettingsIcon("circle.lefthalf.filled", SettingsTint.slate)) {
+                SettingsSegmented(
                     options: AppearancePreference.allCases,
                     selection: Binding(
                         get: { AppearancePreference(rawValue: appearance) ?? .system },
@@ -372,8 +775,8 @@ struct AppearanceSettings: View {
                     title: \.title
                 )
             }
-            SettingsRow(title: "Reduzir movimento", detail: "Troca molas e ondas por transições curtas.") {
-                ChoicePills(
+            SettingsRow(title: "Reduzir movimento", icon: SettingsIcon("wind", SettingsTint.teal), info: "Troca molas e ondas por transições curtas.") {
+                SettingsSegmented(
                     options: MotionPreference.allCases,
                     selection: Binding(
                         get: { MotionPreference(rawValue: motion) ?? .system },
@@ -382,8 +785,8 @@ struct AppearanceSettings: View {
                     title: \.title
                 )
             }
-            SettingsRow(title: "Texto da conversa", detail: "Tamanho das mensagens e respostas.") {
-                ChoicePills(
+            SettingsRow(title: "Texto da conversa", icon: SettingsIcon("textformat.size", SettingsTint.indigo)) {
+                SettingsSegmented(
                     options: ConversationTextSize.allCases,
                     selection: Binding(
                         get: { ConversationTextSize(rawValue: textSize) ?? .regular },
@@ -396,185 +799,41 @@ struct AppearanceSettings: View {
     }
 }
 
-struct BotsSettings: View {
-    @Environment(AppModel.self) private var model
-    @State private var archiving: Bot?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xl) {
-            HStack {
-                Spacer(minLength: 0)
-                Button {
-                    model.openEditor(for: nil)
-                } label: {
-                    Label("Novo bot", systemImage: "plus")
-                }
-                .buttonStyle(.brandPrimary)
-            }
-
-            SettingsGroup(caption: "No time") {
-                ForEach(model.loadedBots) { bot in
-                    SettingsBotRow(bot: bot) {
-                        AutoApproveToggle(bot: bot, compact: true)
-                        Button("Editar") {
-                            model.openEditor(for: bot)
-                        }
-                        .buttonStyle(.brandSecondary)
-                        .disabled(bot.isPending)
-                        Button("Arquivar") {
-                            archiving = bot
-                        }
-                        .buttonStyle(.plain)
-                        .font(TypeScale.captionStrong)
-                        .foregroundStyle(Theme.danger)
-                        .clickable()
-                        .disabled(bot.isPending)
-                    }
-                    .transition(.opacity)
-                }
-                if model.loadedBots.isEmpty {
-                    Text("Nenhum bot no time.")
-                        .font(TypeScale.rowSubtitle)
-                        .foregroundStyle(Theme.textTertiary)
-                        .padding(Spacing.l)
-                }
-            }
-            .springAnimation(value: model.loadedBots.map(\.id))
-
-            if case .loaded(let extra) = model.extraBots, !extra.isEmpty {
-                SettingsGroup(caption: "Ocultos e excluídos") {
-                    ForEach(extra) { bot in
-                        SettingsBotRow(bot: bot, mood: .sleeping) {
-                            if bot.isDeleted {
-                                Button("Restaurar") {
-                                    model.restoreDeleted(bot)
-                                }
-                                .buttonStyle(.brandPrimary)
-                            } else {
-                                Button("Mostrar") {
-                                    model.showHidden(bot)
-                                }
-                                .buttonStyle(.brandSecondary)
-                            }
-                        }
-                        .transition(.opacity)
-                    }
-                }
-            }
-
-            SettingsGroup(caption: "Arquivados") {
-                switch model.archivedBots {
-                case .idle, .loading:
-                    SkeletonRow(width: 180)
-                        .padding(.horizontal, Spacing.s)
-                case .failed(let message):
-                    Text(message)
-                        .font(TypeScale.rowSubtitle)
-                        .foregroundStyle(Theme.textTertiary)
-                        .padding(Spacing.l)
-                case .loaded(let list):
-                    if list.isEmpty {
-                        Text("Nenhum bot arquivado.")
-                            .font(TypeScale.rowSubtitle)
-                            .foregroundStyle(Theme.textTertiary)
-                            .padding(Spacing.l)
-                    } else {
-                        ForEach(list) { bot in
-                            SettingsBotRow(bot: bot, mood: .sleeping) {
-                                Button("Restaurar") {
-                                    model.restore(bot)
-                                }
-                                .buttonStyle(.brandPrimary)
-                            }
-                            .transition(.opacity)
-                        }
-                    }
-                }
-            }
-        }
-        .confirmationDialog(
-            "Arquivar \(archiving?.name ?? "bot")?",
-            isPresented: Binding(get: { archiving != nil }, set: { if !$0 { archiving = nil } })
-        ) {
-            Button("Arquivar", role: .destructive) {
-                if let archiving {
-                    model.archive(archiving)
-                }
-                archiving = nil
-            }
-            Button("Cancelar", role: .cancel) {
-                archiving = nil
-            }
-        } message: {
-            Text("Ele some da lista. Dá para restaurar aqui em Arquivados.")
-        }
-    }
-}
-
-struct SettingsBotRow<Actions: View>: View {
-    let bot: Bot
-    var mood: CharacterMood = .idle
-    @ViewBuilder let actions: Actions
-
-    var body: some View {
-        HStack(spacing: Spacing.m) {
-            BotCharacter(bot: bot, mood: mood, size: 36)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(bot.name)
-                    .font(TypeScale.rowTitle)
-                    .foregroundStyle(Theme.textPrimary)
-                Text(bot.role.isEmpty ? "Sem função" : bot.role)
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: Spacing.m)
-            actions
-        }
-        .padding(.horizontal, Spacing.l)
-        .padding(.vertical, Spacing.s + 2)
-        .frame(minHeight: Metrics.rowHeight)
-    }
-}
-
 struct ShortcutsSettings: View {
-    private let shortcuts: [(String, String)] = [
-        ("Escrever mensagem", "⌘N"),
-        ("Enviar mensagem", "⌘↩"),
-        ("Limpar o campo de mensagem", "Esc"),
-        ("Novo bot", "⇧⌘N"),
-        ("Mostrar ou ocultar o painel", "⌥⌘I"),
-        ("Ajustes", "⌘,"),
-        ("Fechar janela aberta por cima", "Esc"),
-        ("Falar com o bot (segure)", "⌥Espaço")
+    private let shortcuts: [(String, String, String)] = [
+        ("Escrever mensagem", "square.and.pencil", "⌘N"),
+        ("Enviar mensagem", "paperplane.fill", "⌘↩"),
+        ("Limpar o campo de mensagem", "delete.left.fill", "Esc"),
+        ("Novo bot", "plus", "⇧⌘N"),
+        ("Mostrar ou ocultar o painel", "sidebar.right", "⌥⌘I"),
+        ("Trocar de servidor", "server.rack", "⌃⌘1…9"),
+        ("Ajustes", "gearshape.fill", "⌘,"),
+        ("Fechar janela aberta por cima", "xmark", "Esc"),
+        ("Falar com o bot (segure)", "mic.fill", "⌥Espaço")
     ]
     @AppStorage(VoicePreferenceKeys.autoSend) private var voiceAutoSend = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xl) {
+        VStack(alignment: .leading, spacing: Spacing.l) {
             SettingsGroup(caption: "Voz") {
-                SettingsRow(title: "Enviar ao terminar de falar", detail: "Manda a mensagem sozinha depois de 1,2 s de silêncio.") {
-                    Toggle("Enviar ao terminar de falar", isOn: $voiceAutoSend)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                        .tint(Theme.brandAccent)
-                        .clickable()
+                SettingsRow(title: "Enviar ao terminar de falar", icon: SettingsIcon("waveform", SettingsTint.red), info: "Manda a mensagem sozinha depois de 1,2 s de silêncio.") {
+                    SettingsToggle(title: "Enviar ao terminar de falar", isOn: $voiceAutoSend)
                 }
                 MicrophonePicker { _ in
                     VoiceCall.shared.microphoneChanged()
                 }
-                .padding(.horizontal, Spacing.m)
-                .padding(.vertical, Spacing.s)
+                .padding(.horizontal, Spacing.s)
+                .padding(.vertical, Spacing.xxs)
             }
             SettingsGroup(caption: "Teclado") {
                 ForEach(shortcuts, id: \.0) { shortcut in
-                    SettingsRow(title: shortcut.0, detail: nil) {
-                        Text(shortcut.1)
+                    SettingsRow(title: shortcut.0, icon: SettingsIcon(shortcut.1, SettingsTint.graphite)) {
+                        Text(shortcut.2)
                             .font(TypeScale.counter)
                             .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, Spacing.s + 2)
-                            .frame(height: 26)
-                            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
+                            .padding(.horizontal, Spacing.s)
+                            .frame(height: 22)
+                            .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
                 }
             }
@@ -584,37 +843,38 @@ struct ShortcutsSettings: View {
 
 struct AboutSettings: View {
     @Environment(AppModel.self) private var model
+    private let profiles = ServerProfiles.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xl) {
+        VStack(alignment: .leading, spacing: Spacing.l) {
             HStack(alignment: .center, spacing: Spacing.s + 2) {
                 RunelayAppMark(size: 36)
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    RunelayWordmark(height: 26)
-                    Text("bots")
-                        .font(BrandFonts.sans(19, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-            SettingsGroup(caption: "Versões") {
-                SettingsRow(title: "App", detail: "runelay bots para Mac") {
-                    Text(AppInfo.version)
-                        .font(TypeScale.counter)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                SettingsRow(title: "Servidor", detail: model.meta.engineLabel) {
-                    Text(model.meta.version ?? "Não informado")
-                        .font(TypeScale.counter)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-            SettingsGroup(caption: "Servidor") {
-                SettingsRow(title: ServerConfig.currentURL().host() ?? "Servidor", detail: ServerConfig.currentURL().absoluteString) {
-                    Link(destination: ServerConfig.currentURL()) {
-                        Label("Abrir no navegador", systemImage: "arrow.up.right")
-                            .font(TypeScale.captionStrong)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        RunelayWordmark(height: 20)
+                        Text("bots")
+                            .font(BrandFonts.sans(15, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
                     }
-                    .clickable()
+                    Text("Versão \(AppInfo.version)")
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            }
+            SettingsGroup {
+                SettingsRow(title: "App para Mac", icon: SettingsIcon("macwindow", SettingsTint.graphite)) {
+                    SettingsValue(text: AppInfo.version)
+                }
+                if let version = model.meta.version {
+                    SettingsRow(title: "Servidor", icon: SettingsIcon("server.rack", SettingsTint.blue)) {
+                        SettingsValue(text: version)
+                    }
+                }
+                SettingsRow(title: profiles.active.name, icon: SettingsIcon(profiles.active.symbol, Theme.accent(profiles.active.color)), detail: ServerConfig.currentURL().absoluteString) {
+                    Link(destination: ServerConfig.currentURL()) {
+                        Label("Abrir", systemImage: "arrow.up.right")
+                    }
+                    .buttonStyle(SettingsButtonStyle(kind: .plain))
                 }
             }
         }
@@ -652,18 +912,17 @@ struct NotificationSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             if !Notifier.shared.isAvailable {
-                Text("As notificações funcionam no app instalado (RunelayBots.app).")
-                    .font(TypeScale.rowSubtitle)
-                    .foregroundStyle(Theme.textSecondary)
+                SettingsGroup {
+                    SettingsRow(title: "Só no app instalado", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: "As notificações funcionam no RunelayBots.app.") {
+                        EmptyView()
+                    }
+                }
             }
             SettingsGroup(caption: "Avisar quando") {
                 ForEach(NotificationPreference.allCases) { preference in
                     NotificationToggleRow(preference: preference)
                 }
             }
-            Text("O número no ícone do Dock mostra o total de mensagens não lidas.")
-                .font(TypeScale.caption)
-                .foregroundStyle(Theme.textTertiary)
         }
     }
 }
@@ -677,13 +936,18 @@ struct NotificationToggleRow: View {
         _isOn = AppStorage(wrappedValue: true, preference.key)
     }
 
+    private var icon: SettingsIcon {
+        switch preference {
+        case .replies: SettingsIcon("bubble.left.fill", SettingsTint.blue)
+        case .approvals: SettingsIcon("checkmark.shield.fill", SettingsTint.orange)
+        case .routines: SettingsIcon("clock.fill", SettingsTint.purple)
+        case .failures: SettingsIcon("exclamationmark.octagon.fill", SettingsTint.red)
+        }
+    }
+
     var body: some View {
-        SettingsRow(title: preference.title, detail: preference.detail) {
-            Toggle(preference.title, isOn: $isOn)
-                .toggleStyle(.switch)
-                .labelsHidden()
-                .tint(Theme.brandAccent)
-                .clickable()
+        SettingsRow(title: preference.title, icon: icon, info: preference.detail) {
+            SettingsToggle(title: preference.title, isOn: $isOn)
         }
     }
 }
@@ -692,20 +956,20 @@ struct MacLinkStatus: View {
     let state: RunnerLinkState
 
     var body: some View {
-        HStack(spacing: Spacing.s) {
-            Image(systemName: "circle.fill")
-                .font(.system(size: 8))
-                .foregroundStyle(color)
-                .symbolEffect(.pulse, options: .repeating, isActive: state == .connecting)
-            Text(label)
-                .font(TypeScale.caption)
-                .foregroundStyle(Theme.textSecondary)
-                .lineLimit(2)
-        }
-        .springAnimation(value: state)
+        SettingsPill(text: label, color: color, pulsing: state == .connecting)
+            .help(help)
+            .springAnimation(value: state)
     }
 
     private var label: String {
+        switch state {
+        case .connecting: "Conectando"
+        case .connected: "Conectado"
+        case .offline: "Desconectado"
+        }
+    }
+
+    private var help: String {
         switch state {
         case .connecting: "Conectando o Mac ao servidor…"
         case .connected: "Mac conectado ao servidor"
@@ -719,5 +983,17 @@ struct MacLinkStatus: View {
         case .connected: Theme.success
         case .offline: Theme.warning
         }
+    }
+}
+
+struct PageContainer<Content: View>: View {
+    var maxWidth: CGFloat = Metrics.pageWidth
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content
+            .frame(maxWidth: maxWidth, alignment: .leading)
+            .padding(.horizontal, Spacing.xxl + Spacing.xs)
+            .frame(maxWidth: .infinity, alignment: .center)
     }
 }

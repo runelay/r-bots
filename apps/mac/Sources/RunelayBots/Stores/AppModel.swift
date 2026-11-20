@@ -149,7 +149,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .server: "Servidor"
+        case .server: "Servidores"
         case .account: "Conta"
         case .appearance: "Aparência"
         case .notifications: "Notificações"

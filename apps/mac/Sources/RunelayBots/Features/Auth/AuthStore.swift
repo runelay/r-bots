@@ -19,11 +19,32 @@ enum AuthStore {
     }
 
     private static func account(_ kind: AuthSecret, server: URL) -> String? {
-        origin(of: server).map { "\($0)|\(kind.rawValue)" }
+        account(kind, origin: origin(of: server), scope: ServerConfig.keychainScope(for: server))
+    }
+
+    private static func account(_ kind: AuthSecret, origin: String?, scope: String?) -> String? {
+        guard let origin else { return nil }
+        let base = "\(origin)|\(kind.rawValue)"
+        return scope.map { "profile:\($0)|\(base)" } ?? base
+    }
+
+    static func read(_ kind: AuthSecret, profile: ServerProfile) -> String? {
+        account(kind, origin: profile.origin, scope: profile.keychainScope).flatMap(read(account:))
+    }
+
+    static func removeAll(profile: ServerProfile) {
+        for kind in [AuthSecret.session, .runner, .device] {
+            if let account = account(kind, origin: profile.origin, scope: profile.keychainScope) {
+                remove(account: account)
+            }
+        }
     }
 
     static func read(_ kind: AuthSecret, server: URL = ServerConfig.currentURL()) -> String? {
-        guard let account = account(kind, server: server) else { return nil }
+        account(kind, server: server).flatMap(read(account:))
+    }
+
+    private static func read(account: String) -> String? {
         if let cached = cache.withLock({ $0[account] }) {
             return cached.isEmpty ? nil : cached
         }
@@ -60,6 +81,10 @@ enum AuthStore {
 
     static func remove(_ kind: AuthSecret, server: URL = ServerConfig.currentURL()) {
         guard let account = account(kind, server: server) else { return }
+        remove(account: account)
+    }
+
+    private static func remove(account: String) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
