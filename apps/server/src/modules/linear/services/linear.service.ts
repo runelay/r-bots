@@ -11,7 +11,7 @@ export class LinearError extends Error {
   }
 }
 
-export type ViewKind = "mine" | "team" | "view";
+export type ViewKind = "mine" | "team" | "view" | "project";
 
 export interface TeamRef {
   id: string;
@@ -26,6 +26,25 @@ export interface LinearView {
   description: string | null;
   team: TeamRef | null;
   url: string | null;
+  icon: string | null;
+  color: string | null;
+}
+
+export interface LinearLabel {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+export interface LinearProject {
+  id: string;
+  name: string;
+  icon: string | null;
+  color: string | null;
+  url: string | null;
+  summary: string | null;
+  state: string | null;
+  stateType: string | null;
 }
 
 export interface LinearState {
@@ -65,6 +84,8 @@ export interface LinearCard {
 
 export interface Board {
   view: LinearView;
+  label: string | null;
+  project: string | null;
   columns: BoardColumn[];
   issues: LinearCard[];
   nextCursor: string | null;
@@ -194,11 +215,19 @@ function teamOf(value: unknown): TeamRef | null {
   return { id, key: str(raw.key) ?? "", name: str(raw.name) ?? str(raw.displayName) ?? "" };
 }
 
-async function pages(tool: string, args: Json, key: string, max = 5) {
+export function linearTool(tool: string, args: Json) {
+  return call(tool, args);
+}
+
+export function teamIcon(value: unknown) {
+  return str(record(value).icon);
+}
+
+async function pages(tool: string, args: Json, key: string, max = 5, limit = 100) {
   const items: Json[] = [];
   let cursor: string | null = null;
   for (let page = 0; page < max; page++) {
-    const reply = record(await call(tool, { ...args, limit: 100, ...(cursor ? { cursor } : {}) }));
+    const reply = record(await call(tool, { ...args, limit, ...(cursor ? { cursor } : {}) }));
     items.push(...list(reply[key]));
     cursor = reply.hasNextPage === true ? str(reply.cursor) : null;
     if (!cursor) break;
@@ -206,24 +235,78 @@ async function pages(tool: string, args: Json, key: string, max = 5) {
   return items;
 }
 
+export function projectOf(raw: Json): LinearProject | null {
+  const id = str(raw.uuid) ?? str(raw.id);
+  if (!id) return null;
+  const status = record(raw.status);
+  return {
+    id,
+    name: str(raw.name) ?? "Projeto",
+    icon: str(raw.icon),
+    color: str(raw.color),
+    url: str(raw.url),
+    summary: str(raw.summary),
+    state: str(status.name),
+    stateType: str(status.type),
+  };
+}
+
+export function listProjects(refresh = false): Promise<LinearProject[]> {
+  return cached("projects", viewsTtlMs, refresh, async () => {
+    const raw = await pages("list_projects", {}, "projects", 6, 50);
+    return raw
+      .map(projectOf)
+      .filter((project): project is LinearProject => project !== null)
+      .filter((project) => !["completed", "canceled"].includes(project.stateType ?? ""));
+  });
+}
+
+export function listLabels(refresh = false): Promise<LinearLabel[]> {
+  return cached("labels", viewsTtlMs, refresh, async () => {
+    const raw = await pages("list_issue_labels", {}, "labels", 6, 250);
+    const seen = new Set<string>();
+    const labels: LinearLabel[] = [];
+    for (const item of raw) {
+      const id = str(item.id);
+      const name = str(item.name);
+      if (!id || !name || item.retiredAt || seen.has(name.toLowerCase())) continue;
+      seen.add(name.toLowerCase());
+      labels.push({ id, name, color: str(item.color) });
+    }
+    return labels.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  });
+}
+
 export function listViews(refresh = false): Promise<LinearView[]> {
   return cached("views", viewsTtlMs, refresh, async () => {
-    const [teams, views] = await Promise.all([
+    const [teams, views, projects] = await Promise.all([
       pages("list_teams", {}, "teams"),
       pages("list_custom_views", { type: "Issue" }, "customViews"),
+      listProjects(refresh).catch(() => [] as LinearProject[]),
     ]);
     return [
-      { id: "mine", name: "Minhas issues", kind: "mine" as const, description: null, team: null, url: null },
+      {
+        id: "mine",
+        name: "Minhas issues",
+        kind: "mine" as const,
+        description: null,
+        team: null,
+        url: null,
+        icon: null,
+        color: null,
+      },
       ...teams
-        .map((team) => teamOf(team))
-        .filter((team): team is TeamRef => team !== null)
-        .map((team) => ({
+        .map((raw) => ({ team: teamOf(raw), icon: teamIcon(raw), color: str(raw.color) }))
+        .filter((item): item is { team: TeamRef; icon: string | null; color: string | null } => item.team !== null)
+        .map(({ team, icon, color }) => ({
           id: `team:${team.id}`,
           name: team.name,
           kind: "team" as const,
           description: null,
           team,
           url: null,
+          icon,
+          color,
         })),
       ...views
         .filter((view) => str(view.id))
@@ -234,7 +317,19 @@ export function listViews(refresh = false): Promise<LinearView[]> {
           description: str(view.description),
           team: teamOf(view.team),
           url: str(view.url),
+          icon: str(view.icon),
+          color: str(view.color),
         })),
+      ...projects.map((project) => ({
+        id: `project:${project.id}`,
+        name: project.name,
+        kind: "project" as const,
+        description: project.summary,
+        team: null,
+        url: project.url,
+        icon: project.icon,
+        color: project.color,
+      })),
     ];
   });
 }
@@ -284,8 +379,31 @@ export function teamStates(teamId: string, refresh = false): Promise<LinearState
   });
 }
 
+function customBlock(tag: string, inner: string) {
+  let attrs: Json = {};
+  try {
+    attrs = record(record(JSON.parse(inner)).attrs);
+  } catch {
+    const plain = inner.replace(/<[^>]+>/g, "").trim();
+    return plain && !plain.startsWith("{") ? plain : "";
+  }
+  const src = str(attrs.src);
+  const title = (str(attrs.title) ?? str(attrs.alt) ?? str(attrs.label) ?? "").replace(/[[\]]/g, "");
+  if (
+    src &&
+    (tag === "image" || /\.(png|jpe?g|gif|webp|heic)(\?|$)/i.test(src) || /image/i.test(str(attrs.type) ?? ""))
+  )
+    return `\n\n![${title || "imagem"}](${src})\n\n`;
+  const href = src ?? str(attrs.href) ?? str(attrs.url);
+  if (href) return `[${title || tag}](${href})`;
+  return title;
+}
+
 export function cleanDescription(text: string) {
   return text
+    .replace(/<linear-([\w-]+)>([\s\S]*?)<\/linear-\1>/gi, (_match, tag: string, inner: string) =>
+      customBlock(tag.toLowerCase(), inner.trim()),
+    )
     .replace(/<[a-z][\w-]*\s[^>]*?label="([^"]*)"[^>]*?href="([^"]*)"[^>]*?\/>/gi, "[$1]($2)")
     .replace(/<[a-z][\w-]*\s[^>]*?href="([^"]*)"[^>]*?label="([^"]*)"[^>]*?\/>/gi, "[$2]($1)")
     .replace(/<[a-z][\w-]*-[\w-]*\s[^>]*\/>/gi, "")
@@ -329,28 +447,43 @@ export interface BoardInput {
   cursor: string | null;
   query: string;
   refresh: boolean;
+  label?: string | null;
+  project?: string | null;
+}
+
+const filterPattern = /^[\p{L}\p{N}_ .:/&()+#-]{1,80}$/u;
+
+export function parseFilterValue(value: string | null | undefined, field: string) {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return null;
+  if (!filterPattern.test(trimmed)) throw new ValidationError("Filtro inválido.", field);
+  return trimmed;
 }
 
 async function resolveView(id: string): Promise<LinearView> {
   if (id === "mine") return (await listViews())[0];
   const found = (await listViews()).find((view) => view.id === id);
   if (found) return found;
-  if (/^(team|view):[\w-]+$/.test(id)) {
+  if (/^(team|view|project):[\w-]+$/.test(id)) {
     const [kind] = id.split(":");
     return {
       id,
-      name: kind === "team" ? "Time" : "Visão",
+      name: kind === "team" ? "Time" : kind === "project" ? "Projeto" : "Visão",
       kind: kind as ViewKind,
       description: null,
       team: null,
       url: null,
+      icon: null,
+      color: null,
     };
   }
   throw new ValidationError("Visão inválida.", "view");
 }
 
 export function board(input: BoardInput): Promise<Board> {
-  const key = `board:${input.view}:${input.query}:${input.cursor ?? ""}`;
+  const label = input.label ?? null;
+  const project = input.project ?? null;
+  const key = `board:${input.view}:${input.query}:${label ?? ""}:${project ?? ""}:${input.cursor ?? ""}`;
   return cached(key, boardTtlMs, input.refresh, async () => {
     const view = await resolveView(input.view);
     const raw = view.id.slice(view.id.indexOf(":") + 1);
@@ -361,6 +494,9 @@ export function board(input: BoardInput): Promise<Board> {
     if (view.kind === "mine") args.assignee = "me";
     if (view.kind === "team") args.team = raw;
     if (view.kind === "view") args.customView = raw;
+    if (view.kind === "project") args.project = raw;
+    else if (project) args.project = project;
+    if (label) args.label = label;
     if (input.query) args.query = input.query;
     if (input.cursor) args.cursor = input.cursor;
     const [reply, links] = await Promise.all([call("list_issues", args).then(record), linkMap()]);
@@ -383,6 +519,8 @@ export function board(input: BoardInput): Promise<Board> {
     );
     return {
       view,
+      label,
+      project: view.kind === "project" ? null : project,
       columns: ordered,
       issues,
       nextCursor: reply.hasNextPage === true ? str(reply.cursor) : null,

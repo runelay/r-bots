@@ -26,6 +26,7 @@ import { handleGroups } from "./modules/groups/routes/groups.routes";
 import { handleIntegrations } from "./modules/integrations/routes/integrations.routes";
 import { handleJobs } from "./modules/jobs/routes/jobs.routes";
 import { handleLinear } from "./modules/linear/routes/linear.routes";
+import { handleReview } from "./modules/review/routes/review.routes";
 import { handleSections } from "./modules/sections/routes/sections.routes";
 import { handleServers } from "./modules/servers/routes/servers.routes";
 import { handlePreferences } from "./modules/settings/routes/preferences.routes";
@@ -85,6 +86,7 @@ export const routeTable: RouteEntry[] = [
   { root: "groups", handle: (req, res, url, method, parts) => handleGroups(req, res, url, method, parts) },
   { root: "github", handle: (req, res, url, method, parts) => handleGitHub(req, res, url, method, parts) },
   { root: "linear", handle: (req, res, url, method, parts) => handleLinear(req, res, url, method, parts) },
+  { root: "review", handle: (req, res, _url, method, parts) => handleReview(req, res, method, parts) },
   { root: "jobs", handle: (req, res, url, method, parts) => handleJobs(req, res, url, method, parts) },
   { root: "preferences", handle: (req, res, _url, method, parts) => handlePreferences(req, res, method, parts) },
   { root: "servers", handle: (req, res, url, method, parts) => handleServers(req, res, url, method, parts) },

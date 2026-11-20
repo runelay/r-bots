@@ -176,6 +176,13 @@ describe("helpers", () => {
   test("cleans Linear tags and builds cards", () => {
     expect(cleanDescription('a <pull-request href="h" label="L" /> b <x-y z="1" />')).toBe("a [L](h) b");
     expect(cleanDescription('<pull-request label="L" href="h" />')).toBe("[L](h)");
+    expect(
+      cleanDescription(
+        'x <linear-image>{"type":"image","attrs":{"src":"https://uploads.linear.app/a/b?signature=s","title":"print.png"}}</linear-image> y',
+      ),
+    ).toBe("x \n\n![print.png](https://uploads.linear.app/a/b?signature=s)\n\n y");
+    expect(cleanDescription('<linear-mention>{"attrs":{"label":"Ana"}}</linear-mention>')).toBe("Ana");
+    expect(cleanDescription("<linear-x>{broken</linear-x>ok")).toBe("ok");
     const card = cardOf({ id: "CTY-5", priority: 4, labels: ["a", 1], assignee: { name: "Ana" } }, new Map());
     expect(card).toMatchObject({
       priority: 4,

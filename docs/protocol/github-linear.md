@@ -70,3 +70,28 @@ Cada issue traz `pr` (`{ repo, number, title, url, state, draft, ci, review }`) 
 Índice de PR por issue: `CTY-1318 → { repo: "Conty-App/Conty-api", number: 1215, state: "merged", ci: "success" }`.
 
 As respostas do Linear usadas pelo servidor (`list_issues` com `fields`, `list_issue_statuses`, `get_issue`, `list_comments`) foram conferidas pelo runelay com dados reais do time CTY.
+
+## v58 (20/11): ícones, etiquetas, projetos, imagens e review
+
+### Linear
+
+- `GET /linear/views`: cada visão traz `icon` e `color`. Times trazem o `icon` do Linear (emoji `:nome:` ou nome de ícone como `Rocket`); o MCP do Linear não devolve cor de time nem ícone/cor de visão salva, e emoji próprio do workspace (`:many:`) não tem imagem pelo MCP, então o app mostra a inicial na cor do Linear. Nova família `project:<uuid>` com os projetos ativos (não concluídos nem cancelados), com `icon`, `color` e `summary` em `description`.
+- `GET /linear/labels`: `{ labels: [{ id, name, color }] }`, sem etiquetas aposentadas, um nome por etiqueta.
+- `GET /linear/projects`: `{ projects: [{ id, name, icon, color, url, summary, state, stateType }] }`.
+- `GET /linear/board?label=&project=`: filtros no servidor (`label` = nome ou id, `project` = id), também por cima de visão salva. `view=project:<uuid>` usa o projeto como fonte do quadro. A resposta traz `label` e `project` aplicados.
+- Descrição e comentários: `<linear-image>{json}</linear-image>` vira `![título](src)` (URL assinada do `uploads.linear.app`), outros `<linear-*>` viram link (`src`/`href`/`url`), texto (`label`/`title`) ou somem.
+- O `list_issue_statuses` do MCP não traz cor de status; o app usa as cores padrão do Linear por tipo e, nos status de andamento, pelo nome (progresso, review, teste, deploy, aguardando, correção).
+
+### GitHub
+
+- `GET /github/asset?url=`: proxy de imagem anexada em PR (`github.com/user-attachments/assets/…`, `*.githubusercontent.com`), com o token do `gh` do servidor só no `github.com`. Recusa outros hosts (400), só devolve `image/*` ou `video/*`, até 15 MB.
+
+### Review (`review/**`, só do dono)
+
+| Rota | O que faz |
+|---|---|
+| `GET /review` | `{ presets, defaultBotId }`. Sem nada salvo, devolve os três prontos: `daily` (Daily de hoje), `week` (Resumo da semana), `pulls` (PRs para revisar) |
+| `PUT /review/presets` | `{ presets: [{ id?, name, prompt, scope: "today"\|"week"\|"custom", days (1–90), linear, github, botId\|null }] }`, até 20; troca a lista toda (setting `review.presets`) |
+| `POST /review/run` | `{ presetId, botId?, view?, project? }` → `201 { botId, sessionId, title, warnings, conversation, sessionBasePath, deliveryId }` |
+
+O run junta o contexto sem IA: no Linear, issues mexidas no período (`updatedAt`) e as em andamento do escopo (minhas issues por padrão, ou a visão/projeto da tela), separadas em concluídas, começadas, em andamento e mexidas; no GitHub, PRs que abri, mergeei e revisei no período, os que esperam a minha revisão e os meus abertos. Só id, título, estado, projeto e link, até 14 mil caracteres. Cria uma conversa nova com o bot do preset (ou o padrão: nome "Boss", senão o primeiro fixado, senão o primeiro bot) com o pedido do preset mais o contexto e entrega como mensagem do chat. Período no fuso do usuário: hoje desde 0h, semana nos últimos 7 dias. Commits soltos não entram.

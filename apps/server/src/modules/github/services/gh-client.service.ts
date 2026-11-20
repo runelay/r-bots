@@ -79,3 +79,46 @@ export async function rest(method: string, path: string): Promise<unknown> {
     return output.stdout;
   }
 }
+
+const assetHosts =
+  /^(github\.com|private-user-images\.githubusercontent\.com|user-images\.githubusercontent\.com|objects\.githubusercontent\.com|raw\.githubusercontent\.com|camo\.githubusercontent\.com)$/;
+const assetMaxBytes = 15 * 1024 * 1024;
+
+export function isGitHubAsset(raw: string) {
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || !assetHosts.test(url.hostname)) return false;
+    return url.hostname !== "github.com" || /^\/(user-attachments\/assets|[^/]+\/[^/]+\/assets)\//.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchGitHubAsset(raw: string) {
+  if (!isGitHubAsset(raw)) throw new GitHubError(400, "Endereço de imagem inválido.");
+  const token = await runner(["auth", "token"]);
+  const secret = token.code === 0 ? token.stdout.trim() : "";
+  let target = raw;
+  for (let hop = 0; hop < 5; hop++) {
+    const host = new URL(target).hostname;
+    const headers: Record<string, string> = { accept: "image/*,*/*;q=0.5", "user-agent": "rbots" };
+    if (secret && host === "github.com") headers.authorization = `token ${secret}`;
+    const reply = await fetch(target, { headers, redirect: "manual", signal: AbortSignal.timeout(20_000) });
+    if (reply.status >= 300 && reply.status < 400) {
+      const location = reply.headers.get("location");
+      if (!location) break;
+      target = new URL(location, target).toString();
+      if (!isGitHubAsset(target) && !/\.(githubusercontent|amazonaws)\.com$/.test(new URL(target).hostname)) break;
+      continue;
+    }
+    const type = reply.headers.get("content-type") ?? "";
+    if (!reply.ok || !/^(image|video)\//.test(type))
+      throw new GitHubError(reply.status === 404 ? 404 : 502, "O GitHub não entregou essa imagem.");
+    const length = Number(reply.headers.get("content-length") ?? 0);
+    if (length > assetMaxBytes) throw new GitHubError(413, "Imagem grande demais.");
+    const data = await reply.arrayBuffer();
+    if (data.byteLength > assetMaxBytes) throw new GitHubError(413, "Imagem grande demais.");
+    return { data, type };
+  }
+  throw new GitHubError(502, "O GitHub não entregou essa imagem.");
+}

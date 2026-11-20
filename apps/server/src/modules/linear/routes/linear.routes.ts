@@ -7,8 +7,11 @@ import {
   issueDetail,
   LinearError,
   linearSummary,
+  listLabels,
+  listProjects,
   listViews,
   moveIssue,
+  parseFilterValue,
   parseIssueId,
   startIssue,
 } from "../services/linear.service";
@@ -35,6 +38,8 @@ export async function handleLinear(req: Req, res: Res, url: URL, method: string,
     if (method === "GET" && parts.length === 2) {
       if (first === "summary") return sendJson(res, 200, await linearSummary(refresh));
       if (first === "views") return sendJson(res, 200, { views: await listViews(refresh) });
+      if (first === "labels") return sendJson(res, 200, { labels: await listLabels(refresh) });
+      if (first === "projects") return sendJson(res, 200, { projects: await listProjects(refresh) });
       if (first === "board")
         return sendJson(
           res,
@@ -43,6 +48,8 @@ export async function handleLinear(req: Req, res: Res, url: URL, method: string,
             view: url.searchParams.get("view") || "mine",
             cursor: url.searchParams.get("cursor") || null,
             query: cleanText(url.searchParams.get("q")),
+            label: parseFilterValue(url.searchParams.get("label"), "label"),
+            project: parseFilterValue(url.searchParams.get("project"), "project"),
             refresh,
           }),
         );

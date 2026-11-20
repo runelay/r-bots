@@ -1,6 +1,6 @@
 import { ValidationError } from "../../../shared/errors";
-import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
-import { GitHubError } from "../services/gh-client.service";
+import { notFound, type Req, type Res, readBody, sendFile, sendJson, validationResponse } from "../../../shared/http";
+import { fetchGitHubAsset, GitHubError } from "../services/gh-client.service";
 import {
   cleanText,
   commentPull,
@@ -76,6 +76,13 @@ export async function handleGitHub(req: Req, res: Res, url: URL, method: string,
   try {
     const [, first, owner, name, kind, number, action] = parts;
     const refresh = url.searchParams.get("refresh") === "1";
+    if (method === "GET" && first === "asset" && parts.length === 2) {
+      const asset = await fetchGitHubAsset(url.searchParams.get("url") ?? "");
+      return sendFile(res, new Blob([asset.data], { type: asset.type }), {
+        "content-type": asset.type,
+        "cache-control": "private, max-age=3600",
+      });
+    }
     if (method === "GET" && first === "summary" && parts.length === 2)
       return sendJson(res, 200, { counts: await summary(refresh) });
     if (method === "GET" && first === "pulls" && parts.length === 2)
