@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EventLog } from "../../conversations/services/sessions.service";
-import { CodeLive } from "../services/live-diff.service";
+import { type CodeSignal, CodeLive, onCodeSignal } from "../services/live-diff.service";
 import type { WorkspaceState } from "../services/workspace.service";
 import * as workspaceService from "../services/workspace.service";
 
@@ -56,7 +56,7 @@ function makeRepo(files: Record<string, string>) {
 
 function fakeLog() {
   const events: Emitted[] = [];
-  const log = { emit: (event: Emitted) => events.push(event) } as unknown as EventLog;
+  const log = { sessionId: "s1", emit: (event: Emitted) => events.push(event) } as unknown as EventLog;
   return { log, events };
 }
 
@@ -177,5 +177,76 @@ describe("CodeLive", () => {
         scope: { turnId: "turn5" },
       },
     ]);
+  });
+
+  test("a branch switch is a neutral line, not a wall of edits", async () => {
+    const files = Object.fromEntries(Array.from({ length: 30 }, (_, index) => [`f${index}.txt`, "a\n"]));
+    const workspace = await makeRepo(files);
+    workspace.branch = "main";
+    gitSync(workspace.path, ["checkout", "-q", "-b", "hotfix/x"]);
+    for (let index = 0; index < 30; index++) writeFileSync(join(workspace.path, `f${index}.txt`), "b\n");
+    gitSync(workspace.path, ["commit", "-q", "-am", "other"]);
+    gitSync(workspace.path, ["checkout", "-q", "main"]);
+    const signals: CodeSignal[] = [];
+    onCodeSignal((value) => signals.push(value));
+    const { log, events } = fakeLog();
+    const live = new CodeLive(log, "turn6", workspace, new Map());
+    gitSync(workspace.path, ["checkout", "-q", "hotfix/x"]);
+    await live.scan("c1", "tool");
+    expect(events.some((event) => event.type === "code.edit" || event.type === "code.bulk")).toBe(false);
+    expect(events.find((event) => event.type === "code.branch")).toEqual({
+      type: "code.branch",
+      data: { workspaceId: workspace.id, from: "main", to: "hotfix/x" },
+      scope: { turnId: "turn6" },
+    });
+    expect(workspace.branch).toBe("hotfix/x");
+    expect(workspace.baseCommit).toBe(gitSync(workspace.path, ["rev-parse", "main"]));
+    expect(signals).toEqual([{ sessionId: "s1", kind: "head" }]);
+
+    writeFileSync(join(workspace.path, "f1.txt"), "c\n");
+    gitSync(workspace.path, ["commit", "-q", "-am", "mine"]);
+    await live.scan("c2", "tool");
+    expect(events.find((event) => event.type === "code.edit")?.data).toMatchObject({ path: "f1.txt", before: "b\n" });
+
+    gitSync(workspace.path, ["reset", "-q", "--hard", "HEAD~1"]);
+    await live.scan("c3", "tool");
+    expect(events.filter((event) => event.type === "code.edit")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "code.branch")).toHaveLength(1);
+    onCodeSignal(null);
+  });
+
+  test("PR URLs from tool output are signaled with whether the tool created them", async () => {
+    const workspace = await makeRepo({ "a.txt": "a\n" });
+    const signals: CodeSignal[] = [];
+    onCodeSignal((value) => signals.push(value));
+    const { log } = fakeLog();
+    const live = new CodeLive(log, "turn7", workspace, new Map());
+    const url = "https://github.com/o/r/pull/12";
+    await live.scan("c1", "tool", { input: { command: "gh pr create --fill" }, output: { stdout: `${url}\n` } });
+    await live.scan("c2", "tool", { input: null, output: `see ${url} and ${url}` });
+    await live.scan("c3", "tool", { output: null });
+    await live.scan("c4", "tool", { input: { command: "ls" }, output: "nothing" });
+    expect(signals).toEqual([
+      { sessionId: "s1", kind: "pr", urls: [url], created: true },
+      { sessionId: "s1", kind: "pr", urls: [url], created: false },
+    ]);
+    onCodeSignal(() => {
+      throw new Error("handler broke");
+    });
+    await live.scan("c5", "tool", { output: url });
+    expect(warn).toHaveBeenCalledWith("code signal failed", expect.any(Error));
+    onCodeSignal(null);
+  });
+
+  test("an unreadable HEAD never counts as a branch switch", async () => {
+    const workspace = await makeRepo({ "a.txt": "a\n" });
+    const head = spyOn(workspaceService, "readHead").mockRejectedValue(new Error("no head"));
+    const { log, events } = fakeLog();
+    const live = new CodeLive(log, "turn8", workspace, new Map());
+    writeFileSync(join(workspace.path, "a.txt"), "b\n");
+    await live.scan("c1", "tool");
+    head.mockRestore();
+    expect(events.some((event) => event.type === "code.branch")).toBe(false);
+    expect(events.find((event) => event.type === "code.edit")?.data.after).toBe("b\n");
   });
 });

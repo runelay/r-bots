@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { childEnv, findBinary, run } from "@runelay-bots/providers/proc";
 import { dataDir } from "../../../config/env";
 import type { StoredSession } from "../../conversations/services/sessions.service";
-import type { PrSnapshot } from "./pull-request.service";
+import type { PrSnapshot, PrStatus } from "./pull-request.service";
 import { allowedRepos, expandHome, worktreesRoot } from "./repos.service";
 import { sandboxArgv, sandboxGroup, sandboxMarker, sandboxMode, sandboxProblem } from "./sandbox.service";
 
@@ -35,6 +35,13 @@ export interface WorkspaceState {
   closedAt: string | null;
   install: InstallState;
   pr?: PrSnapshot | null;
+  prs?: KnownPr[];
+}
+
+export interface KnownPr {
+  number: number;
+  head: string;
+  status: PrStatus;
 }
 
 export interface RepoInfo {
@@ -269,13 +276,87 @@ export function slugify(text: string, max = 40) {
   return (dash > 12 ? cut.slice(0, dash) : cut).replace(/-+$/g, "");
 }
 
+const baseRefs = ["origin/develop", "origin/main", "origin/master", "develop", "main", "master"];
+
 async function pickBase(repo: string) {
-  for (const ref of ["origin/develop", "origin/main", "origin/master", "develop", "main", "master"]) {
+  for (const ref of baseRefs) {
     const result = await git(repo, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
     if (result.code === 0) return { base: ref, commit: result.stdout.trim() };
   }
   const head = await git(repo, ["rev-parse", "HEAD"]);
   return { base: "HEAD", commit: head.stdout.trim() };
+}
+
+export async function readHead(path: string) {
+  const [branch, sha] = await Promise.all([
+    git(path, ["symbolic-ref", "--short", "-q", "HEAD"]),
+    git(path, ["rev-parse", "HEAD"]),
+  ]);
+  if (sha.code !== 0) return null;
+  return { branch: branch.code === 0 ? branch.stdout.trim() || null : null, sha: sha.stdout.trim() };
+}
+
+export async function isAncestor(path: string, older: string, newer: string) {
+  return (await git(path, ["merge-base", "--is-ancestor", older, newer])).code === 0;
+}
+
+async function mergeBase(path: string, ref: string) {
+  const result = await git(path, ["merge-base", "HEAD", ref]);
+  return result.code === 0 ? result.stdout.trim() || null : null;
+}
+
+export async function closestBase(workspace: WorkspaceState) {
+  let best: { base: string; commit: string; distance: number } | null = null;
+  for (const ref of new Set([workspace.base, ...baseRefs])) {
+    if (ref === "HEAD") continue;
+    const commit = await mergeBase(workspace.path, ref);
+    if (!commit) continue;
+    const distance = Number((await git(workspace.path, ["rev-list", "--count", `${commit}..HEAD`])).stdout.trim());
+    if (!best || distance < best.distance) best = { base: ref, commit, distance };
+  }
+  return best ? { base: best.base, commit: best.commit } : null;
+}
+
+export async function alignBase(workspace: WorkspaceState, branch: string) {
+  const remote = `origin/${branch}`;
+  const ref =
+    (await git(workspace.path, ["rev-parse", "--verify", "--quiet", `${remote}^{commit}`])).code === 0
+      ? remote
+      : branch;
+  const commit = await mergeBase(workspace.path, ref);
+  if (!commit || (ref === workspace.base && commit === workspace.baseCommit)) return false;
+  workspace.base = ref;
+  workspace.baseCommit = commit;
+  invalidateStatus(workspace);
+  return true;
+}
+
+async function syncHead(workspace: WorkspaceState) {
+  const head = await readHead(workspace.path);
+  if (!head?.branch || head.branch === workspace.branch) return null;
+  const from = workspace.branch;
+  workspace.branch = head.branch;
+  const base = await closestBase(workspace);
+  if (base) {
+    workspace.base = base.base;
+    workspace.baseCommit = base.commit;
+  }
+  invalidateStatus(workspace);
+  return { from, to: head.branch };
+}
+
+const headLocks = new Map<string, Promise<unknown>>();
+
+export function followHead(workspace: WorkspaceState): Promise<{ from: string; to: string } | null> {
+  const previous = headLocks.get(workspace.path) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(() => syncHead(workspace));
+  headLocks.set(workspace.path, next);
+  void next
+    .finally(() => {
+      if (headLocks.get(workspace.path) === next) headLocks.delete(workspace.path);
+    })
+    .catch(() => undefined);
+  return next;
 }
 
 async function branchExists(repo: string, branch: string) {

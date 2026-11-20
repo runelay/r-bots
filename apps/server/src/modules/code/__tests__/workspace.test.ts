@@ -18,6 +18,7 @@ import { resetData } from "../../../../test/helpers";
 import { addAllowedRepo } from "../services/repos.service";
 import {
   activeWorkspace,
+  alignBase,
   allDiffs,
   baseContent,
   CodeError,
@@ -26,10 +27,12 @@ import {
   checkpointRef,
   clipText,
   closeWorkspace,
+  closestBase,
   codeSummary,
   createCheckpoint,
   diffTexts,
   fileDiff,
+  followHead,
   hunkStats,
   insideWorkspace,
   installLogPath,
@@ -38,6 +41,7 @@ import {
   openWorkspace,
   parsePatch,
   publicWorkspace,
+  readHead,
   readMaybe,
   relativePath,
   resolveRepo,
@@ -159,6 +163,28 @@ describe("opening and closing workspaces", () => {
     const fallback = await openWorkspace(untitled, "bot-head", "ws-headbase", "");
     await waitForInstall(fallback.workspace);
     expect(fallback.workspace.branch).toBe("feat/tarefa");
+  });
+
+  test("follows the HEAD branch without a known base and reads detached heads", async () => {
+    await makeRepo("ws-follow", { branch: "trunk" });
+    await listRepos(true);
+    const { workspace } = await openWorkspace(await newSession("bot-follow"), "bot-follow", "ws-follow", "x");
+    await waitForInstall(workspace);
+    expect(await closestBase(workspace)).toBeNull();
+    const baseCommit = workspace.baseCommit;
+    gitSync(workspace.path, ["checkout", "-q", "-b", "fix/other"]);
+    const [first, second] = await Promise.all([followHead(workspace), followHead(workspace)]);
+    expect(first).toEqual({ from: "feat/x", to: "fix/other" });
+    expect(second).toBeNull();
+    expect(workspace.baseCommit).toBe(baseCommit);
+    expect(await alignBase(workspace, "trunk")).toBe(true);
+    expect(workspace.base).toBe("trunk");
+    expect(await alignBase(workspace, "trunk")).toBe(false);
+    expect(await alignBase(workspace, "nowhere")).toBe(false);
+    gitSync(workspace.path, ["checkout", "-q", "--detach"]);
+    expect((await readHead(workspace.path))?.branch).toBeNull();
+    expect(await followHead(workspace)).toBeNull();
+    expect(await readHead(join(workspace.path, "..", "..", ".."))).toBeNull();
   });
 
   test("adds a suffix when the folder or branch is taken", async () => {

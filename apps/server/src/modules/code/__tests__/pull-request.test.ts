@@ -4,15 +4,19 @@ import { join } from "node:path";
 import { codeProcesses, factsOf, ghArgs, gitArgs, gitSync, makeRepo, newSession } from "../../../../test/code-helpers";
 import type { ProcessCall, ProcessReply } from "../../../../test/helpers";
 import { resetData } from "../../../../test/helpers";
+import * as sessions from "../../conversations/services/sessions.service";
 import * as engine from "../../engine/services/engine.service";
 import { watchApp } from "../../status/services/viewers.service";
 import { listWorktrees, recordWorktree } from "../repositories/code.repository";
+import { CodeLive } from "../services/live-diff.service";
 import {
   classifyFile,
   discoverPr,
+  choosePr,
   failedLog,
   fetchPr,
   finishWorkspace,
+  handleCodeSignal,
   kickPr,
   type PrCheck,
   refreshPr,
@@ -21,6 +25,7 @@ import {
   snapshotFromView,
   startPrWatcher,
   summarizeLog,
+  visitedBranches,
 } from "../services/pull-request.service";
 import {
   activeWorkspace,
@@ -191,9 +196,10 @@ describe("gh lookups", () => {
       "pr view 7 --json number": { code: 1 },
       "pr list": {
         stdout: JSON.stringify([
-          { number: 1, updatedAt: "2026-01-01" },
-          { number: 2, updatedAt: "2026-02-01" },
-          { number: 3 },
+          { number: 1, state: "MERGED", headRefName: "feat/x" },
+          { number: 2, state: "OPEN", isDraft: true },
+          { number: 3, state: "CLOSED" },
+          { number: "x" },
         ]),
       },
       "run view --job 22": { stdout: "error: broke\n" },
@@ -230,7 +236,11 @@ describe("gh lookups", () => {
     expect((await fetchPr("/tmp", 5))?.number).toBe(5);
     expect(await fetchPr("/tmp", 6)).toBeNull();
     expect(await fetchPr("/tmp", 7)).toBeNull();
-    expect(await discoverPr(workspaceStub)).toBe(2);
+    expect(await discoverPr(workspaceStub)).toEqual([
+      { number: 1, head: "feat/x", status: "merged" },
+      { number: 2, head: "feat/x", status: "draft" },
+      { number: 3, head: "feat/x", status: "closed" },
+    ]);
     const list = fake.calls.find((call) => call.args[1] === "list");
     expect(list?.args).toContain("feat/x");
     expect((list?.options.env as Record<string, string> | undefined)?.GH_PROMPT_DISABLED).toBe("1");
@@ -257,11 +267,11 @@ describe("gh lookups", () => {
 
   test("discovery returns null on failures and empty lists", async () => {
     gh({ "pr list": { code: 1 } });
-    expect(await discoverPr(workspaceStub)).toBeNull();
+    expect(await discoverPr(workspaceStub)).toEqual([]);
     gh({ "pr list": { stdout: "[]" } });
-    expect(await discoverPr(workspaceStub)).toBeNull();
+    expect(await discoverPr(workspaceStub)).toEqual([]);
     gh({ "pr list": { stdout: "{" } });
-    expect(await discoverPr(workspaceStub)).toBeNull();
+    expect(await discoverPr(workspaceStub)).toEqual([]);
   });
 });
 
@@ -320,7 +330,7 @@ describe("refreshing a workspace PR", () => {
       reviewDecision: "CHANGES_REQUESTED",
     });
     gh({
-      "pr list": { stdout: JSON.stringify([{ number: 7, updatedAt: "x" }]) },
+      "pr list": { stdout: JSON.stringify([{ number: 7, state: "OPEN" }]) },
       "pr view 7 --json number": () => ({ stdout: JSON.stringify(current) }),
       "pr view 99 --json number": () => ({ stdout: JSON.stringify(view(100)) }),
       "run view --job 2": { stdout: "FAIL a.test.ts\n" },
@@ -363,7 +373,7 @@ describe("refreshing a workspace PR", () => {
     const record = (await listWorktrees()).find((item) => item.id === workspace.id);
     expect(record?.prUrl).toBe("https://github.com/o/r/pull/7");
 
-    workspace.pr = { ...(workspace.pr as NonNullable<WorkspaceState["pr"]>), number: 99 };
+    workspace.prs = [...(workspace.prs ?? []), { number: 99, head: "feat/other", status: "open" }];
     await refreshPr(session);
     expect((await factsOf(session, "code.pr")).at(-1)?.data).toMatchObject({ number: 100, workspaceId: workspace.id });
 
@@ -375,7 +385,7 @@ describe("refreshing a workspace PR", () => {
     const { session, workspace } = await openTask("pr-concurrent");
     push(workspace);
     gh({
-      "pr list": { stdout: JSON.stringify([{ number: 3 }]) },
+      "pr list": { stdout: JSON.stringify([{ number: 3, state: "OPEN" }]) },
       "pr view 3 --json number": {
         stdout: JSON.stringify(view(3, { statusCheckRollup: [failing], reviewDecision: "CHANGES_REQUESTED" })),
       },
@@ -402,7 +412,7 @@ describe("refreshing a workspace PR", () => {
     const proc = await import("@runelay-bots/providers/proc");
     let calls = 0;
     const spy = spyOn(proc, "run").mockImplementation((async (...args: Parameters<typeof run>) => {
-      if (args[1][4]?.startsWith("number,title")) return run(...args);
+      if (!String(args[0]).endsWith("gh") || args[1][4]?.startsWith("number,title")) return run(...args);
       calls++;
       throw new Error("spawn exploded");
     }) as typeof run);
@@ -441,6 +451,142 @@ describe("refreshing a workspace PR", () => {
       warn.mockRestore();
     }
     expect(other.workspace.pr).toBeUndefined();
+  });
+});
+
+describe("following the worktree HEAD", () => {
+  function branchOff(workspace: WorkspaceState, branch: string) {
+    gitSync(workspace.path, ["checkout", "-q", "-b", branch, "origin/main"]);
+    writeFileSync(join(workspace.path, "hotfix.txt"), "fix\n");
+    gitSync(workspace.path, ["add", "-A"]);
+    gitSync(workspace.path, ["commit", "-q", "-m", "fix: x"]);
+    gitSync(workspace.path, ["push", "-q", "-u", "origin", branch]);
+  }
+
+  test("ranks open PRs first, then the current branch, then the newest", () => {
+    const prs = [
+      { number: 16, head: "feat/a", status: "closed" as const },
+      { number: 17, head: "hotfix/b", status: "open" as const },
+      { number: 18, head: "feat/a", status: "draft" as const },
+      { number: 19, head: "feat/c", status: "merged" as const },
+    ];
+    expect(choosePr(prs, "feat/a")?.number).toBe(18);
+    expect(choosePr(prs, "feat/a", new Set([18]))?.number).toBe(17);
+    expect(choosePr(prs, "feat/a", new Set([17, 18]))?.number).toBe(16);
+    expect(choosePr(prs, "feat/z", new Set([17, 18]))?.number).toBe(19);
+    expect(choosePr([], "feat/a")).toBeNull();
+  });
+
+  test("switches to the newer open PR when the branch changes and keeps it after going back", async () => {
+    const { session, workspace } = await openTask("pr-follow");
+    push(workspace);
+    const feature = workspace.branch;
+    workspace.pr = snapshotFromView(view(16, { state: "CLOSED", headRefName: feature, baseRefName: "main" }));
+    branchOff(workspace, "hotfix/digest");
+    gh({
+      [`pr list --head ${feature}`]: {
+        stdout: JSON.stringify([{ number: 16, state: "CLOSED", headRefName: feature }]),
+      },
+      "pr list --head hotfix/digest": { stdout: JSON.stringify([{ number: 17, state: "OPEN" }]) },
+      "pr view 16 --json number": {
+        stdout: JSON.stringify(view(16, { state: "CLOSED", headRefName: feature, baseRefName: "main" })),
+      },
+      "pr view 17 --json number": {
+        stdout: JSON.stringify(view(17, { headRefName: "hotfix/digest", baseRefName: "main", additions: 1 })),
+      },
+    });
+    const next = await refreshPr(session);
+    expect(next?.number).toBe(17);
+    expect(workspace.branch).toBe("hotfix/digest");
+    expect(workspace.base).toBe("origin/main");
+    expect(workspace.baseCommit).toBe(gitSync(workspace.path, ["rev-parse", "origin/main"]).stdout.trim());
+    expect((await factsOf(session, "code.branch"))[0].data).toMatchObject({ from: feature, to: "hotfix/digest" });
+    expect((await factsOf(session, "code.status")).at(-1)?.data).toMatchObject({ files: 1, added: 1, removed: 0 });
+
+    gitSync(workspace.path, ["checkout", "-q", feature]);
+    expect(await visitedBranches(workspace)).toEqual([feature]);
+    const back = await refreshPr(session);
+    expect(workspace.branch).toBe(feature);
+    expect(await visitedBranches(workspace)).toEqual(["hotfix/digest"]);
+    expect(back?.number).toBe(17);
+    expect(workspace.prs?.map((item) => [item.number, item.status])).toEqual([
+      [17, "open"],
+      [16, "closed"],
+    ]);
+  });
+
+  test("shows a closed PR only when nothing newer is open", async () => {
+    const { session, workspace } = await openTask("pr-follow-closed");
+    push(workspace);
+    gh({
+      "pr list": { stdout: JSON.stringify([{ number: 5, state: "CLOSED" }]) },
+      "pr view 5 --json number": { stdout: JSON.stringify(view(5, { state: "CLOSED" })) },
+      "pr view 6 --json number": { stdout: JSON.stringify(view(6, { state: "MERGED", headRefName: "feat/old" })) },
+      "pr view 7 --json number": { code: 1 },
+    });
+    workspace.prs = [
+      { number: 7, head: "feat/gone", status: "open" },
+      { number: 6, head: "feat/old", status: "open" },
+    ];
+    const shown = await refreshPr(session);
+    expect(shown?.number).toBe(6);
+    expect(shown?.status).toBe("merged");
+  });
+
+  test("adopts PR URLs produced by tools in the conversation", async () => {
+    const { session, workspace } = await openTask("pr-adopt");
+    push(workspace);
+    gitSync(workspace.path, ["remote", "set-url", "origin", "https://github.com/O/R.git"]);
+    gh({
+      "pr list": { stdout: "[]" },
+      "pr view 30 --json number": { stdout: JSON.stringify(view(30, { headRefName: "someone/else" })) },
+      "pr view 31 --json number": { stdout: JSON.stringify(view(31, { headRefName: workspace.branch })) },
+      "pr view 32 --json number": { stdout: JSON.stringify(view(32, { headRefName: "hotfix/new" })) },
+      "pr view 33 --json number": { code: 1 },
+    });
+    await handleCodeSignal({ sessionId: "missing", kind: "head" });
+    await handleCodeSignal({
+      sessionId: session.meta.sessionId,
+      kind: "pr",
+      urls: [
+        "https://github.com/other/repo/pull/29",
+        "https://github.com/o/r/pull/30",
+        "https://github.com/o/r/pull/33",
+      ],
+      created: false,
+    });
+    expect(workspace.pr).toBeUndefined();
+    await handleCodeSignal({
+      sessionId: session.meta.sessionId,
+      kind: "pr",
+      urls: ["https://github.com/o/r/pull/31"],
+      created: false,
+    });
+    expect(workspace.pr?.number).toBe(31);
+    await handleCodeSignal({
+      sessionId: session.meta.sessionId,
+      kind: "pr",
+      urls: ["https://github.com/o/r/pull/31", "https://github.com/o/r/pull/32"],
+      created: true,
+    });
+    expect(workspace.prs?.map((item) => item.number)).toEqual([32, 31]);
+    expect(workspace.pr?.number).toBe(31);
+    await handleCodeSignal({ sessionId: session.meta.sessionId, kind: "head" });
+
+    gitSync(workspace.path, ["remote", "set-url", "origin", "/nowhere/local"]);
+    await handleCodeSignal({
+      sessionId: session.meta.sessionId,
+      kind: "pr",
+      urls: ["https://github.com/o/r/pull/40"],
+      created: true,
+    });
+    expect(workspace.prs?.some((item) => item.number === 40)).toBe(false);
+    await handleCodeSignal({
+      sessionId: (await newSession("idle")).meta.sessionId,
+      kind: "pr",
+      urls: [],
+      created: true,
+    });
   });
 });
 
@@ -542,6 +688,24 @@ describe("watcher", () => {
     expect(fake.calls.some((call) => call.args.join(" ").startsWith("pr view 34"))).toBe(true);
     expect(activeWorkspace(pending.session)).not.toBeNull();
     stopWatching();
+  });
+
+  test("routes tool signals to the PR resolver and logs failures", async () => {
+    const { session, workspace } = await openTask("pr-watch-signal");
+    await tickOnce(0);
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    const lookup = spyOn(sessions, "getStoredSession").mockImplementation(() => {
+      throw new Error("lookup broke");
+    });
+    try {
+      const live = new CodeLive(session.log, "turn_signal", workspace, new Map());
+      await live.scan("c1", "tool", { input: { command: "gh pr create" }, output: "https://github.com/o/r/pull/9" });
+      await until(() => warn.mock.calls.some((args) => args[0] === "code signal failed"));
+      expect(warn).toHaveBeenCalledWith("code signal failed", expect.any(Error));
+    } finally {
+      lookup.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   test("skips auto-close while busy or dirty and logs failures", async () => {

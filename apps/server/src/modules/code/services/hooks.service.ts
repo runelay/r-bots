@@ -488,7 +488,7 @@ export function nativeHooks(context: ToolContext, workspace: WorkspaceState, liv
           source: "tool",
         }).catch((error) => console.warn("code.edit failed", error));
       } else if (call.absPath || tool === "Bash") {
-        await live.scan(call.callId, "tool");
+        await live.scan(call.callId, "tool", { input: call.input, output: response });
       }
     },
   };

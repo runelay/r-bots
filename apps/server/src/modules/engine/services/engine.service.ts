@@ -1664,7 +1664,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
               });
               turn.calls.push(`${event.name}(${JSON.stringify(event.input ?? {}).slice(0, 120)})`);
               needsRun = true;
-              void codeLive?.scan(callId, "tool");
+              void codeLive?.scan(callId, "tool", { input: event.input, output: event.output });
             }
           } else if (event.type === "warning") {
             console.warn(`provider warning ${account.id}: ${event.message}`);

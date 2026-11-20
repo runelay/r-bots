@@ -1,16 +1,21 @@
 import { childEnv, run } from "@runelay-bots/providers/proc";
 import { env } from "../../../config/env";
-import { allStoredSessions, type StoredSession } from "../../conversations/services/sessions.service";
+import { allStoredSessions, getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import { isBusy } from "../../engine/services/engine.service";
 import { appWatching } from "../../status/services/viewers.service";
 import { touchWorktree } from "../repositories/code.repository";
 import { stopDevServers } from "./dev-server.service";
+import { type CodeSignal, onCodeSignal } from "./live-diff.service";
 import {
   activeWorkspace,
+  alignBase,
   CodeError,
   closeWorkspace,
+  codeSummary,
+  followHead,
   git,
   gitSafeEnv,
+  type KnownPr,
   publicWorkspace,
   type WorkspaceState,
 } from "./workspace.service";
@@ -235,35 +240,110 @@ async function hasUpstream(workspace: WorkspaceState) {
   return (await git(workspace.path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])).code === 0;
 }
 
-async function wasPushed(workspace: WorkspaceState) {
-  if (await hasUpstream(workspace)) return true;
-  return (
-    (await git(workspace.path, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${workspace.branch}`]))
-      .code === 0
-  );
+async function wasPushed(workspace: WorkspaceState, branch: string) {
+  if ((await git(workspace.path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", `${branch}@{u}`])).code === 0)
+    return true;
+  return (await git(workspace.path, ["rev-parse", "--verify", "--quiet", `refs/remotes/origin/${branch}`])).code === 0;
 }
 
-export async function discoverPr(workspace: WorkspaceState) {
+function statusOf(state: unknown, draft: unknown): PrStatus {
+  const value = String(state ?? "").toUpperCase();
+  if (value === "MERGED") return "merged";
+  if (value === "CLOSED") return "closed";
+  return draft ? "draft" : "open";
+}
+
+export async function discoverPr(workspace: WorkspaceState, branch = workspace.branch): Promise<KnownPr[]> {
   const result = await gh(workspace.path, [
     "pr",
     "list",
     "--head",
-    workspace.branch,
+    branch,
     "--state",
     "all",
     "--json",
-    "number,url,updatedAt",
+    "number,state,isDraft,headRefName",
     "--limit",
-    "5",
+    "10",
   ]);
-  if (result.code !== 0) return null;
+  if (result.code !== 0) return [];
   try {
-    const list = JSON.parse(result.stdout) as Array<{ number: number; updatedAt?: string }>;
-    const newest = [...list].sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))[0];
-    return newest ? newest.number : null;
+    const list = JSON.parse(result.stdout) as Array<{
+      number: number;
+      state?: string;
+      isDraft?: boolean;
+      headRefName?: string;
+    }>;
+    return list
+      .filter((item) => Number.isInteger(item.number))
+      .map((item) => ({
+        number: item.number,
+        head: item.headRefName || branch,
+        status: statusOf(item.state, item.isDraft),
+      }));
   } catch {
-    return null;
+    return [];
   }
+}
+
+const protectedBranches = new Set(["main", "master", "develop"]);
+
+export async function visitedBranches(workspace: WorkspaceState) {
+  const log = await git(workspace.path, ["reflog", "--format=%gs", "-n", "300"]);
+  const names = new Set<string>();
+  for (const line of log.stdout.split("\n")) {
+    const match = line.match(/^checkout: moving from (\S+) to (\S+)$/);
+    if (match) names.add(match[2]).add(match[1]);
+  }
+  const visited: string[] = [];
+  for (const name of names) {
+    if (name === workspace.branch || protectedBranches.has(name) || visited.length >= 6) continue;
+    if ((await git(workspace.path, ["show-ref", "--verify", "--quiet", `refs/heads/${name}`])).code === 0)
+      visited.push(name);
+  }
+  return visited;
+}
+
+function isOpen(status: PrStatus) {
+  return status === "open" || status === "draft";
+}
+
+function remember(workspace: WorkspaceState, entry: KnownPr) {
+  const others = (workspace.prs ?? []).filter((item) => item.number !== entry.number);
+  workspace.prs = [entry, ...others].sort((a, b) => b.number - a.number).slice(0, 12);
+}
+
+export function choosePr(prs: KnownPr[], branch: string, skip: Set<number> = new Set()) {
+  const rank = (item: KnownPr) => (isOpen(item.status) ? 0 : 2) + (item.head === branch ? 0 : 1);
+  return (
+    prs.filter((item) => !skip.has(item.number)).sort((a, b) => rank(a) - rank(b) || b.number - a.number)[0] ?? null
+  );
+}
+
+async function discoverAll(workspace: WorkspaceState) {
+  const branches = [workspace.branch, ...(await visitedBranches(workspace))];
+  for (const [index, branch] of branches.entries()) {
+    if (index > 0 && (workspace.prs ?? []).some((item) => isOpen(item.status))) return;
+    if (!(await wasPushed(workspace, branch))) continue;
+    for (const item of await discoverPr(workspace, branch)) remember(workspace, item);
+  }
+}
+
+async function resolvePr(workspace: WorkspaceState) {
+  const skip = new Set<number>();
+  let fallback: PrSnapshot | null = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const pick = choosePr(workspace.prs ?? [], workspace.branch, skip);
+    if (!pick) break;
+    skip.add(pick.number);
+    const snapshot = await fetchPr(workspace.path, pick.number);
+    if (!snapshot) continue;
+    remember(workspace, { number: snapshot.number, head: snapshot.head || pick.head, status: snapshot.status });
+    if (isOpen(snapshot.status)) return snapshot;
+    fallback ??= snapshot;
+    if (!(workspace.prs ?? []).some((item) => !skip.has(item.number) && isOpen(item.status))) break;
+  }
+  return fallback;
 }
 
 function cleanLogLine(line: string) {
@@ -432,6 +512,14 @@ async function applySnapshot(session: StoredSession, workspace: WorkspaceState, 
   }
 }
 
+async function emitSummary(session: StoredSession, workspace: WorkspaceState) {
+  const summary = await codeSummary(workspace);
+  session.log.emit({
+    type: "code.status",
+    data: { workspaceId: workspace.id, files: summary.files, added: summary.added, removed: summary.removed },
+  });
+}
+
 export async function refreshPr(session: StoredSession, discover = true) {
   const workspace = activeWorkspace(session);
   if (!workspace) return null;
@@ -439,12 +527,23 @@ export async function refreshPr(session: StoredSession, discover = true) {
   if (inFlight.has(key)) return workspace.pr ?? null;
   inFlight.add(key);
   try {
-    let number = workspace.pr?.number ?? null;
-    if (!number && discover && (await wasPushed(workspace))) number = await discoverPr(workspace);
-    if (!number) return null;
-    const next = await fetchPr(workspace.path, number);
+    const switched = await followHead(workspace);
+    if (switched)
+      session.log.emit({
+        type: "code.branch",
+        data: { workspaceId: workspace.id, from: switched.from, to: switched.to },
+      });
+    if (workspace.pr)
+      remember(workspace, { number: workspace.pr.number, head: workspace.pr.head, status: workspace.pr.status });
+    if (discover) await discoverAll(workspace);
+    const next = await resolvePr(workspace);
+    const realigned = next && next.head === workspace.branch ? await alignBase(workspace, next.base) : false;
+    if (next) await applySnapshot(session, workspace, next);
+    if (switched || realigned) {
+      await session.save();
+      await emitSummary(session, workspace);
+    }
     if (!next) return workspace.pr ?? null;
-    await applySnapshot(session, workspace, next);
     nextCheck.set(key, Date.now() + delayFor(next));
     return next;
   } finally {
@@ -455,15 +554,46 @@ export async function refreshPr(session: StoredSession, discover = true) {
 export function kickPr(session: StoredSession, url?: string | null) {
   const workspace = activeWorkspace(session);
   if (!workspace) return;
-  const number = url?.match(/\/pull\/(\d+)/)?.[1];
-  if (number && !workspace.pr) {
-    void fetchPr(workspace.path, number)
-      .then((pr) => pr && applySnapshot(session, workspace, pr))
-      .catch((error) => console.warn("pr fetch failed", error));
-    nextCheck.set(session.meta.sessionId, Date.now() + pendingDelayMs);
-    return;
-  }
+  const number = Number(url?.match(/\/pull\/(\d+)/)?.[1] ?? 0);
   nextCheck.set(session.meta.sessionId, Date.now());
+  if (!number) return;
+  if (!(workspace.prs ?? []).some((item) => item.number === number))
+    remember(workspace, { number, head: workspace.branch, status: "open" });
+  void refreshPr(session, false).catch((error) => console.warn("pr fetch failed", error));
+}
+
+async function originSlug(workspace: WorkspaceState) {
+  const origin = (await git(workspace.path, ["remote", "get-url", "origin"])).stdout.trim();
+  return origin.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?\/?$/i)?.[1]?.toLowerCase() ?? null;
+}
+
+async function adoptPrUrls(session: StoredSession, urls: string[], created: boolean) {
+  const workspace = activeWorkspace(session);
+  if (!workspace) return;
+  const slug = await originSlug(workspace);
+  if (!slug) return;
+  const branches = new Set([workspace.branch, ...(await visitedBranches(workspace))]);
+  let adopted = false;
+  for (const url of urls) {
+    const match = url.match(/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)/);
+    if (!match || match[1].toLowerCase() !== slug) continue;
+    const number = Number(match[2]);
+    if (workspace.prs?.some((item) => item.number === number) || workspace.pr?.number === number) continue;
+    const snapshot = await fetchPr(workspace.path, number);
+    if (!snapshot || (!created && !branches.has(snapshot.head))) continue;
+    remember(workspace, { number, head: snapshot.head, status: snapshot.status });
+    adopted = true;
+  }
+  if (!adopted) return;
+  nextCheck.set(session.meta.sessionId, Date.now());
+  await refreshPr(session, false);
+}
+
+export async function handleCodeSignal(signal: CodeSignal) {
+  const session = getStoredSession(signal.sessionId);
+  if (!session) return;
+  if (signal.kind === "pr") await adoptPrUrls(session, signal.urls, signal.created);
+  else await refreshPr(session);
 }
 
 async function isClean(workspace: WorkspaceState) {
@@ -535,7 +665,7 @@ async function tick() {
     if (due > now) continue;
     nextCheck.set(key, now + delayFor(workspace.pr ?? null));
     try {
-      if (workspace.pr?.status !== "merged") await refreshPr(session);
+      await refreshPr(session);
       await autoClose(session, workspace);
     } catch (error) {
       console.warn("pr watch failed", key, error instanceof Error ? error.message : error);
@@ -544,6 +674,9 @@ async function tick() {
 }
 
 export function startPrWatcher() {
+  onCodeSignal((signal) => {
+    void handleCodeSignal(signal).catch((error) => console.warn("code signal failed", error));
+  });
   let running = false;
   const run = () => {
     if (running) return;

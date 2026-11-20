@@ -546,7 +546,7 @@ describe("nativeHooks", () => {
     });
     expect(events[0].data.capability).toMatchObject({ label: "Editar e.txt" });
     await hooks.after("Edit", {}, { filePath: "x" }, "tu2", false);
-    expect(scan).toHaveBeenCalledWith("tu2", "tool");
+    expect(scan).toHaveBeenCalledWith("tu2", "tool", expect.objectContaining({ input: expect.any(Object) }));
     expect(events.find((event) => event.type === "call.settled")?.data.output).toEqual({ ok: true });
   });
 
@@ -600,7 +600,7 @@ describe("nativeHooks", () => {
       expect(command).toContain("SECRET=1 vitest run");
       expect(events[0].data.input).toEqual({ command: "vitest run", description: "Testes" });
       await hooks.after("Bash", {}, { stdout: "ok", stderr: "", interrupted: true }, "tu5", false);
-      expect(scan).toHaveBeenCalledWith("tu5", "tool");
+      expect(scan).toHaveBeenCalledWith("tu5", "tool", expect.objectContaining({ input: expect.any(Object) }));
       expect(events.find((event) => event.type === "call.settled")?.data.output).toEqual({
         stdout: "ok",
         stderr: "",
