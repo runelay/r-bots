@@ -66,10 +66,27 @@ export function watchComputerEvents(onStop: (event: { type: string; botId?: stri
   });
 }
 
-const shellAllowlist = /^\s*(npm|pnpm|bun|node|swift|xcodebuild|ls|cat|mkdir|git\s+(status|diff|add|commit))\b/;
+const shellMetacharacters = /[;&|`$()<>\n\r*?[\]{}\\'"!#~]/;
+const shellPrograms = new Set(["npm", "pnpm", "bun", "node", "swift", "xcodebuild", "ls", "cat", "mkdir"]);
+const gitReadWrite = new Set(["status", "diff", "add", "commit"]);
+
+export function shellArgv(command: string): string[] | null {
+  if (shellMetacharacters.test(command)) return null;
+  return command.trim().split(/[ \t]+/).filter(Boolean);
+}
+
+function shellAllowed(argv: string[]) {
+  const [program, sub] = argv;
+  if (program === "git") return gitReadWrite.has(sub ?? "");
+  return shellPrograms.has(program);
+}
+
+const doShellScript = /\bdo\s+shell\s+script\b/i;
 
 export function computerHumanReason(tool: string, args: Record<string, unknown>): string | null {
   const text = JSON.stringify(args);
+  if (tool === "computer_applescript" && doShellScript.test(String(args.script ?? "")))
+    return "AppleScript com do shell script roda comando no Mac: sempre passa por uma pessoa.";
   if (
     tool === "computer_applescript" &&
     /\b(send|deliver|delete|empty trash|purchase|buy|pay)\b|\bMail\b|\bMessages\b/i.test(String(args.script ?? ""))
@@ -78,10 +95,12 @@ export function computerHumanReason(tool: string, args: Record<string, unknown>)
   }
   if (tool === "files_trash" && Array.isArray(args.paths) && args.paths.length > 10)
     return "Mandar mais de 10 itens para a lixeira sempre passa por uma pessoa.";
-  if (tool === "shell_run" && !shellAllowlist.test(String(args.cmd ?? "")))
-    return "Comando fora da lista permitida sempre passa por uma pessoa.";
-  if (tool === "shell_run" && /\bsudo\b|[;&|`$(]\s*rm\s|\brm\s+-rf?\b/.test(String(args.cmd ?? "")))
-    return "Comando perigoso sempre passa por uma pessoa.";
+  if (tool === "shell_run") {
+    const argv = shellArgv(String(args.cmd ?? ""));
+    if (!argv)
+      return "Comando com caractere especial de shell (; & | $ ` ( ) < > aspas ou curinga) sempre passa por uma pessoa.";
+    if (!shellAllowed(argv)) return "Comando fora da lista permitida sempre passa por uma pessoa.";
+  }
   if (
     (tool === "computer_type" || tool === "computer_key") &&
     /(?:\d[ -]?){13,19}|\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/.test(text)

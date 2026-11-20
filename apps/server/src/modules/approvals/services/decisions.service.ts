@@ -30,7 +30,10 @@ const cardLike = /\b(?:\d[ -]?){13,19}\b/;
 const cpfLike = /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/;
 const cnpjLike = /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/;
 
+export const scheduleTools = new Set(["add_schedule", "update_schedule"]);
+
 export function hardHumanReason(tool: string, input: Record<string, unknown>, element: string) {
+  if (scheduleTools.has(tool)) return "Criar ou mudar rotina sempre passa por uma pessoa: ela roda sozinha depois.";
   if (tool === "browser_fill") {
     const value = String(input.text ?? "");
     if (sensitiveField.test(element)) return "Campo sensível (senha, cartão, documento ou token).";

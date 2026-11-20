@@ -56,6 +56,8 @@ describe("hardHumanReason", () => {
     );
     expect(hardHumanReason("browser_click", {}, 'link "Docs"')).toBeNull();
     expect(hardHumanReason("browser_open", {}, "Delete")).toBeNull();
+    expect(hardHumanReason("add_schedule", { cron: "* * * * *" }, "")).toContain("rotina");
+    expect(hardHumanReason("update_schedule", {}, "")).toContain("rotina");
   });
 });
 

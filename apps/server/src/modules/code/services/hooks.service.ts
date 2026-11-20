@@ -8,9 +8,10 @@ import type { EventLog } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import { secretBashCommand } from "../../vault/services/vault-tools.service";
 import { addGrant, hasGrant } from "../repositories/code.repository";
-import { wrapHeavyCommand } from "./heavy-commands.service";
+import { heavyTimeoutSec, wrapHeavyCommand } from "./heavy-commands.service";
 import type { CodeLive } from "./live-diff.service";
 import { commandIsReadOnly, fixedRuleViolation, type Gate, gateNative } from "./policy.service";
+import { sandboxMarker, sandboxMode, sandboxProblem, sandboxShell } from "./sandbox.service";
 import {
   clipText,
   diffTexts,
@@ -21,6 +22,11 @@ import {
 } from "./workspace.service";
 
 const editTools = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
+
+export const approvalTimeoutMs = Number(process.env.CODE_APPROVAL_TIMEOUT_SEC ?? 600) * 1000;
+
+const backgroundDeny =
+  "Bash em segundo plano (run_in_background) não é permitido. Para servidor ou watcher, use dev_server_start; para ver a saída, dev_server_logs.";
 
 function clip(text: string, max: number) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
@@ -269,6 +275,7 @@ export async function beginCall(
       ...(spec.target ? { target: spec.target } : {}),
       ...(gate.reason ? { reason: gate.reason } : {}),
       ...(offerGrant ? { grant: offerGrant } : {}),
+      timeoutMs: approvalTimeoutMs,
     });
     if (choice !== "approve") return reject(interactionId, "A pessoa negou essa ação. Não tente de novo sem pedir.");
     if (always && gate.grantKey && repo) await addGrant(repo, gate.grantKey);
@@ -350,6 +357,32 @@ export async function emitEdit(
   });
 }
 
+export async function sandboxedBash(
+  context: ToolContext,
+  command: string,
+  input: Record<string, unknown>,
+): Promise<{ command: string | null } | { error: string }> {
+  let rewritten: string | null;
+  try {
+    rewritten = await secretBashCommand(context, command);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+  if (rewritten) return { command: wrapHeavyCommand(command, rewritten) ?? rewritten };
+  if (sandboxMode() === "off") return { command: wrapHeavyCommand(command, command) };
+  const problem = await sandboxProblem();
+  if (problem) return { error: problem };
+  const requested = Number(input.timeout);
+  const bashSec = Math.ceil((Number.isFinite(requested) && requested > 0 ? requested : 600_000) / 1000) + 30;
+  const outer = (inner: string) =>
+    sandboxShell({
+      command: inner,
+      marker: sandboxMarker("sbx", context.turnId),
+      timeoutSec: Math.max(bashSec, heavyTimeoutSec(command)),
+    });
+  return { command: wrapHeavyCommand(command, command, outer) ?? outer(command) };
+}
+
 export function nativeHooks(context: ToolContext, workspace: WorkspaceState, live: CodeLive): NativeToolHooks {
   const calls = new Map<
     string,
@@ -357,7 +390,10 @@ export function nativeHooks(context: ToolContext, workspace: WorkspaceState, liv
   >();
   return {
     before: async (tool, input, toolUseId) => {
-      const gate = gateNative(tool, input, workspace);
+      const gate: Gate =
+        tool === "Bash" && input.run_in_background
+          ? { kind: "deny", message: backgroundDeny }
+          : gateNative(tool, input, workspace);
       const command = tool === "Bash" ? String(input.command ?? "") : "";
       const file = String(input.file_path ?? input.notebook_path ?? "");
       const target = command
@@ -377,18 +413,16 @@ export function nativeHooks(context: ToolContext, workspace: WorkspaceState, liv
       if (!start.allowed) return { allow: false, message: start.message };
       let rewritten: string | null = null;
       if (command) {
-        try {
-          rewritten = await secretBashCommand(context, command);
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+        const prepared = await sandboxedBash(context, command, input);
+        if ("error" in prepared) {
           endCall(context, start.callId, tool, shownInput(tool, input, workspace) as Record<string, unknown>, {
             ok: false,
-            error: message,
+            error: prepared.error,
           });
-          return { allow: false, message };
+          return { allow: false, message: prepared.error };
         }
+        rewritten = prepared.command;
       }
-      if (command) rewritten = wrapHeavyCommand(command, rewritten ?? command) ?? rewritten;
       const absPath = editTools.has(tool) && file ? resolve(workspace.path, file) : null;
       calls.set(toolUseId, { callId: start.callId, absPath, before: absPath ? await readMaybe(absPath) : null, input });
       return rewritten ? { allow: true, input: { ...input, command: rewritten } } : { allow: true };

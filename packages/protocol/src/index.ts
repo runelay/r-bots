@@ -25,6 +25,7 @@ export interface TurnRequest {
   mcp: McpTarget | null;
   workKey: string;
   code?: { cwd: string; readOnly?: boolean } | null;
+  nativeShell?: boolean;
 }
 
 export interface NativeToolGate {

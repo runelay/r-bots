@@ -1,7 +1,9 @@
+import { realpathSync } from "node:fs";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { asc } from "drizzle-orm";
+import { dataDir, rootDir } from "../../../config/env";
 import { getDb } from "../../../db";
 import { codeRepos, codeWorkspaces } from "../../../db/tables";
 
@@ -74,6 +76,36 @@ export function insideAllowedArea(path: string, extra: string[] = []) {
 export function insideHome(path: string) {
   const absolute = resolve(expandHome(path));
   return within(hostHome, absolute) || within(homedir(), absolute);
+}
+
+function real(path: string) {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+export function repoRootProblem(path: string) {
+  const target = real(resolve(expandHome(path)));
+  const homes = [hostHome, homedir()].map(real);
+  if (target === "/" || homes.includes(target))
+    return `${target} é a raiz ou a pasta pessoal inteira, não um repositório.`;
+  const serverRoots = [
+    dataDir,
+    "/data",
+    "/backups",
+    "/run",
+    "/proc",
+    "/sys",
+    "/etc",
+    rootDir,
+    worktreesRoot,
+    join(hostHome, ".local", "share", "runelay-bots"),
+    join(hostHome, ".local", "share", "runelay-bots-backups"),
+  ].map((root) => real(resolve(root)));
+  const clash = serverRoots.find((root) => within(target, root) || within(root, target));
+  return clash ? `${target} contém ou fica dentro de uma pasta do servidor (${clash}) e não pode ser liberado.` : null;
 }
 
 export async function gitRepoAt(path: string) {

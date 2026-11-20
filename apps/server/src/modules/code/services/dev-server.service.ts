@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { childEnv } from "@runelay-bots/providers/proc";
 import type { Subprocess } from "bun";
 import { env } from "../../../config/env";
+import { killSandboxed, sandboxArgv, sandboxMarker, sandboxMode, sandboxProblem } from "./sandbox.service";
 import { codeDataDir, insideWorkspace, type WorkspaceState, waitForInstall } from "./workspace.service";
 
 export interface DevServer {
@@ -23,7 +24,14 @@ export interface DevServer {
   previewToken: string;
   child: Subprocess<"ignore", "pipe", "pipe"> | null;
   tail: string[];
+  marker: string | null;
+  expiry: ReturnType<typeof setTimeout> | null;
 }
+
+export const devLimits = {
+  perWorkspace: Number(process.env.CODE_DEV_SERVER_MAX ?? 3),
+  maxMinutes: Number(process.env.CODE_DEV_SERVER_MAX_MIN ?? 240),
+};
 
 const servers = new Map<string, DevServer>();
 const portBase = env.DEV_PORT_BASE;
@@ -71,6 +79,19 @@ function withPort(command: string, port: number) {
   if (/^(npm\s+start)\b/.test(command.trim())) return `${command} -- --port ${port}`;
   if (/^(pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+/.test(command.trim()) || /\b(vite|next|astro|wrangler)\b/.test(command))
     return `${command} --port ${port}`;
+  return command;
+}
+
+const publicBind =
+  /(--host(name)?|--ip|--bind|-H|-b)(=|\s+)(0\.0\.0\.0|::|\[::\]|\*)(\s|$)|\bHOST=(0\.0\.0\.0|::)|--host(\s*$|\s+-)/;
+
+export function withHost(command: string) {
+  if (publicBind.test(command))
+    throw new Error("O servidor de desenvolvimento só pode ouvir em 127.0.0.1. Tire o --host 0.0.0.0 do comando.");
+  if (/(--host(name)?|--ip|--bind|\s-H)(=|\s)/.test(command)) return command;
+  if (/\b(vite|astro)\b/.test(command)) return `${command} --host 127.0.0.1`;
+  if (/\bnext\b/.test(command)) return `${command} -H 127.0.0.1`;
+  if (/\bwrangler\b/.test(command)) return `${command} --ip 127.0.0.1`;
   return command;
 }
 
@@ -128,26 +149,38 @@ export async function startDevServer(
   if (!command) throw new Error("Diga o comando, por exemplo npm run dev.");
   const cwd = resolve(workspace.path, input.cwd ?? ".");
   if (!insideWorkspace(workspace, cwd)) throw new Error("A pasta do servidor precisa ficar dentro da tarefa.");
+  const problem = await sandboxProblem();
+  if (problem) throw new Error(problem);
+  if (devServersOf(workspace).length >= devLimits.perWorkspace)
+    throw new Error(
+      `Já há ${devLimits.perWorkspace} servidores rodando nesta tarefa. Pare um com dev_server_stop antes de subir outro.`,
+    );
+  const hosted = withHost(command);
   await waitForInstall(workspace);
   const port = await freePort(input.port);
   reserved.add(port);
-  const finalCommand = withPort(command, port);
+  const finalCommand = withPort(hosted, port);
   const id = `dev_${randomBytes(5).toString("hex")}`;
+  const marker = sandboxMode() === "uid" ? sandboxMarker("dev", id) : null;
+  const childVars = {
+    PORT: String(port),
+    HOST: "127.0.0.1",
+    BROWSER: "none",
+    FORCE_COLOR: "0",
+    CI: "",
+    NODE_ENV: "development",
+  };
   const logDir = join(codeDataDir, workspace.id, "dev");
   await mkdir(logDir, { recursive: true });
   const logFile = join(logDir, `${port}.log`);
   const out: WriteStream = createWriteStream(logFile, { flags: "a" });
   out.write(`\n$ ${finalCommand}\n`);
-  const child = Bun.spawn(["bash", "-lc", finalCommand], {
+  const argv = marker
+    ? sandboxArgv({ cwd, command: finalCommand, marker, timeoutSec: devLimits.maxMinutes * 60 + 60, env: childVars })
+    : ["bash", "-lc", finalCommand];
+  const child = Bun.spawn(argv, {
     cwd,
-    env: childEnv({
-      PORT: String(port),
-      HOST: "127.0.0.1",
-      BROWSER: "none",
-      FORCE_COLOR: "0",
-      CI: "",
-      NODE_ENV: "development",
-    }),
+    env: childEnv(childVars),
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -168,8 +201,12 @@ export async function startDevServer(
     previewToken: randomBytes(18).toString("base64url"),
     child,
     tail: [],
+    marker,
+    expiry: null,
   };
   servers.set(id, server);
+  server.expiry = setTimeout(() => void stopDevServer(server), devLimits.maxMinutes * 60_000);
+  server.expiry.unref();
   const onData = (data: Buffer) => {
     const text = data.toString("utf8");
     out.write(text);
@@ -183,6 +220,7 @@ export async function startDevServer(
   void Promise.all([pump(child.stdout), pump(child.stderr), child.exited]).then(() => {
     out.end();
     reserved.delete(port);
+    if (server.expiry) clearTimeout(server.expiry);
     if (server.status !== "stopped") server.status = "exited";
     server.exitCode = child.exitCode;
     server.child = null;
@@ -215,6 +253,7 @@ export async function stopDevServer(server: DevServer) {
   if (!server.child) return publicServer(server);
   server.status = "stopped";
   const child = server.child;
+  if (server.marker) await killSandboxed(server.marker);
   killGroup(child, "SIGTERM");
   const stopped = await Promise.race([child.exited.then(() => true), Bun.sleep(5_000).then(() => false)]);
   if (!stopped) killGroup(child, "SIGKILL");
@@ -242,5 +281,9 @@ export async function devServerLogs(workspace: WorkspaceState, port: number | un
 }
 
 export function stopAllDevServers() {
-  for (const server of servers.values()) if (server.child) killGroup(server.child, "SIGTERM");
+  for (const server of servers.values()) {
+    if (!server.child) continue;
+    if (server.marker) void killSandboxed(server.marker);
+    killGroup(server.child, "SIGTERM");
+  }
 }

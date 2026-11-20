@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { readUsage, runCursor, withInstructions } from "../cursor";
+import { cursorPermissions, readUsage, runCursor, withInstructions } from "../cursor";
 import { fakeCli, recorder, turnRequest } from "./fakes";
 
 const signal = () => new AbortController().signal;
@@ -103,7 +103,19 @@ describe("runCursor", () => {
     expect(args[args.indexOf("--workspace") + 1]).toBe(fakeCli.home);
     expect(args[args.indexOf("--model") + 1]).toBe("model-x");
     expect(args[args.indexOf("--resume") + 1]).toBe("cs-0");
-    expect(args.at(-1)).toBe("hello");
+    expect(args.slice(-2)).toEqual(["--", "hello"]);
+    const permissions = JSON.parse(await readFile(join(fakeCli.home, ".cursor", "cli.json"), "utf8"));
+    expect(permissions).toEqual(cursorPermissions);
+    expect(fs.statSync(join(fakeCli.home, ".cursor", "cli.json")).mode & 0o777).toBe(0o600);
+  });
+
+  test("native shell turns drop the permission file", async () => {
+    fakeCli.lines("cursor-agent", [{ type: "result" }]);
+    const { emit } = recorder();
+    await runCursor(turnRequest({ provider: "cursor" }), fakeCli.home, signal(), emit);
+    expect(fs.existsSync(join(fakeCli.home, ".cursor", "cli.json"))).toBe(true);
+    await runCursor(turnRequest({ provider: "cursor", nativeShell: true }), fakeCli.home, signal(), emit);
+    expect(fs.existsSync(join(fakeCli.home, ".cursor", "cli.json"))).toBe(false);
   });
 
   test("an empty mcp config is written when there is no mcp target", async () => {

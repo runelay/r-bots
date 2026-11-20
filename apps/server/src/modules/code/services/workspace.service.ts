@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { createWriteStream } from "node:fs";
+import { createWriteStream, readdirSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { childEnv, findBinary, run } from "@runelay-bots/providers/proc";
@@ -7,6 +7,7 @@ import { dataDir } from "../../../config/env";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import type { PrSnapshot } from "./pull-request.service";
 import { allowedRepos, expandHome, worktreesRoot } from "./repos.service";
+import { sandboxArgv, sandboxGroup, sandboxMarker, sandboxMode, sandboxProblem } from "./sandbox.service";
 
 export { worktreesRoot };
 export const codeDataDir = join(dataDir, "code");
@@ -69,12 +70,102 @@ export class CodeError extends Error {
   }
 }
 
+export const gitSafety: Array<[string, string]> = [
+  ["core.hooksPath", "/dev/null"],
+  ["core.fsmonitor", "false"],
+  ["diff.external", ""],
+  ["protocol.ext.allow", "never"],
+  ["core.pager", "cat"],
+];
+
+const diffLike = new Set(["diff", "show", "log"]);
+
+function isDirSync(path: string) {
+  try {
+    return statSync(path).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+export function pinnedGitEnv(cwd: string): Record<string, string> | null {
+  const rel = relative(worktreesRoot, resolve(cwd));
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+  const [name, id] = rel.split("/");
+  if (!name || !id) return null;
+  const repo = allowedRepos().find((item) => item.name === name);
+  if (!repo) return null;
+  const common = join(repo.path, ".git");
+  const root = join(worktreesRoot, name, id);
+  const admin = join(common, "worktrees");
+  let gitDir = isDirSync(join(admin, id)) ? join(admin, id) : null;
+  if (!gitDir) {
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(admin);
+    } catch {}
+    for (const entry of entries) {
+      try {
+        if (readFileSync(join(admin, entry, "gitdir"), "utf8").trim() === join(root, ".git")) {
+          gitDir = join(admin, entry);
+          break;
+        }
+      } catch {}
+    }
+  }
+  if (!gitDir) return null;
+  return { GIT_DIR: gitDir, GIT_COMMON_DIR: common, GIT_WORK_TREE: root };
+}
+
+export function gitArgs(args: string[]) {
+  const first = args[0] ?? "";
+  return diffLike.has(first) ? [first, "--no-ext-diff", "--no-textconv", ...args.slice(1)] : args;
+}
+
+export function gitSafeEnv(cwd: string): Record<string, string> {
+  const env: Record<string, string> = {
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_NOSYSTEM: "1",
+    GIT_PAGER: "cat",
+    GIT_CONFIG_COUNT: String(gitSafety.length),
+  };
+  gitSafety.forEach(([key, value], index) => {
+    env[`GIT_CONFIG_KEY_${index}`] = key;
+    env[`GIT_CONFIG_VALUE_${index}`] = value;
+  });
+  return { ...env, ...(pinnedGitEnv(cwd) ?? {}) };
+}
+
 export function git(cwd: string, args: string[], timeoutMs = 60_000, extraEnv: Record<string, string> = {}) {
-  return run("git", args, {
+  return run("git", gitArgs(args), {
     cwd,
     timeoutMs,
-    env: childEnv({ GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0", ...extraEnv }),
+    env: childEnv({ GIT_OPTIONAL_LOCKS: "0", ...gitSafeEnv(cwd), ...extraEnv }),
   });
+}
+
+export async function shareWithSandbox(workspace: WorkspaceState) {
+  if (sandboxMode() !== "uid") return;
+  const common = join(workspace.repo, ".git");
+  const pinned = pinnedGitEnv(workspace.path);
+  const paths = [
+    workspace.path,
+    join(common, "objects"),
+    join(common, "refs"),
+    join(common, "logs"),
+    ...(pinned ? [pinned.GIT_DIR] : []),
+  ];
+  const steps: Array<[string, string[]]> = [
+    ["chgrp", ["-R", sandboxGroup, ...paths]],
+    ["chmod", ["-R", "g+rwX", ...paths]],
+    ["find", [...paths, "-type", "d", "-exec", "chmod", "g+s", "{}", "+"]],
+  ];
+  for (const [bin, args] of steps) {
+    const result = await run(bin, args, { timeoutMs: 300_000 });
+    if (result.code !== 0)
+      console.warn(`sandbox ${bin} falhou em ${workspace.id}: ${result.stderr.trim().slice(0, 300)}`);
+  }
+  await git(workspace.repo, ["config", "core.sharedRepository", "group"]);
 }
 
 async function isDir(path: string) {
@@ -208,12 +299,17 @@ export function waitForInstall(workspace: WorkspaceState) {
 
 function installPlan(files: Set<string>) {
   if (files.has("bun.lock") || files.has("bun.lockb"))
-    return { manager: "bun", bin: "bun", args: ["install", "--frozen-lockfile"] };
-  if (files.has("pnpm-lock.yaml")) return { manager: "pnpm", bin: "pnpm", args: ["install", "--frozen-lockfile"] };
-  if (files.has("yarn.lock")) return { manager: "yarn", bin: "yarn", args: ["install", "--frozen-lockfile"] };
-  if (files.has("package-lock.json")) return { manager: "npm", bin: "npm", args: ["ci", "--no-audit", "--no-fund"] };
+    return { manager: "bun", bin: "bun", args: ["install", "--frozen-lockfile", "--ignore-scripts"] };
+  if (files.has("pnpm-lock.yaml"))
+    return { manager: "pnpm", bin: "pnpm", args: ["install", "--frozen-lockfile", "--ignore-scripts"] };
+  if (files.has("yarn.lock"))
+    return { manager: "yarn", bin: "yarn", args: ["install", "--frozen-lockfile", "--ignore-scripts"] };
+  if (files.has("package-lock.json"))
+    return { manager: "npm", bin: "npm", args: ["ci", "--no-audit", "--no-fund", "--ignore-scripts"] };
   return null;
 }
+
+export const installLimits = { logBytes: Number(process.env.CODE_INSTALL_LOG_MAX_BYTES ?? 5 * 1024 * 1024) };
 
 export function installLogPath(workspace: WorkspaceState) {
   return join(codeDataDir, workspace.id, "install.log");
@@ -238,14 +334,15 @@ function startInstall(session: StoredSession, workspace: WorkspaceState) {
     }
     const bin = findBinary([plan.bin]);
     const command = `${plan.bin} ${plan.args.join(" ")}`;
-    if (!bin) {
+    const problem = await sandboxProblem();
+    if (!bin || problem) {
       workspace.install = {
         status: "failed",
         manager: plan.manager,
         command,
         startedAt: null,
         finishedAt: new Date().toISOString(),
-        error: `${plan.bin} não está instalado na VPS.`,
+        error: problem ?? `${plan.bin} não está instalado na VPS.`,
       };
       emit();
       await session.save();
@@ -265,8 +362,18 @@ function startInstall(session: StoredSession, workspace: WorkspaceState) {
     const out = createWriteStream(installLogPath(workspace));
     const code = await (async () => {
       let child: Bun.Subprocess<"ignore", "pipe", "pipe">;
+      const argv =
+        sandboxMode() === "uid"
+          ? sandboxArgv({
+              cwd: workspace.path,
+              command,
+              marker: sandboxMarker("install", workspace.id),
+              timeoutSec: 20 * 60,
+              env: { CI: "1" },
+            })
+          : [bin, ...plan.args];
       try {
-        child = Bun.spawn([bin, ...plan.args], {
+        child = Bun.spawn(argv, {
           cwd: workspace.path,
           env: childEnv({ CI: "1" }),
           stdin: "ignore",
@@ -278,8 +385,16 @@ function startInstall(session: StoredSession, workspace: WorkspaceState) {
       } catch {
         return 1;
       }
+      let written = 0;
       const pump = async (stream: ReadableStream<Uint8Array>) => {
-        for await (const chunk of stream) out.write(chunk);
+        for await (const chunk of stream) {
+          if (written >= installLimits.logBytes) continue;
+          const room = installLimits.logBytes - written;
+          const part = chunk.byteLength > room ? chunk.subarray(0, room) : chunk;
+          written += part.byteLength;
+          out.write(part);
+          if (written >= installLimits.logBytes) out.write("\n[log cortado]\n");
+        }
       };
       await Promise.all([pump(child.stdout), pump(child.stderr)]);
       const exit = await child.exited;
@@ -341,6 +456,7 @@ export async function openWorkspace(session: StoredSession, botId: string, repoI
     current.active = true;
     current.closedAt = null;
     await session.save();
+    await shareWithSandbox(current);
     session.log.emit({ type: "code.workspace", data: { action: "reopened", ...publicWorkspace(current) } });
     return { workspace: current, created: false };
   }
@@ -379,6 +495,7 @@ export async function openWorkspace(session: StoredSession, botId: string, repoI
   session.meta.workspace = workspace;
   await session.save();
   session.log.emit({ type: "code.workspace", data: { action: "opened", ...publicWorkspace(workspace) } });
+  await shareWithSandbox(workspace);
   startInstall(session, workspace);
   statusCache.delete(path);
   return { workspace, created: true };
