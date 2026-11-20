@@ -173,7 +173,7 @@ final class ServerProfiles {
             return .needsOwner
         }
         guard let token else {
-            return setup.required ? .signedOut : .connected(latency: latency)
+            return .signedOut
         }
         do {
             _ = try await client.profile(token: token)

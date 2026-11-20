@@ -218,12 +218,21 @@ final class AuthSession: NSObject {
     }
 
     private func openBrowser(_ url: URL) {
-        let session = ASWebAuthenticationSession(url: url, callback: .customScheme("runelaybots")) { _, _ in }
+        let session = ASWebAuthenticationSession(url: url, callback: .customScheme("runelaybots"), completionHandler: Self.browserCompletion(for: self))
         session.presentationContextProvider = self
         session.prefersEphemeralWebBrowserSession = false
         webSession = session
         if !session.start() {
             NSWorkspace.shared.open(url)
+        }
+    }
+
+    nonisolated private static func browserCompletion(for owner: AuthSession) -> @Sendable (URL?, (any Error)?) -> Void {
+        { [weak owner] _, error in
+            guard error != nil, let owner else { return }
+            Task { @MainActor in
+                owner.cancelBrowser()
+            }
         }
     }
 

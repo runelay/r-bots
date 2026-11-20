@@ -64,7 +64,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let deny = UNNotificationAction(identifier: "deny", title: "Negar", options: [.destructive])
         let approval = UNNotificationCategory(identifier: "approval", actions: [approve, deny], intentIdentifiers: [], options: [])
         center.setNotificationCategories([approval])
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        Task {
+            _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+        }
     }
 
     func post(_ event: StoreNotification, bot: Bot, speakerName: String?) {
@@ -102,7 +104,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             content.attachments = [attachment]
         }
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { _ in }
+        Task {
+            try? await UNUserNotificationCenter.current().add(request)
+        }
     }
 
     private static func avatarAttachment(for bot: Bot) -> UNNotificationAttachment? {

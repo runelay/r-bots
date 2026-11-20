@@ -203,6 +203,8 @@ final class UsageStore {
         content.body = body
         content.userInfo = ["usage": "1"]
         let request = UNNotificationRequest(identifier: "usage-\(account.id)-\(window.kind)-\(window.label)", content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { _ in }
+        Task {
+            try? await UNUserNotificationCenter.current().add(request)
+        }
     }
 }

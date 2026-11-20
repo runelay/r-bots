@@ -160,7 +160,7 @@ final class RunnerConnection {
         return String(decoding: (try? JSONEncoder().encode(hello)) ?? Data(), as: UTF8.self)
     }
 
-    private static func ping(_ socket: URLSessionWebSocketTask) async -> Bool {
+    nonisolated private static func ping(_ socket: URLSessionWebSocketTask) async -> Bool {
         await withCheckedContinuation { continuation in
             let once = OnceFlag()
             socket.sendPing { error in
