@@ -63,7 +63,7 @@ export function createAuthModule(options: AuthModuleOptions) {
         },
       }
     : undefined;
-  const authenticate = createAuthenticator(auth, { trusts: origins.trusts, internal });
+  const authenticate = createAuthenticator(auth, { trusts: origins.trusts, authFor: pool.forRequest, internal });
   const avatars = createAvatarService(auth, options.blobs ?? getBlobStore);
   const routes = createAuthRoutes({
     auth,

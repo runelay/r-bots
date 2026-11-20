@@ -95,6 +95,7 @@ export interface InternalCredential {
 
 export interface AuthenticatorOptions {
   trusts: (origin: string, request: Request) => boolean;
+  authFor?: (request: Request) => Auth;
   internal?: InternalCredential;
 }
 
@@ -124,8 +125,9 @@ export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
     };
   }
 
-  async function fromSession(headers: Headers): Promise<Principal | null> {
-    const result = await auth.api.getSession({ headers }).catch(() => null);
+  async function fromSession(request: Request): Promise<Principal | null> {
+    const scoped = options.authFor?.(request) ?? auth;
+    const result = await scoped.api.getSession({ headers: request.headers }).catch(() => null);
     if (!result) return null;
     return {
       userId: result.user.id,
@@ -152,7 +154,7 @@ export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
       const origin = request.headers.get("origin");
       if (origin && !options.trusts(origin, request)) return forbidden("Origem não permitida.");
     }
-    const principal = await fromSession(request.headers);
+    const principal = await fromSession(request);
     return principal ? { kind: "principal", principal } : unauthorized();
   };
 }

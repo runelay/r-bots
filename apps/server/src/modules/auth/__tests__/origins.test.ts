@@ -121,6 +121,32 @@ describe("sign in from any address of the server", () => {
     expect(local?.status).toBe(200);
   });
 
+  test("the session cookie the server hands out on an https origin opens pages on that origin", async () => {
+    const forwarded = {
+      host: "bots.example.ts.net:10447",
+      "x-forwarded-host": "bots.example.ts.net:10447",
+      "x-forwarded-proto": "https",
+    };
+    const signedIn = await mod.handle(signIn("http://127.0.0.1:2996/api/auth/sign-in/email", { ...forwarded, origin: tailnet }), null);
+    const token = signedIn?.headers.get("set-auth-token") ?? "";
+    const meRequest = new Request("http://127.0.0.1:2996/auth/me", {
+      headers: { ...forwarded, authorization: `Bearer ${token}` },
+    });
+    const outcome = await mod.authenticate(meRequest);
+    expect(outcome).toHaveProperty("kind", "principal");
+    const principal = (outcome as { principal: Parameters<AuthModule["handle"]>[1] }).principal;
+    const me = (await (await mod.handle(meRequest, principal))?.json()) as { cookie: { name: string; value: string } };
+    expect(me.cookie.name).toStartWith("__Secure-");
+    const page = new Request("http://127.0.0.1:2996/bots/boss/artifacts/art_x/v/1.html", {
+      headers: { ...forwarded, cookie: `${me.cookie.name}=${me.cookie.value}` },
+    });
+    expect(await mod.authenticate(page)).toHaveProperty("kind", "principal");
+    const local = new Request("http://127.0.0.1:2996/bots", {
+      headers: { cookie: `${me.cookie.name}=${me.cookie.value}` },
+    });
+    expect(await mod.authenticate(local)).toHaveProperty("status", 401);
+  });
+
   test("refuses another site's origin and accepts a remembered profile origin", async () => {
     const foreign = await mod.handle(
       signIn("http://127.0.0.1:2996/api/auth/sign-in/email", {
