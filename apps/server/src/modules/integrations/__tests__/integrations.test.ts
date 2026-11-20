@@ -335,6 +335,48 @@ describe("integrations", () => {
     expect(items.jev.status).toBe("invalid");
   });
 
+  test("a v1 record sealed with a raw 32 byte vault key still opens and moves to v2", async () => {
+    const vaultKey = process.env.VAULT_KEY_FILE;
+    const rawFile = join(testDataDir(), "raw.key");
+    const master = randomBytes(32);
+    writeFileSync(rawFile, master, { mode: 0o600 });
+    process.env.VAULT_KEY_FILE = rawFile;
+    try {
+      const iv = randomBytes(12);
+      const cipher = createCipheriv("aes-256-gcm", master, iv);
+      cipher.setAAD(Buffer.from("runelay-bots:integration:v1:jev", "utf8"));
+      const ct = Buffer.concat([cipher.update(goodKey, "utf8"), cipher.final()]);
+      await writeSetting(
+        "integration:jev",
+        {
+          iv: iv.toString("base64"),
+          tag: cipher.getAuthTag().toString("base64"),
+          ct: ct.toString("base64"),
+          keyRef: "vault",
+          last4: "1234",
+          url: null,
+          validatedAt: "2026-11-19T23:19:00.000Z",
+          savedAt: "2026-11-19T23:19:00.000Z",
+        },
+        getDb(),
+      );
+      const log = spyOn(console, "log").mockImplementation(() => undefined);
+      try {
+        await resetIntegrationCache();
+      } finally {
+        log.mockRestore();
+      }
+      expect(integrationSecret("jev")).toBe(goodKey);
+      const row = await readSetting<Record<string, string>>("integration:jev", {}, getDb());
+      expect(Buffer.from(row.iv, "base64")[0]).toBe(2);
+      await resetIntegrationCache();
+      expect(integrationSecret("jev")).toBe(goodKey);
+      expect(readFileSync(rawFile).equals(master)).toBe(true);
+    } finally {
+      process.env.VAULT_KEY_FILE = vaultKey;
+    }
+  });
+
   test("reads a hex vault key, survives a throwing listener and network failures", async () => {
     const vaultKey = process.env.VAULT_KEY_FILE;
     const hexFile = join(testDataDir(), "hex.key");
@@ -413,7 +455,7 @@ describe("runtime secrets", () => {
     expect(readFileSync(join(dir, "restored"), "utf8").trim()).toBe(value);
   });
 
-  test("reuses a stored secret and replaces one that is too short", async () => {
+  test("reuses a stored secret and refuses to replace one that is too short", async () => {
     const dir = join(testDataDir(), "secrets");
     rmSync(dir, { recursive: true, force: true });
     readOrCreateSecret("seed", 32, dir);
@@ -421,7 +463,7 @@ describe("runtime secrets", () => {
     expect(readOrCreateSecret("kept", 32, dir)).toBe("a-stored-secret-long-enough-1234");
     expect(runnerTokenFile()).toBe(join(testDataDir(), "runner.token"));
     writeFileSync(join(dir, "short"), "abc\n");
-    const value = readOrCreateSecret("short", 32, dir);
-    expect(value.length).toBeGreaterThanOrEqual(24);
+    expect(() => readOrCreateSecret("short", 32, dir)).toThrow("refusing to replace it");
+    expect(readFileSync(join(dir, "short"), "utf8")).toBe("abc\n");
   });
 });

@@ -29,6 +29,7 @@ export function writableKeyFile(env: NodeJS.ProcessEnv = process.env) {
 }
 
 export function parseKey(raw: Buffer) {
+  if (raw.length === 32) return Buffer.from(raw);
   const text = raw.toString("utf8").trim();
   if (/^[0-9a-f]{64}$/i.test(text)) return Buffer.from(text, "hex");
   if (/^[A-Za-z0-9+/_-]{43}=?$/.test(text)) {
@@ -56,6 +57,11 @@ export function readKeyFile(file: string) {
 
 export function loadMasterKey(env: NodeJS.ProcessEnv = process.env) {
   return readKeyFile(activeKeyFile(env));
+}
+
+export function assertKeyFileReadable(file: string) {
+  if (readKeyFile(file)) return;
+  throw new KeyFileUnsafe(`${file} exists but is not a readable 32 byte key: refusing to replace it`);
 }
 
 export function deriveKey(master: Buffer, info: string) {

@@ -282,14 +282,14 @@ describe("metadata", () => {
 });
 
 describe("server copy and key", () => {
-  test("serverStorageAvailable accepts only hex and base64 keys", async () => {
+  test("serverStorageAvailable accepts raw, hex and base64 keys", async () => {
     expect(serverStorageAvailable()).toBe(true);
     await useKey(`${testKey.toString("base64")}\n`);
     expect(serverStorageAvailable()).toBe(true);
     await useKey(testKey.toString("base64url"));
     expect(serverStorageAvailable()).toBe(true);
     await useKey(testKey);
-    expect(serverStorageAvailable()).toBe(false);
+    expect(serverStorageAvailable()).toBe(true);
     await useKey("short");
     expect(serverStorageAvailable()).toBe(false);
     await useKey(null);

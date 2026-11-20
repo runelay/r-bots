@@ -20,6 +20,7 @@ export function readOrCreateSecret(name: string, bytes = 32, directory = dataDir
       rememberSecretValue(`runtime:${file}`, stored, { pinned: true });
       return stored;
     }
+    throw new Error(`${file} exists but holds no usable secret: refusing to replace it`);
   }
   const secret = randomBytes(bytes).toString("base64url");
   persist(directory, file, secret);

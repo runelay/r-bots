@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { testDataDir } from "../../../../test/helpers";
 import {
   activeKeyFile,
+  assertKeyFileReadable,
   deriveKey,
   integrationInfo,
   keyFileCandidates,
@@ -37,14 +38,25 @@ describe("vault key", () => {
     expect(writableKeyFile({ VAULT_KEY_FILE: " " })).toBe(join(testDataDir(), "vault.key"));
   });
 
-  test("parses only 32 byte hex or base64 keys", () => {
+  test("parses 32 byte raw, hex or base64 keys", () => {
     const key = randomBytes(32);
     expect(parseKey(Buffer.from(key.toString("hex")))?.equals(key)).toBe(true);
     expect(parseKey(Buffer.from(`${key.toString("base64")}\n`))?.equals(key)).toBe(true);
     expect(parseKey(Buffer.from(key.toString("base64url")))?.equals(key)).toBe(true);
-    expect(parseKey(key)).toBeNull();
+    expect(parseKey(key)?.equals(key)).toBe(true);
+    expect(parseKey(randomBytes(31))).toBeNull();
     expect(parseKey(Buffer.from(randomBytes(31).toString("base64")))).toBeNull();
     expect(parseKey(Buffer.from("short"))).toBeNull();
+  });
+
+  test("refuses a key file that exists but does not parse", () => {
+    const dir = mkdtempSync(join(tmpdir(), "rb-key-"));
+    dirs.push(dir);
+    const file = join(dir, "vault.key");
+    writeFileSync(file, randomBytes(32), { mode: 0o600 });
+    expect(() => assertKeyFileReadable(file)).not.toThrow();
+    writeFileSync(file, "not a key", { mode: 0o600 });
+    expect(() => assertKeyFileReadable(file)).toThrow("refusing to replace it");
   });
 
   test("derives separate subkeys and rejects a wrong key id or tag length", () => {

@@ -16,6 +16,7 @@ import {
 } from "../repositories/vault.repository";
 import { isPublicSuffix } from "./public-suffix";
 import {
+  assertKeyFileReadable,
   assertKeyFileSafe,
   deriveKey,
   KeyFileUnsafe,
@@ -99,6 +100,7 @@ function ensureKeyFile() {
   const present = keyFileCandidates().find((file) => existsSync(file));
   if (present) {
     assertKeyFileSafe(present);
+    assertKeyFileReadable(present);
     return;
   }
   const keyFile = writableKeyFile();
