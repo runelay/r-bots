@@ -91,4 +91,59 @@ struct CronSchedule: Sendable {
         }
         return result.isEmpty ? nil : result
     }
+
+    static func describe(_ expression: String) -> String {
+        let parts = expression.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard parts.count == 5 else { return "em horário personalizado" }
+        let (minute, hour, day, month, weekday) = (parts[0], parts[1], parts[2], parts[3], parts[4])
+        func every(_ field: String) -> Int? {
+            guard field.hasPrefix("*/") else { return nil }
+            return Int(field.dropFirst(2))
+        }
+        func plural(_ count: Int, _ one: String, _ many: String) -> String {
+            count == 1 ? one : "\(count) \(many)"
+        }
+        guard month == "*" else { return "em horário personalizado" }
+        if let step = every(minute), hour == "*", day == "*", weekday == "*" {
+            return "a cada " + plural(step, "minuto", "minutos")
+        }
+        if let value = Int(minute), let step = every(hour), day == "*", weekday == "*" {
+            let base = "a cada " + plural(step, "hora", "horas")
+            return value == 0 ? base : base + ", aos \(value) min"
+        }
+        if let value = Int(minute), hour == "*", day == "*", weekday == "*" {
+            return value == 0 ? "a cada hora" : "toda hora, aos \(value) min"
+        }
+        guard let value = Int(minute) else { return "em horário personalizado" }
+        let hours = hour.split(separator: ",").compactMap { Int($0) }
+        guard !hours.isEmpty, hours.count == hour.split(separator: ",").count else { return "em horário personalizado" }
+        let times = Self.join(hours.map { String(format: "%02d:%02d", $0, value) })
+        if day == "*", weekday == "*" {
+            return "todo dia às \(times)"
+        }
+        if day == "*", weekday == "1-5" {
+            return "dias úteis às \(times)"
+        }
+        if day == "*", weekday == "0,6" || weekday == "6,0" {
+            return "fins de semana às \(times)"
+        }
+        let names = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+        if day == "*" {
+            let days = weekday.split(separator: ",").compactMap { Int($0) }.filter { (0...7).contains($0) }
+            if !days.isEmpty, days.count == weekday.split(separator: ",").count {
+                let label = Self.join(days.map { names[$0] })
+                let prefix = days.count == 1 && (days[0] == 0 || days[0] == 6 || days[0] == 7) ? "todo" : "toda"
+                return "\(prefix) \(label) às \(times)"
+            }
+        }
+        if weekday == "*", let date = Int(day) {
+            return "todo dia \(date) do mês às \(times)"
+        }
+        return "em horário personalizado"
+    }
+
+    private static func join(_ items: [String]) -> String {
+        guard items.count > 1 else { return items.first ?? "" }
+        return items.dropLast().joined(separator: ", ") + " e " + (items.last ?? "")
+    }
 }

@@ -193,6 +193,12 @@ struct ActionPhrase: Equatable {
                 verb = Self.humanizeIdentifier(call.name)
             }
         }
+        if name.hasSuffix("add_schedule"), let cron = input["cron"]?.stringValue {
+            verb = "Criar rotina"
+            object = input["name"]?.stringValue
+            extra = CronSchedule.describe(cron)
+            symbol = "clock"
+        }
     }
 
     init(approval: Approval, call: ToolCall?) {
