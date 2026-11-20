@@ -262,6 +262,11 @@ struct AuthClient: Sendable {
         )
     }
 
+    func updateName(token: String, name: String) async throws {
+        let (data, response) = try await send("POST", "/api/auth/update-user", body: ["name": name], token: token)
+        try Self.ensure(data, response)
+    }
+
     func uploadAvatar(token: String, data: Data, mime: String) async throws -> String? {
         var request = URLRequest(url: try url("/auth/me/avatar"))
         request.httpMethod = "PUT"

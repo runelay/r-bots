@@ -150,6 +150,13 @@ final class AuthSession: NSObject {
         store(user)
     }
 
+    func updateName(_ name: String) async throws {
+        guard let token = AuthStore.read(.session) else { throw AuthFailure.server(401, nil) }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        try await client.updateName(token: token, name: trimmed)
+        apply(try await client.profile(token: token))
+    }
+
     func avatarData(path: String) async throws -> Data {
         guard let token = AuthStore.read(.session) else { throw AuthFailure.server(401, nil) }
         return try await client.avatar(path: path, token: token)
