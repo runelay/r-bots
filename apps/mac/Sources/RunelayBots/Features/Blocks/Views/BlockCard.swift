@@ -121,9 +121,23 @@ struct BlockCard: View {
 
     private var subtitle: String {
         if kind == .agenda, case .agenda(let preview) = center.preview(for: ref) {
-            return preview.view == "week" ? "Semana" : "Dia"
+            return Self.agendaRange(preview)
         }
         return ref.version > 1 ? "\(kind.label) · editada" : kind.label
+    }
+
+    static func agendaRange(_ preview: AgendaPreview) -> String {
+        guard let start = BlockDates.parse(preview.start), let rawEnd = BlockDates.parse(preview.end) else {
+            return preview.view == "week" ? "Semana" : "Dia"
+        }
+        let end = rawEnd.addingTimeInterval(-1)
+        if preview.view == "day" || Calendar.agenda.isDate(start, inSameDayAs: end) {
+            return start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)).replacingOccurrences(of: ".", with: "").capitalizedFirst
+        }
+        if Calendar.agenda.isDate(start, equalTo: end, toGranularity: .month) {
+            return "\(start.formatted(.dateTime.day()))–\(end.formatted(.dateTime.day().month(.abbreviated)))".replacingOccurrences(of: ".", with: "")
+        }
+        return "\(start.formatted(.dateTime.day().month(.abbreviated))) – \(end.formatted(.dateTime.day().month(.abbreviated)))".replacingOccurrences(of: ".", with: "")
     }
 
     private func open() {
@@ -289,54 +303,150 @@ struct SheetPreviewGrid: View {
 struct AgendaPreviewList: View {
     let preview: AgendaPreview
 
+    private static let dayLimit = 5
+
     private var colors: [String: String] {
         Dictionary(preview.accounts.map { ($0.id, $0.color) }, uniquingKeysWith: { first, _ in first })
     }
 
+    private var timed: [AgendaEventPreview] {
+        preview.events.filter { !$0.allDay }.sorted { $0.startDate < $1.startDate }
+    }
+
+    private var allDay: [(event: AgendaEventPreview, days: Int, first: Date, last: Date)] {
+        let calendar = Calendar.agenda
+        var groups: [(event: AgendaEventPreview, days: Int, first: Date, last: Date)] = []
+        for event in preview.events.filter(\.allDay).sorted(by: { $0.startDate < $1.startDate }) {
+            let last = calendar.date(byAdding: .day, value: -1, to: event.endDate) ?? event.startDate
+            if let index = groups.firstIndex(where: { $0.event.title == event.title && $0.event.accountId == event.accountId }) {
+                groups[index].days += 1
+                groups[index].last = max(groups[index].last, last)
+            } else {
+                groups.append((event, 1, event.startDate, max(last, event.startDate)))
+            }
+        }
+        return groups
+    }
+
+    private var days: [(day: Date, events: [AgendaEventPreview])] {
+        let calendar = Calendar.agenda
+        let grouped = Dictionary(grouping: timed) { calendar.startOfDay(for: $0.startDate) }
+        return grouped.keys.sorted().map { ($0, grouped[$0] ?? []) }
+    }
+
     var body: some View {
-        let events = preview.events.sorted { $0.startDate < $1.startDate }
-        let shown = Array(events.prefix(6))
-        VStack(alignment: .leading, spacing: Spacing.xs) {
-            if shown.isEmpty {
+        VStack(alignment: .leading, spacing: Spacing.xs + 2) {
+            if preview.events.isEmpty {
                 Text("Nada marcado")
                     .font(TypeScale.rowSubtitle)
                     .foregroundStyle(Theme.textSecondary)
             }
-            ForEach(Array(shown.enumerated()), id: \.element.id) { index, event in
-                if preview.view == "week", index == 0 || !Calendar.current.isDate(shown[index - 1].startDate, inSameDayAs: event.startDate) {
-                    Text(event.startDate.formatted(.dateTime.weekday(.wide).day()).capitalized)
-                        .font(TypeScale.captionStrong)
-                        .foregroundStyle(Theme.textTertiary)
-                        .padding(.top, index == 0 ? 0 : Spacing.xs)
-                }
-                HStack(spacing: Spacing.s) {
-                    Rectangle()
-                        .fill(Theme.accent(colors[event.accountId] ?? "blue"))
-                        .frame(width: 3, height: 18)
-                    Text(event.allDay ? "Dia todo" : event.startDate.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute(.twoDigits)))
-                        .font(TypeScale.caption.monospacedDigit())
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                        .frame(width: 52, alignment: .leading)
-                    Text(event.title)
-                        .font(TypeScale.rowSubtitle)
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    if event.meet {
-                        Image(systemName: "video")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Theme.textTertiary)
+            if !allDay.isEmpty {
+                HStack(spacing: Spacing.xs) {
+                    ForEach(allDay.prefix(3), id: \.event.id) { group in
+                        HStack(spacing: Spacing.xs) {
+                            Circle()
+                                .fill(Theme.accent(colors[group.event.accountId] ?? "blue"))
+                                .frame(width: 6, height: 6)
+                            Text(group.event.title)
+                                .font(TypeScale.caption)
+                                .foregroundStyle(Theme.textPrimary)
+                                .lineLimit(1)
+                            if group.days > 1 || group.last > group.first {
+                                Text(spanText(group.first, group.last))
+                                    .font(TypeScale.caption)
+                                    .foregroundStyle(Theme.textTertiary)
+                                    .lineLimit(1)
+                                    .fixedSize()
+                            }
+                        }
+                        .padding(.horizontal, Spacing.s)
+                        .frame(height: 22)
+                        .background(Theme.accent(colors[group.event.accountId] ?? "blue").opacity(0.12), in: Capsule())
                     }
+                    Spacer(minLength: 0)
                 }
             }
-            if events.count > shown.count {
-                Text("e mais \(events.count - shown.count)")
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Theme.textTertiary)
+            if preview.view == "week" {
+                ForEach(days.prefix(Self.dayLimit), id: \.day) { item in
+                    weekRow(item.day, item.events)
+                }
+                if days.count > Self.dayLimit {
+                    Text("e mais \(days.count - Self.dayLimit) \(days.count - Self.dayLimit == 1 ? "dia" : "dias")")
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                }
+            } else {
+                ForEach(timed.prefix(6)) { event in
+                    dayRow(event)
+                }
+                if timed.count > 6 {
+                    Text("e mais \(timed.count - 6)")
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                }
             }
         }
         .allowsHitTesting(false)
+    }
+
+    private func weekRow(_ day: Date, _ events: [AgendaEventPreview]) -> some View {
+        let today = Calendar.agenda.isDateInToday(day)
+        return HStack(spacing: Spacing.s) {
+            Text("\(AgendaFormat.weekday(day)) \(day.formatted(.dateTime.day()))")
+                .font(TypeScale.captionStrong.monospacedDigit())
+                .foregroundStyle(today ? Theme.brandText : Theme.textSecondary)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(width: 52, alignment: .leading)
+            HStack(spacing: 3) {
+                ForEach(events.prefix(8)) { event in
+                    Capsule()
+                        .fill(Theme.accent(colors[event.accountId] ?? "blue"))
+                        .frame(width: 4, height: 14)
+                }
+            }
+            .fixedSize()
+            Text(events.prefix(2).map { "\($0.startDate.formatted(AgendaFormat.time)) \($0.title)" }.joined(separator: "  ·  "))
+                .font(TypeScale.caption)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+            Text("\(events.count)")
+                .font(TypeScale.caption.monospacedDigit())
+                .foregroundStyle(Theme.textTertiary)
+                .lineLimit(1)
+                .fixedSize()
+        }
+    }
+
+    private func dayRow(_ event: AgendaEventPreview) -> some View {
+        HStack(spacing: Spacing.s) {
+            Capsule()
+                .fill(Theme.accent(colors[event.accountId] ?? "blue"))
+                .frame(width: 4, height: 16)
+            Text(event.startDate.formatted(AgendaFormat.time))
+                .font(TypeScale.caption.monospacedDigit())
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+                .fixedSize()
+                .frame(width: 40, alignment: .leading)
+            Text(event.title)
+                .font(TypeScale.rowSubtitle)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if event.meet {
+                Image(systemName: "video")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+    }
+
+    private func spanText(_ first: Date, _ last: Date) -> String {
+        if Calendar.agenda.isDate(first, inSameDayAs: last) { return AgendaFormat.weekday(first).lowercased() }
+        return "\(AgendaFormat.weekday(first).lowercased())–\(AgendaFormat.weekday(last).lowercased())"
     }
 }

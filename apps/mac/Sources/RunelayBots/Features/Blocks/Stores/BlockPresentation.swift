@@ -32,7 +32,7 @@ final class BlockPresentation {
     }
 
     var isOpen: Bool {
-        ArtifactCenter.shared.current != nil && ArtifactCenter.shared.isBlock
+        ArtifactCenter.shared.current != nil && !ArtifactCenter.shared.presenting
     }
 
     func panelWidth(available: CGFloat) -> CGFloat {

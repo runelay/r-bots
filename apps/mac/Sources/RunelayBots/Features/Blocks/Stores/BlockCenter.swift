@@ -63,6 +63,7 @@ final class BlockCenter {
 
     @ObservationIgnored private var botsClient: BotsClient?
     @ObservationIgnored private var statusTask: Task<Void, Never>?
+    @ObservationIgnored private var agendaFocus: (anchor: Date, mode: AgendaStore.Mode)?
 
     var client: any BlocksClient {
         if UserDefaults.standard.string(forKey: "blocksSource") != "fixture", let botsClient {
@@ -132,6 +133,9 @@ final class BlockCenter {
         self.botsClient = botsClient
         guard let route = BlockRoute(ref: ref) else { return }
         backStack = []
+        if case .agenda(let preview) = preview(for: ref) {
+            agendaFocus = (BlockDates.parse(preview.start) ?? Date(), preview.view == "day" ? .day : .week)
+        }
         show(route)
     }
 
@@ -269,7 +273,9 @@ final class BlockCenter {
         case .agenda(let botID):
             noteEditor = nil
             sheetEditor = nil
-            let store = AgendaStore(botID: botID, client: client)
+            let focus = agendaFocus
+            agendaFocus = nil
+            let store = AgendaStore(botID: botID, client: client, anchor: focus?.anchor ?? Date(), mode: focus?.mode ?? .week)
             agendaStore = store
             Task { await store.load() }
         }

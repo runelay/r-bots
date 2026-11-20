@@ -342,6 +342,7 @@ struct AgendaEvent: Codable, Identifiable, Hashable, Sendable {
     var status: String
     var recurring: Bool
     var updatedAt: String
+    var calendarUrl: String? = nil
 
     var startDate: Date { BlockDates.parse(start) ?? .distantPast }
     var endDate: Date { BlockDates.parse(end) ?? startDate }

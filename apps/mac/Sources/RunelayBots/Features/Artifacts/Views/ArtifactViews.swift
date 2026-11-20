@@ -111,55 +111,34 @@ struct ArtifactViewerLayer: View {
 
     var body: some View {
         ZStack {
-            if let ref = center.current, !center.isBlock, let url = center.currentURL {
-                GeometryReader { geometry in
-                    let presenting = center.presenting
-                    ZStack {
-                        (presenting ? Color.black : Theme.scrim)
-                            .ignoresSafeArea()
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if !presenting {
-                                    center.close()
-                                }
-                            }
-
-                        ArtifactViewer(ref: ref, url: url, presenting: presenting)
-                            .frame(
-                                width: presenting ? geometry.size.width : min(geometry.size.width * 0.92, geometry.size.width - 48),
-                                height: presenting ? geometry.size.height : min(geometry.size.height * 0.92, geometry.size.height - 48)
-                            )
-                            .background(presenting ? Color.black : Theme.inspectorBackground)
-                            .clipShape(RoundedRectangle(cornerRadius: presenting ? 0 : 24, style: .continuous))
-                            .softElevation(lifted: !presenting)
-
-                        Button("Fechar") {
-                            center.escape()
-                        }
-                        .keyboardShortcut(.cancelAction)
-                        .opacity(0)
-                        .frame(width: 0, height: 0)
-                        .accessibilityHidden(true)
-
-                        Button("Apresentar") {
-                            center.togglePresenting()
-                        }
-                        .keyboardShortcut("f", modifiers: [.command, .shift])
-                        .opacity(0)
-                        .frame(width: 0, height: 0)
-                        .accessibilityHidden(true)
+            if let ref = center.current, !center.isBlock, center.presenting, let url = center.currentURL {
+                ZStack {
+                    Color.black
+                        .ignoresSafeArea()
+                    ArtifactSurface(ref: ref, url: url, presenting: true)
+                    Button("Sair da apresentação") {
+                        center.togglePresenting()
                     }
-                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .keyboardShortcut(.cancelAction)
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+                    Button("Apresentar") {
+                        center.togglePresenting()
+                    }
+                    .keyboardShortcut("p", modifiers: [.command, .option])
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
                 }
-                .modifier(ModalTransition())
+                .transition(.opacity)
             }
         }
-        .animation(Motion.animation(reduceMotion: reduceMotion), value: center.current?.id)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: center.presenting)
     }
 }
 
-struct ArtifactViewer: View {
+struct ArtifactSurface: View {
     let ref: ArtifactRef
     let url: URL
     let presenting: Bool
@@ -167,73 +146,96 @@ struct ArtifactViewer: View {
     private var center: ArtifactCenter { .shared }
 
     var body: some View {
+        Group {
+            if let canvas = center.canvas, ref.kind == "canvas" {
+                CanvasEditorView(editor: canvas)
+                    .id(canvas.ref.id)
+            } else {
+                ArtifactWebView(url: url, focusToken: center.focusToken)
+            }
+        }
+        .background(presenting ? Color.black : Theme.background)
+    }
+}
+
+struct ArtifactPanel: View {
+    let ref: ArtifactRef
+
+    private var center: ArtifactCenter { .shared }
+
+    var body: some View {
         VStack(spacing: 0) {
-            if !presenting {
-                header
-                    .transition(.opacity)
+            ArtifactPanelHeader(ref: ref)
+                .zIndex(1)
+            if let url = center.currentURL {
+                ArtifactSurface(ref: ref, url: url, presenting: false)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                Color.clear
             }
-            Group {
-                if let canvas = center.canvas, ref.kind == "canvas" {
-                    CanvasEditorView(editor: canvas)
-                        .id(canvas.ref.id)
-                } else {
-                    ArtifactWebView(url: url, focusToken: center.focusToken)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: presenting ? 0 : Radius.large, style: .continuous))
-            .padding(.horizontal, presenting ? 0 : Spacing.l)
-            .padding(.bottom, presenting ? 0 : Spacing.l)
         }
     }
+}
 
-    private var header: some View {
-        HStack(spacing: Spacing.s) {
-            Image(systemName: ArtifactKindInfo.symbol(ref.kind))
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .frame(width: 32, height: 32)
-                .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-            VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(ref.title)
-                    .font(TypeScale.panelTitle)
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                Text(center.status ?? caption)
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Theme.textSecondary)
-                    .contentTransition(.opacity)
-                    .springAnimation(value: center.status)
-            }
-            Spacer(minLength: Spacing.m)
+struct ArtifactPanelHeader: View {
+    @Environment(AppModel.self) private var model
+    let ref: ArtifactRef
+
+    private var center: ArtifactCenter { .shared }
+    private var presentation: BlockPresentation { .shared }
+
+    var body: some View {
+        HStack(spacing: Spacing.xs) {
+            Text(center.current?.title ?? ref.title)
+                .font(TypeScale.rowSubtitle.weight(.medium))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .help(center.current?.title ?? ref.title)
             if center.versions.count > 1 {
                 versionMenu
             }
+            Spacer(minLength: Spacing.m)
+            if let status = center.status {
+                Text(status)
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.trailing, Spacing.xs)
+                    .transition(.opacity)
+            }
             if ref.kind != "canvas" {
-                actionButton(kind: "browser", systemImage: "safari", help: "Abrir no navegador") {
-                    Task { await center.openInBrowser() }
-                }
-                actionButton(kind: "pdf", systemImage: "arrow.down.doc", help: "Exportar PDF") {
-                    Task { await center.exportPDF() }
-                }
-                RoundIconButton(systemImage: "play.rectangle", help: "Apresentar em tela cheia (⇧⌘F)") {
+                exportMenu
+                    .padding(.trailing, Spacing.xs)
+                BlockHeaderButton(systemImage: "play.rectangle", help: ref.kind == "slides" ? "Apresentar  ⌥⌘P" : "Ver em tela cheia  ⌥⌘P") {
                     center.togglePresenting()
                 }
+                .background {
+                    Button("Apresentar") {
+                        center.togglePresenting()
+                    }
+                    .keyboardShortcut("p", modifiers: [.command, .option])
+                    .opacity(0)
+                    .frame(width: 0, height: 0)
+                    .accessibilityHidden(true)
+                }
+            }
+            BlockHeaderButton(
+                systemImage: presentation.fullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
+                help: presentation.fullScreen ? "Voltar ao painel  ⇧⌘F" : "Tela cheia  ⇧⌘F",
+                isActive: presentation.fullScreen
+            ) {
+                presentation.toggleFullScreen()
             }
             moreMenu
-            RoundIconButton(systemImage: "xmark", help: "Fechar (esc)") {
-                center.close()
+            BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
+                presentation.close()
             }
         }
-        .padding(.horizontal, Spacing.l)
-        .frame(height: Metrics.headerHeight + Spacing.s)
-    }
-
-    private var caption: String {
-        let base = ArtifactKindInfo.label(ref.kind)
-        if ref.kind == "canvas" {
-            return "\(base) · duplo clique cria uma caixa, Tab cria uma filha"
-        }
-        return ref.kind == "slides" ? "\(base) · use ← → para navegar" : base
+        .padding(.horizontal, Spacing.m)
+        .frame(height: 44)
+        .springAnimation(value: center.status)
     }
 
     private var versionMenu: some View {
@@ -245,36 +247,71 @@ struct ArtifactViewer: View {
             ),
             title: "v\(center.selectedVersion)",
             help: "Escolher versão",
-            edge: .trailing,
+            edge: .leading,
             minWidth: 160
         )
+        .fixedSize()
+    }
+
+    private var exportMenu: some View {
+        GlassMenuButton(edge: .trailing, help: "Exportar", items: {
+            [
+                GlassMenuItem("PDF", systemImage: "arrow.down.doc") {
+                    Task { await center.exportPDF() }
+                },
+                GlassMenuItem("Abrir no navegador", systemImage: "safari") {
+                    Task { await center.openInBrowser() }
+                },
+            ]
+        }) { _ in
+            HStack(spacing: Spacing.xs) {
+                if center.busy != nil {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Text("Exportar")
+                    .font(TypeScale.captionStrong)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .foregroundStyle(Theme.textPrimary)
+            .padding(.horizontal, Spacing.m)
+            .frame(height: 28)
+            .glassSurface(Capsule(), interactive: true)
+        }
+        .fixedSize()
+        .disabled(center.busy != nil)
+        .blockTooltip("Baixar como arquivo")
     }
 
     private var moreMenu: some View {
-        GlassMenuIconButton(systemImage: "ellipsis", help: "Mais", iconSize: 13, size: 32, weight: .medium, shape: .circle, edge: .trailing) {
-            var items: [GlassMenuItem] = []
-            if ref.kind == "canvas" {
-                items += [
-                    GlassMenuItem("Exportar PNG", systemImage: "photo") { center.exportCanvas(pdf: false) },
-                    GlassMenuItem("Exportar PDF", systemImage: "doc.richtext") { center.exportCanvas(pdf: true) },
-                    GlassMenuItem("Copiar como Mermaid", systemImage: "chevron.left.forwardslash.chevron.right") { center.copyMermaid() },
-                ]
-            }
-            items.append(GlassMenuItem("Copiar link desta versão", systemImage: "link", startsSection: !items.isEmpty) { center.copyLink() })
-            return items
+        GlassMenuButton(edge: .trailing, help: "Mais", items: { moreItems }) { isOpen in
+            BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen)
         }
+        .fixedSize()
+        .blockTooltip("Mais")
     }
 
-    @ViewBuilder
-    private func actionButton(kind: String, systemImage: String, help: String, action: @escaping () -> Void) -> some View {
-        if center.busy == kind {
-            ProgressView()
-                .controlSize(.small)
-                .frame(width: 32, height: 32)
-        } else {
-            RoundIconButton(systemImage: systemImage, help: help, action: action)
-                .disabled(center.busy != nil)
+    private var moreItems: [GlassMenuItem] {
+        var items: [GlassMenuItem] = []
+        if ref.kind == "canvas" {
+            items += [
+                GlassMenuItem("Exportar PNG", systemImage: "photo") { center.exportCanvas(pdf: false) },
+                GlassMenuItem("Exportar PDF", systemImage: "doc.richtext") { center.exportCanvas(pdf: true) },
+                GlassMenuItem("Copiar como Mermaid", systemImage: "chevron.left.forwardslash.chevron.right") { center.copyMermaid() },
+            ]
         }
+        items.append(GlassMenuItem("Copiar link desta versão", systemImage: "link", startsSection: !items.isEmpty) { center.copyLink() })
+        if let botID = center.current?.botID {
+            let client = model.client
+            items.append(GlassMenuItem("Todos os arquivos", systemImage: "square.stack") {
+                ArtifactCenter.shared.openFiles(botID: botID, client: client)
+            })
+        }
+        return items
     }
 }
 

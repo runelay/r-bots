@@ -13,15 +13,22 @@ struct BlockStage: View {
             let available = max(0, geometry.size.width - reserved)
             let fullScreen = presentation.fullScreen
             ZStack(alignment: .trailing) {
-                if let ref = center.current, center.isBlock {
+                if let ref = center.current, !center.presenting {
                     HStack(spacing: 0) {
                         if !fullScreen {
                             BlockSplitHandle(available: available)
                                 .zIndex(1)
                         }
-                        BlockPanel(ref: ref)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Theme.background)
+                        Group {
+                            if center.isBlock {
+                                BlockPanel(ref: ref)
+                            } else {
+                                ArtifactPanel(ref: ref)
+                                    .background { BlockPanelShortcuts() }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Theme.background)
                     }
                     .frame(width: fullScreen ? geometry.size.width : presentation.panelWidth(available: available))
                     .transition(Motion.panel(reduceMotion: reduceMotion))
@@ -171,7 +178,11 @@ struct BlockPanelHeader: View {
                 }
                 .padding(.trailing, Spacing.xs)
             }
-            BlockBreadcrumb(folders: folders, title: title)
+            if let agenda = agendaStore {
+                AgendaHeaderControls(store: agenda)
+            } else {
+                BlockBreadcrumb(folders: folders, title: title)
+            }
             Spacer(minLength: Spacing.m)
             if let status {
                 Text(status)
@@ -184,6 +195,10 @@ struct BlockPanelHeader: View {
             }
             if let kind = exportKind {
                 exportMenu(kind)
+                    .padding(.trailing, Spacing.xs)
+            }
+            if let agenda = agendaStore {
+                AgendaModeSwitch(store: agenda)
                     .padding(.trailing, Spacing.xs)
             }
             BlockHeaderButton(
@@ -201,6 +216,11 @@ struct BlockPanelHeader: View {
         .padding(.horizontal, Spacing.m)
         .frame(height: 44)
         .springAnimation(value: status)
+    }
+
+    private var agendaStore: AgendaStore? {
+        if case .agenda = center.route { return center.agendaStore }
+        return nil
     }
 
     private var isNote: Bool {
@@ -235,7 +255,7 @@ struct BlockPanelHeader: View {
             return text == "Salvo" || text == "Planilha" || text.hasPrefix("Aba ") ? nil : text
         case .agenda:
             guard let text = center.agendaStore?.statusText else { return nil }
-            return text.hasSuffix("ligada") || text.hasSuffix("ligadas") ? nil : text
+            return text.hasSuffix("ligada") || text.hasSuffix("ligadas") || text == "Atualizando…" ? nil : text
         default:
             return nil
         }
