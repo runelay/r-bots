@@ -315,4 +315,58 @@ final class ConversationScrollTests: XCTestCase {
         host.close()
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
+
+    func testScrollFrameBudget() throws {
+        let botID = ProcessInfo.processInfo.environment["RB_HARNESS_BIG"] ?? "engenheiro-de-software"
+        let fixture = try fixture(botID)
+        let store = try makeStore(fixture, cached: true)
+        let host = HarnessHost(size: Self.size) {
+            ConversationView(store: store, bot: store.bot, focusToken: 0)
+        }
+        store.start()
+        _ = openReport(host, store: store, label: "frames")
+        guard let scroll = host.transcriptScrollView else { return XCTFail("sem scroll view") }
+        let rounds = Int(ProcessInfo.processInfo.environment["RB_HARNESS_ROUNDS"] ?? "6") ?? 6
+        for _ in 0..<rounds {
+            host.scrollTo(y: -scroll.contentInsets.top + 120)
+            host.pump(1.0)
+        }
+        _ = host.pressJump()
+        host.pump(1.0)
+        log("frames setup entries=\(store.entries.count) doc=\(Int(scroll.documentView?.frame.height ?? 0))")
+        let step = CGFloat(Double(ProcessInfo.processInfo.environment["RB_HARNESS_STEP"] ?? "28") ?? 28)
+        let count = Int(ProcessInfo.processInfo.environment["RB_HARNESS_FRAMECOUNT"] ?? "2000") ?? 2000
+        var failures: [String] = []
+        for (label, direction, frames) in [("cima", -1.0, count), ("baixo", 1.0, count / 2)] {
+            var times: [Double] = []
+            var cpu: [Double] = []
+            var blank = 0
+            for _ in 0..<frames {
+                let start = DispatchTime.now().uptimeNanoseconds
+                let cpuStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+                host.scrollTo(y: scroll.contentView.bounds.origin.y + step * direction)
+                host.window.contentView?.layoutSubtreeIfNeeded()
+                host.window.displayIfNeeded()
+                CATransaction.flush()
+                times.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000)
+                cpu.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpuStart) / 1_000_000)
+                if host.inkRatio(in: scroll) <= 0.01 { blank += 1 }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.0005))
+            }
+            let sorted = times.sorted()
+            let p95 = sorted[Int(Double(sorted.count - 1) * 0.95)]
+            let p99 = sorted[Int(Double(sorted.count - 1) * 0.99)]
+            let mean = times.reduce(0, +) / Double(times.count)
+            let over = times.filter { $0 > 16.6 }.count
+            let over8 = times.filter { $0 > 8.3 }.count
+            log(String(format: "frames %@ n=%d mean=%.2fms p95=%.2fms p99=%.2fms worst=%.2fms >16.6ms=%d >8.3ms=%d blank=%d", label, times.count, mean, p95, p99, sorted.last ?? 0, over, over8, blank))
+            let cpuSorted = cpu.sorted()
+            log(String(format: "cpu %@ mean=%.2fms p95=%.2fms p99=%.2fms worst=%.2fms >8.3ms=%d", label, cpu.reduce(0, +) / Double(cpu.count), cpuSorted[Int(Double(cpuSorted.count - 1) * 0.95)], cpuSorted[Int(Double(cpuSorted.count - 1) * 0.99)], cpuSorted.last ?? 0, cpu.filter { $0 > 8.3 }.count))
+            if (cpuSorted.last ?? 0) > 16.6 { failures.append(String(format: "rolando para %@: pior quadro da main thread %.1fms", label, cpuSorted.last ?? 0)) }
+            if blank > 0 { failures.append("rolando para \(label): \(blank) quadros em branco") }
+        }
+        store.stop()
+        host.close()
+        XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
+    }
 }
