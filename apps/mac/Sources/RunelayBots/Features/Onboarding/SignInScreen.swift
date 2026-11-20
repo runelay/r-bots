@@ -130,24 +130,30 @@ private struct SignInFormPane: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: Spacing.s) {
-            Spacer(minLength: Spacing.m)
-            if variant != .setup && session.pendingUserCode == nil {
+        Color.clear
+            .frame(height: FrameMetrics.stripHeight)
+    }
+
+    @ViewBuilder
+    private var switchLine: some View {
+        if variant != .setup {
+            HStack(spacing: Spacing.xs) {
                 Text(variant == .signin ? "Não tem conta?" : "Já tem conta?")
-                    .font(TypeScale.rowSubtitle)
                     .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-                    .fixedSize()
                 Button(variant == .signin ? "Usar convite" : "Entrar") {
                     error = nil
                     notice = nil
                     inviteMode.toggle()
                     focus = inviteMode ? .name : .email
                 }
-                .buttonStyle(SignInSmallButtonStyle())
+                .buttonStyle(SignInLinkButtonStyle())
             }
+            .font(TypeScale.caption)
+            .lineLimit(1)
+            .fixedSize()
+            .frame(maxWidth: .infinity)
+            .padding(.top, Spacing.xs)
         }
-        .frame(height: FrameMetrics.stripHeight)
     }
 
     private var subtitle: String {
@@ -266,6 +272,7 @@ private struct SignInFormPane: View {
                     .buttonStyle(OnboardingGhostButtonStyle())
                     .disabled(busy || session.browserBusy)
                 }
+                switchLine
             }
         }
     }
@@ -577,23 +584,18 @@ private struct SignInPrimaryButtonStyle: ButtonStyle {
     }
 }
 
-private struct SignInSmallButtonStyle: ButtonStyle {
+private struct SignInLinkButtonStyle: ButtonStyle {
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(TypeScale.captionStrong)
+            .fontWeight(.semibold)
             .foregroundStyle(Theme.textPrimary)
-            .lineLimit(1)
-            .fixedSize()
-            .padding(.horizontal, Spacing.m)
-            .frame(height: 28)
-            .background(hovering ? Theme.surfaceRaised : Theme.surface, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-            .opacity(configuration.isPressed ? 0.75 : 1)
-            .contentShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
+            .underline(hovering)
+            .opacity(configuration.isPressed ? 0.6 : 1)
+            .contentShape(Rectangle())
             .clickable()
             .onHover { hovering = $0 }
-            .animation(.easeOut(duration: 0.15), value: hovering)
     }
 }
 
