@@ -38,6 +38,7 @@ struct FloatingMenuButton: View {
     let systemImage: String
     let help: String
     var iconSize: CGFloat = 14
+    var size: CGFloat = 30
 
     @State private var isHovering = false
 
@@ -50,7 +51,7 @@ struct FloatingMenuButton: View {
             Image(systemName: systemImage)
                 .font(.system(size: iconSize, weight: .regular))
                 .foregroundStyle(isOpen || isHovering ? Theme.textPrimary : Theme.textSecondary)
-                .frame(width: 30, height: 30)
+                .frame(width: size, height: size)
                 .background(isOpen ? Theme.selection : isHovering ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
                 .contentShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
         }

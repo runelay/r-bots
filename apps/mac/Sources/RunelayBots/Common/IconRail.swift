@@ -5,6 +5,8 @@ enum FrameMetrics {
     @MainActor static var stripHeight: CGFloat { WindowChrome.shared.stripHeight }
     static let panelInset: CGFloat = 8
     static let sidebarWidth: CGFloat = 300
+    static let titleLeading: CGFloat = 84
+    static let sidebarContentTrailing: CGFloat = railWidth + sidebarWidth - Spacing.m
 }
 
 struct IconRail: View {

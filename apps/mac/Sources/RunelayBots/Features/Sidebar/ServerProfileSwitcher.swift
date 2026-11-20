@@ -22,7 +22,6 @@ struct ServerProfileSwitcher: View {
                 Circle()
                     .fill(Theme.connection(model.connection))
                     .frame(width: 6, height: 6)
-                Spacer(minLength: 0)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.textTertiary)

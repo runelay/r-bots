@@ -44,12 +44,9 @@ struct SidebarHeader: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.s) {
-            ServerProfileSwitcher()
-                .padding(.horizontal, -Spacing.xs)
-            searchRow
-        }
-        .padding(.horizontal, Spacing.m)
+        searchRow
+            .padding(.leading, FrameMetrics.titleLeading - FrameMetrics.railWidth)
+            .padding(.trailing, Spacing.m)
         .padding(.top, Spacing.m)
         .padding(.bottom, Spacing.s)
     }
@@ -81,11 +78,11 @@ struct SidebarHeader: View {
                 }
             }
             .padding(.horizontal, Spacing.m)
+            .frame(maxWidth: .infinity)
             .frame(height: 32)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.small + 1, style: .continuous))
 
-            FloatingMenuButton(id: .sidebarFilter, systemImage: "line.3.horizontal.decrease", help: "Filtrar")
-            FloatingMenuButton(id: .sidebarNew, systemImage: "plus", help: "Novo bot ou grupo", iconSize: 15)
+            FloatingMenuButton(id: .sidebarFilter, systemImage: "line.3.horizontal.decrease", help: "Filtrar", size: 32)
         }
     }
 }
