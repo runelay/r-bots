@@ -319,12 +319,15 @@ describe("project servers", () => {
       return serving(call);
     });
     process.env.NAPI_RS_NATIVE_LIBRARY_PATH = "/app/native/x.node";
+    process.env.CI = "true";
     try {
       const repo = await project();
       await (await startProjectServer({ path: repo.path, script: "api", startedBy: "user" })).ready;
     } finally {
       delete process.env.NAPI_RS_NATIVE_LIBRARY_PATH;
+      delete process.env.CI;
     }
+    expect(seen.CI).toBeUndefined();
     expect(seen.NAPI_RS_NATIVE_LIBRARY_PATH).toBeUndefined();
     expect(seen.XDG_CONFIG_HOME).toBe(join(process.env.HOST_HOME as string, ".config"));
     expect(seen.FORCE_COLOR).toBe("1");

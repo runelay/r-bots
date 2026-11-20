@@ -297,10 +297,10 @@ function spawnInto(server: DevServer, out: WriteStream) {
     HOST: "127.0.0.1",
     BROWSER: "none",
     FORCE_COLOR: server.target.kind === "project" ? "1" : "0",
-    CI: "",
     NODE_ENV: "development",
   });
   delete env.NAPI_RS_NATIVE_LIBRARY_PATH;
+  if (!server.input.env?.CI) delete env.CI;
   const child = Bun.spawn(["bash", "-lc", server.command], {
     cwd: server.cwd,
     env,
