@@ -32,6 +32,7 @@ struct SidebarView: View {
                 SidebarAccountBar()
             }
         }
+        .task { SpotifyPlayer.shared.start() }
     }
 
     private func reload() {

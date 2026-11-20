@@ -9,7 +9,6 @@ struct SpotifyMiniPlayer: View {
             .padding(.horizontal, Spacing.l)
             .padding(.top, player.phase == .unavailable ? 0 : Spacing.s)
             .animation(Motion.animation(reduceMotion: reduceMotion), value: player.phase)
-            .task { player.start() }
     }
 
     @ViewBuilder
