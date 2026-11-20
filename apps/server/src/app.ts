@@ -21,9 +21,11 @@ import { handleComputerHealth } from "./modules/computer/routes/computer.routes"
 import { handleConnections, handleConnectorActions } from "./modules/connectors/routes/connectors.routes";
 import { handleDevices } from "./modules/devices/routes/devices.routes";
 import { handleMcp } from "./modules/engine/routes/mcp.routes";
+import { handleGitHub } from "./modules/github/routes/github.routes";
 import { handleGroups } from "./modules/groups/routes/groups.routes";
 import { handleIntegrations } from "./modules/integrations/routes/integrations.routes";
 import { handleJobs } from "./modules/jobs/routes/jobs.routes";
+import { handleLinear } from "./modules/linear/routes/linear.routes";
 import { handleSections } from "./modules/sections/routes/sections.routes";
 import { handleServers } from "./modules/servers/routes/servers.routes";
 import { handlePreferences } from "./modules/settings/routes/preferences.routes";
@@ -81,6 +83,8 @@ export const routeTable: RouteEntry[] = [
   { root: "skills", match: exactly("GET"), handle: (_req, res, url) => handleSkills(res, url) },
   { root: "sections", handle: (req, res, _url, method, parts) => handleSections(req, res, method, parts) },
   { root: "groups", handle: (req, res, url, method, parts) => handleGroups(req, res, url, method, parts) },
+  { root: "github", handle: (req, res, url, method, parts) => handleGitHub(req, res, url, method, parts) },
+  { root: "linear", handle: (req, res, url, method, parts) => handleLinear(req, res, url, method, parts) },
   { root: "jobs", handle: (req, res, url, method, parts) => handleJobs(req, res, url, method, parts) },
   { root: "preferences", handle: (req, res, _url, method, parts) => handlePreferences(req, res, method, parts) },
   { root: "servers", handle: (req, res, url, method, parts) => handleServers(req, res, url, method, parts) },

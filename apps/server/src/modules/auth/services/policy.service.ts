@@ -17,6 +17,8 @@ export const ownerRoutes: OwnerRule[] = [
   { method: "*", path: ["vault", "**"] },
   { method: "*", path: ["code", "grants"] },
   { method: "*", path: ["jobs", "**"] },
+  { method: "*", path: ["github", "**"] },
+  { method: "*", path: ["linear", "**"] },
   { method: "write", path: ["connectors", "**"] },
   { method: ["POST"], path: ["bots"] },
   { method: ["PATCH"], path: ["bots", "*"] },
