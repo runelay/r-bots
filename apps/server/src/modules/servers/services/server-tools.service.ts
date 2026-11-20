@@ -40,7 +40,15 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
       inputSchema: {},
     },
     async () => {
+      const start = await beginCall(context, {
+        name: "server_list",
+        label: "Ver os servidores",
+        input: {},
+        gate: { kind: "allow" },
+      });
+      if (!start.allowed) return text(start.message ?? "Negado.", true);
       const [projects, profiles] = await Promise.all([listProjects(), listProfiles()]);
+      endCall(context, start.callId, "server_list", {}, { ok: true, output: { servers: listServers().length } });
       return text({
         servers: listServers().map((item) => ({ ...item, summary: summary(item) })),
         projects: projects.map((item) => ({
@@ -169,14 +177,28 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
       },
     },
     async (args: Record<string, unknown>) => {
+      const start = await beginCall(context, {
+        name: "server_logs",
+        label: "Ler o log do servidor",
+        input: args,
+        gate: { kind: "allow" },
+      });
+      if (!start.allowed) return text(start.message ?? "Negado.", true);
       try {
         const result = await serverLogs(
           requireServer(String(args.id)),
           Number(args.lines ?? 80),
           typeof args.query === "string" ? args.query : undefined,
         );
-        return text(`${summary(result)}:\n${result.logs || "(sem linhas)"}`);
+        const { logs, ...view } = result;
+        emitServerCard(context, view);
+        endCall(context, start.callId, "server_logs", args, {
+          ok: true,
+          output: { id: view.id, status: view.status, lines: logs ? logs.split("\n").length : 0 },
+        });
+        return text(`${summary(view)}:\n${logs || "(sem linhas)"}`);
       } catch (error) {
+        endCall(context, start.callId, "server_logs", args, { ok: false, error: messageOf(error) });
         return text(messageOf(error), true);
       }
     },

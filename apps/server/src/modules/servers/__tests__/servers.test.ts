@@ -546,10 +546,12 @@ describe("bot tools", () => {
     expect(listed.projects.some((item: { name: string }) => item.name === repo.name)).toBe(true);
     expect((await call("server_logs", { id, query: "ready" })).content[0].text).toContain("ready");
     expect((await call("server_logs", { id: "nope" })).isError).toBe(true);
+    expect((await call("server_logs", { id, query: "zzz" })).content[0].text).toContain("(sem linhas)");
     expect((await call("server_restart", { id })).content[0].text).toContain("No ar de novo");
     expect((await call("server_stop", { id })).content[0].text).toContain("Parado");
     expect((await call("server_stop", { id: "nope" })).isError).toBe(true);
-    expect(events.filter((event) => event.type === "server.card")).toHaveLength(3);
+    expect(events.filter((event) => event.type === "server.card")).toHaveLength(5);
+    expect(events.filter((event) => event.type === "call.settled").length).toBeGreaterThanOrEqual(5);
   });
 
   test("asks before a free command and reports failures", async () => {
