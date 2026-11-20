@@ -287,10 +287,8 @@ function validateGlyph(value: unknown) {
   if (typeof value !== "string" || !/^[a-z0-9-]{1,40}$/.test(value)) {
     throw new ValidationError("Ícone inválido: use até 40 caracteres de a-z, 0-9 e hífen.", "glyph");
   }
-  return glyphAliases[value] ?? value;
+  return value;
 }
-
-const glyphAliases: Record<string, string> = { boss: "crown", davi: "visor", lia: "antenna" };
 
 const knownFields = new Set([
   "name",

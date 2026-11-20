@@ -137,7 +137,7 @@ describe("createBot", () => {
       name: uniqueName(),
       role: "Analista",
       accent: "electric",
-      glyph: "boss",
+      glyph: "crown",
       instructions: "Faz análise.",
       capabilities: { browser: false, desktop: true, delegate: ["x", "x"] },
       schedules: [
@@ -265,7 +265,7 @@ describe("updateBot", () => {
       name: "Renomeado",
       role: "Novo papel",
       accent: "teal",
-      glyph: "lia",
+      glyph: "antenna",
       instructions: "Novas instruções",
       capabilities: { desktop: true },
       schedules: [{ name: "manha", cron: "0 8 * * *", prompt: "Oi" }],
