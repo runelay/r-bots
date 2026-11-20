@@ -202,6 +202,7 @@ struct ConversationView: View {
     let bot: Bot
     let focusToken: Int
     @Environment(\.appReduceMotion) private var reduceMotion
+    @Environment(\.conversationFontSize) private var conversationFontSize
     @State private var hoveredItemID: String?
     @State private var isDropTargeted = false
     @State private var showsJumpButton = false
@@ -209,9 +210,8 @@ struct ConversationView: View {
     @State private var lastEntryID: String?
     @State private var userScrolled = false
     @State private var footerHeight: CGFloat = 0
-    @State private var visible = VisibleItems()
+    @State private var scroll = TranscriptScrollController()
 
-    private static let bottomID = "transcript-bottom"
     private static let fadeHeight: CGFloat = 40
 
     private var topInset: CGFloat {
@@ -220,7 +220,6 @@ struct ConversationView: View {
 
     var body: some View {
         transcript
-            .safeAreaPadding(.top, topInset)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 footer
                     .onGeometryChange(for: CGFloat.self) { proxy in
@@ -256,169 +255,89 @@ struct ConversationView: View {
     }
 
     private var transcript: some View {
-        GeometryReader { geometry in
-            ScrollViewReader { proxy in
-                ScrollView {
-                    let snapshot = store.transcriptSnapshot(now: Date())
-                    let bubbles = snapshot.bubbles
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        if store.hasOlder {
-                            OlderMessagesRow(loading: store.isLoadingOlder) {
-                                store.loadOlder()
-                            }
-                        }
-                        ForEach(snapshot.items) { item in
-                            Group {
-                            switch item {
-                            case .day(_, let label):
-                                DaySeparator(label: label)
-                                    .id(item.id)
-                            case .delegation(_, let callIDs):
-                                DelegationSummary(store: store, callIDs: callIDs)
-                                    .id(item.id)
-                                    .transition(Motion.message(fromTrailing: false, reduceMotion: reduceMotion))
-                            case .delegateCard(_, let callIDs):
-                                DelegationLine(calls: callIDs.compactMap { store.toolCalls[$0] })
-                                    .id(item.id)
-                                    .transition(Motion.message(fromTrailing: false, reduceMotion: reduceMotion))
-                            case .caption(_, let text):
-                                DaySeparator(label: text)
-                                    .id(item.id)
-                            case .tools(_, let callIDs):
-                                ToolGroupRow(calls: callIDs.compactMap { store.toolCalls[$0] })
-                                    .id(item.id)
-                                    .transition(Motion.message(fromTrailing: false, reduceMotion: reduceMotion))
-                            case .entry(let entry):
-                                TranscriptRow(
-                                    entry: entry,
-                                    store: store,
-                                    bubble: bubbles[entry.id],
-                                    isHovered: hoveredItemID == entry.id
-                                ) { id in
-                                    if let id {
-                                        hoveredItemID = id
-                                    } else if hoveredItemID == entry.id {
-                                        hoveredItemID = nil
-                                    }
-                                }
-                                .equatable()
-                                .id(entry.id)
-                                    .transition(Motion.message(
-                                        fromTrailing: entry.kind == .user,
-                                        reduceMotion: reduceMotion
-                                    ))
-                            }
-                            }
-                            .padding(.top, topSpacing(for: item, bubbles: bubbles))
-                        }
-                        if store.showsThinking, store.mood != .waiting {
-                            ThinkingCharacter(bot: bot, mood: store.mood, queuePosition: store.queuePosition)
-                                .padding(.top, 14)
-                                .transition(.opacity)
-                        }
-                        Spacer(minLength: 0)
-                            .frame(height: Self.fadeHeight)
-                            .id(Self.bottomID)
-                    }
-                    .frame(maxWidth: Metrics.transcriptWidth, alignment: .leading)
-                    .padding(.horizontal, Spacing.xxl)
-                    .padding(.top, Spacing.l + Spacing.s)
-                    .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .bottom)
-                    .scrollTargetLayout()
-                    .springAnimation(value: store.entryMotion)
-                    .springAnimation(value: store.showsThinking)
+        let snapshot = store.transcriptSnapshot(now: Date())
+        let list = TranscriptScrollView(
+            controller: scroll,
+            insets: NSEdgeInsets(top: topInset, left: 0, bottom: footerHeight, right: 0),
+            rows: transcriptRows(items: snapshot.items, bubbles: snapshot.bubbles),
+            animatesAppends: store.historySettled && !store.isLoadingOlder,
+            reduceMotion: reduceMotion,
+            onZone: { zone in
+                let away = zone == .away
+                if away != showsJumpButton {
+                    showsJumpButton = away
                 }
-                .defaultScrollAnchor(.bottom)
-                .defaultScrollAnchor(showsJumpButton && !store.isLoadingOlder ? .top : .bottom, for: .sizeChanges)
-                .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.2) { ids in
-                    visible.firstID = ids.first
+                if zone == .atEnd, unseenCount != 0 {
+                    unseenCount = 0
                 }
-                .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y < 160 || geometry.contentSize.height <= geometry.containerSize.height + 1
-                } action: { _, nearTop in
-                    guard nearTop, userScrolled, store.historySettled, store.hasOlder, !store.isLoadingOlder else { return }
-                    store.loadOlder()
+            },
+            onNearTop: {
+                loadOlderIfNeeded()
+            },
+            onUserScroll: {
+                if !userScrolled {
+                    userScrolled = true
                 }
-                .onScrollGeometryChange(for: Int.self) { geometry in
-                    let distance = geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY
-                    return distance > 200 ? 2 : distance > 24 ? 1 : 0
-                } action: { _, zone in
-                    if zone == 2, !showsJumpButton {
-                        showsJumpButton = true
-                    } else if zone == 0, showsJumpButton {
-                        showsJumpButton = false
-                        unseenCount = 0
-                    }
-                }
-                .mask {
-                    transcriptMask
-                }
-                .overlay(alignment: .bottom) {
-                    if showsJumpButton && userScrolled && store.historySettled {
-                        JumpToBottomButton(count: unseenCount, accent: Theme.accent(bot.accent)) {
-                            scrollToEnd(proxy)
-                        }
-                        .padding(.bottom, (Self.fadeHeight - 32) / 2)
-                        .transition(Motion.insertion(reduceMotion: reduceMotion))
-                    }
-                }
-                .springAnimation(value: showsJumpButton)
-                .onScrollPhaseChange { _, phase in
-                    if phase != .idle, hoveredItemID != nil {
-                        hoveredItemID = nil
-                    }
-                    if phase == .interacting || phase == .tracking {
-                        userScrolled = true
-                    }
-                }
-                .onChange(of: store.entryMotion) {
-                    let previous = lastEntryID
-                    lastEntryID = store.entries.last?.id
-                    guard store.historySettled, !store.isLoadingOlder else { return }
-                    guard previous != lastEntryID else { return }
-                    let sentByMe = store.entries.last.map { $0.kind == .user && store.userMessages[$0.id]?.fromBotID == nil } ?? false
-                    if showsJumpButton && !sentByMe {
-                        let added = previous.flatMap { id in store.entries.lastIndex { $0.id == id } }.map { store.entries.count - 1 - $0 } ?? 1
-                        unseenCount += max(1, added)
-                        return
-                    }
-                    scrollToEnd(proxy)
-                }
-                .onChange(of: store.historySettled) {
-                    jumpToBottom(proxy)
-                    fillIfShort()
-                    reportShown()
-                }
-                .onChange(of: store.isLoadingOlder) {
-                    if !store.isLoadingOlder {
-                        fillIfShort()
-                    }
-                }
-                .onAppear {
-                    lastEntryID = store.entries.last?.id
-                    if let anchor = store.scrollAnchorID {
-                        userScrolled = true
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            proxy.scrollTo(anchor, anchor: .top)
-                        }
-                    }
-                    if store.historySettled {
-                        fillIfShort()
-                        reportShown()
-                    }
-                }
-                .onDisappear {
-                    store.scrollAnchorID = showsJumpButton && userScrolled ? visible.firstID : nil
-                }
-                .onChange(of: store.showsThinking) {
-                    guard store.historySettled, !showsJumpButton else { return }
-                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                        proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                    }
+                if hoveredItemID != nil {
+                    hoveredItemID = nil
                 }
             }
+        )
+        return Color.clear
+            .background {
+                list
+                    .mask {
+                        transcriptMask
+                    }
+                    .ignoresSafeArea(.container, edges: .bottom)
+            }
+            .overlay(alignment: .bottom) {
+            if showsJumpButton && userScrolled && store.historySettled {
+                JumpToBottomButton(count: unseenCount, accent: Theme.accent(bot.accent)) {
+                    jumpToEnd()
+                }
+                .padding(.bottom, (Self.fadeHeight - 32) / 2)
+                .transition(Motion.insertion(reduceMotion: reduceMotion))
+            }
+        }
+        .springAnimation(value: showsJumpButton)
+        .onChange(of: store.entryMotion) {
+            let previous = lastEntryID
+            lastEntryID = store.entries.last?.id
+            guard store.historySettled, !store.isLoadingOlder else { return }
+            guard previous != lastEntryID else { return }
+            guard !scroll.isPinned else { return }
+            let sentByMe = store.entries.last.map { $0.kind == .user && store.userMessages[$0.id]?.fromBotID == nil } ?? false
+            if sentByMe {
+                jumpToEnd()
+                return
+            }
+            let added = previous.flatMap { id in store.entries.lastIndex { $0.id == id } }.map { store.entries.count - 1 - $0 } ?? 1
+            unseenCount += max(1, added)
+        }
+        .onChange(of: store.historySettled) {
+            lastEntryID = store.entries.last?.id
+            fillIfShort()
+            reportShown()
+        }
+        .onChange(of: store.isLoadingOlder) {
+            if !store.isLoadingOlder {
+                fillIfShort()
+            }
+        }
+        .onAppear {
+            lastEntryID = store.entries.last?.id
+            if let memory = store.scrollMemory {
+                userScrolled = true
+                scroll.restore(memory)
+            }
+            if store.historySettled {
+                fillIfShort()
+                reportShown()
+            }
+        }
+        .onDisappear {
+            store.scrollMemory = scroll.isPinned ? nil : scroll.memory
         }
         .overlay {
             TranscriptLoadingLayer(loading: store.isLoadingHistory)
@@ -428,6 +347,79 @@ struct ConversationView: View {
                 ConversationEmptyState(bot: bot, mood: store.mood)
             }
         }
+    }
+
+    private func transcriptRows(items: [TranscriptItem], bubbles: [String: BubbleMeta]) -> [TranscriptListRow] {
+        var rows: [TranscriptListRow] = []
+        if store.hasOlder {
+            rows.append(row("transcript-older", OlderMessagesRow(loading: store.isLoadingOlder) {
+                loadOlderIfNeeded(force: true)
+            }))
+        }
+        for item in items {
+            rows.append(row(item.id, itemView(item, bubbles: bubbles).padding(.top, topSpacing(for: item, bubbles: bubbles))))
+        }
+        if store.showsThinking, store.mood != .waiting {
+            rows.append(row("transcript-thinking", ThinkingCharacter(bot: bot, mood: store.mood, queuePosition: store.queuePosition)
+                .padding(.top, 14)))
+        }
+        rows.append(row("transcript-end", Color.clear.frame(height: Self.fadeHeight)))
+        return rows
+    }
+
+    private func row(_ id: String, _ content: some View) -> TranscriptListRow {
+        TranscriptListRow(
+            id: id,
+            content: AnyView(
+                content
+                    .frame(maxWidth: Metrics.transcriptWidth, alignment: .leading)
+                    .padding(.horizontal, Spacing.xxl)
+                    .frame(maxWidth: .infinity)
+                    .environment(model)
+                    .environment(\.appReduceMotion, reduceMotion)
+                    .environment(\.conversationFontSize, conversationFontSize)
+            )
+        )
+    }
+
+    @ViewBuilder
+    private func itemView(_ item: TranscriptItem, bubbles: [String: BubbleMeta]) -> some View {
+        switch item {
+        case .day(_, let label):
+            DaySeparator(label: label)
+        case .delegation(_, let callIDs):
+            DelegationSummary(store: store, callIDs: callIDs)
+        case .delegateCard(_, let callIDs):
+            DelegationLine(calls: callIDs.compactMap { store.toolCalls[$0] })
+        case .caption(_, let text):
+            DaySeparator(label: text)
+        case .tools(_, let callIDs):
+            ToolGroupRow(calls: callIDs.compactMap { store.toolCalls[$0] })
+        case .entry(let entry):
+            TranscriptRow(
+                entry: entry,
+                store: store,
+                bubble: bubbles[entry.id],
+                isHovered: hoveredItemID == entry.id
+            ) { id in
+                if let id {
+                    hoveredItemID = id
+                } else if hoveredItemID == entry.id {
+                    hoveredItemID = nil
+                }
+            }
+            .equatable()
+        }
+    }
+
+    private func loadOlderIfNeeded(force: Bool = false) {
+        guard force || userScrolled, store.historySettled, store.hasOlder, !store.isLoadingOlder else { return }
+        store.loadOlder()
+    }
+
+    private func jumpToEnd() {
+        unseenCount = 0
+        scroll.scrollToEnd(animated: !reduceMotion)
     }
 
     private func reportShown() {
@@ -440,25 +432,6 @@ struct ConversationView: View {
             LinearGradient(colors: [Color.clear, Color.black], startPoint: .top, endPoint: .bottom)
                 .frame(height: topInset + Spacing.l + Spacing.s)
             Color.black
-            Color.black
-                .frame(height: Self.fadeHeight)
-            Color.black
-                .frame(height: footerHeight)
-        }
-    }
-
-    private func scrollToEnd(_ proxy: ScrollViewProxy) {
-        unseenCount = 0
-        if reduceMotion {
-            var transaction = Transaction()
-            transaction.disablesAnimations = true
-            withTransaction(transaction) {
-                proxy.scrollTo(Self.bottomID, anchor: .bottom)
-            }
-        } else {
-            withAnimation(.smooth(duration: 0.45)) {
-                proxy.scrollTo(Self.bottomID, anchor: .bottom)
-            }
         }
     }
 
@@ -466,21 +439,6 @@ struct ConversationView: View {
         guard store.historySettled, store.hasOlder, !store.isLoadingOlder,
               store.entries.count < 20 || store.transcriptSnapshot(now: Date()).items.isEmpty else { return }
         store.loadOlder()
-    }
-
-    private func jumpToBottom(_ proxy: ScrollViewProxy) {
-        lastEntryID = store.entries.last?.id
-        unseenCount = 0
-        var transaction = Transaction()
-        transaction.disablesAnimations = true
-        withTransaction(transaction) {
-            proxy.scrollTo(Self.bottomID, anchor: .bottom)
-        }
-        DispatchQueue.main.async {
-            withTransaction(transaction) {
-                proxy.scrollTo(Self.bottomID, anchor: .bottom)
-            }
-        }
     }
 
     private func topSpacing(for item: TranscriptItem, bubbles: [String: BubbleMeta]) -> CGFloat {
@@ -529,10 +487,6 @@ struct ConversationView: View {
         .springAnimation(value: store.connection)
         .springAnimation(value: store.openApprovalIDs.count)
     }
-}
-
-final class VisibleItems {
-    var firstID: String?
 }
 
 struct JumpToBottomButton: View {
