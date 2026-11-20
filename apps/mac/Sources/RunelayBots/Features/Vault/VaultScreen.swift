@@ -58,12 +58,60 @@ private struct VaultLockedView: View {
     }
 }
 
+struct VaultSecretPage: View {
+    let name: String?
+    @Environment(AppModel.self) private var model
+    @Environment(SettingsNavigator.self) private var navigator
+    @State private var lock = VaultLock.shared
+    @State private var store = VaultStore.shared
+
+    var body: some View {
+        Group {
+            if !lock.isUnlocked {
+                VaultLockedView(lock: lock)
+                    .transition(.opacity)
+            } else if let name {
+                if let secret = store.secrets.first(where: { $0.name == name }) {
+                    VaultEditor(secret: secret, bots: vaultBots(model)) { _ in
+                    } onCancel: {
+                    } onDeleted: {
+                        navigator.pop()
+                    }
+                    .id(secret.name)
+                    .transition(.opacity)
+                }
+            } else {
+                VaultEditor(secret: nil, bots: vaultBots(model)) { saved in
+                    navigator.pop()
+                    navigator.push(.secret(saved))
+                } onCancel: {
+                    navigator.pop()
+                }
+                .id("new")
+                .transition(.opacity)
+            }
+        }
+        .springAnimation(value: lock.isUnlocked)
+    }
+}
+
+@MainActor
+private func vaultBots(_ model: AppModel) -> [Bot] {
+    if case .loaded(let list) = model.bots { return list.filter { !$0.isGroup } }
+    return []
+}
+
 private struct VaultPanel: View {
     @Environment(AppModel.self) private var model
+    @Environment(SettingsNavigator.self) private var navigator
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var store = VaultStore.shared
     @State private var selection: String?
     @State private var creating = false
+    @State private var width: CGFloat = 0
+
+    private var isCompact: Bool { width > 0 && width < 720 }
+    private var listWidth: CGFloat { max(280, (width * 0.32).rounded()) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
@@ -74,6 +122,10 @@ private struct VaultPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: Spacing.m)
                 Button {
+                    if isCompact {
+                        navigator.push(.newSecret)
+                        return
+                    }
                     withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
                         selection = nil
                         creating = true
@@ -91,12 +143,22 @@ private struct VaultPanel: View {
                     .foregroundStyle(Theme.attention)
             }
 
-            HStack(alignment: .top, spacing: Spacing.l) {
+            if isCompact {
                 list
-                    .frame(width: 210)
-                detail
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+            } else {
+                HStack(alignment: .top, spacing: Spacing.xl) {
+                    list
+                        .frame(width: listWidth)
+                    detail
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                }
             }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { newWidth in
+            width = newWidth
         }
         .task {
             await store.reload()
@@ -123,7 +185,11 @@ private struct VaultPanel: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             ForEach(store.secrets) { secret in
-                VaultRow(secret: secret, botName: botName(secret.lastUsedBy), isSelected: selection == secret.name && !creating) {
+                VaultRow(secret: secret, botName: botName(secret.lastUsedBy), isSelected: !isCompact && selection == secret.name && !creating) {
+                    if isCompact {
+                        navigator.push(.secret(secret.name))
+                        return
+                    }
                     withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
                         creating = false
                         selection = secret.name
@@ -158,8 +224,7 @@ private struct VaultPanel: View {
     }
 
     private var bots: [Bot] {
-        if case .loaded(let list) = model.bots { return list.filter { !$0.isGroup } }
-        return []
+        vaultBots(model)
     }
 
     private func botName(_ id: String?) -> String? {
@@ -520,7 +585,7 @@ private struct VaultEditor: View {
                     plainField(TextField("", text: $descriptionText, prompt: Text("Login do GitHub no navegador").foregroundStyle(Theme.textTertiary)))
                 }
                 VaultSettingRow(title: "Sites", help: "Vazio vale para qualquer site. *.dominio libera os subdomínios.") {
-                    plainField(TextField("", text: $domainsText, prompt: Text("Qualquer site").foregroundStyle(Theme.textTertiary)))
+                    plainField(TextField("", text: $domainsText, prompt: Text("Qualquer site").foregroundStyle(Theme.textTertiary), axis: .vertical).lineLimit(1...6))
                 }
                 VaultSettingRow(title: "Bots") {
                     VStack(alignment: .leading, spacing: Spacing.s) {
@@ -701,7 +766,8 @@ private struct VaultEditor: View {
             .textFieldStyle(.plain)
             .font(mono ? TypeScale.mono : TypeScale.rowSubtitle)
             .padding(.horizontal, Spacing.m)
-            .frame(height: 32)
+            .padding(.vertical, Spacing.xs + 2)
+            .frame(minHeight: 32)
             .background(Theme.background, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
     }
 

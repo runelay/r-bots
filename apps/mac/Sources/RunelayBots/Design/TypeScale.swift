@@ -40,6 +40,8 @@ enum Radius {
 enum Metrics {
     static let transcriptWidth: CGFloat = 720
     static let pageWidth: CGFloat = 1100
+    static let formWidth: CGFloat = 720
+    static let settingsGutter: CGFloat = Spacing.xxl + Spacing.s
     static let pageTitleTracking: CGFloat = -0.4
     static let sidebarWidth: CGFloat = 288
     static let inspectorWidth: CGFloat = 320

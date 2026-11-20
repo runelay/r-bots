@@ -3,12 +3,16 @@ import SwiftUI
 enum SettingsRoute: Hashable {
     case profile(String)
     case addProfile
+    case secret(String)
+    case newSecret
 
     @MainActor
     var title: String {
         switch self {
         case .profile(let id): ServerProfiles.shared.profile(id: id)?.name ?? "Servidor"
         case .addProfile: "Adicionar servidor"
+        case .secret(let name): name
+        case .newSecret: "Novo segredo"
         }
     }
 }
@@ -176,9 +180,8 @@ struct SettingsScreen: View {
                         titleLine
                         content
                     }
-                    .frame(maxWidth: 660, alignment: .leading)
-                    .padding(.horizontal, Spacing.xxl)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Metrics.settingsGutter)
                     .padding(.bottom, Spacing.xxl)
                     .id(contentID)
                     .transition(.opacity)
@@ -340,6 +343,8 @@ struct SettingsScreen: View {
             switch route {
             case .profile(let id): ServerProfileEditor(profileID: id)
             case .addProfile: ServerProfileEditor(profileID: nil)
+            case .secret(let name): VaultSecretPage(name: name)
+            case .newSecret: VaultSecretPage(name: nil)
             }
         } else {
             switch model.settingsSection {
