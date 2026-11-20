@@ -25,6 +25,7 @@ ARG CODEX_VERSION=0.170.0
 ARG AGENT_BROWSER_VERSION=0.27.0
 ARG SUPABASE_VERSION=3.0.0
 ARG PNPM_VERSION=12.18.0
+ARG WRANGLER_VERSION=4.158.0
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
@@ -59,7 +60,8 @@ RUN --mount=type=cache,target=/root/.npm \
       "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
       "@openai/codex@${CODEX_VERSION}" \
       "agent-browser@${AGENT_BROWSER_VERSION}" \
-      "pnpm@${PNPM_VERSION}"
+      "pnpm@${PNPM_VERSION}" \
+      "wrangler@${WRANGLER_VERSION}"
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
@@ -68,7 +70,7 @@ RUN HOME=/home/app agent-browser install --with-deps \
  && chrome_dir="$(ls -d /home/app/.agent-browser/browsers/chrome-* | sort | tail -1)" \
  && cp -a "$chrome_dir" /opt/runelay-chrome \
  && chmod -R a+rX /opt/runelay-chrome \
- && mkdir -p /home/app/.config/gh /home/app/.cache /home/app/.local/share /home/app/.supabase /home/app/.claude /home/app/.codex \
+ && mkdir -p /home/app/.config/gh /home/app/.cache /home/app/.local/share /home/app/.supabase /home/app/.config/.wrangler /home/app/.claude /home/app/.codex \
  && chown -R app:app /home/app
 
 ENV HOME=/home/app \

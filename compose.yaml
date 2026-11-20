@@ -49,6 +49,7 @@ services:
       - ${HOME}/.codex:/home/app/.codex
       - ${HOME}/.config/gh:/home/app/.config/gh
       - ${HOME}/.supabase:/home/app/.supabase
+      - ${HOME}/.config/.wrangler:/home/app/.config/.wrangler
       - ${HOME}/.gitconfig:/home/app/.gitconfig:ro
       - desktop-home:/home/runelaybot
     healthcheck:
