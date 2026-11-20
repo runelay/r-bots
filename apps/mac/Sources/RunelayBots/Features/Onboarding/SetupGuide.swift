@@ -483,7 +483,7 @@ private struct SetupStepBody: View {
         case .accounts:
             accountsReady
                 ? "Cada bot usa uma destas contas. Dá para trocar depois, um por um."
-                : "Os bots rodam nas assinaturas já logadas nas suas máquinas. Entre no Claude Code, Codex, Grok ou Cursor e ela aparece aqui sozinha."
+                : "Os bots rodam nas assinaturas logadas no servidor. Entre no Claude Code ou no Codex lá e a conta aparece aqui sozinha. Duas contas do Claude? Cada uma numa pasta, e uma cobre a outra no limite."
         case .integrations:
             "Tudo opcional: cada chave liga uma parte a mais, como a voz ou os conectores do runelay. A chave fica cifrada no servidor."
         case .connectors:
@@ -715,6 +715,11 @@ private struct SetupDoneBody: View {
 private struct SetupAccountsList: View {
     @Environment(AppModel.self) private var model
 
+    private func setupDetail(_ account: AIAccount) -> String? {
+        let parts = [account.email, account.planLabel].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? account.friendlyDetail : parts.joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             switch model.accounts {
@@ -722,11 +727,13 @@ private struct SetupAccountsList: View {
                 ForEach(list.filter { $0.status != "missing" }) { account in
                     SetupCheckRow(
                         provider: account.provider,
-                        title: "\(account.providerTitle) · \(account.machineLabel)",
-                        detail: account.isReady ? account.friendlyDetail : account.statusLabel,
+                        title: account.name,
+                        detail: account.isReady ? setupDetail(account) : account.statusLabel,
                         state: account.isReady ? .ok : .warn
                     )
                 }
+                AddAccountSection()
+                    .padding(.top, Spacing.m)
             case .idle, .loading:
                 ForEach(KnownProvider.all.prefix(2)) { provider in
                     SetupCheckRow(provider: provider.id, title: provider.label, detail: nil, state: .pending)

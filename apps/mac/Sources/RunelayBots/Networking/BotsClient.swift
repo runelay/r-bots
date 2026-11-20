@@ -78,6 +78,36 @@ struct BotsClient: Sendable {
         return true
     }
 
+    func updateAccount(id: String, body: JSONValue) async throws -> [AIAccount] {
+        try await accountsMutation("/accounts/\(Self.escape(id))", method: "PATCH", body: body)
+    }
+
+    func addAccountDir(path: String) async throws -> [AIAccount] {
+        try await accountsMutation("/accounts/dirs", method: "POST", body: .object(["path": .string(path)]))
+    }
+
+    func removeAccount(id: String) async throws -> [AIAccount] {
+        try await accountsMutation("/accounts/\(Self.escape(id))", method: "DELETE", body: nil)
+    }
+
+    func accountLoginGuide(provider: String) async throws -> AccountLoginGuide {
+        let (data, response) = try await perform(try request(path: "/accounts/login-guide", query: [URLQueryItem(name: "provider", value: provider)]))
+        try validate(response, data: data)
+        return try JSONDecoder().decode(AccountLoginGuide.self, from: data)
+    }
+
+    private func accountsMutation(_ path: String, method: String, body: JSONValue?) async throws -> [AIAccount] {
+        var urlRequest = try request(path: path)
+        urlRequest.httpMethod = method
+        if let body {
+            urlRequest.httpBody = try JSONEncoder().encode(body)
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        let (data, response) = try await perform(urlRequest)
+        try validate(response, data: data)
+        return ((try? JSONDecoder().decode([Lossy<AIAccount>].self, from: data)) ?? []).compactMap(\.value)
+    }
+
     func meta() async -> ServerMeta? {
         guard let result = try? await perform(try request(path: "/meta")),
               (200..<300).contains(result.1.statusCode)

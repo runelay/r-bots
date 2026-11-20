@@ -53,21 +53,14 @@ struct ModelPickerEntry: Identifiable, Hashable {
 
 private extension AIAccount {
     var railBadge: String {
-        switch runner {
-        case "vps": return "VP"
-        case "mac": return "MC"
-        default:
-            let initials = providerTitle
-                .split(whereSeparator: { !$0.isLetter })
-                .compactMap(\.first)
-                .prefix(2)
-            return String(initials).uppercased()
+        let words = shortName.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        if words.count >= 2 {
+            return String(words.prefix(2).compactMap(\.first)).uppercased()
         }
+        return String(shortName.filter { $0.isLetter || $0.isNumber }.prefix(2)).uppercased()
     }
 
-    var railTitle: String {
-        "\(ModelNames.providerName(provider)) · \(machineLabel)"
-    }
+    var railTitle: String { name }
 
     var railHelp: String {
         guard !isReady else { return railTitle }
@@ -104,7 +97,8 @@ struct ModelPickerPanel: View {
             let right = Self.providerOrder.firstIndex(of: rhs.provider) ?? Self.providerOrder.count
             if left != right { return left < right }
             if lhs.provider != rhs.provider { return lhs.provider < rhs.provider }
-            return lhs.runner == "vps" && rhs.runner != "vps"
+            if lhs.isDefault != rhs.isDefault { return lhs.isDefault }
+            return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
         }
     }
 
@@ -217,13 +211,15 @@ struct ModelPickerPanel: View {
                 } content: {
                     ProviderLogo(provider: account.provider, size: 20)
                         .overlay(alignment: .bottomTrailing) {
-                            Text(account.railBadge)
-                                .font(.system(size: 7.5, weight: .bold))
-                                .foregroundStyle(Theme.textPrimary)
-                                .padding(.horizontal, 2.5)
-                                .frame(height: 11)
-                                .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 3, style: .continuous))
-                                .offset(x: 8, y: 6)
+                            if !account.railBadge.isEmpty {
+                                Text(account.railBadge)
+                                    .font(.system(size: 7.5, weight: .bold))
+                                    .foregroundStyle(Theme.textPrimary)
+                                    .padding(.horizontal, 2.5)
+                                    .frame(height: 11)
+                                    .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: 3, style: .continuous))
+                                    .offset(x: 8, y: 6)
+                            }
                         }
                 }
             }
@@ -287,7 +283,7 @@ struct ModelPickerPanel: View {
                         ForEach(Array(visible.enumerated()), id: \.element.id) { index, entry in
                             ModelPickerRow(
                                 entry: entry,
-                                showsAccount: showsAccountContext,
+                                showsAccount: showsAccountContext || accounts.filter({ $0.provider == entry.account.provider }).count > 1,
                                 isCurrent: entry.account.id == currentAccountID && entry.model.id == currentModelID,
                                 isHighlighted: index == highlighted,
                                 isFavorite: favorites.contains(entry.id),
@@ -474,15 +470,23 @@ struct ModelPickerPanel: View {
     }
 
     private func fallbackName(_ id: String) -> String {
+        if let account = accounts.first(where: { $0.id == id }) { return account.name }
         let provider = id.split(separator: ":").last.map(String.init) ?? id
-        let name = provider == "codex" ? "Codex" : ModelNames.providerName(id)
-        let runner = id.hasPrefix("mac:") ? "Mac" : "VPS"
-        return "\(name) · \(runner)"
+        return provider == "codex" ? "Codex" : ModelNames.providerName(id)
+    }
+
+    private var siblingNames: [String] {
+        guard let current = accounts.first(where: { $0.id == currentAccountID }) else { return [] }
+        return accounts.filter { $0.provider == current.provider && $0.id != current.id && $0.isReady }.map(\.name)
+    }
+
+    private var fallbackTitle: String {
+        siblingNames.isEmpty ? "Se acabar o limite, usar" : "Depois de \(siblingNames.joined(separator: " e ")), usar"
     }
 
     private var fallbackFooter: some View {
         HStack(spacing: Spacing.m) {
-            Text("Se acabar o limite, usar")
+            Text(fallbackTitle)
                 .font(TypeScale.rowSubtitle)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize()
@@ -500,7 +504,7 @@ struct ModelPickerPanel: View {
                 help: "Se acabar o limite",
                 edge: .trailing
             )
-            .help("Quando a conta principal bater no limite, o mesmo pedido continua nesta conta, com o contexto da conversa. Volta sozinho depois do reset.")
+            .help("Quando a conta principal bater no limite ou cair, o pedido continua primeiro na outra conta do mesmo provedor e depois nesta, com o contexto da conversa. Volta sozinho quando a principal libera.")
         }
         .padding(.horizontal, Spacing.l)
         .frame(height: 44)
@@ -595,7 +599,7 @@ struct ModelPickerRow: View {
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1)
             if showsAccount {
-                Text(entry.account.machineLabel)
+                Text(entry.account.name)
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .lineLimit(1)

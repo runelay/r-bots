@@ -15,62 +15,68 @@ struct AccountModel: Identifiable, Hashable, Sendable, Decodable {
     }
 }
 
-struct AccountDevice: Hashable, Sendable, Decodable {
-    let id: String
-    let name: String
-    let connected: Bool
-}
-
 struct AIAccount: Identifiable, Hashable, Sendable, Decodable {
     let id: String
-    let runner: String
-    let device: AccountDevice?
     let provider: String
     let label: String
+    var name: String
+    let autoName: String
+    let email: String?
+    let plan: String?
+    let configDir: String?
+    var isDefault: Bool
+    let added: Bool
     let status: String
     let models: [AccountModel]
     let detail: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, runner, provider, label, status, models, detail, device
+        case id, provider, label, name, autoName, email, plan, configDir, isDefault, added, status, models, detail
     }
 
     init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
-        runner = (try? container.decodeIfPresent(String.self, forKey: .runner)) ?? id.split(separator: ":").first.map(String.init) ?? ""
         provider = (try? container.decodeIfPresent(String.self, forKey: .provider)) ?? id.split(separator: ":").last.map(String.init) ?? ""
         label = (try? container.decodeIfPresent(String.self, forKey: .label)) ?? id
+        name = (try? container.decodeIfPresent(String.self, forKey: .name)) ?? label
+        autoName = (try? container.decodeIfPresent(String.self, forKey: .autoName)) ?? name
+        email = try? container.decodeIfPresent(String.self, forKey: .email)
+        plan = try? container.decodeIfPresent(String.self, forKey: .plan)
+        configDir = try? container.decodeIfPresent(String.self, forKey: .configDir)
+        isDefault = (try? container.decodeIfPresent(Bool.self, forKey: .isDefault)) ?? false
+        added = (try? container.decodeIfPresent(Bool.self, forKey: .added)) ?? false
         status = (try? container.decodeIfPresent(String.self, forKey: .status)) ?? "offline"
         models = ((try? container.decodeIfPresent([Lossy<AccountModel>].self, forKey: .models)) ?? []).compactMap(\.value)
         detail = try? container.decodeIfPresent(String.self, forKey: .detail)
-        device = try? container.decodeIfPresent(AccountDevice.self, forKey: .device)
     }
 
-    var machineKey: String {
-        device.map { "device:\($0.id)" } ?? id.split(separator: ":").first.map(String.init) ?? runner
+    var providerTitle: String { name }
+
+    var hasLogin: Bool { provider == "claude" || provider == "codex" }
+
+    var planLabel: String? {
+        guard let plan, !plan.isEmpty else { return nil }
+        switch plan.lowercased() {
+        case "team": return "Team"
+        case "max": return "Max"
+        case "pro": return "Pro"
+        case "plus": return "Plus"
+        case "enterprise": return "Enterprise"
+        default: return plan.capitalized
+        }
+    }
+
+    var shortName: String {
+        let base = ModelNames.providerName(id) == "ChatGPT" ? "Codex" : ModelNames.providerName(id)
+        let rest = name.hasPrefix(base) ? String(name.dropFirst(base.count)).trimmingCharacters(in: .whitespaces) : name
+        return rest
     }
 
     var isReady: Bool { status == "ready" }
 
-    var providerTitle: String {
-        let base = device.map { label.replacingOccurrences(of: " · \($0.name)", with: "") } ?? label
-        return base
-            .replacingOccurrences(of: " (VPS)", with: "")
-            .replacingOccurrences(of: " (Mac)", with: "")
-    }
-
     var supportsEffort: Bool {
         provider == "claude" || provider == "codex"
-    }
-
-    var machineLabel: String {
-        if let device { return device.name }
-        switch runner {
-        case "vps": return "VPS"
-        case "mac": return "Mac"
-        default: return runner.uppercased()
-        }
     }
 
     var statusLabel: String {
@@ -92,6 +98,13 @@ struct AIAccount: Identifiable, Hashable, Sendable, Decodable {
         default: "cpu"
         }
     }
+}
+
+struct AccountLoginGuide: Decodable, Sendable, Hashable {
+    let provider: String
+    let dir: String
+    let command: String
+    let steps: [String]
 }
 
 struct EngineFallback: Hashable, Sendable, Decodable {

@@ -23,16 +23,14 @@ struct UsageFailover: Decodable, Sendable, Hashable {
 
 struct UsageLimitAccount: Decodable, Sendable, Identifiable, Hashable {
     let id: String
-    let environment: String
     let provider: String
     let label: String
     let plan: String?
+    let isDefault: Bool?
     let ok: Bool
     let error: String?
     let windows: [UsageLimitWindow]
     let failover: [UsageFailover]
-
-    var environmentLabel: String { environment == "mac" ? "Mac" : "VPS" }
 }
 
 struct UsageLimitsResponse: Decodable, Sendable {
@@ -78,7 +76,7 @@ struct UsageDetailRow: Decodable, Sendable, Hashable {
     let day: String
     let provider: String
     let model: String
-    let environment: String
+    let account: String?
     let input: Double
     let cacheRead: Double
     let cacheWrite: Double
@@ -88,16 +86,14 @@ struct UsageDetailRow: Decodable, Sendable, Hashable {
     let costUsd: Double?
 }
 
-struct UsageEnvironmentState: Decodable, Sendable {
-    let ok: Bool
-    let error: String?
-    let scannedAt: String?
-    let pending: Bool?
-}
-
-struct UsageEnvironments: Decodable, Sendable {
-    let vps: UsageEnvironmentState?
-    let mac: UsageEnvironmentState?
+struct UsageAccountTotals: Decodable, Sendable, Identifiable, Hashable {
+    let id: String
+    let provider: String
+    let label: String
+    let processed: Double
+    let requests: Double
+    let sessions: Double
+    let costUsd: Double
 }
 
 struct UsageSummary: Decodable, Sendable {
@@ -108,7 +104,7 @@ struct UsageSummary: Decodable, Sendable {
     let series: [UsageSeriesPoint]
     let speeds: [UsageSpeed]
     let detail: [UsageDetailRow]
-    let environments: UsageEnvironments
+    let accounts: [UsageAccountTotals]?
 }
 
 enum UsageRange: String, CaseIterable, Identifiable, Sendable {

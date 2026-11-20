@@ -1159,6 +1159,74 @@ final class AppModel {
         }
     }
 
+    func renameAccount(_ account: AIAccount, to name: String?) {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        updateAccount(account, body: .object(["name": trimmed.map { .string($0) } ?? .null])) { item in
+            item.name = (trimmed?.isEmpty ?? true) ? item.autoName : trimmed ?? item.autoName
+        }
+    }
+
+    func makeDefaultAccount(_ account: AIAccount) {
+        updateAccount(account, body: .object(["isDefault": .bool(true)])) { item in
+            item.isDefault = true
+        } others: { item in
+            if item.provider == account.provider { item.isDefault = false }
+        }
+    }
+
+    private func updateAccount(
+        _ account: AIAccount,
+        body: JSONValue,
+        change: @escaping (inout AIAccount) -> Void,
+        others: @escaping (inout AIAccount) -> Void = { _ in }
+    ) {
+        guard case .loaded(let list) = accounts else { return }
+        accounts = .loaded(list.map { item in
+            var copy = item
+            if copy.id == account.id { change(&copy) } else { others(&copy) }
+            return copy
+        })
+        let client = client
+        Task {
+            do {
+                let updated = try await client.updateAccount(id: account.id, body: body)
+                if !updated.isEmpty { accounts = .loaded(updated) }
+            } catch {
+                accounts = .loaded(list)
+                showNotice(ErrorMessage.describe(error))
+            }
+        }
+    }
+
+    func addAccountDir(_ path: String) async -> String? {
+        do {
+            let updated = try await client.addAccountDir(path: path)
+            if !updated.isEmpty { accounts = .loaded(updated) }
+            return nil
+        } catch {
+            return ErrorMessage.describe(error)
+        }
+    }
+
+    func removeAccount(_ account: AIAccount) {
+        guard case .loaded(let list) = accounts else { return }
+        accounts = .loaded(list.filter { $0.id != account.id })
+        let client = client
+        Task {
+            do {
+                let updated = try await client.removeAccount(id: account.id)
+                if !updated.isEmpty { accounts = .loaded(updated) }
+            } catch {
+                accounts = .loaded(list)
+                showNotice(ErrorMessage.describe(error))
+            }
+        }
+    }
+
+    func accountLoginGuide(provider: String) async -> AccountLoginGuide? {
+        try? await client.accountLoginGuide(provider: provider)
+    }
+
     func refreshAccounts() {
         guard !isRefreshingAccounts else { return }
         isRefreshingAccounts = true

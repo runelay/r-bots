@@ -10,7 +10,7 @@ struct UsageScreen: View {
             PageContainer {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
                     HStack(alignment: .center, spacing: Spacing.l) {
-                        ScreenTitle(title: "Uso", subtitle: "Limites das assinaturas e tokens gastos pelos bots, na VPS e no Mac.")
+                        ScreenTitle(title: "Uso", subtitle: "Limites de cada conta e tokens gastos pelos bots.")
                         Spacer(minLength: Spacing.l)
                         UsageRefreshButton(isBusy: store.summaryLoading) {
                             Task { await store.refreshLimits(force: true) }
@@ -25,7 +25,9 @@ struct UsageScreen: View {
                             UsageSegmented(options: UsageRange.allCases.map { ($0, $0.title) }, selection: $store.range, namespaceID: "range")
                         }
                         UsageFilterMenu(title: "Provedor", options: [(nil, "Todos"), ("claude", "Claude"), ("codex", "Codex")], selection: $store.provider)
-                        UsageFilterMenu(title: "Ambiente", options: [(nil, "Todos"), ("vps", "VPS"), ("mac", "Mac")], selection: $store.environment)
+                        if store.accounts.count > 1 {
+                            UsageFilterMenu(title: "Conta", options: [(nil, "Todas")] + store.accounts.map { ($0.id, $0.label) }, selection: $store.account)
+                        }
                     }
 
                     Group {
@@ -58,7 +60,7 @@ struct UsageScreen: View {
         }
         .onChange(of: store.range) { store.reloadSummary() }
         .onChange(of: store.provider) { store.reloadSummary() }
-        .onChange(of: store.environment) { store.reloadSummary() }
+        .onChange(of: store.account) { store.reloadSummary() }
     }
 }
 
@@ -176,14 +178,12 @@ private struct UsageNote: View {
 private struct UsageLimitsTab: View {
     let store: UsageStore
 
-    private var visibleProviders: [String] {
-        ["codex", "claude"].filter { provider in
-            (store.provider == nil || store.provider == provider) && !accounts(provider).isEmpty
+    private var visibleAccounts: [UsageLimitAccount] {
+        ["claude", "codex"].flatMap { provider in
+            store.accounts(for: provider).filter { account in
+                (store.provider == nil || store.provider == provider) && (store.account == nil || store.account == account.id)
+            }
         }
-    }
-
-    private func accounts(_ provider: String) -> [UsageLimitAccount] {
-        store.accounts(for: provider).filter { store.environment == nil || $0.environment == store.environment }
     }
 
     var body: some View {
@@ -195,19 +195,21 @@ private struct UsageLimitsTab: View {
                 ProgressView()
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, minHeight: 120)
-            } else if visibleProviders.isEmpty {
+            } else if visibleAccounts.isEmpty {
                 UsageNote(text: "Nenhuma conta com limite para mostrar com esses filtros.")
             }
-            ForEach(visibleProviders, id: \.self) { provider in
-                UsageProviderLimits(provider: provider, accounts: accounts(provider))
+            ForEach(visibleAccounts) { account in
+                UsageAccountLimits(account: account)
             }
         }
     }
 }
 
-private struct UsageProviderLimits: View {
-    let provider: String
-    let accounts: [UsageLimitAccount]
+private struct UsageAccountLimits: View {
+    let account: UsageLimitAccount
+    private var store: UsageStore { .shared }
+
+    private var accounts: [UsageLimitAccount] { [account] }
 
     private var windowLabels: [String] {
         var seen: [String] = []
@@ -219,19 +221,19 @@ private struct UsageProviderLimits: View {
         return seen
     }
 
-    private var plans: String {
-        Set(accounts.compactMap(\.plan)).sorted().map { $0.capitalized }.joined(separator: ", ")
-    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
             HStack(spacing: Spacing.s) {
-                ProviderLogo(provider: provider, size: 18)
-                Text(UsageFormat.providerName(provider))
+                ProviderLogo(provider: account.provider, size: 18)
+                Text(account.label)
                     .font(TypeScale.sectionTitle)
                     .foregroundStyle(Theme.textPrimary)
-                if !plans.isEmpty {
-                    RoleTag(text: plans)
+                if let plan = account.plan, !plan.isEmpty {
+                    RoleTag(text: plan.capitalized)
+                }
+                if account.isDefault == true, store.accounts(for: account.provider).count > 1 {
+                    RoleTag(text: "Padrão")
                 }
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: Spacing.m, alignment: .top)], alignment: .leading, spacing: Spacing.m) {
@@ -239,13 +241,11 @@ private struct UsageProviderLimits: View {
                     UsageLimitCard(label: label, accounts: accounts)
                 }
             }
-            ForEach(accounts.filter { !$0.ok }) { account in
-                UsageNote(text: "\(account.label) (\(account.environmentLabel)): \(account.error ?? "sem dados")", systemImage: "exclamationmark.circle", color: Theme.textTertiary)
+            if !account.ok {
+                UsageNote(text: account.error ?? "Sem dados desta conta.", systemImage: "exclamationmark.circle", color: Theme.textTertiary)
             }
-            ForEach(accounts.filter { account in account.ok && account.windows.contains { $0.remainingPercent < 25 } }) { account in
-                if let line = UsageStore.failoverLine(account) {
-                    UsageNote(text: "Se \(account.label) (\(account.environmentLabel)) acabar: \(line)", systemImage: "arrow.triangle.swap", color: Theme.attention)
-                }
+            if account.ok, account.windows.contains(where: { $0.remainingPercent < 25 }), let line = UsageStore.failoverLine(account) {
+                UsageNote(text: "Se \(account.label) acabar: \(line)", systemImage: "arrow.triangle.swap", color: Theme.attention)
             }
         }
     }
@@ -291,7 +291,7 @@ private struct UsageLimitCard: View {
                 }
                 VStack(alignment: .leading, spacing: Spacing.s + 2) {
                     ForEach(entries, id: \.account.id) { entry in
-                        UsageAccountBar(account: entry.account, window: entry.window)
+                        UsageAccountBar(account: entry.account, window: entry.window, showsName: entries.count > 1)
                     }
                 }
             }
@@ -302,6 +302,7 @@ private struct UsageLimitCard: View {
 private struct UsageAccountBar: View {
     let account: UsageLimitAccount
     let window: UsageLimitWindow
+    var showsName = true
 
     private var paceHelp: String {
         guard let pace = window.pacePercent else { return "" }
@@ -313,15 +314,12 @@ private struct UsageAccountBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.xs) {
-                Text(account.label)
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                Text(account.environmentLabel)
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .lineLimit(1)
-                    .fixedSize()
+                if showsName {
+                    Text(account.label)
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(1)
+                }
                 Spacer(minLength: Spacing.s)
                 if let until = UsageFormat.until(window.resetDate) {
                     Text(until)
@@ -460,6 +458,10 @@ private struct UsageTokensTab: View {
                 UsageSpeedCard(speeds: summary.speeds)
             }
 
+            if let accounts = summary.accounts, accounts.count > 1 {
+                UsageAccountsCard(accounts: accounts, mode: mode)
+            }
+
             UsageDetailTable(rows: summary.detail, mode: mode)
         }
     }
@@ -472,9 +474,6 @@ private struct UsageTokensTab: View {
 
     private func notes(_ summary: UsageSummary) -> [String] {
         var list: [String] = []
-        if let mac = summary.environments.mac, let error = mac.error {
-            list.append(error)
-        }
         if mode == .cost, summary.totals.unpricedTokens > 0 {
             list.append("\(UsageFormat.tokens(summary.totals.unpricedTokens)) tokens são de modelos sem preço público e ficaram fora da conta.")
         }
@@ -499,6 +498,59 @@ private struct UsageTokensTab: View {
             }
         }
         return result.sorted { $0.date < $1.date }
+    }
+}
+
+private struct UsageAccountsCard: View {
+    let accounts: [UsageAccountTotals]
+    let mode: UsageMode
+
+    private func value(_ account: UsageAccountTotals) -> Double {
+        mode == .tokens ? account.processed : account.costUsd
+    }
+
+    var body: some View {
+        let total = max(accounts.map(value).reduce(0, +), 1)
+        UsageCard {
+            VStack(alignment: .leading, spacing: Spacing.m) {
+                Text(mode == .tokens ? "Tokens por conta" : "Custo por conta")
+                    .font(TypeScale.sectionTitle)
+                    .foregroundStyle(Theme.textPrimary)
+                ForEach(accounts) { account in
+                    VStack(alignment: .leading, spacing: Spacing.xs) {
+                        HStack(spacing: Spacing.s) {
+                            ProviderLogo(provider: account.provider, size: 14)
+                            Text(account.label)
+                                .font(TypeScale.caption)
+                                .foregroundStyle(Theme.textPrimary)
+                                .lineLimit(1)
+                            Spacer(minLength: Spacing.s)
+                            Text("\(Int(account.sessions)) sessões")
+                                .font(TypeScale.caption.monospacedDigit())
+                                .foregroundStyle(Theme.textTertiary)
+                                .fixedSize()
+                            Text(mode == .tokens ? UsageFormat.tokens(account.processed) : UsageFormat.usd(account.costUsd))
+                                .font(TypeScale.captionStrong.monospacedDigit())
+                                .foregroundStyle(Theme.textPrimary)
+                                .contentTransition(.numericText())
+                                .fixedSize()
+                                .frame(minWidth: 64, alignment: .trailing)
+                        }
+                        GeometryReader { geometry in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(UsagePalette.track)
+                                Capsule()
+                                    .fill(UsagePalette.provider(account.provider))
+                                    .frame(width: max(0, geometry.size.width * value(account) / total))
+                            }
+                        }
+                        .frame(height: 6)
+                        .springAnimation(value: value(account))
+                    }
+                }
+            }
+        }
     }
 }
 

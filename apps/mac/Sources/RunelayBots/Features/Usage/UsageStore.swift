@@ -24,7 +24,7 @@ final class UsageStore {
     var tab: UsageTab = .limits
     var range: UsageRange = .month
     var provider: String?
-    var environment: String?
+    var account: String?
 
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var summaryTask: Task<Void, Never>?
@@ -72,7 +72,7 @@ final class UsageStore {
         summary = nil
         summaryError = nil
         provider = nil
-        environment = nil
+        account = nil
         Task { await refreshLimits(force: true) }
     }
 
@@ -102,17 +102,12 @@ final class UsageStore {
         defer { summaryLoading = false }
         var query = [URLQueryItem(name: "range", value: range.rawValue)]
         if let provider { query.append(URLQueryItem(name: "provider", value: provider)) }
-        if let environment { query.append(URLQueryItem(name: "environment", value: environment)) }
+        if let account { query.append(URLQueryItem(name: "account", value: account)) }
         do {
             let result = try await fetch("/usage/summary", query: query, timeout: 90, as: UsageSummary.self)
             guard !Task.isCancelled else { return }
             summary = result
             summaryError = nil
-            if result.environments.mac?.pending == true {
-                try? await Task.sleep(for: .seconds(15))
-                guard !Task.isCancelled else { return }
-                await loadSummary()
-            }
         } catch {
             guard !Task.isCancelled else { return }
             summaryError = "Não consegui somar o uso agora."
@@ -205,7 +200,7 @@ final class UsageStore {
     private func postWarning(account: UsageLimitAccount, window: UsageLimitWindow, key: String) {
         guard Notifier.shared.isAvailable else { return }
         let content = UNMutableNotificationContent()
-        content.title = "\(account.label) (\(account.environmentLabel)) quase no limite"
+        content.title = "\(account.label) quase no limite"
         var body = "\(window.label): \(UsageFormat.percent(window.remainingPercent)) restante"
         if let until = UsageFormat.until(window.resetDate) {
             body += ", volta em \(until)"

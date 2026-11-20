@@ -114,7 +114,7 @@ extension SettingsSection {
         case .appearance: ["tema", "escuro", "claro", "movimento", "texto", "fonte"]
         case .notifications: ["avisos", "respostas", "aprovações", "rotinas", "erros"]
         case .bots: ["arquivados", "ocultos", "excluídos", "restaurar", "novo bot", "editar"]
-        case .aiAccounts: ["contas", "claude", "codex", "grok", "cursor", "modelos", "máquinas"]
+        case .aiAccounts: ["contas", "claude", "codex", "grok", "cursor", "modelos", "padrão", "adicionar"]
         case .vault: ["segredos", "senhas", "tokens", "keychain", "touch id"]
         case .computer: ["acessibilidade", "gravação de tela", "automação", "permissões", "executor", "gravações"]
         case .integrations: ["elevenlabs", "jev", "chave", "voz", "runelay"]
@@ -128,7 +128,7 @@ extension SettingsSection {
         switch self {
         case .server: "Cada servidor guarda o próprio login neste Mac. Trocar de servidor recarrega o app sem misturar bots, conversas e caches. Atalho: ⌃⌘1 a ⌃⌘9."
         case .computer: "Bots com \"Seu Mac\" ligado podem ver a tela, clicar, digitar e mexer nas pastas liberadas. O botão Parar aparece no topo da tela enquanto um bot age. Depois de reinstalar o app, o macOS pode pedir as permissões de novo."
-        case .aiAccounts: "As IAs logadas nas suas máquinas. Cada bot escolhe uma conta e um modelo."
+        case .aiAccounts: "As contas de IA logadas no servidor. Cada bot escolhe uma conta e um modelo; se ela acabar ou cair, o pedido segue na outra conta do mesmo provedor."
         case .vault: "Os valores ficam no Keychain deste Mac e nunca aparecem sem Touch ID. Abrir o cofre pede confirmação e ele tranca de novo em 5 minutos ou quando o app sai da frente."
         case .integrations: "Serviços opcionais. Os bots funcionam sem eles; cada chave liga uma parte a mais. A chave fica cifrada no servidor e nunca volta para o app."
         case .notifications: "O número no ícone do Dock mostra o total de mensagens não lidas."
