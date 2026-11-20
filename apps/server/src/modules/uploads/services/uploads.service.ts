@@ -1,6 +1,6 @@
 import { createWriteStream } from "node:fs";
-import { copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { basename, extname, join, resolve, sep } from "node:path";
+import { copyFile, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import {
@@ -13,7 +13,7 @@ import {
 import { runBytes } from "@runelay-bots/providers/proc";
 import { ulid } from "ulid";
 import { z } from "zod";
-import { botDir, dataDir } from "../../../config/env";
+import { botDir } from "../../../config/env";
 import type { Req, Res } from "../../../shared/http";
 import {
   macReadFile,
@@ -21,7 +21,6 @@ import {
   macRunnerSupports,
   macTranscribeFile,
 } from "../../accounts/services/mac-runner.service";
-import { fileRoots } from "../../code/services/repos.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
 import { integrationSecret } from "../../integrations/services/integration-store.service";
 import { defineJob, enqueue, jobsActive } from "../../jobs/services/jobs.service";
@@ -31,8 +30,19 @@ import {
   readUploadRow,
   saveUploadRow,
   updateUploadMeta,
+  uploadBytesOf,
   uploadFromRow,
 } from "../repositories/uploads.repository";
+import { lexicallyInOutbox, macPathAllowed, openConfined, outboxDir } from "./send-file.service";
+import {
+  mediaInput,
+  probeFormatAllowed,
+  servedContentType,
+  servesInline,
+  sniffBytes,
+  sniffMime,
+  userContentCsp,
+} from "./sniff.service";
 
 export type UploadKind = "image" | "video" | "audio" | "file";
 
@@ -85,52 +95,6 @@ export class UploadError extends Error {
     super(message);
   }
 }
-
-const mimeByExt: Record<string, string> = {
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".gif": "image/gif",
-  ".webp": "image/webp",
-  ".heic": "image/heic",
-  ".heif": "image/heif",
-  ".tif": "image/tiff",
-  ".tiff": "image/tiff",
-  ".bmp": "image/bmp",
-  ".svg": "image/svg+xml",
-  ".mp4": "video/mp4",
-  ".m4v": "video/x-m4v",
-  ".mov": "video/quicktime",
-  ".webm": "video/webm",
-  ".mkv": "video/x-matroska",
-  ".mp3": "audio/mpeg",
-  ".m4a": "audio/mp4",
-  ".aac": "audio/aac",
-  ".wav": "audio/wav",
-  ".aiff": "audio/aiff",
-  ".aif": "audio/aiff",
-  ".ogg": "audio/ogg",
-  ".opus": "audio/ogg",
-  ".flac": "audio/flac",
-  ".pdf": "application/pdf",
-  ".json": "application/json",
-  ".csv": "text/csv",
-  ".md": "text/markdown",
-  ".txt": "text/plain",
-  ".html": "text/html",
-  ".zip": "application/zip",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  ".doc": "application/msword",
-  ".xls": "application/vnd.ms-excel",
-  ".ppt": "application/vnd.ms-powerpoint",
-  ".odt": "application/vnd.oasis.opendocument.text",
-  ".ods": "application/vnd.oasis.opendocument.spreadsheet",
-  ".odp": "application/vnd.oasis.opendocument.presentation",
-  ".rtf": "application/rtf",
-  ".epub": "application/epub+zip",
-};
 
 const textExts = new Set([
   ".txt",
@@ -241,14 +205,27 @@ export function kindOf(mime: string, name: string): UploadKind {
   return "file";
 }
 
-function mimeOf(declared: string | undefined, name: string) {
-  const clean = (declared ?? "").split(";")[0].trim().toLowerCase();
-  if (
-    clean &&
-    !["application/octet-stream", "application/x-www-form-urlencoded", "multipart/form-data"].includes(clean)
-  )
-    return clean;
-  return mimeByExt[extname(name).toLowerCase()] ?? "application/octet-stream";
+async function sniffFile(path: string, name: string) {
+  const handle = await open(path, "r");
+  try {
+    const info = await handle.stat();
+    const buffer = Buffer.alloc(Math.min(sniffBytes, info.size));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return sniffMime(buffer.subarray(0, bytesRead), name, bytesRead >= info.size);
+  } finally {
+    await handle.close();
+  }
+}
+
+export function uploadQuotaBytes() {
+  const megabytes = Number(process.env.BOTS_UPLOAD_QUOTA_MB ?? 5000);
+  return (Number.isFinite(megabytes) && megabytes > 0 ? megabytes : 5000) * 1024 * 1024;
+}
+
+const quotaMessage = "O espaço de anexos deste bot acabou. Apague anexos antigos ou peça para aumentar a cota.";
+
+async function quotaLeft(botId: string) {
+  return uploadQuotaBytes() - (await uploadBytesOf(botId));
 }
 
 async function run(cmd: string, args: string[], options: { timeout?: number } = {}) {
@@ -257,15 +234,16 @@ async function run(cmd: string, args: string[], options: { timeout?: number } = 
   return { stdout: Buffer.from(stdout), stderr };
 }
 
-async function probe(path: string) {
+async function probe(path: string, mime: string) {
   try {
+    const input = mediaInput(mime, path);
     const { stdout } = await run(
       "ffprobe",
-      ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", path],
+      ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", ...input.slice(0, -2), path],
       { timeout: 30_000 },
     );
-    return JSON.parse(stdout.toString("utf8")) as {
-      format?: { duration?: string };
+    const parsed = JSON.parse(stdout.toString("utf8")) as {
+      format?: { duration?: string; format_name?: string };
       streams?: Array<{
         codec_type?: string;
         width?: number;
@@ -275,15 +253,16 @@ async function probe(path: string) {
         side_data_list?: Array<{ rotation?: number }>;
       }>;
     };
+    return probeFormatAllowed(parsed.format?.format_name) ? parsed : null;
   } catch {
     return null;
   }
 }
 
-async function waveformOf(path: string, bars = 48) {
+async function waveformOf(path: string, mime: string, bars = 48) {
   const { stdout } = await run(
     "ffmpeg",
-    ["-v", "error", "-i", path, "-vn", "-ac", "1", "-ar", "2000", "-f", "s16le", "-"],
+    ["-v", "error", ...mediaInput(mime, path), "-t", "7200", "-vn", "-ac", "1", "-ar", "2000", "-f", "s16le", "-"],
     { timeout: 60_000 },
   );
   const samples = Math.floor(stdout.length / 2);
@@ -306,7 +285,7 @@ async function waveformOf(path: string, bars = 48) {
 
 async function analyze(botId: string, meta: UploadMeta) {
   const path = uploadPath(botId, meta);
-  const info = meta.kind === "file" ? null : await probe(path);
+  const info = meta.kind === "file" ? null : await probe(path, meta.mime);
   const video = info?.streams?.find((stream) => stream.codec_type === "video");
   const duration = Number(info?.format?.duration ?? video?.duration ?? NaN);
   if (meta.kind === "image" || meta.kind === "video") {
@@ -325,7 +304,7 @@ async function analyze(botId: string, meta: UploadMeta) {
     meta.kind === "audio" ||
     (meta.kind === "video" && info?.streams?.some((stream) => stream.codec_type === "audio"))
   ) {
-    meta.waveform = await waveformOf(path).catch(() => undefined);
+    meta.waveform = await waveformOf(path, meta.mime).catch(() => undefined);
   }
   if (
     meta.kind === "video" ||
@@ -342,8 +321,7 @@ async function analyze(botId: string, meta: UploadMeta) {
           "error",
           "-y",
           ...at,
-          "-i",
-          path,
+          ...mediaInput(meta.mime, path),
           "-frames:v",
           "1",
           "-vf",
@@ -448,7 +426,9 @@ export async function receiveUpload(botId: string, req: Req) {
   } catch {
     name = safeName(rawName);
   }
-  const mime = mimeOf(String(req.headers["x-file-type"] ?? req.headers["content-type"] ?? ""), name);
+  const left = await quotaLeft(botId);
+  if (left <= 0 || (Number.isFinite(declared) && declared > left)) throw new UploadError(quotaMessage, 413);
+  const limit = Math.min(maxUploadBytes, left);
   const uploadId = ulid();
   const file = `${uploadId}-${name}`;
   const dir = uploadsDir(botId);
@@ -459,6 +439,7 @@ export async function receiveUpload(botId: string, req: Req) {
     transform(chunk: Buffer, _encoding, callback) {
       size += chunk.length;
       if (size > maxUploadBytes) callback(new UploadError("O arquivo passa de 100 MB.", 413));
+      else if (size > limit) callback(new UploadError(quotaMessage, 413));
       else callback(null, chunk);
     },
   });
@@ -473,6 +454,7 @@ export async function receiveUpload(botId: string, req: Req) {
     await rm(target, { force: true });
     throw new UploadError("O arquivo está vazio.", 400);
   }
+  const mime = await sniffFile(target, name);
   const meta: UploadMeta = {
     uploadId,
     name,
@@ -486,16 +468,15 @@ export async function receiveUpload(botId: string, req: Req) {
   return register(botId, meta);
 }
 
-const sendRoots = async () =>
-  [dataDir, ...(await fileRoots()), "/home/runelaybot", "/tmp"].map((root) => resolve(root));
-const protectedFile = /(^|\/)(\.env[^/]*|\.git|\.ssh|\.claude)(\/|$)/;
 const maxMacFileBytes = 20 * 1024 * 1024;
 
 async function importMacFile(botId: string, rawPath: string, name?: string) {
-  if (protectedFile.test(rawPath)) throw new Error("Esse arquivo é protegido.");
+  if (!macPathAllowed(rawPath))
+    throw new Error("No Mac só posso enviar arquivos de Downloads, Mesa, Documentos ou /tmp.");
   const fetched = await macReadFile(rawPath, maxMacFileBytes);
+  if (fetched.bytes.length > (await quotaLeft(botId))) throw new Error(quotaMessage);
   const finalName = safeName(name?.trim() || fetched.name || basename(fetched.path));
-  const mime = mimeOf(undefined, finalName);
+  const mime = sniffMime(fetched.bytes.subarray(0, sniffBytes), finalName, fetched.bytes.length <= sniffBytes);
   const uploadId = ulid();
   const file = `${uploadId}-${finalName}`;
   await mkdir(uploadsDir(botId), { recursive: true });
@@ -514,10 +495,8 @@ async function importMacFile(botId: string, rawPath: string, name?: string) {
 }
 
 export async function importBotFile(botId: string, rawPath: string, name?: string) {
-  let real: string;
-  try {
-    real = await realpath(resolve(rawPath));
-  } catch {
+  const confined = await openConfined(botId, rawPath);
+  if (!confined) {
     if (macRunnerSupports("files")) return importMacFile(botId, rawPath, name);
     throw new Error(
       macRunnerConnected()
@@ -525,26 +504,33 @@ export async function importBotFile(botId: string, rawPath: string, name?: strin
         : `Não achei ${rawPath} no servidor, e o Mac está desconectado.`,
     );
   }
-  if (!(await sendRoots()).some((root) => real === root || real.startsWith(root + sep))) {
-    throw new Error(
-      `${real} está fora das pastas que posso enviar: dados do bot, worktrees, computador do bot ou /tmp do servidor.`,
-    );
-  }
-  if (protectedFile.test(real)) throw new Error("Esse arquivo é protegido.");
-  const info = await stat(real);
-  if (!info.isFile()) throw new Error("Isso não é um arquivo.");
-  if (info.size > maxUploadBytes) throw new Error("O arquivo passa de 100 MB.");
-  const finalName = safeName(name?.trim() || basename(real));
-  const mime = mimeOf(undefined, finalName);
+  const { handle, path, size } = confined;
+  let finalName = "arquivo";
+  let file = "";
   const uploadId = ulid();
-  const file = `${uploadId}-${finalName}`;
-  await mkdir(uploadsDir(botId), { recursive: true });
-  await copyFile(real, join(uploadsDir(botId), file));
+  try {
+    if (size === 0) throw new Error("O arquivo está vazio.");
+    if (size > maxUploadBytes) throw new Error("O arquivo passa de 100 MB.");
+    if (size > (await quotaLeft(botId))) throw new Error(quotaMessage);
+    finalName = safeName(name?.trim() || basename(path));
+    file = `${uploadId}-${finalName}`;
+    await mkdir(uploadsDir(botId), { recursive: true });
+    await pipeline(
+      handle.createReadStream({ start: 0, end: size - 1, autoClose: false }),
+      createWriteStream(join(uploadsDir(botId), file)),
+    );
+  } catch (error) {
+    if (file) await rm(join(uploadsDir(botId), file), { force: true });
+    throw error;
+  } finally {
+    await handle.close();
+  }
+  const mime = await sniffFile(join(uploadsDir(botId), file), finalName);
   const meta: UploadMeta = {
     uploadId,
     name: finalName,
     mime,
-    size: info.size,
+    size,
     kind: kindOf(mime, finalName),
     file,
     createdAt: new Date().toISOString(),
@@ -686,7 +672,24 @@ async function extractAudio(botId: string, meta: UploadMeta) {
   await mkdir(derivedDir(botId, meta.uploadId), { recursive: true });
   await run(
     "ffmpeg",
-    ["-v", "error", "-y", "-i", uploadPath(botId, meta), "-vn", "-ac", "1", "-ar", "16000", "-b:a", "48k", out],
+    [
+      "-v",
+      "error",
+      "-y",
+      ...mediaInput(meta.mime, uploadPath(botId, meta)),
+      "-t",
+      "7200",
+      "-vn",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-b:a",
+      "48k",
+      "-fs",
+      "200M",
+      out,
+    ],
     { timeout: 300_000 },
   );
   return out;
@@ -704,8 +707,7 @@ async function resizedImage(botId: string, meta: UploadMeta) {
       "-v",
       "error",
       "-y",
-      "-i",
-      source,
+      ...mediaInput(meta.mime, source),
       "-frames:v",
       "1",
       "-vf",
@@ -737,8 +739,7 @@ async function videoFrames(botId: string, meta: UploadMeta) {
           "-y",
           "-ss",
           at.toFixed(2),
-          "-i",
-          uploadPath(botId, meta),
+          ...mediaInput(meta.mime, uploadPath(botId, meta)),
           "-frames:v",
           "1",
           "-vf",
@@ -834,15 +835,16 @@ async function documentImages(botId: string, meta: UploadMeta, format: AnydocFor
   for (const [index, asset] of images.entries()) {
     const source = join(dir, `${String(index).padStart(2, "0")}.src`);
     await writeFile(source, asset.data);
-    if (claudeImageMimes.has(asset.mediaType) && asset.mediaType !== "image/gif" && asset.data.length <= 3_500_000) {
-      const info = await probe(source);
+    const sniffed = sniffMime(asset.data.subarray(0, sniffBytes), "", asset.data.length <= sniffBytes);
+    if (claudeImageMimes.has(sniffed) && sniffed !== "image/gif" && asset.data.length <= 3_500_000) {
+      const info = await probe(source, sniffed);
       const stream = info?.streams?.find((item) => item.codec_type === "video");
       if (stream && Math.max(stream.width ?? 0, stream.height ?? 0) <= maxImageSide) {
-        const ext = asset.mediaType === "image/png" ? "png" : asset.mediaType === "image/webp" ? "webp" : "jpg";
+        const ext = sniffed === "image/png" ? "png" : sniffed === "image/webp" ? "webp" : "jpg";
         const final = join(dir, `${String(index).padStart(2, "0")}.${ext}`);
         await copyFile(source, final);
         await rm(source, { force: true });
-        out.push({ path: final, mime: asset.mediaType });
+        out.push({ path: final, mime: sniffed });
         continue;
       }
     }
@@ -854,8 +856,7 @@ async function documentImages(botId: string, meta: UploadMeta, format: AnydocFor
           "-v",
           "error",
           "-y",
-          "-i",
-          source,
+          ...mediaInput(sniffed, source),
           "-frames:v",
           "1",
           "-vf",
@@ -1084,14 +1085,13 @@ export async function serveUpload(req: Req, res: Res, botId: string, uploadId: s
   }
   const type = variant === "thumb.jpg" ? "image/jpeg" : meta.mime;
   const headers: Record<string, string> = {
-    "content-type": type,
+    "content-type": servedContentType(type),
     "accept-ranges": "bytes",
     "cache-control": "private, max-age=31536000, immutable",
     "x-content-type-options": "nosniff",
-    "content-disposition": `inline; filename*=UTF-8''${encodeURIComponent(meta.name)}`,
+    "content-security-policy": userContentCsp,
+    "content-disposition": `${servesInline(type) ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(meta.name)}`,
   };
-  if (type === "text/html" || type === "image/svg+xml")
-    headers["content-security-policy"] = "default-src 'none'; style-src 'unsafe-inline'; img-src data:";
   const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
   if (range && (range[1] || range[2])) {
     let start = range[1] ? Number(range[1]) : size - Number(range[2]);
@@ -1137,10 +1137,16 @@ export function uploadTools(botId: string): BotTool[] {
   return [
     {
       name: "send_file",
-      description:
-        "Anexa na sua resposta um arquivo que você gerou ou baixou (imagem, PDF, planilha, vídeo, áudio…). A pessoa vê como miniatura ou card na conversa. path é absoluto: no servidor (pasta de dados do bot, worktree, computador do bot ou /tmp) ou, quando você roda no Mac, na pasta pessoal ou /tmp do Mac (até 20 MB).",
+      description: `Anexa na sua resposta um arquivo que você gerou ou baixou (imagem, PDF, planilha, vídeo, áudio…). A pessoa vê como miniatura ou card na conversa. Salve o arquivo em ${outboxDir(botId)} (crie a pasta se faltar) e mande o caminho absoluto: dali ele sai sem pedir aprovação. Também aceito, com aprovação de uma pessoa, os anexos e prints do navegador e do computador do bot, os worktrees abertos por você e, quando você roda no Mac, Downloads, Mesa, Documentos ou /tmp do Mac (até 20 MB). O tipo do arquivo vem do conteúdo, não do nome.`,
       shape: { path: z.string().min(1).max(1000), name: z.string().min(1).max(120).optional() },
-      approval: null,
+      approval: (input) =>
+        lexicallyInOutbox(botId, String(input.path ?? ""))
+          ? null
+          : `Posso enviar ${basename(String(input.path ?? "arquivo"))} (${String(input.path ?? "")}) na conversa?`,
+      humanReason: (input) =>
+        lexicallyInOutbox(botId, String(input.path ?? ""))
+          ? null
+          : "Enviar arquivo de fora da pasta de saída do bot sempre passa por uma pessoa, em qualquer modo.",
       label: (input) => `Enviar ${basename(String(input.name ?? input.path ?? "arquivo"))}`,
       run: async (input) => {
         const meta = await importBotFile(
@@ -1204,4 +1210,4 @@ export function uploadTools(botId: string): BotTool[] {
 }
 
 export const uploadGuide =
-  '## Arquivos\nA pessoa pode anexar imagem, vídeo, áudio e arquivos. Imagens chegam junto da mensagem; áudio chega transcrito como "[áudio: …]"; vídeo chega com a transcrição e quadros-chave; PDF e texto chegam com o conteúdo extraído. Para devolver um arquivo que você gerou (imagem, PDF, CSV…), use `send_file` com o caminho; não cole o caminho na resposta.';
+  '## Arquivos\nA pessoa pode anexar imagem, vídeo, áudio e arquivos. Imagens chegam junto da mensagem; áudio chega transcrito como "[áudio: …]"; vídeo chega com a transcrição e quadros-chave; PDF e texto chegam com o conteúdo extraído. Para devolver um arquivo que você gerou (imagem, PDF, CSV…), salve na sua pasta de saída (`outbox` dentro da pasta do bot) e use `send_file` com o caminho; não cole o caminho na resposta.';

@@ -33,6 +33,21 @@ describe("database settings", () => {
     expect(() => localDatabaseUrl({ BOTS_DATA_DIR: join(dir, "none") })).toThrow("postgres password not found");
   });
 
+  test("POSTGRES_APP_USER switches to the least privileged role and its own password file", () => {
+    mkdirSync(join(dir, "secrets"), { recursive: true });
+    writeFileSync(join(dir, "secrets", "postgres-app.password"), "app-pass\n");
+    const env = { BOTS_DATA_DIR: dir, POSTGRES_APP_USER: "runelay_app", POSTGRES_USER: "runelay_bots" };
+    expect(passwordFile(env)).toBe(join(dir, "secrets", "postgres-app.password"));
+    expect(localDatabaseUrl(env)).toBe("postgres://runelay_app:app-pass@127.0.0.1:5432/runelay_bots");
+    writeFileSync(join(dir, "custom.password"), "other\n");
+    expect(localDatabaseUrl({ ...env, POSTGRES_APP_PASSWORD_FILE: join(dir, "custom.password") })).toBe(
+      "postgres://runelay_app:other@127.0.0.1:5432/runelay_bots",
+    );
+    expect(passwordFile({ BOTS_DATA_DIR: dir, POSTGRES_APP_USER: " " })).toBe(
+      join(dir, "secrets", "postgres.password"),
+    );
+  });
+
   test("an external url turns on TLS, the pooler mode and the direct url", () => {
     const neon = {
       DATABASE_URL: "postgres://u:p@ep-x-pooler.sa-east-1.aws.neon.tech/db?sslmode=require&channel_binding=require",

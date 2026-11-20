@@ -238,3 +238,22 @@ Ordem quando a conta do turno bate o limite **ou está fora do ar** (sem login, 
 - Bot de teste em Haiku: turno em `vps:claude` → `model.started.account.label` "Claude AppConty", resposta `APPCONTY`; turno em `claude-2:claude` → "Claude Anderson", resposta `ANDERSON`.
 - Failover real: pasta `~/.claude-falha` sem login adicionada por `POST /accounts/dirs` (`status:"logged_out"`), bot apontando para ela com reserva `vps:codex` → `account.failover` `{"from":"claude-falha:claude","to":"vps:claude","line":"Claude claude-falha fora do ar · continuei com Claude AppConty"}` e resposta `FAILOVER` (foi para a outra Claude, não para o Codex). Pasta e conta removidas depois.
 - `PATCH /accounts/claude-2:claude {"name":"Pessoal"}` → `label:"Pessoal"`, `autoName:"Claude Anderson"`; `{"name":null}` volta. `PATCH /accounts/vps:grok {"isDefault":true}` → 400 `Só contas do Claude e do Codex têm padrão.`; `POST /accounts/dirs {"path":"~/nao-existe"}` → 400; `DELETE /accounts/claude-2:claude` → 400 (achada sozinha).
+
+## v51 (20/11): Mac de membro e identidade do dispositivo
+
+- Sem chave explícita (`connectionFor()` sem `key`), o servidor só escolhe um Mac de conta com papel `owner`; o mais antigo entre eles. Mac de membro só recebe pedido quando é endereçado pela conta dele (`mac-<id>:<provedor>`).
+- `GET /accounts` não lista mais contas de modelo do Mac (v47); a regra de Mac do dono primeiro vale para a escolha do Mac em `connectionFor()`.
+- `/runner/connect` com um dispositivo já conectado por outra conta fecha a conexão nova com `4003 device conflict`; a antiga fica.
+- A identidade do Mac vem da tabela `device` (ver [auth](auth.md), v51), achada pelo id da chave; o `metadata` da chave não é mais lido.
+- Cada conexão renova o vencimento da chave do dispositivo (180 dias).
+- Banir, rebaixar ou apagar a conta derruba os Macs dela.
+
+### Verificado
+
+`mac-runner.test.ts`:
+
+```
+só Mac de membro conectado -> macRunnerConnected() = false, turno sem chave -> {"type":"done","ok":false,"message":"O app runelay bots não está conectado."}
+macAccounts("member-mac") -> responde pelo Mac do membro
+mesmo deviceKey com outro userId -> close 4003 "device conflict"
+```

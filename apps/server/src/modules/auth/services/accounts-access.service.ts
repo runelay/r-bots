@@ -20,6 +20,7 @@ export interface IssuedSession {
 }
 
 export class SetupClosedError extends Error {}
+export class SetupTokenError extends Error {}
 export class InviteInvalidError extends Error {}
 
 function hashCode(code: string) {
@@ -48,8 +49,14 @@ function readCredentials(body: unknown): Credentials {
   return { name, email, password };
 }
 
+export interface SetupGuard {
+  verify: (given: unknown) => boolean;
+  consume: () => void;
+}
+
 export interface AccessOptions {
   onOwnerCreated?: (owner: IssuedSession["user"]) => void | Promise<void>;
+  setupGuard?: SetupGuard;
 }
 
 export function createAccessService(auth: Auth, db: AuthDatabase, options: AccessOptions = {}) {
@@ -96,12 +103,16 @@ export function createAccessService(auth: Auth, db: AuthDatabase, options: Acces
     return created.user.id;
   }
 
-  async function setupOwner(body: unknown): Promise<IssuedSession> {
+  async function setupOwner(body: unknown, headerToken?: string | null): Promise<IssuedSession> {
     const credentials = readCredentials(body);
     if (setupRunning) throw new SetupClosedError("O primeiro acesso já está em andamento.");
+    const given = headerToken || (body as Record<string, unknown>).setupToken;
     const run = (async () => {
       if (!(await needsOwner())) throw new SetupClosedError("O dono já foi criado. Peça um convite.");
+      if (options.setupGuard && !options.setupGuard.verify(given))
+        throw new SetupTokenError("Informe o código de primeiro acesso que está no arquivo setup.token do servidor.");
       await createAccount(credentials, ownerRole);
+      options.setupGuard?.consume();
       const session = await signIn(credentials.email, credentials.password);
       await options.onOwnerCreated?.(session.user);
       return session;

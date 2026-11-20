@@ -337,6 +337,13 @@ export interface NoteWrite {
   event: ReturnType<typeof blockEvent>;
 }
 
+export const maxNoteChars = 500_000;
+
+function checkNoteSize(markdown: string) {
+  if (markdown.length > maxNoteChars)
+    throw new BlockError(`A nota passa de ${maxNoteChars} caracteres (${markdown.length}).`, 413);
+}
+
 export async function createNote(
   botId: string,
   body: Record<string, unknown>,
@@ -345,6 +352,7 @@ export async function createNote(
   const title = cleanTitle(body.title);
   const folder = cleanFolder(body.folder);
   const markdown = String(body.content ?? "");
+  checkNoteSize(markdown);
   return writeTransaction(async () => {
     await assertUnique(botId, title, folder);
     const at = nowIso();
@@ -381,6 +389,7 @@ async function saveContent(
   author: BlockAuthor,
   baseVersion: unknown,
 ): Promise<NoteWrite> {
+  checkNoteSize(next.markdown);
   staleCheck(current, baseVersion, author);
   const title = next.title === undefined ? current.title : cleanTitle(next.title);
   if (title !== current.title) await assertUnique(botId, title, current.folder, current.id);

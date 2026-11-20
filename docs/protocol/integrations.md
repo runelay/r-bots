@@ -82,3 +82,17 @@ O app usa isso para mostrar os atalhos. Servidor antigo sem o campo = tudo ligad
 5. `grep` das três chaves (puras e em base64) no `data/` de teste e nos logs: 0 arquivos.
 
 Não testado ao vivo: as telas do app com a pessoa (build `make-app.sh` sem erros, sem prints).
+
+## v51 (20/11): endurecimento do cofre, egress e deploy
+
+- Formato v2 da chave guardada (mesmo esquema do cofre, ver [vault](vault.md#v51-2011-endurecimento-do-cofre-egress-e-deploy)): subchave HKDF-SHA256 com info `runelay-bots/integration/v2` a partir da chave do cofre (ou de `<dados>/integrations.key`), `iv` = `0x02` + id da chave + IV de 12 bytes, tag de 16 bytes conferida, AAD `runelay-bots:integration:v2:<id>:<url>`. Trocar a `url` guardada direto no banco invalida a chave (`status: "invalid"`).
+- Linhas v1 continuam abrindo e são recifradas para v2 no boot, numa transação só; o log diz `integrations: re-encrypted N keys to v2`.
+- A chave do cofre só é aceita em hex ou base64 de 32 bytes, procurada em `VAULT_KEY_FILE`, `/run/secrets/vault.key`, `<dados>/vault.key`.
+- `PUT /integrations/runelay`: `url` precisa ser `https://`; `http://` só para `127.0.0.1`, `[::1]` ou `localhost`. URL com usuário/senha é recusada. Erro: `400 {"ok":false,"error":"Endereço inválido: use https:// (http só para 127.0.0.1).","field":"url"}`.
+- A validação do runelay passa por `guardedFetch` (`apps/server/src/shared/net-guard.ts`): endereço interno (rede privada, tailnet, metadata, nome que resolve para dentro) vira `422 "Não consegui falar com o runelay nesse endereço."`. Loopback só é aceito com `RUNELAY_ALLOW_LOOPBACK=1` no ambiente do servidor (runelay rodando na mesma máquina).
+- `ELEVENLABS_API_URL` só vale com `https://` (ou `http://` em loopback); fora disso o servidor avisa no log e usa `https://api.elevenlabs.io`.
+- `runner.token` muda a cada boot (32 bytes aleatórios, 0600). Nenhum cliente usa o arquivo (o app usa a chave do dispositivo); ele fica só para o operador na máquina: `curl -s -H "Authorization: Bearer $(cat ~/.local/share/runelay-bots/runner.token)" 127.0.0.1:2000/status`.
+
+### Verificado
+
+- `bun test src/modules/integrations/__tests__/integrations.test.ts`: 17 pass (inclui recifragem v1→v2, URL presa na AAD, runelay `http` recusado, probe sem loopback, rotação do `runner.token`).

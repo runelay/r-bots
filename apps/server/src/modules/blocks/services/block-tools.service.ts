@@ -39,6 +39,7 @@ import {
   sheetTabTool,
   writeCells,
 } from "../../sheets/services/sheets.service";
+import { exportsTmpDir } from "../../uploads/services/send-file.service";
 import { importBotFile, publicUpload } from "../../uploads/services/uploads.service";
 import { BlockError } from "./blocks.shared";
 
@@ -407,7 +408,7 @@ export function blockTools(botId: string): BotTool[] {
         if (job.status !== "ready") throw new BlockError(job.error ?? "A exportação falhou.");
         if (input.send !== true) return job;
         const file = await exportBytes(botId, job.id);
-        const dir = join("/tmp", "runelay-exports", job.id);
+        const dir = join(exportsTmpDir(botId), job.id);
         await mkdir(dir, { recursive: true });
         const path = join(dir, file.fileName);
         await writeFile(path, file.data);

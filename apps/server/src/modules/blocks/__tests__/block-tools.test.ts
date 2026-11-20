@@ -9,6 +9,7 @@ import type { BotTool } from "../../engine/services/bot-tools.service";
 import * as exportsService from "../../exports/services/exports.service";
 import { createNote, requireNote, writeNote } from "../../notes/services/notes.service";
 import { requireSheet } from "../../sheets/services/sheets.service";
+import { exportsTmpDir } from "../../uploads/services/send-file.service";
 import { blocksEditNote, blocksGuide, blockTools } from "../services/block-tools.service";
 import type { BlockEvent } from "../services/blocks.shared";
 
@@ -326,7 +327,7 @@ describe("export_create", () => {
       status: string;
       fileEvent: { type: string; data: { attachment: { name: string; url: string } } };
     };
-    await rm(join("/tmp", "runelay-exports", job.id), { recursive: true, force: true });
+    await rm(join(exportsTmpDir(bot.id), job.id), { recursive: true, force: true });
     expect(job.status).toBe("ready");
     expect(job.fileEvent.type).toBe("file.sent");
     expect(job.fileEvent.data.attachment.name).toMatch(/\.csv$/);

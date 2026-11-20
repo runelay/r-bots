@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { runBytes, run as runProcess } from "@runelay-bots/providers/proc";
+import { childEnv, runBytes, run as runProcess } from "@runelay-bots/providers/proc";
 import type { Subprocess } from "bun";
 import { env } from "../../../config/env";
 import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
@@ -28,11 +28,10 @@ function asUser(display: number, args: string[]) {
 }
 
 async function x(display: number, args: string[], timeoutMs = 10_000) {
-  const env = Object.fromEntries(
-    Object.entries({ ...process.env, DISPLAY: `:${display}` }).filter(
-      (entry): entry is [string, string] => entry[1] !== undefined,
-    ),
-  );
+  const env = childEnv({
+    DISPLAY: `:${display}`,
+    ...(process.env.XAUTHORITY ? { XAUTHORITY: process.env.XAUTHORITY } : {}),
+  });
   const { code, stdout, stderr } = await runProcess("xdotool", args, { env, timeoutMs });
   if (code !== 0) throw new Error(stderr.trim() || `xdotool saiu com código ${code}`);
   return stdout.trim();

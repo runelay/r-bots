@@ -26,6 +26,17 @@ services:
     pids_limit: 4096
     ulimits:
       core: 0
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+      - FSETID
+      - KILL
+      - AUDIT_WRITE
     environment:
       GATEWAY_HOST: 127.0.0.1
       GATEWAY_PORT: ${GATEWAY_PORT:-2000}
@@ -36,7 +47,9 @@ services:
       VOICE_MAX_WARM: ${VOICE_MAX_WARM:-3}
       HOST_HOME: ${HOME}
       POSTGRES_PORT: ${BOTS_POSTGRES_PORT:-5432}
-      REDIS_URL: redis://127.0.0.1:${BOTS_REDIS_PORT:-6379}
+      REDIS_URL: redis://${BOTS_REDIS_APP_USER:-}@127.0.0.1:${BOTS_REDIS_PORT:-6379}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-}
+      BOTS_BACKUP_AGE_RECIPIENT: ${BOTS_BACKUP_AGE_RECIPIENT:-}
     env_file:
       - path: .env.local
         required: false
@@ -65,18 +78,26 @@ services:
         max-file: "5"
 
   data-secrets:
-    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine}
+    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a}
     command: ["bun", "/bootstrap/bootstrap.ts"]
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./deploy/secrets:/bootstrap:ro
       - ${HOME}/.local/share/runelay-bots:/data
     restart: "no"
 
   postgres:
-    image: ${BOTS_POSTGRES_IMAGE:-postgres:17-bookworm}
+    image: ${BOTS_POSTGRES_IMAGE:-postgres:17-bookworm@sha256:837bed18782820fe967067cb5328b02b0d9992c1be9a37ee0c9c492cfc03af3b}
     container_name: ${BOTS_POSTGRES_CONTAINER_NAME:-runelay-bots-postgres}
     user: "1000:1000"
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+      - /var/run/postgresql:uid=1000,gid=1000,mode=0775
     depends_on:
       data-secrets:
         condition: service_completed_successfully
@@ -84,6 +105,8 @@ services:
       POSTGRES_USER: runelay_bots
       POSTGRES_DB: runelay_bots
       POSTGRES_PASSWORD_FILE: /secrets/postgres.password
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER:-runelay_app}
+      POSTGRES_APP_PASSWORD_FILE: /secrets/postgres-app.password
       POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
       PGDATA: /var/lib/postgresql/data
     ports:
@@ -95,6 +118,7 @@ services:
     volumes:
       - ${HOME}/.local/share/runelay-bots/postgres:/var/lib/postgresql/data
       - ${HOME}/.local/share/runelay-bots/secrets:/secrets:ro
+      - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U runelay_bots -d runelay_bots"]
       interval: 5s
@@ -108,17 +132,21 @@ services:
         max-file: "3"
 
   redis:
-    image: ${BOTS_REDIS_IMAGE:-redis:7.4-alpine}
+    image: ${BOTS_REDIS_IMAGE:-redis:7.4-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe}
     container_name: ${BOTS_REDIS_CONTAINER_NAME:-runelay-bots-redis}
     user: "1000:1000"
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:uid=1000,gid=1000,mode=0700
     depends_on:
       data-secrets:
         condition: service_completed_successfully
-    command:
-      - sh
-      - -c
-      - umask 077 && { cat /etc/redis/redis.conf; printf 'requirepass %s\n' "$$(cat /secrets/redis.password)"; } > /tmp/redis.conf && exec redis-server /tmp/redis.conf
+    environment:
+      BOTS_REDIS_APP_USER: ${BOTS_REDIS_APP_USER:-}
+    command: ["sh", "/etc/redis/start.sh"]
     ports:
       - 127.0.0.1:${BOTS_REDIS_PORT:-6379}:6379
     mem_limit: ${BOTS_REDIS_MEM_LIMIT:-512m}
@@ -126,10 +154,11 @@ services:
     stop_grace_period: 30s
     volumes:
       - ./deploy/redis/redis.conf:/etc/redis/redis.conf:ro
+      - ./deploy/redis/start.sh:/etc/redis/start.sh:ro
       - ${HOME}/.local/share/runelay-bots/redis:/data
       - ${HOME}/.local/share/runelay-bots/secrets:/secrets:ro
     healthcheck:
-      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /secrets/redis.password)\" redis-cli ping | grep -q PONG"]
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /secrets/redis.password)\" redis-cli $${BOTS_REDIS_APP_USER:+--user $$BOTS_REDIS_APP_USER} ping | grep -q PONG"]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -141,18 +170,25 @@ services:
         max-file: "3"
 
   storage-secrets:
-    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine}
+    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a}
     command: ["bun", "/bootstrap/bootstrap.ts", "secrets"]
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./deploy/garage:/bootstrap:ro
       - ${HOME}/.local/share/runelay-bots/storage:/var/lib/garage
     restart: "no"
 
   storage:
-    image: dxflrs/garage:v2.5.0
+    image: ${BOTS_STORAGE_IMAGE:-dxflrs/garage:v2.5.0@sha256:677e5b758e4425a325b811c425c026bf35a4bf42f7ddbaa773de3f4fd779a5a5}
     container_name: ${BOTS_STORAGE_CONTAINER_NAME:-runelay-bots-storage}
     user: "1000:1000"
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:uid=1000,gid=1000,mode=0700
     depends_on:
       storage-secrets:
         condition: service_completed_successfully
@@ -176,8 +212,10 @@ services:
         max-file: "3"
 
   storage-init:
-    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine}
+    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a}
     command: ["bun", "/bootstrap/bootstrap.ts", "setup"]
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       storage:
         condition: service_healthy

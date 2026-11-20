@@ -1,3 +1,8 @@
+import { mkdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { dataDir } from "../../../config/env";
+import { shellQuote } from "./sandbox.service";
+
 const testPattern =
   /\b(vitest|jest|mocha|ava|playwright\s+test|pytest|go\s+test|cargo\s+test|swift\s+test|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::\S+)?|npx\s+(?:vitest|jest|playwright))\b/;
 const heavyPattern =
@@ -8,12 +13,8 @@ export const heavyLimits = {
   timeoutMin: Number(process.env.CODE_HEAVY_TIMEOUT_MIN ?? 20),
   testWaitSec: Number(process.env.CODE_TEST_WAIT_SEC ?? 100),
   workers: Number(process.env.CODE_TEST_WORKERS ?? 2),
-  lockFile: process.env.CODE_TEST_LOCK ?? "/tmp/runelay-bots-tests.lock",
+  lockFile: process.env.CODE_TEST_LOCK ?? join(dataDir, "locks", "tests.lock"),
 };
-
-function quote(text: string) {
-  return `'${text.replace(/'/g, `'\\''`)}'`;
-}
 
 export function heavyKind(command: string): "test" | "heavy" | null {
   if (process.platform !== "linux") return null;
@@ -22,7 +23,11 @@ export function heavyKind(command: string): "test" | "heavy" | null {
   return null;
 }
 
-export function wrapHeavyCommand(original: string, finalCommand: string) {
+export function heavyTimeoutSec(command: string) {
+  return heavyKind(command) ? heavyLimits.timeoutMin * 60 + 30 : 0;
+}
+
+export function wrapHeavyCommand(original: string, finalCommand: string, outer?: (inner: string) => string) {
   const kind = heavyKind(original);
   if (!kind) return null;
   const env = [
@@ -33,10 +38,13 @@ export function wrapHeavyCommand(original: string, finalCommand: string) {
   ]
     .filter(Boolean)
     .join(" ");
-  const run = `env ${env} nice -n 10 timeout -k 15s ${heavyLimits.timeoutMin}m bash -c ${quote(finalCommand)}`;
-  if (kind === "heavy") return `ulimit -c 0; ${run}`;
-  const busy = quote(
+  const inner = `ulimit -c 0; env ${env} nice -n 10 timeout -k 15s ${heavyLimits.timeoutMin}m bash -c ${shellQuote(finalCommand)}`;
+  const run = outer ? outer(inner) : inner;
+  if (kind === "heavy") return run;
+  mkdirSync(dirname(heavyLimits.lockFile), { recursive: true, mode: 0o700 });
+  const busy = shellQuote(
     "Outra suíte de testes ainda está rodando na VPS (só roda uma por vez). Tente de novo em alguns minutos.",
   );
-  return `ulimit -c 0; flock -E 75 -w ${heavyLimits.testWaitSec} ${quote(heavyLimits.lockFile)} ${run}; rc=$?; [ "$rc" = 75 ] && echo ${busy} >&2; (exit $rc)`;
+  const locked = outer ? run : `bash -c ${shellQuote(run)}`;
+  return `flock -E 75 -w ${heavyLimits.testWaitSec} ${shellQuote(heavyLimits.lockFile)} ${locked}; rc=$?; [ "$rc" = 75 ] && echo ${busy} >&2; (exit $rc)`;
 }

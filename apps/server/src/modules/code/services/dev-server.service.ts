@@ -8,6 +8,7 @@ import type { Subprocess } from "bun";
 import { env } from "../../../config/env";
 import { redactText } from "../../../shared/redact";
 import { hostHome } from "./repos.service";
+import { killSandboxed, sandboxArgv, sandboxMarker, sandboxMode, sandboxProblem } from "./sandbox.service";
 import { codeDataDir, type WorkspaceState, waitForInstall } from "./workspace.service";
 
 export type ServerStatus = "starting" | "running" | "exited" | "stopped";
@@ -59,10 +60,17 @@ export interface DevServer {
   tail: string[];
   raw: string[];
   onExit: (server: PublicDevServer) => void;
+  marker: string | null;
+  expiry: ReturnType<typeof setTimeout> | null;
 }
 
 type ChangeListener = (server: PublicDevServer, removed: boolean) => void;
 type LogListener = (lines: string[]) => void;
+
+export const devLimits = {
+  perWorkspace: Number(process.env.CODE_DEV_SERVER_MAX ?? 3),
+  maxMinutes: Number(process.env.CODE_DEV_SERVER_MAX_MIN ?? 240),
+};
 
 const servers = new Map<string, DevServer>();
 const changeListeners = new Set<ChangeListener>();
@@ -158,6 +166,19 @@ export function toolOf(...texts: Array<string | null | undefined>) {
 function within(root: string, path: string) {
   const rel = relative(root, path);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+const publicBind =
+  /(--host(name)?|--ip|--bind|-H|-b)(=|\s+)(0\.0\.0\.0|::|\[::\]|\*)(\s|$)|\bHOST=(0\.0\.0\.0|::)|--host(\s*$|\s+-)/;
+
+export function withHost(command: string) {
+  if (publicBind.test(command))
+    throw new Error("O servidor de desenvolvimento só pode ouvir em 127.0.0.1. Tire o --host 0.0.0.0 do comando.");
+  if (/(--host(name)?|--ip|--bind|\s-H)(=|\s)/.test(command)) return command;
+  if (/\b(vite|astro)\b/.test(command)) return `${command} --host 127.0.0.1`;
+  if (/\bnext\b/.test(command)) return `${command} -H 127.0.0.1`;
+  if (/\bwrangler\b/.test(command)) return `${command} --ip 127.0.0.1`;
+  return command;
 }
 
 function publicServer(server: DevServer) {
@@ -288,6 +309,26 @@ function pushLines(server: DevServer, chunk: string) {
   for (const listener of logListeners.get(server.id) ?? []) listener(lines);
 }
 
+function sandboxed(server: DevServer) {
+  return server.target.kind === "workspace" && sandboxMode() === "uid";
+}
+
+function expires(server: DevServer) {
+  return server.target.kind === "workspace" || server.input.startedBy === "bot";
+}
+
+function armExpiry(server: DevServer) {
+  disarmExpiry(server);
+  if (!expires(server)) return;
+  server.expiry = setTimeout(() => void stopDevServer(server), devLimits.maxMinutes * 60_000);
+  server.expiry.unref();
+}
+
+function disarmExpiry(server: DevServer) {
+  if (server.expiry) clearTimeout(server.expiry);
+  server.expiry = null;
+}
+
 function spawnInto(server: DevServer, out: WriteStream) {
   out.write(`\n$ ${server.command}\n`);
   const env = childEnv({
@@ -301,7 +342,23 @@ function spawnInto(server: DevServer, out: WriteStream) {
   });
   delete env.NAPI_RS_NATIVE_LIBRARY_PATH;
   if (!server.input.env?.CI) delete env.CI;
-  const child = Bun.spawn(["bash", "-lc", server.command], {
+  server.marker = sandboxed(server) ? sandboxMarker("dev", server.id) : null;
+  const argv = server.marker
+    ? sandboxArgv({
+        cwd: server.cwd,
+        command: server.command,
+        marker: server.marker,
+        timeoutSec: devLimits.maxMinutes * 60 + 60,
+        env: {
+          PORT: String(server.port),
+          HOST: "127.0.0.1",
+          BROWSER: "none",
+          FORCE_COLOR: "0",
+          NODE_ENV: "development",
+        },
+      })
+    : ["bash", "-lc", server.command];
+  const child = Bun.spawn(argv, {
     cwd: server.cwd,
     env,
     stdin: "ignore",
@@ -320,9 +377,11 @@ function spawnInto(server: DevServer, out: WriteStream) {
       for await (const chunk of stream) onData(Buffer.from(chunk));
     } catch {}
   };
+  armExpiry(server);
   server.done = Promise.all([pump(child.stdout), pump(child.stderr), child.exited]).then(() => {
     out.end();
     reserved.delete(server.port);
+    disarmExpiry(server);
     if (server.status !== "stopped") server.status = "exited";
     server.exitCode = child.exitCode;
     server.endedAt = new Date().toISOString();
@@ -402,6 +461,18 @@ export async function launchServer(
         ? "A pasta do servidor precisa ficar dentro da tarefa."
         : "A pasta do servidor precisa ficar dentro do projeto.",
     );
+  if (target.kind === "workspace") {
+    const problem = await sandboxProblem();
+    if (problem) throw new Error(problem);
+    const running = [...servers.values()].filter(
+      (item) => item.workspacePath === target.path && (item.status === "running" || item.status === "starting"),
+    ).length;
+    if (running >= devLimits.perWorkspace)
+      throw new Error(
+        `Já há ${devLimits.perWorkspace} servidores rodando nesta tarefa. Pare um com dev_server_stop antes de subir outro.`,
+      );
+  }
+  const hosted = withHost(command);
   if (input.before) await input.before();
   const port = await freePort(input.port);
   reserved.add(port);
@@ -411,8 +482,8 @@ export async function launchServer(
     workspacePath: target.path,
     target,
     input: { ...input, cmd: command },
-    baseCommand: command,
-    command: withPort(command, port, input.tool ?? toolOf(command)),
+    baseCommand: hosted,
+    command: withPort(hosted, port, input.tool ?? toolOf(command)),
     cwd,
     port,
     url: `http://localhost:${port}`,
@@ -428,6 +499,8 @@ export async function launchServer(
     tail: [],
     raw: [],
     onExit,
+    marker: null,
+    expiry: null,
   };
   const out = await openLog(server);
   servers.set(server.id, server);
@@ -465,7 +538,9 @@ function killGroup(child: Subprocess, signal: NodeJS.Signals) {
 export async function stopDevServer(server: DevServer) {
   if (!server.child) return publicServer(server);
   server.status = "stopped";
+  disarmExpiry(server);
   const child = server.child;
+  if (server.marker) await killSandboxed(server.marker);
   killGroup(child, "SIGTERM");
   const stopped = await Promise.race([child.exited.then(() => true), Bun.sleep(5_000).then(() => false)]);
   if (!stopped) killGroup(child, "SIGKILL");
@@ -543,5 +618,9 @@ export async function serverLogs(server: DevServer, lines: number, query?: strin
 }
 
 export function stopAllDevServers() {
-  for (const server of servers.values()) if (server.child) killGroup(server.child, "SIGTERM");
+  for (const server of servers.values()) {
+    if (!server.child) continue;
+    if (server.marker) void killSandboxed(server.marker);
+    killGroup(server.child, "SIGTERM");
+  }
 }

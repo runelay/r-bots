@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { eq } from "drizzle-orm";
 import { fakeProcesses, resetData, testDataDir, writeData } from "../../../../test/helpers";
 import { mediaTools } from "../../../../test/media-helpers";
+import { getDb, tables } from "../../../db";
 import { Req, Res } from "../../../shared/http";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { handleUploads } from "../routes/uploads.routes";
@@ -76,9 +78,51 @@ describe("POST /bots/:id/uploads", () => {
       headers: { "x-file-name": "bad%E0%A4%A.json", "content-type": "application/octet-stream" },
     });
     expect(sent.json()).toMatchObject({ name: "bad%E0%A4%A.json", mime: "application/json" });
-    const unnamed = await call("POST", [], { body: "x" });
+    const unnamed = await call("POST", [], { body: new Uint8Array([0, 1, 2]) });
     expect(unnamed.json()).toMatchObject({ name: "arquivo", mime: "application/octet-stream" });
     await settle();
+  });
+
+  test("ignores the declared type and serves disguised HTML as a download", async () => {
+    const sent = await call("POST", [], {
+      body: "<!doctype html><script>fetch('/status')</script>",
+      headers: { "x-file-name": "foto.png", "x-file-type": "image/png" },
+    });
+    const body = sent.json();
+    expect(body).toMatchObject({ name: "foto.png", mime: "text/html", kind: "file" });
+    const served = await call("GET", [String(body.uploadId)]);
+    expect(served.headers.get("content-type")).toBe("application/octet-stream");
+    expect(served.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''foto.png");
+    expect(served.headers.get("content-security-policy")).toBe(
+      "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'",
+    );
+    expect(served.headers.get("x-content-type-options")).toBe("nosniff");
+    await settle();
+  });
+
+  test("stops at the bot upload quota", async () => {
+    await getDb().delete(tables.uploads).where(eq(tables.uploads.botId, botId));
+    process.env.BOTS_UPLOAD_QUOTA_MB = "0.00001";
+    try {
+      const declared = await call("POST", [], {
+        body: "x".repeat(20),
+        headers: { "x-file-name": "a.txt", "content-length": "20" },
+      });
+      expect(declared.status).toBe(413);
+      expect(declared.json().error).toBe(
+        "O espaço de anexos deste bot acabou. Apague anexos antigos ou peça para aumentar a cota.",
+      );
+      const streamed = await call("POST", [], { body: "y".repeat(20), headers: { "x-file-name": "b.txt" } });
+      expect(streamed.status).toBe(413);
+      expect(await readdir(uploadsDir())).toEqual([]);
+      const fits = await call("POST", [], { body: "12345678", headers: { "x-file-name": "c.txt" } });
+      expect(fits.status).toBe(201);
+      const full = await call("POST", [], { body: "123", headers: { "x-file-name": "d.txt" } });
+      expect(full.status).toBe(413);
+      await settle();
+    } finally {
+      delete process.env.BOTS_UPLOAD_QUOTA_MB;
+    }
   });
 
   test("rejects a body declared bigger than the limit before reading it", async () => {

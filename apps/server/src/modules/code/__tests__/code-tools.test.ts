@@ -13,6 +13,7 @@ import { codeModeSupported, registerCodeTools } from "../services/code-tools.ser
 import type { PublicDevServer } from "../services/dev-server.service";
 import * as devServers from "../services/dev-server.service";
 import * as pullRequests from "../services/pull-request.service";
+import * as repos from "../services/repos.service";
 import { allowedRepoFor, seedAllowedRepos } from "../services/repos.service";
 import * as workspaces from "../services/workspace.service";
 import { CodeError, type InstallState, type WorkspaceState } from "../services/workspace.service";
@@ -126,13 +127,26 @@ function devServer(overrides: Partial<PublicDevServer> = {}): PublicDevServer & 
   return {
     id: "dev_1",
     workspaceId: "ws_tools",
+    kind: "workspace",
+    name: "repo",
+    branch: null,
+    path: "/work/repo",
+    cwd: "",
     command: "npm run dev",
+    tool: "node",
+    script: null,
+    profileId: null,
+    startedBy: "bot",
+    botId: null,
+    sessionId: null,
+    envKeys: [],
     port: 4100,
     url: "http://localhost:4100",
     previewPath: "/preview/ws_tools/4100/?t=x",
     status: "running",
     exitCode: null,
     startedAt: "2026-01-01T00:00:00.000Z",
+    endedAt: null,
     logs: "ready",
     ...overrides,
   };
@@ -191,6 +205,17 @@ describe("without an open workspace", () => {
     expect(allowedRepoFor(path)).toBeNull();
     const plain = await call("workspace_add", { path: "/tmp", reason: "x" });
     expect(textOf(plain)).toContain("não é um repositório git");
+  });
+
+  test("workspace_add refuses the home folder and server folders without asking", async () => {
+    const asked = mock(async () => ({ choice: "approve" as const, interactionId: "i3" }));
+    const { call, context } = harness({ permission: "full" });
+    context.requestApproval = asked as unknown as ToolContext["requestApproval"];
+    stub(repos, "gitRepoAt").mockResolvedValue(process.env.HOST_HOME as string);
+    const result = await call("workspace_add", { path: "~", reason: "tudo" });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toContain("pasta pessoal inteira");
+    expect(asked).not.toHaveBeenCalled();
   });
 
   test("workspace_open needs the conversation", async () => {
@@ -407,6 +432,18 @@ describe("with an open workspace", () => {
       const kick = stub(pullRequests, "kickPr").mockImplementation(() => undefined);
       return { deliver, kick, ...open() };
     }
+
+    test("a delivery that changes hooks or package scripts asks a person first", async () => {
+      const { call, deliver, context } = setup(delivered());
+      stub(actions, "deliverRisk").mockResolvedValue([".husky/pre-commit", "package.json"]);
+      const asked = mock(async () => ({ choice: "deny" as const, interactionId: "i9" }));
+      context.requestApproval = asked as unknown as ToolContext["requestApproval"];
+      const result = await call("workspace_deliver", { action: "push", message: "fix: typo" });
+      expect(result.isError).toBe(true);
+      expect(asked).toHaveBeenCalledTimes(1);
+      expect(String((asked.mock.calls[0] as unknown[])[0])).toContain(".husky/pre-commit, package.json");
+      expect(deliver).not.toHaveBeenCalled();
+    });
 
     test("a bad commit message is denied before anything runs", async () => {
       const { call, deliver } = setup(delivered());

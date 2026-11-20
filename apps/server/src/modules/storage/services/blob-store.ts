@@ -37,7 +37,13 @@ export interface BlobStore {
 export const defaultMime = "application/octet-stream";
 
 export function validKey(key: string) {
-  if (!key || key.length > 1024 || key.startsWith("/") || key.split("/").some((part) => part === ".." || part === "."))
+  if (
+    !key ||
+    key.length > 1024 ||
+    key.startsWith("/") ||
+    /[\u0000-\u001f\u007f\\]/.test(key) ||
+    key.split("/").some((part) => part === "" || part === ".." || part === ".")
+  )
     throw new Error(`invalid blob key: ${key}`);
   return key;
 }

@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ValidationError } from "../../../shared/errors";
+import { guardedFetch } from "../../../shared/net-guard";
 import {
   clearStored,
   envLast4,
@@ -94,8 +95,35 @@ export function integrationFlags() {
   >;
 }
 
+const loopbackHosts = new Set(["127.0.0.1", "[::1]", "localhost"]);
+
+export function trustedServiceUrl(value: string | undefined, fallback: string) {
+  const raw = value?.trim();
+  if (!raw) return fallback;
+  try {
+    const url = new URL(raw);
+    if (url.username || url.password) return fallback;
+    if (url.protocol === "https:" || (url.protocol === "http:" && loopbackHosts.has(url.hostname))) return raw;
+  } catch {}
+  console.warn(`ignoring insecure service URL ${raw.slice(0, 80)}: use https`);
+  return fallback;
+}
+
 function elevenLabsBase() {
-  return process.env.ELEVENLABS_API_URL ?? "https://api.elevenlabs.io";
+  return trustedServiceUrl(process.env.ELEVENLABS_API_URL, "https://api.elevenlabs.io");
+}
+
+let probeLoopbackPorts: number[] = [];
+
+export function setProbeLoopbackPorts(ports: number[]) {
+  probeLoopbackPorts = [...ports];
+}
+
+function runelayFetch(input: string | URL, init?: RequestInit) {
+  const url = new URL(String(input));
+  const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  const allow = process.env.RUNELAY_ALLOW_LOOPBACK === "1" ? [...probeLoopbackPorts, port] : probeLoopbackPorts;
+  return guardedFetch(url, { ...init, allowLoopbackPorts: allow, timeoutMs: 15_000, maxBytes: 1024 * 1024 });
 }
 
 async function probeElevenLabs(key: string) {
@@ -128,6 +156,7 @@ async function probeRunelay(key: string, url: string) {
   const client = new Client({ name: "runelay-bots-check", version: "1.0.0" });
   const transport = new StreamableHTTPClientTransport(new URL(url), {
     requestInit: { headers: { Authorization: `Bearer ${key}` } },
+    fetch: runelayFetch,
   });
   try {
     await client.connect(transport);
@@ -149,10 +178,12 @@ function normalizeUrl(value: unknown) {
   if (typeof value !== "string") throw new ValidationError("Endereço inválido.", "url");
   try {
     const parsed = new URL(value.trim());
-    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("protocol");
+    if (parsed.username || parsed.password) throw new Error("userinfo");
+    if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && loopbackHosts.has(parsed.hostname)))
+      throw new Error("protocol");
     return parsed.toString();
   } catch {
-    throw new ValidationError("Endereço inválido.", "url");
+    throw new ValidationError("Endereço inválido: use https:// (http só para 127.0.0.1).", "url");
   }
 }
 

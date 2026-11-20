@@ -30,6 +30,7 @@ const cardLike = /\b(?:\d[ -]?){13,19}\b/;
 const cpfLike = /\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/;
 const cnpjLike = /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/;
 
+
 export function hardHumanReason(tool: string, input: Record<string, unknown>, element: string) {
   if (tool === "browser_fill") {
     const value = String(input.text ?? "");

@@ -1,19 +1,22 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import * as fsPromises from "node:fs/promises";
 import { readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, extname, join } from "node:path";
 import * as anydoc from "@firecrawl/anydoc";
 import { ulid } from "ulid";
 import { waitFor } from "../../../../test/engine-helpers";
 import { fakeProcesses, resetData, testDataDir, writeData } from "../../../../test/helpers";
 import { startTestJobs, type TestJobs } from "../../../../test/jobs-helpers";
 import { connectFakeRunner, fastTimers, fixtureFile, mediaTools, pcmSamples } from "../../../../test/media-helpers";
+import { botsDir } from "../../../config/env";
 import { getDb, tables } from "../../../db";
 import { Req, Res } from "../../../shared/http";
 import * as jobsService from "../../jobs/services/jobs.service";
 import { getJobView } from "../../jobs/services/jobs.service";
 import { blobKeys, getBlobStore, putBlob } from "../../storage/services/storage.service";
 import { readUploadRow, saveUploadRow } from "../repositories/uploads.repository";
+import { exportsTmpDir, isDenied, macPathAllowed, outboxDir } from "../services/send-file.service";
 import {
   attachmentsTitle,
   fileEventOf,
@@ -30,6 +33,7 @@ import {
   type UploadMeta,
   uploadGuide,
   uploadPath,
+  uploadQuotaBytes,
   uploadTools,
 } from "../services/uploads.service";
 
@@ -48,8 +52,36 @@ function derived(meta: UploadMeta, ...parts: string[]) {
   return join(uploadsDir(), ".derived", meta.uploadId, ...parts);
 }
 
+function iso(brand: string) {
+  return Buffer.concat([Buffer.from([0, 0, 0, 0x18]), Buffer.from(`ftyp${brand}\0\0\0\0${brand}`)]);
+}
+
+const magic: Record<string, Buffer> = {
+  ".m4a": iso("M4A "),
+  ".mov": iso("qt  "),
+  ".heic": iso("heic"),
+  ".webm": Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.from("....webm")]),
+  ".mp3": Buffer.from("ID3"),
+  ".wav": Buffer.from("RIFF\0\0\0\0WAVE"),
+  ".ogg": Buffer.from("OggS"),
+  ".bmp": Buffer.concat([Buffer.from("BM"), Buffer.alloc(30)]),
+};
+
+function outbox(...parts: string[]) {
+  return join(testDataDir(), "bots", botId, "outbox", ...parts);
+}
+
+function outboxFile(name: string, content: string | Buffer, size?: number) {
+  const path = outbox(name);
+  mkdirSync(dirname(path), { recursive: true });
+  const prefix = typeof content === "string" ? magic[extname(name)] : undefined;
+  writeFileSync(path, prefix ? Buffer.concat([prefix, Buffer.from(content)]) : content);
+  if (size !== undefined) truncateSync(path, size);
+  return path;
+}
+
 async function importFixture(name: string, content: string | Buffer, size?: number) {
-  return importBotFile(botId, fixtureFile(name, content, size));
+  return importBotFile(botId, outboxFile(name, content, size));
 }
 
 async function craft(fields: Partial<UploadMeta> & Pick<UploadMeta, "name" | "kind" | "mime">, content = "content") {
@@ -100,6 +132,7 @@ const sendFile = () => uploadTools(botId)[0];
 beforeEach(async () => {
   await resetData();
   await getDb().delete(tables.uploads);
+  await getDb().delete(tables.codeWorkspaces);
   media = mediaTools();
   fakeProcesses(media.handler);
   warn = spyOn(console, "warn").mockImplementation(() => undefined);
@@ -198,7 +231,7 @@ describe("images", () => {
 
   test("an unreadable heic keeps no dimensions and reports the failed conversion", async () => {
     media.options.failOutput = /(thumb|model)\.jpg$/;
-    const meta = await importFixture("scan.heic", png);
+    const meta = await importFixture("scan.heic", "x");
     expect(meta).toMatchObject({ kind: "image", mime: "image/heic" });
     expect(meta.width).toBeUndefined();
     expect(meta.thumb).toBeUndefined();
@@ -210,7 +243,7 @@ describe("images", () => {
 
   test("analysis failures are logged and the upload is still registered", async () => {
     await writeData(`bots/${botId}/uploads/.derived`, "blocks the derived dir");
-    const meta = await importFixture("old.bmp", png);
+    const meta = await importFixture("old.bmp", "x");
     expect(warn.mock.calls.some((args) => args[0] === "upload analyze failed")).toBe(true);
     expect(await readUpload(botId, meta.uploadId)).toMatchObject({ name: "old.bmp", kind: "image" });
     const prepared = await prepareAttachments(botId, [meta], true);
@@ -514,17 +547,18 @@ describe("documents", () => {
 
   test("office documents become markdown with their images", async () => {
     const toMarkdown = spyOn(anydoc, "toMarkdownBytes").mockResolvedValue("# Relatório");
-    const big = Buffer.alloc(3000, 1);
+    const big = (head: Buffer) => Buffer.concat([head, Buffer.alloc(3000, 0)]);
     const toDocument = spyOn(anydoc, "toDocument").mockResolvedValue({
       blocks: [],
       notes: [],
       assets: [
-        { id: 0, mediaType: "image/png", originPart: "a", data: big },
-        { id: 1, mediaType: "image/webp", originPart: "b", data: big },
-        { id: 2, mediaType: "image/gif", originPart: "c", data: big },
-        { id: 3, mediaType: "image/jpeg", originPart: "d", data: big },
+        { id: 0, mediaType: "image/png", originPart: "a", data: big(png) },
+        { id: 1, mediaType: "image/webp", originPart: "b", data: big(Buffer.from("RIFF\0\0\0\0WEBP")) },
+        { id: 2, mediaType: "image/gif", originPart: "c", data: big(Buffer.from("GIF89a")) },
+        { id: 3, mediaType: "image/jpeg", originPart: "d", data: big(Buffer.from([0xff, 0xd8, 0xff])) },
         { id: 4, mediaType: "image/png", originPart: "e", data: Buffer.alloc(10) },
-        { id: 5, mediaType: "text/plain", originPart: "f", data: big },
+        { id: 5, mediaType: "text/plain", originPart: "f", data: big(png) },
+        { id: 6, mediaType: "image/png", originPart: "g", data: Buffer.alloc(3000, 0x41) },
       ],
     });
     try {
@@ -645,12 +679,14 @@ describe("documents", () => {
 });
 
 describe("importBotFile", () => {
-  test("sends a server file under a chosen name through send_file", async () => {
-    const path = fixtureFile("out/result.csv", "a,b");
+  test("sends a file from the outbox under a chosen name through send_file without approval", async () => {
+    const path = outboxFile("out/result.csv", "a,b");
     const tool = sendFile();
+    expect(tool.description).toContain(outboxDir(botId));
     expect(tool.label({ path })).toBe("Enviar result.csv");
     expect(tool.label({ path, name: "final.csv" })).toBe("Enviar final.csv");
     expect(tool.label({})).toBe("Enviar arquivo");
+    expect(await tool.approval?.({ path })).toBeNull();
     const output = (await tool.run({ path, name: " Relatório: final?.csv " }, {} as never)) as Record<string, unknown>;
     expect(output).toMatchObject({ name: "Relatório- final-.csv", kind: "file", size: 3 });
     expect(fileEventOf(output)?.data.attachment).toMatchObject({ name: "Relatório- final-.csv", source: "bot" });
@@ -659,21 +695,128 @@ describe("importBotFile", () => {
     await prepareAttachments(botId, await listUploads(botId), true);
   });
 
-  test("refuses files outside the allowed roots, protected files, folders and huge files", async () => {
+  test("asks a person before sending anything outside the outbox", async () => {
+    const tool = sendFile();
+    expect(await tool.approval?.({ path: "/etc/passwd" })).toBe("Posso enviar passwd (/etc/passwd) na conversa?");
+    expect(await tool.approval?.({ path: `${outbox()}/../uploads/a.txt` })).toContain("Posso enviar a.txt");
+    expect(await tool.approval?.({})).toBe("Posso enviar arquivo () na conversa?");
+    expect(tool.humanReason?.({ path: "/etc/passwd" })).toContain("sempre passa por uma pessoa");
+    expect(tool.humanReason?.({})).toContain("sempre passa por uma pessoa");
+    expect(tool.humanReason?.({ path: `${outbox()}/report.pdf` })).toBeNull();
+  });
+
+  test("takes the type from the bytes, not from the name", async () => {
+    const page = await importFixture("photo.png", "<!doctype html><script>alert(1)</script>");
+    expect(page).toMatchObject({ mime: "text/html", kind: "file" });
+    const disguised = await importFixture("notes.txt", png);
+    expect(disguised).toMatchObject({ mime: "image/png", kind: "image" });
+    const binary = await importFixture("blob.txt", Buffer.from([0, 1, 2, 3]));
+    expect(binary).toMatchObject({ mime: "application/octet-stream", kind: "file" });
+  });
+
+  test("refuses paths outside the bot areas, protected files, links, folders and huge files", async () => {
     await expect(importBotFile(botId, "/etc/passwd")).rejects.toThrow("/etc/passwd está fora das pastas");
-    await expect(importBotFile(botId, fixtureFile("app/.env", "SECRET=1"))).rejects.toThrow(
-      "Esse arquivo é protegido.",
-    );
-    await expect(importBotFile(botId, join(testDataDir(), "fixtures", "app"))).rejects.toThrow(
-      "Isso não é um arquivo.",
-    );
-    await expect(importBotFile(botId, fixtureFile("huge.bin", "", 100 * 1024 * 1024 + 1))).rejects.toThrow(
+    await expect(importBotFile(botId, fixtureFile("loose.txt", "x"))).rejects.toThrow("está fora das pastas");
+    await expect(importBotFile(botId, outboxFile("app/.env", "SECRET=1"))).rejects.toThrow("Esse arquivo é protegido.");
+    await expect(importBotFile(botId, outbox("app"))).rejects.toThrow("Isso não é um arquivo.");
+    await expect(importBotFile(botId, outboxFile("empty.txt", ""))).rejects.toThrow("O arquivo está vazio.");
+    await expect(importBotFile(botId, outboxFile("huge.bin", "", 100 * 1024 * 1024 + 1))).rejects.toThrow(
       "O arquivo passa de 100 MB.",
     );
+    symlinkSync("/etc/passwd", outbox("passwd-link"));
+    await expect(importBotFile(botId, outbox("passwd-link"))).rejects.toThrow("Esse caminho é um atalho (symlink)");
+    symlinkSync("/etc", outbox("etc-dir"));
+    await expect(importBotFile(botId, outbox("etc-dir", "hostname"))).rejects.toThrow(
+      "O arquivo saiu da pasta de saída do bot por um atalho.",
+    );
+    await expect(importBotFile(botId, join(outboxFile("plain.txt", "x"), "child"))).rejects.toThrow(
+      "Não consegui abrir",
+    );
+    const foreign = join(botsDir, "other-bot", "uploads", "secret.txt");
+    mkdirSync(dirname(foreign), { recursive: true });
+    writeFileSync(foreign, "x");
+    await expect(importBotFile(botId, foreign)).rejects.toThrow("Esse arquivo é protegido.");
+  });
+
+  test("sends from the bot uploads, its live worktrees and its export folder", async () => {
+    const live = join(testDataDir(), "wt-live");
+    const closed = join(testDataDir(), "wt-closed");
+    for (const dir of [live, closed]) mkdirSync(dir, { recursive: true });
+    writeFileSync(join(live, "build.txt"), "ok");
+    writeFileSync(join(closed, "old.txt"), "ok");
+    const base = { repo: "r", repoName: "r", branch: "b", createdAt: new Date().toISOString() };
+    await getDb()
+      .insert(tables.codeWorkspaces)
+      .values([
+        { ...base, id: "wt1", botId, path: live, status: "alive" },
+        { ...base, id: "wt2", botId, path: closed, status: "closed" },
+        { ...base, id: "wt3", botId: "other-bot", path: join(testDataDir(), "fixtures"), status: "alive" },
+      ]);
+    expect((await importBotFile(botId, join(live, "build.txt"))).name).toBe("build.txt");
+    await expect(importBotFile(botId, join(closed, "old.txt"))).rejects.toThrow("está fora das pastas");
+    await expect(importBotFile(botId, fixtureFile("theirs.txt", "x"))).rejects.toThrow("está fora das pastas");
+    const exported = join(exportsTmpDir(botId), "relatorio.txt");
+    mkdirSync(dirname(exported), { recursive: true });
+    writeFileSync(exported, "pdf");
+    try {
+      expect((await importBotFile(botId, exported)).name).toBe("relatorio.txt");
+    } finally {
+      await rm(exportsTmpDir(botId), { recursive: true, force: true });
+    }
+    const shot = join(testDataDir(), "bots", botId, "browser", "shots", "a.png");
+    mkdirSync(dirname(shot), { recursive: true });
+    writeFileSync(shot, png);
+    expect((await importBotFile(botId, shot)).mime).toBe("image/png");
+    const first = await importFixture("again.txt", "x");
+    expect((await importBotFile(botId, uploadPath(botId, first))).name).toBe(first.file);
+  });
+
+  test("hard-denies secrets, other bots and system folders", async () => {
+    const data = testDataDir();
+    expect(await isDenied(botId, join(data, "secrets", "postgres.password"))).toBe(true);
+    expect(await isDenied(botId, join(data, "vault.key"))).toBe(true);
+    expect(await isDenied(botId, join(data, "runner.token"))).toBe(true);
+    expect(await isDenied(botId, join(data, "blobs", "bots", botId, "x"))).toBe(true);
+    expect(await isDenied(botId, join(botsDir, "other-bot", "outbox", "a.txt"))).toBe(true);
+    expect(await isDenied(botId, "/proc/self/environ")).toBe(true);
+    expect(await isDenied(botId, "/backups/dump.sql")).toBe(true);
+    expect(await isDenied(botId, join(String(process.env.BOTS_BACKUP_DIR), "x"))).toBe(true);
+    expect(await isDenied(botId, "/repo/.git/config")).toBe(true);
+    expect(await isDenied(botId, outbox("a.txt"))).toBe(false);
+    const saved = process.env.BOTS_BACKUP_DIR;
+    delete process.env.BOTS_BACKUP_DIR;
+    try {
+      expect(await isDenied(botId, "/srv/file.txt")).toBe(false);
+    } finally {
+      process.env.BOTS_BACKUP_DIR = saved;
+    }
+  });
+
+  test("refuses when the opened file cannot be traced back to its real path", async () => {
+    const path = outboxFile("trace.txt", "x");
+    const readlink = spyOn(fsPromises, "readlink").mockRejectedValue(new Error("no proc"));
+    try {
+      await expect(importBotFile(botId, path)).rejects.toThrow("Não consegui conferir onde o arquivo está.");
+    } finally {
+      readlink.mockRestore();
+    }
+  });
+
+  test("keeps each bot inside its upload quota", async () => {
+    process.env.BOTS_UPLOAD_QUOTA_MB = "0.00001";
+    try {
+      expect(uploadQuotaBytes()).toBe(0.00001 * 1024 * 1024);
+      await importFixture("small.txt", "1234");
+      await expect(importFixture("more.txt", "123456789")).rejects.toThrow("O espaço de anexos deste bot acabou.");
+      process.env.BOTS_UPLOAD_QUOTA_MB = "nada";
+      expect(uploadQuotaBytes()).toBe(5000 * 1024 * 1024);
+    } finally {
+      delete process.env.BOTS_UPLOAD_QUOTA_MB;
+    }
   });
 
   test("explains a missing file depending on the Mac connection", async () => {
-    const missing = join(testDataDir(), "nope.txt");
+    const missing = outbox("nope.txt");
     await expect(importBotFile(botId, missing)).rejects.toThrow("e o Mac está desconectado.");
     const runner = connectFakeRunner(["vault"]);
     try {
@@ -683,6 +826,17 @@ describe("importBotFile", () => {
     }
   });
 
+  test("only reads Downloads, Desktop, Documents and /tmp on the Mac", async () => {
+    expect(macPathAllowed("~/Downloads/a.pdf")).toBe(true);
+    expect(macPathAllowed("/Users/p/Documents/sub/a.pdf")).toBe(true);
+    expect(macPathAllowed("/private/tmp/a.txt")).toBe(true);
+    expect(macPathAllowed("/Users/p/Library/a.txt")).toBe(false);
+    expect(macPathAllowed("/Users/p/Downloads/../.ssh/id_rsa")).toBe(false);
+    expect(macPathAllowed("/Users/p/Desktop/./x")).toBe(false);
+    expect(macPathAllowed("/Users/p/Desktop/app/.env")).toBe(false);
+    expect(macPathAllowed("/Users/p/Desktop")).toBe(false);
+  });
+
   test("pulls a missing file from the Mac when it can send files", async () => {
     const replies = [
       { ok: true, result: { path: "/Users/p/Desktop/foto.txt", name: "foto.txt", base64: "aGVsbG8=" } },
@@ -690,12 +844,14 @@ describe("importBotFile", () => {
       { ok: true, result: {} },
       { ok: false, error: "sem permissão" },
       { ok: false },
+      { ok: true, result: { path: "/Users/p/Downloads/big.txt", name: "big.txt", base64: "MTIzNDU2Nzg5MA==" } },
     ];
     const runner = connectFakeRunner(["files"], (op) =>
       op === "file.read" ? (replies.shift() ?? { ok: false }) : { ok: true },
     );
     const reads = () => runner.requests.filter((item) => item.op === "file.read");
     try {
+      expect(await sendFile().approval?.({ path: "/Users/p/Desktop/foto.txt" })).toContain("Posso enviar foto.txt");
       const first = await importBotFile(botId, "/Users/p/Desktop/foto.txt");
       expect(first).toMatchObject({ name: "foto.txt", size: 5, source: "bot", mime: "text/plain" });
       expect(await readFile(uploadPath(botId, first), "utf8")).toBe("hello");
@@ -704,11 +860,19 @@ describe("importBotFile", () => {
         body: { path: "/Users/p/Desktop/foto.txt", maxBytes: 20 * 1024 * 1024 },
       });
       expect((await importBotFile(botId, "/Users/p/Desktop/semnome.txt")).name).toBe("semnome.txt");
-      expect((await importBotFile(botId, "/Users/p/x.bin", "renomeado.txt")).name).toBe("renomeado.txt");
-      await expect(importBotFile(botId, "/Users/p/a.txt")).rejects.toThrow("sem permissão");
-      await expect(importBotFile(botId, "/Users/p/b.txt")).rejects.toThrow("O Mac não enviou o arquivo.");
-      await expect(importBotFile(botId, "/Users/p/.ssh/id_rsa")).rejects.toThrow("Esse arquivo é protegido.");
+      expect((await importBotFile(botId, "/Users/p/Documents/x.bin", "renomeado.txt")).name).toBe("renomeado.txt");
+      await expect(importBotFile(botId, "/Users/p/Downloads/a.txt")).rejects.toThrow("sem permissão");
+      await expect(importBotFile(botId, "/tmp/runelay-missing/b.txt")).rejects.toThrow("O Mac não enviou o arquivo.");
+      await expect(importBotFile(botId, "/Users/p/.ssh/id_rsa")).rejects.toThrow(
+        "No Mac só posso enviar arquivos de Downloads, Mesa, Documentos ou /tmp.",
+      );
       expect(reads()).toHaveLength(5);
+      process.env.BOTS_UPLOAD_QUOTA_MB = "0.00001";
+      try {
+        await expect(importBotFile(botId, "/Users/p/Downloads/big.txt")).rejects.toThrow("O espaço de anexos");
+      } finally {
+        delete process.env.BOTS_UPLOAD_QUOTA_MB;
+      }
       await prepareAttachments(botId, await listUploads(botId), true);
     } finally {
       runner.close();
@@ -778,8 +942,11 @@ describe("serveUpload", () => {
     const full = await serve(page);
     expect(full.status).toBe(200);
     expect(full.text).toBe("<h1>oi</h1>");
-    expect(full.headers.get("content-security-policy")).toContain("default-src 'none'");
-    expect(full.headers.get("content-disposition")).toBe("inline; filename*=UTF-8''page.html");
+    expect(full.headers.get("content-type")).toBe("application/octet-stream");
+    expect(full.headers.get("content-security-policy")).toBe(
+      "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'",
+    );
+    expect(full.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''page.html");
     expect(full.headers.get("x-content-type-options")).toBe("nosniff");
     const meta = await serve(page, "meta");
     expect(JSON.parse(meta.text)).toMatchObject({ uploadId: page.uploadId, name: "page.html" });
@@ -787,13 +954,41 @@ describe("serveUpload", () => {
     await writeData(`bots/${botId}/uploads/.derived/${page.uploadId}/thumb.jpg`, "jpeg");
     const thumb = await serve(page, "thumb.jpg");
     expect(thumb.headers.get("content-type")).toBe("image/jpeg");
-    expect(thumb.headers.get("content-security-policy")).toBeNull();
+    expect(thumb.headers.get("content-disposition")).toBe("inline; filename*=UTF-8''page.html");
     expect(thumb.text).toBe("jpeg");
     expect((await serve(page, "other")).status).toBe(404);
     expect((await serve(ulid())).status).toBe(404);
     const head = await serve(page, undefined, { "x-method": "HEAD" });
     expect(head.headers.get("content-length")).toBe("11");
     expect(head.text).toBe("");
+  });
+
+  test("serves only safe media inline and everything else as a download", async () => {
+    const cases: Array<[string, string, string, string]> = [
+      ["a.png", "image/png", "image/png", "inline"],
+      ["a.avif", "image/avif", "image/avif", "inline"],
+      ["a.mp3", "audio/mpeg", "audio/mpeg", "inline"],
+      ["a.mp4", "video/mp4", "video/mp4", "inline"],
+      ["a.pdf", "application/pdf", "application/pdf", "inline"],
+      ["a.svg", "image/svg+xml", "application/octet-stream", "attachment"],
+      ["a.xhtml", "application/xhtml+xml", "application/octet-stream", "attachment"],
+      ["a.xml", "text/xml", "application/octet-stream", "attachment"],
+      ["a.js", "text/javascript", "application/octet-stream", "attachment"],
+      ["a.css", "text/css", "application/octet-stream", "attachment"],
+      ["a.md", "text/markdown", "text/plain; charset=utf-8", "attachment"],
+      ["a.json", "application/json", "text/plain; charset=utf-8", "attachment"],
+      ["a.bmp", "image/bmp", "image/bmp", "attachment"],
+      ["a.zip", "application/zip", "application/zip", "attachment"],
+      ["a.bin", "", "application/octet-stream", "attachment"],
+    ];
+    for (const [name, mime, served, disposition] of cases) {
+      const meta = await craft({ name, kind: "file", mime }, "x");
+      const sent = await serve(meta);
+      expect([name, sent.headers.get("content-type")]).toEqual([name, served]);
+      expect(sent.headers.get("content-disposition")).toStartWith(`${disposition};`);
+      expect(sent.headers.get("content-security-policy")).toStartWith("sandbox;");
+      expect(sent.headers.get("x-content-type-options")).toBe("nosniff");
+    }
   });
 
   test("answers byte ranges", async () => {

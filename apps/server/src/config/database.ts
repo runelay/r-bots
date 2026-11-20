@@ -15,8 +15,14 @@ export interface DatabaseSettings {
 const localHosts = new Set(["127.0.0.1", "localhost", "::1", "[::1]", "postgres"]);
 const strippedParams = ["sslmode", "pgbouncer", "channel_binding", "prepare"];
 
+function appUser(env: Env) {
+  return env.POSTGRES_APP_USER?.trim() || null;
+}
+
 export function passwordFile(env: Env = process.env) {
-  return env.POSTGRES_PASSWORD_FILE ?? join(env.BOTS_DATA_DIR ?? dataDir, "secrets", "postgres.password");
+  const secrets = join(env.BOTS_DATA_DIR ?? dataDir, "secrets");
+  if (appUser(env)) return env.POSTGRES_APP_PASSWORD_FILE ?? join(secrets, "postgres-app.password");
+  return env.POSTGRES_PASSWORD_FILE ?? join(secrets, "postgres.password");
 }
 
 export function localDatabaseUrl(env: Env = process.env) {
@@ -27,7 +33,7 @@ export function localDatabaseUrl(env: Env = process.env) {
   } catch {
     throw new Error(`postgres password not found in ${file}: set DATABASE_URL or POSTGRES_PASSWORD_FILE`);
   }
-  const user = encodeURIComponent(env.POSTGRES_USER ?? "runelay_bots");
+  const user = encodeURIComponent(appUser(env) ?? env.POSTGRES_USER ?? "runelay_bots");
   const host = env.POSTGRES_HOST ?? "127.0.0.1";
   const port = env.POSTGRES_PORT ?? "5432";
   const name = env.POSTGRES_DB ?? "runelay_bots";

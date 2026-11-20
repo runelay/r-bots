@@ -19,6 +19,44 @@ const removedTools = [
   "Agent",
 ];
 
+const nativeAliases = [
+  "bash",
+  "Bash",
+  "shell",
+  "run_command",
+  "run_shell_command",
+  "execute",
+  "execute_command",
+  "terminal",
+  "edit_file",
+  "create_file",
+  "write_file",
+  "delete_file",
+  "read",
+  "Read",
+  "view",
+  "view_file",
+  "str_replace_editor",
+  "str_replace_based_edit_tool",
+  "edit",
+  "Edit",
+  "Write",
+  "glob",
+  "Glob",
+  "Grep",
+  "ls",
+  "find",
+  "search_files",
+  "file_search",
+  "codebase_search",
+  "apply_patch",
+  "fetch",
+];
+
+export function disallowedTools(nativeShell: boolean) {
+  return nativeShell ? removedTools : [...removedTools, ...nativeAliases];
+}
+
 function toml(value: string) {
   return JSON.stringify(value);
 }
@@ -46,7 +84,7 @@ export async function runGrok(
 ) {
   const bin = findBinary(["grok"]);
   if (!bin) return emit({ type: "done", ok: false, message: "Grok CLI não está instalado." });
-  await mkdir(join(workDir, ".grok"), { recursive: true });
+  await mkdir(join(workDir, ".grok"), { recursive: true, mode: 0o700 });
   const config = request.mcp
     ? `[mcp_servers.bots]\nurl = ${toml(request.mcp.url)}\nheaders = { Authorization = ${toml(`Bearer ${request.mcp.token}`)} }\ntool_timeout_sec = 900\n`
     : "";
@@ -64,7 +102,7 @@ export async function runGrok(
     "--system-prompt-override",
     request.systemPrompt,
     "--disallowed-tools",
-    removedTools.join(","),
+    disallowedTools(request.nativeShell === true).join(","),
     "--disable-web-search",
     "--no-subagents",
     "--always-approve",

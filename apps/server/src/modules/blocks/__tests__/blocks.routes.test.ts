@@ -17,6 +17,7 @@ interface Failure {
   code?: string;
   version?: number;
   accountId?: string;
+  errorId?: string;
 }
 
 const spies: Array<{ mockRestore(): void }> = [];
@@ -328,8 +329,13 @@ describe("agenda routes", () => {
     const logged = spyOn(console, "error").mockImplementation(() => undefined);
     spies.push(logged);
     const crash = await request<Failure>(`${base}/agenda/accounts`);
-    expect([crash.status, crash.body]).toEqual([500, { ok: false, error: "disco cheio" }]);
-    expect((logged.mock.calls[0]?.[0] as Error | undefined)?.message).toBe("disco cheio");
+    expect(crash.status).toBe(500);
+    expect(crash.body).toEqual({
+      ok: false,
+      error: "Algo deu errado no servidor. Tente de novo.",
+      errorId: expect.any(String),
+    });
+    expect((logged.mock.calls[0]?.[1] as Error | undefined)?.message).toBe("disco cheio");
   });
 
   test("unknown agenda routes", async () => {

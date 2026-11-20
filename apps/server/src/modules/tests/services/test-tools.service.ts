@@ -38,6 +38,7 @@ function realDataGate(writes: boolean, where: string): Gate {
         kind: "human",
         prompt: `Rodar um teste que escreve dado real (${where})?`,
         reason: "Teste que cria ou envia algo de verdade passa por você.",
+        hard: true,
       }
     : { kind: "allow" };
 }
@@ -125,6 +126,7 @@ export function registerTestTools(server: McpServer, context: ToolContext) {
             kind: "human",
             prompt: `Rodar o teste contra ${baseUrl}?`,
             reason: "Teste fora da prévia local passa por você.",
+            hard: false,
           }
         : realDataGate(args.writesRealData === true, "prévia local");
       return run("test_playwright", `Testar ${String(args.path)} no navegador`, args, gate, {

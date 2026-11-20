@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { runGrok } from "../grok";
+import { disallowedTools, runGrok } from "../grok";
 import { fakeCli, recorder, turnRequest } from "./fakes";
 
 const signal = () => new AbortController().signal;
@@ -72,6 +72,18 @@ describe("runGrok", () => {
     const config = await readFile(join(fakeCli.home, ".grok", "config.toml"), "utf8");
     expect(config).toContain('url = "http://127.0.0.1:1/mcp"');
     expect(config).toContain('Authorization = "Bearer tok"');
+    const disallowed = args[args.indexOf("--disallowed-tools") + 1].split(",");
+    expect(disallowed).toContain("run_terminal_cmd");
+    expect(disallowed).toContain("bash");
+    expect(disallowed).toContain("str_replace_editor");
+    expect(fs.statSync(join(fakeCli.home, ".grok")).mode & 0o777).toBe(0o700);
+  });
+
+  test("native shell turns keep only the base deny list", async () => {
+    await run([{ type: "done" }], { nativeShell: true });
+    const args = fakeCli.args("grok");
+    expect(args[args.indexOf("--disallowed-tools") + 1]).toBe(disallowedTools(true).join(","));
+    expect(disallowedTools(true)).not.toContain("bash");
   });
 
   test("resumes an existing session without mcp config", async () => {

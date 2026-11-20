@@ -79,3 +79,50 @@ Claude: com imagens, `packages/providers/src/claude.ts` passa o prompt como mens
 ### Verificado 19/11
 
 Bot "Teste Anexos" (Sonnet 5.5, `vps:claude`). Imagem 2400×1800 (fundo vermelho, retângulo azul, quadrado amarelo) → descrita certo, a partir do `model.jpg` 1568 px. Áudio feito com `say -v Luciana` (aiff, 8,3 s), enviado sem texto → transcrição exata ("…a senha secreta é girassol azul…") e resposta certa. Vídeo ffmpeg 12 s (vermelho/verde/azul + seno 440 Hz) → 6 quadros, o modelo descreveu as cores em ordem e o som como bipe sem fala. PDF feito à mão → código e faturamento certos (anydoc; o pdftotext também extraiu). `.docx` com imagem embutida e `.xlsx` gerados no container → anydoc deu markdown e tabela; a imagem do docx foi como bloco de imagem e o modelo a descreveu. `send_file` com o print do browser → `file.sent` com miniatura. Range (206) e `thumb.jpg` conferidos por curl. Build do Mac + `make-app.sh` assinado "runelay bots Local". Não testado ao vivo: Codex/Cursor/Grok com anexo (só o caminho no texto), upload perto de 100 MB, arquivo `.doc`/`.pptx`/`.epub` reais.
+
+## v51 (20/11): conteúdo do usuário isolado (uploads, artefatos, exportações, navegador)
+
+### Tipo pelo conteúdo
+
+O `mime` de um upload (`POST /bots/:id/uploads`, `send_file`, arquivo do Mac) agora vem dos bytes, não do `x-file-type`, do `content-type` nem do nome. Assinaturas conhecidas: PNG, JPEG, GIF, WebP, AVIF/HEIC/HEIF, BMP, TIFF, MP4/MOV/M4A/M4V, WebM/Matroska, MP3, AAC, WAV, AIFF, OGG, FLAC, PDF, ZIP (docx/xlsx/pptx/odt/ods/odp/epub pela extensão só depois de confirmar o ZIP), OLE (doc/xls/ppt), RTF. Texto é UTF-8 válido sem NUL (tipo pela extensão: `text/markdown`, `text/csv`, `application/json`, `text/html`, `image/svg+xml`…; sem extensão conhecida, `text/plain`). O resto é `application/octet-stream`. HTML disfarçado de `foto.png` com `x-file-type: image/png` volta como:
+
+```json
+{"name":"foto.png","mime":"text/html","kind":"file"}
+```
+
+### Download
+
+Todo `GET /bots/:id/uploads/:uploadId` (e `thumb.jpg`) leva:
+
+```
+content-security-policy: sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'
+x-content-type-options: nosniff
+```
+
+`inline` só para `image/png|jpeg|gif|webp|avif`, `audio/*`, `video/*` e `application/pdf`. O resto sai com `content-disposition: attachment; filename*=UTF-8''<nome>`; HTML, XHTML, XML, SVG, JS e CSS saem como `content-type: application/octet-stream`, texto e JSON como `text/plain; charset=utf-8`. O app baixa os anexos para o cache e abre no QuickLook/AVPlayer, então nada muda para ele.
+
+### ffmpeg e ffprobe
+
+Só rodam em tipos de mídia detectados, sempre com `-protocol_whitelist file -f <demuxer fixo pelo tipo>` antes do arquivo (`mov`, `matroska`, `mp3`, `aac`, `wav`, `aiff`, `ogg`, `flac`, `png_pipe`, `jpeg_pipe`, `gif`, `webp_pipe`, `bmp_pipe`, `tiff_pipe`). O `ffprobe` só vale se o `format_name` estiver nessa lista (`hls`, `concat` etc. são recusados). Áudio extraído e onda param em 2 h (`-t 7200`), áudio extraído em 200 MB (`-fs 200M`); miniaturas e quadros continuam com `-frames:v 1` e os timeouts de antes.
+
+### Cota
+
+`BOTS_UPLOAD_QUOTA_MB` (padrão 5000) por bot, somando `uploads.size`. Estourar dá `413`:
+
+```json
+{"ok":false,"error":"O espaço de anexos deste bot acabou. Apague anexos antigos ou peça para aumentar a cota."}
+```
+
+O corte vale pelo `content-length` declarado e também no meio do stream (o arquivo parcial é apagado). `send_file` e o arquivo do Mac também respeitam a cota.
+
+### `send_file` (substitui as raízes da v22)
+
+- Sem aprovação só da pasta de saída do bot: `<dados>/bots/<botId>/outbox/` (a descrição da ferramenta traz o caminho absoluto).
+- Com card de aprovação ("Posso enviar <nome> (<caminho>) na conversa?"): os anexos do próprio bot, os prints dele (`<dados>/bots/<botId>/browser/` e `/desktop/`), os worktrees `alive` dele (`code_workspaces.bot_id`), `/tmp/runelay-exports/<botId>/` e, quando o arquivo não existe no servidor, o Mac.
+- Negado sempre: `<dados>/secrets`, `vault.*`, `runner.token`, `auth.secret`, `setup.token`, `integrations.key`, `postgres/`, `redis/`, `storage/`, `blobs/`, pastas de outros bots, `BOTS_BACKUP_DIR`, `/backups`, `/run`, `/proc`, `/sys`, `/dev`, e `.env*`, `.git`, `.ssh`, `.claude`, `.codex`, `.aws`, `.gnupg`, `.npmrc`, `.netrc` em qualquer nível.
+- O arquivo é aberto uma vez com `O_NOFOLLOW|O_NONBLOCK`; o caminho real sai de `/proc/self/fd/N` e a cópia é feita desse descritor, até o tamanho do `fstat`. Atalho no último nível dá "Esse caminho é um atalho (symlink). Mande o arquivo de verdade."; atalho no meio que tira o arquivo da pasta de saída dá "O arquivo saiu da pasta de saída do bot por um atalho.".
+- Mac: o servidor só pede `file.read` para `~/…` ou `/Users/<u>/…` dentro de `Downloads`, `Desktop` ou `Documents`, e para `/tmp` ou `/private/tmp`, sem `.`/`..`. O runner do Mac confere a mesma lista depois de resolver atalhos (`resolvingSymlinksInPath`). Fora disso: "No Mac só posso enviar arquivos de Downloads, Mesa, Documentos ou /tmp.".
+
+### Verificado 20/11
+
+Por testes (`bun test`): `uploads.service.test.ts` (50), `uploads.routes.test.ts` (10), `sniff.service.test.ts` (7). Os cabeçalhos e corpos acima são os que os testes conferem. Não conferido no servidor rodando nem no app.

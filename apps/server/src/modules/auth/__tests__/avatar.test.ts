@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDb } from "../../../../test/db-helpers";
@@ -58,7 +58,10 @@ beforeAll(async () => {
   });
   const created = await call("/auth/setup", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      "x-setup-token": readFileSync(mod.setupToken.issue(), "utf8").trim(),
+    },
     body: JSON.stringify({ name: "Dona", email: "dona@example.com", password: "correct horse battery" }),
   });
   const body = (await created.json()) as { token: string; user: { id: string } };
@@ -119,7 +122,7 @@ describe("avatar", () => {
     expect((await call(me.user.image)).status).toBe(401);
     expect((await call(avatarPath(userId, "nope.png"), { token })).status).toBe(404);
     expect((await call(avatarPath(userId, "../x.png"), { token })).status).toBe(404);
-    expect((await call("/auth/avatars/bad%2Fid/a.png", { token })).status).toBe(404);
+    expect((await call("/auth/avatars/bad%2Fid/a.png", { token })).status).toBe(418);
     expect((await call("/auth/me/avatar", { token })).status).toBe(418);
   });
 

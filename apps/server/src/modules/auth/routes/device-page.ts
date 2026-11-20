@@ -107,6 +107,9 @@ h1{margin:0;font-size:21px;line-height:1.25;font-weight:600;letter-spacing:-.4px
 .note{display:flex;gap:8px;align-items:flex-start;margin:0 0 20px;padding:10px 12px;border-radius:10px;background:var(--surface);color:var(--muted);font-size:13px}
 .note svg{flex:none;margin-top:1px}
 .code{margin:0 0 20px;padding:16px;border-radius:14px;background:var(--surface-raised);text-align:center;font:600 22px/1 "Geist Mono",ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.16em;text-indent:.16em;white-space:nowrap;overflow-wrap:normal}
+.info{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 0 20px;font-size:13px}
+.info dt{color:var(--muted)}
+.info dd{margin:0;overflow-wrap:anywhere}
 .error{margin:0;font-size:12px;color:var(--danger);text-align:left}
 .error:empty{display:none}
 #error{margin-top:12px}
@@ -131,7 +134,7 @@ const socialError = params.get("error");
 const back = "/device?user_code=" + encodeURIComponent(userCode);
 const webauthn = !!(window.PublicKeyCredential && PublicKeyCredential.parseRequestOptionsFromJSON);
 const $ = (id) => document.getElementById(id);
-const views = ["loading", "login", "approve", "result"];
+const views = ["loading", "setup", "login", "approve", "result"];
 const messages = {
   "Invalid email or password": "E-mail ou senha incorretos.",
   "Invalid password": "E-mail ou senha incorretos.",
@@ -218,10 +221,29 @@ async function check() {
     return true;
   }
 }
+async function needsOwner() {
+  try {
+    const response = await fetch("/auth/setup", { credentials: "same-origin" });
+    const body = await response.json();
+    return Boolean(body && body.needsOwner);
+  } catch {
+    return false;
+  }
+}
+async function requestInfo() {
+  try {
+    const response = await fetch("/auth/device/info?user_code=" + encodeURIComponent(userCode), { credentials: "same-origin" });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
 async function enter() {
   if (!userCode) return result("no", "Abra este link pelo app", "Este endereço só funciona a partir do botão Entrar no runelay bots.");
   const signedIn = await session();
   if ((await check()) !== true) return;
+  if (!signedIn && (await needsOwner())) return show("setup");
   if (!signedIn) {
     show("login");
     if (socialError) return fail(socialError === "signup_disabled" ? "Essa conta ainda não tem acesso. Peça um convite." : "Não deu para entrar com essa conta.");
@@ -229,6 +251,10 @@ async function enter() {
     return;
   }
   $("code").textContent = userCode;
+  const info = await requestInfo();
+  $("info-client").textContent = info && info.clientName ? info.clientName : "desconhecido";
+  $("info-ip").textContent = info && info.ip ? info.ip : "desconhecido";
+  $("info-time").textContent = info && info.requestedAt ? new Date(info.requestedAt).toLocaleString("pt-BR") : "desconhecido";
   $("enroll").hidden = !webauthn || (await hasPasskey());
   show("approve");
 }
@@ -281,6 +307,30 @@ $("password").addEventListener("submit", (event) => {
     if ($("secret").getAttribute("aria-invalid") === "true") $("secret").select();
   });
 });
+$("setup-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  fail("");
+  busy($("setup-submit"), async () => {
+    try {
+      const email = $("setup-email").value.trim();
+      const password = $("setup-secret").value;
+      const response = await fetch("/auth/setup", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json", "x-setup-token": $("setup-token").value.trim() },
+        body: JSON.stringify({ name: $("setup-name").value.trim(), email, password }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) return fail((body && body.error) || "Não deu certo. Tente de novo.");
+      await call("/sign-in/email", { method: "POST", body: JSON.stringify({ email, password }) });
+      $("setup-secret").value = "";
+      $("setup-token").value = "";
+      await enter();
+    } catch (error) {
+      fail(error.message);
+    }
+  });
+});
 $("enroll").addEventListener("click", () => {
   fail("");
   busy($("enroll"), async () => {
@@ -321,7 +371,7 @@ $("deny").addEventListener("click", () => {
 enter();
 `;
 
-export function devicePage(basePath: string) {
+export function devicePage(basePath: string, nonce: string) {
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -336,8 +386,8 @@ export function devicePage(basePath: string) {
 <link rel="apple-touch-icon" href="${favicon}" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
-<style>${styles}</style>
+<link rel="stylesheet" nonce="${nonce}" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+<style nonce="${nonce}">${styles}</style>
 </head>
 <body>
 <main aria-live="polite">
@@ -345,6 +395,16 @@ export function devicePage(basePath: string) {
 <section id="loading" class="view" aria-busy="true">
 <header><h1 tabindex="-1">Conferindo o código</h1><p class="lede">Só um instante.</p></header>
 <span class="spinner" role="status" aria-label="Carregando"></span>
+</section>
+<section id="setup" class="view" hidden>
+<header><h1 tabindex="-1">Criar a conta do dono</h1><p class="lede">Use o código do arquivo setup.token, que fica na pasta de dados do servidor.</p></header>
+<form id="setup-form" novalidate>
+<div class="field"><label for="setup-token">Código de primeiro acesso</label><div class="control">${icons.lock}<input id="setup-token" type="password" autocomplete="off" spellcheck="false" required aria-describedby="error" /></div></div>
+<div class="field"><label for="setup-name">Nome</label><div class="control"><input id="setup-name" type="text" autocomplete="name" required aria-describedby="error" /></div></div>
+<div class="field"><label for="setup-email">E-mail</label><div class="control">${icons.mail}<input id="setup-email" type="email" inputmode="email" autocomplete="username email" autocapitalize="off" spellcheck="false" required aria-describedby="error" /></div></div>
+<div class="field"><label for="setup-secret">Senha</label><div class="control">${icons.lock}<input id="setup-secret" type="password" autocomplete="new-password" minlength="8" required aria-describedby="error" /></div></div>
+<button class="btn primary" id="setup-submit" type="submit"><span class="label">Criar conta</span></button>
+</form>
 </section>
 <section id="login" class="view" hidden>
 <header><h1 tabindex="-1">Entrar no runelay bots</h1><p class="lede">Para liberar o app no seu Mac.</p></header>
@@ -368,6 +428,8 @@ export function devicePage(basePath: string) {
 <section id="approve" class="view" hidden>
 <header><h1 tabindex="-1">Liberar o app</h1><p class="lede">Confira se o código é o mesmo que aparece no app.</p></header>
 <div class="code" id="code" aria-label="Código"></div>
+<p class="note" id="request-warning">${icons.lock}<span>Só libere se foi você que pediu agora, no seu Mac. Se alguém te mandou este link, recuse.</span></p>
+<dl class="info" id="request-info"><dt>Quem pediu</dt><dd id="info-client"></dd><dt>Endereço</dt><dd id="info-ip"></dd><dt>Quando</dt><dd id="info-time"></dd></dl>
 <div class="stack">
 <button class="btn primary" id="allow" type="button"><span class="label">Liberar</span></button>
 <button class="btn secondary" id="deny" type="button"><span class="label">Recusar</span></button>
@@ -381,7 +443,7 @@ export function devicePage(basePath: string) {
 <p class="error" id="error" role="alert"></p>
 </main>
 <footer>runelay bots</footer>
-<script>${script(basePath)}</script>
+<script nonce="${nonce}">${script(basePath)}</script>
 </body>
 </html>`;
 }

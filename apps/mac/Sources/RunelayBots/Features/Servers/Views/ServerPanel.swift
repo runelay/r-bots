@@ -123,7 +123,7 @@ struct ServerPanel: View {
     @ViewBuilder
     private func preview(_ server: DevServerInfo) -> some View {
         if server.status == .running, let url = store.previewURL(for: server) {
-            ArtifactWebView(url: url, focusToken: reloadToken)
+            ArtifactWebView(url: url, focusToken: reloadToken, sameOrigin: true)
                 .id("\(url.absoluteString)#\(reloadToken)")
         } else if server.status == .starting {
             VStack(spacing: Spacing.m) {

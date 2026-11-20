@@ -118,6 +118,27 @@ describe("approvals", () => {
     expect((await factsOfType(session, "interaction.settled"))[0].data.outcome).toBe("declined");
   });
 
+  test("an approval with a timeout expires as a denial and an answered one clears its timer", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const ask = asking("Posso rodar?", { timeoutMs: 20 } as never);
+    fakeProviders.next(ask.script);
+    send(session);
+    const card = await nextInteraction(session);
+    await idle(session);
+    expect(ask.results[0]).toEqual({ choice: "deny", interactionId: card.interactionId });
+    expect((await factsOfType(session, "interaction.settled"))[0].data.outcome).toBe("expired");
+    expect(answer(session, "dlv_late", card.interactionId, "approve")).toBe(false);
+
+    const quick = asking("Posso rodar de novo?", { timeoutMs: 60_000 } as never);
+    fakeProviders.next(quick.script);
+    send(session);
+    const second = await nextInteraction(session, 2);
+    expect(answer(session, "dlv_ok", second.interactionId, "approve")).toBe(true);
+    await idle(session);
+    expect(quick.results[0].choice).toBe("approve");
+  });
+
   test("withdraws the card when the turn is cancelled", async () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);

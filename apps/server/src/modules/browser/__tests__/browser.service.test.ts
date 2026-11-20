@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, jest, setSystemTime, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, type Mock, setSystemTime, spyOn, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -29,6 +29,7 @@ import {
   startLiveView,
   viewport,
 } from "../services/browser.service";
+import * as netGuard from "../../../shared/net-guard";
 import { controllerOf, onControllerChange, setController, waitForBotControl } from "../services/control.service";
 
 let counter = 0;
@@ -37,10 +38,19 @@ function botId() {
   return `browser-bot-${counter}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+let resolved: Mock<typeof netGuard.resolvePublic>;
+
+beforeEach(() => {
+  resolved = spyOn(netGuard, "resolvePublic").mockResolvedValue({ address: "93.184.216.34", family: 4 });
+});
+
 afterEach(() => {
+  resolved.mockRestore();
   jest.useRealTimers();
   setSystemTime();
 });
+
+const browsing = (commands: string[][]) => commands.filter((command) => command[0] !== "session");
 
 async function seedState(id: string, state = { url: "https://seed.test/", title: "Seed", updatedAt: "x" }) {
   await mkdir(browserDir(id), { recursive: true });
@@ -95,13 +105,23 @@ describe("open, history and capture", () => {
     expect(existsSync(state.screenshot)).toBe(true);
     expect(readFileSync(latestScreenshotFile(id))).toEqual(pngBytes);
     expect(await readBrowserState(id)).toMatchObject({ url: "https://a.test/" });
-    expect(fake.commands.slice(0, 4)).toEqual([
+    expect(fake.commands[0]).toEqual(["session", "list", "--json"]);
+    expect(browsing(fake.commands).slice(0, 4)).toEqual([
       ["set", "viewport", "1280", "800"],
       ["open", "https://a.test/"],
       ["wait", "500"],
       ["wait", "--fn", "document.readyState === 'complete'"],
     ]);
-    expect(fake.calls[0].args.slice(0, 5)).toEqual(["--session", `runelay-${id}`, "--args", "--no-sandbox", "--json"]);
+    const launch = fake.calls[1].args;
+    expect(launch.slice(0, 3)).toEqual(["--session", `runelay-${id}`, "--args"]);
+    expect(launch[4]).toBe("--json");
+    expect(launch[3].split(",")).toEqual([
+      "--no-sandbox",
+      expect.stringMatching(/^--proxy-server=http:\/\/127\.0\.0\.1:\d+$/),
+      "--proxy-bypass-list=<-loopback>",
+      "--disable-quic",
+      "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+    ]);
   });
 
   test("navigates history without touching the viewport twice", async () => {
@@ -154,7 +174,7 @@ describe("open, history and capture", () => {
     const id = botId();
     const file = await fullScreenshot(id);
     expect(file).toBe(join(browserDir(id), "full.png"));
-    expect(fake.commands[0]).toEqual(["screenshot", "--full", file]);
+    expect(browsing(fake.commands)[0]).toEqual(["screenshot", "--full", file]);
   });
 
   test("captures after an action into a timestamped shot", async () => {
@@ -338,10 +358,10 @@ describe("live capture", () => {
     await seedState(id);
     markBrowserViewed(id);
     const first = liveCapture(id);
-    await until(() => fake.commands.length === 1);
+    await until(() => browsing(fake.commands).length === 1);
     await liveCapture(id);
-    expect(fake.commands).toHaveLength(1);
-    fake.calls[0].child.finish({ code: 1 });
+    expect(browsing(fake.commands)).toHaveLength(1);
+    fake.calls.find((call) => call.args.includes("screenshot"))?.child.finish({ code: 1 });
     await first;
     hang = false;
     await liveCapture(id);

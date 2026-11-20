@@ -22,6 +22,13 @@
       "when": 1795144965664,
       "tag": "0002_usage_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795146146718,
+      "tag": "0003_devices",
+      "breakpoints": true
     }
   ]
 }

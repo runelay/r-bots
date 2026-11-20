@@ -2,12 +2,18 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
-import { closeTaskWorkspace, deliverProblem, deliverWorkspace, openTaskWorkspace } from "./actions.service";
+import {
+  closeTaskWorkspace,
+  deliverProblem,
+  deliverRisk,
+  deliverWorkspace,
+  openTaskWorkspace,
+} from "./actions.service";
 import { devServerLogs, devServersOf, startDevServer, stopDevServers } from "./dev-server.service";
 import { beginCall, endCall } from "./hooks.service";
 import { type Gate, gateCommand, protectedPath } from "./policy.service";
 import { kickPr } from "./pull-request.service";
-import { addAllowedRepo, allowedRepoFor, gitRepoAt } from "./repos.service";
+import { addAllowedRepo, allowedRepoFor, gitRepoAt, repoRootProblem } from "./repos.service";
 import {
   activeWorkspace,
   CodeError,
@@ -50,18 +56,21 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       const reason = String(args.reason);
       const repoPath = await gitRepoAt(String(args.path));
       const known = repoPath ? allowedRepoFor(repoPath) : null;
+      const rootProblem = repoPath ? repoRootProblem(repoPath) : null;
       const gate: Gate = !repoPath
         ? { kind: "deny", message: `${String(args.path)} não é um repositório git (não achei a pasta .git).` }
-        : protectedPath(repoPath)
-          ? { kind: "deny", message: `${repoPath} é um caminho protegido e não pode ser liberado.` }
-          : known?.path === repoPath
-            ? { kind: "allow" }
-            : {
-                kind: "human",
-                prompt: `Liberar o repositório ${repoPath} para os bots? Motivo: ${reason}`,
-                reason: "Liberar repositório sempre passa por você.",
-                hard: true,
-              };
+        : rootProblem
+          ? { kind: "deny", message: rootProblem }
+          : protectedPath(repoPath)
+            ? { kind: "deny", message: `${repoPath} é um caminho protegido e não pode ser liberado.` }
+            : known?.path === repoPath
+              ? { kind: "allow" }
+              : {
+                  kind: "human",
+                  prompt: `Liberar o repositório ${repoPath} para os bots? Motivo: ${reason}`,
+                  reason: "Liberar repositório sempre passa por você.",
+                  hard: true,
+                };
       const start = await beginCall(context, {
         name: "workspace_add",
         label: `Liberar ${repoPath ?? String(args.path)}`,
@@ -295,15 +304,26 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       } as const;
       await changedFiles(workspace, true);
       const problem = deliverProblem(input, input.action === "commit");
-      const gate: Gate = problem ? { kind: "deny", message: problem } : { kind: "allow" };
+      const label =
+        input.action === "pr"
+          ? `Abrir PR da branch ${workspace.branch}`
+          : input.action === "push"
+            ? `Push da branch ${workspace.branch}`
+            : `Commit na branch ${workspace.branch}`;
+      const risky = problem ? [] : await deliverRisk(workspace);
+      const gate: Gate = problem
+        ? { kind: "deny", message: problem }
+        : risky.length > 0
+          ? {
+              kind: "human",
+              prompt: `${label}? Esta entrega muda hooks ou scripts: ${risky.join(", ")}.`,
+              reason: "Hooks do git ou scripts de instalação mudaram nesta entrega.",
+              hard: false,
+            }
+          : { kind: "allow" };
       const start = await beginCall(context, {
         name: "workspace_deliver",
-        label:
-          input.action === "pr"
-            ? `Abrir PR da branch ${workspace.branch}`
-            : input.action === "push"
-              ? `Push da branch ${workspace.branch}`
-              : `Commit na branch ${workspace.branch}`,
+        label,
         input: args,
         gate,
         workspace,

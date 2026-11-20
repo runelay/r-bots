@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { ValidationError } from "../../../shared/errors";
+import { buildRequestContext, setRequestContext } from "../../../shared/http";
 import { createAuthRoutes } from "../routes/auth.routes";
 import { type AccessService, InviteInvalidError, SetupClosedError } from "../services/accounts-access.service";
 import type { Principal } from "../services/auth.middleware";
@@ -92,7 +93,15 @@ describe("auth routes", () => {
   test("setup is rate limited per client after five tries until the window resets", async () => {
     const clock = { at: 1_000 };
     const routes = setup({ setupOwner: async () => ({ token: "t" }) } as unknown as Partial<AccessService>, clock);
-    const from = (ip: string) => post("/auth/setup", "{}", { "x-forwarded-for": `${ip}, 10.0.0.1` });
+    const from = (ip: string) => {
+      const request = post("/auth/setup", "{}", {
+        "x-forwarded-for": `${ip}, 10.0.0.1`,
+        "tailscale-user-login": "a@b.c",
+      });
+      const context = buildRequestContext(request, "127.0.0.1");
+      if (context) setRequestContext(request, context);
+      return request;
+    };
     for (let i = 0; i < 5; i++) expect((await routes.handle(from("1.1.1.1"), null))?.status).toBe(201);
     clock.at += 20_500;
     const blocked = await routes.handle(from("1.1.1.1"), null);
