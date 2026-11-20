@@ -62,6 +62,9 @@ const base = ${JSON.stringify(basePath)};
 const callback = ${JSON.stringify(appCallbackUrl)};
 const params = new URLSearchParams(location.search);
 const userCode = (params.get("user_code") || "").toUpperCase();
+const provider = params.get("provider");
+const socialError = params.get("error");
+const back = "/device?user_code=" + encodeURIComponent(userCode);
 const $ = (id) => document.getElementById(id);
 const show = (id) => { for (const s of ["login","approve","done"]) $(s).hidden = s !== id; };
 const fail = (message) => { $("error").textContent = message || ""; };
@@ -79,10 +82,21 @@ async function hasPasskey() {
 }
 async function enter() {
   if (!userCode) { show("done"); $("doneText").textContent = "Abra este link pelo app."; return; }
-  if (!(await session())) { show("login"); return; }
+  if (!(await session())) {
+    show("login");
+    if (socialError) { fail(socialError === "signup_disabled" ? "Essa conta ainda não tem acesso. Peça um convite." : "Não deu para entrar com essa conta."); return; }
+    if (provider) await social(provider);
+    return;
+  }
   $("code").textContent = userCode;
   $("enroll").hidden = !window.PublicKeyCredential || (await hasPasskey());
   show("approve");
+}
+async function social(id) {
+  try {
+    const body = await call("/sign-in/social", { method: "POST", body: JSON.stringify({ provider: id, callbackURL: back, errorCallbackURL: back, disableRedirect: true }) });
+    if (body && body.url) location.href = body.url;
+  } catch (error) { fail(error.message); }
 }
 $("passkey").onclick = async () => {
   fail("");

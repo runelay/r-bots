@@ -21,6 +21,7 @@ export function isPublicRoute(method: string, pathname: string) {
   if (pathname === authBasePath || pathname.startsWith(`${authBasePath}/`)) return true;
   if (pathname === devicePagePath && method === "GET") return true;
   if (pathname === "/auth/setup" && (method === "GET" || method === "POST")) return true;
+  if (pathname === "/auth/providers" && method === "GET") return true;
   if (pathname === "/auth/invites/accept" && method === "POST") return true;
   const parts = pathname.split("/").filter(Boolean);
   if (parts[0] === "mcp" && parts.length === 3) return true;

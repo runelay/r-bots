@@ -15,6 +15,7 @@ export interface AuthRouteDeps {
   access: AccessService;
   avatars?: AvatarService;
   secret: string;
+  providers?: string[];
   now?: () => number;
 }
 
@@ -143,6 +144,8 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
           required: true,
           methods: authMethods,
         });
+      if (path === "/auth/providers" && method === "GET")
+        return json({ ok: true, providers: deps.providers ?? [], methods: authMethods });
       if (path === "/auth/setup" && method === "POST") {
         const blocked = limited(request, "setup");
         if (blocked) return blocked;

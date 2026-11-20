@@ -10,7 +10,7 @@ import { readSetting } from "../../../db/settings";
 import { type AuthModule, createAuthModule, isPublicRoute, type Principal } from "..";
 import { authActive, authEnabled, authMode, gate, initAuth, principalOf, useAuthModule } from "../gate";
 import { readToken } from "../services/auth.middleware";
-import { apiKeyPrefix, appClientId, memberRole } from "../services/auth.service";
+import { apiKeyPrefix, appClientId, memberRole, socialFromEnv } from "../services/auth.service";
 
 const base = "http://127.0.0.1:2999";
 const internalToken = "internal-token-0123456789abcdef";
@@ -90,6 +90,8 @@ describe("readToken and public routes", () => {
     expect(isPublicRoute("PUT", "/auth/setup")).toBe(false);
     expect(isPublicRoute("POST", "/auth/invites/accept")).toBe(true);
     expect(isPublicRoute("GET", "/auth/invites/accept")).toBe(false);
+    expect(isPublicRoute("GET", "/auth/providers")).toBe(true);
+    expect(isPublicRoute("POST", "/auth/providers")).toBe(false);
     expect(isPublicRoute("GET", "/preview/abc/5310/")).toBe(true);
     expect(isPublicRoute("GET", "/mcp/a")).toBe(false);
     expect(isPublicRoute("GET", "/api/authx")).toBe(false);
@@ -207,6 +209,54 @@ describe("internal token", () => {
       internalToken: () => "tiny",
     });
     expect(((await weak.authenticate(req("/bots", { token: "tiny" }))) as Response).status).toBe(401);
+  });
+});
+
+describe("social providers", () => {
+  test("reads only complete credentials from the environment", () => {
+    expect(socialFromEnv({})).toEqual({});
+    expect(
+      socialFromEnv({
+        GOOGLE_CLIENT_ID: " g-id ",
+        GOOGLE_CLIENT_SECRET: "g-secret",
+        GITHUB_CLIENT_ID: "gh-id",
+        APPLE_CLIENT_SECRET: "a-secret",
+      }),
+    ).toEqual({ google: { clientId: "g-id", clientSecret: "g-secret" } });
+  });
+
+  test("lists configured providers publicly and starts a social sign in without creating users", async () => {
+    const social = createAuthModule({
+      db: await freshDb(),
+      env: {
+        BETTER_AUTH_URL: base,
+        GITHUB_CLIENT_ID: "gh-id",
+        GITHUB_CLIENT_SECRET: "gh-secret",
+        APPLE_CLIENT_ID: "a-id",
+        APPLE_CLIENT_SECRET: "a-secret",
+      },
+      dataDir: join(dir, "data-social"),
+      repoDir: join(dir, "repo"),
+      serverDir: join(dir, "server"),
+      host: "127.0.0.1",
+      port: 2999,
+    });
+    expect(social.providers).toEqual(["apple", "github"]);
+    const listed = await social.handle(req("/auth/providers"), null);
+    expect(await listed?.json()).toMatchObject({ ok: true, providers: ["apple", "github"] });
+    expect(await social.authenticate(req("/auth/providers"))).toEqual({ kind: "public" });
+    const started = await social.handle(
+      req("/api/auth/sign-in/social", {
+        method: "POST",
+        headers: { origin: base },
+        body: JSON.stringify({ provider: "github", callbackURL: "/device?user_code=X", disableRedirect: true }),
+      }),
+      null,
+    );
+    expect(started?.status).toBe(200);
+    expect(((await started?.json()) as { url: string }).url).toStartWith("https://github.com/login/oauth/authorize");
+    const empty = await mod.handle(req("/auth/providers"), null);
+    expect(await empty?.json()).toMatchObject({ providers: [] });
   });
 });
 
