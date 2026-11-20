@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { macDeviceCall } from "../../accounts/services/mac-runner.service";
-import { getServer } from "../../code/services/dev-server.service";
+import { getServer, portOwner } from "../../code/services/dev-server.service";
+import { parseEnv } from "../../servers/services/projects.service";
 
 export interface SimulatorDevice {
   udid: string;
@@ -85,6 +86,34 @@ export function expoUrl(localPort: number, client: "go" | "dev", scheme: string 
   return `exp://127.0.0.1:${localPort}`;
 }
 
+export async function appLocalPorts(path: string, cwd: string) {
+  const ports = new Set<number>();
+  for (const file of [".env", ".env.development", ".env.local", ".env.development.local"]) {
+    const text = await readFile(join(path, cwd, file), "utf8").catch(() => "");
+    for (const [key, value] of Object.entries(parseEnv(text))) {
+      const match = value.match(/^https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)/);
+      if (key.startsWith("EXPO_PUBLIC_") && match) ports.add(Number(match[1]));
+    }
+  }
+  return [...ports].sort((a, b) => a - b);
+}
+
+async function bridgeAppPorts(path: string, cwd: string, metroPort: number, signal?: AbortSignal) {
+  const bridged: number[] = [];
+  const missing: number[] = [];
+  for (const port of await appLocalPorts(path, cwd)) {
+    if (port === metroPort) continue;
+    if (!portOwner(port)) {
+      missing.push(port);
+      continue;
+    }
+    const result = await macDeviceCall("sim.tunnel", { port }, 30_000, signal);
+    if (Number(result.localPort) === port) bridged.push(port);
+    else missing.push(port);
+  }
+  return { bridged, missing };
+}
+
 export async function openExpo(
   input: { serverId: string; udid?: string; client?: "go" | "dev" },
   signal?: AbortSignal,
@@ -99,6 +128,7 @@ export async function openExpo(
   const devClient = input.client ? input.client === "dev" : await hasDevClient(server.target.path, cwd);
   const scheme = devClient ? await expoScheme(server.target.path, cwd) : null;
   const url = expoUrl(localPort, devClient && scheme ? "dev" : "go", scheme);
+  const ports = await bridgeAppPorts(server.target.path, cwd, server.port, signal);
   await macDeviceCall("sim.open_url", { url, ...(input.udid ? { udid: input.udid } : {}) }, 60_000, signal);
-  return { url, localPort, client: devClient && scheme ? ("dev" as const) : ("go" as const) };
+  return { url, localPort, client: devClient && scheme ? ("dev" as const) : ("go" as const), ...ports };
 }

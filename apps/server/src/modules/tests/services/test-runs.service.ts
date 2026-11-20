@@ -55,6 +55,7 @@ const runs = new Map<string, TestRun>();
 const listeners = new Set<Listener>();
 export const testsDir = join(dataDir, "tests");
 export const playwrightDir = join(dataDir, "tools", "playwright");
+const browsersDir = join(playwrightDir, "browsers");
 const playwrightVersion = "1.64.1";
 
 function runDir(id: string) {
@@ -247,21 +248,16 @@ export async function agentBrowserChrome(home = homedir()) {
 export async function playwrightInstalled() {
   try {
     await readFile(join(playwrightDir, "node_modules", "@playwright", "test", "package.json"), "utf8");
-    return true;
   } catch {
     return false;
   }
+  return (await readdir(browsersDir).catch(() => [] as string[])).some((name) => name.startsWith("ffmpeg"));
 }
 
-export async function installPlaywright(spawn = Bun.spawn) {
-  await mkdir(playwrightDir, { recursive: true });
-  await writeFile(
-    join(playwrightDir, "package.json"),
-    JSON.stringify({ name: "runelay-playwright", private: true, type: "module" }),
-  );
-  const child = spawn(["npm", "install", "--no-audit", "--no-fund", `@playwright/test@${playwrightVersion}`], {
+async function quiet(argv: string[], spawn: typeof Bun.spawn) {
+  const child = spawn(argv, {
     cwd: playwrightDir,
-    env: childEnv({}),
+    env: childEnv({ PLAYWRIGHT_BROWSERS_PATH: browsersDir }),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -270,7 +266,17 @@ export async function installPlaywright(spawn = Bun.spawn) {
     new Response(child.stderr as ReadableStream).text(),
     child.exited,
   ]);
-  if (code !== 0) throw new Error(`npm install falhou: ${(err || out).slice(-600)}`);
+  if (code !== 0) throw new Error(`${argv.slice(0, 3).join(" ")} falhou: ${(err || out).slice(-600)}`);
+}
+
+export async function installPlaywright(spawn = Bun.spawn) {
+  await mkdir(playwrightDir, { recursive: true });
+  await writeFile(
+    join(playwrightDir, "package.json"),
+    JSON.stringify({ name: "runelay-playwright", private: true, type: "module" }),
+  );
+  await quiet(["npm", "install", "--no-audit", "--no-fund", `@playwright/test@${playwrightVersion}`], spawn);
+  await quiet(["npx", "playwright", "install", "ffmpeg"], spawn);
   return true;
 }
 
@@ -305,7 +311,7 @@ async function runPlaywright(run: TestRun, signal?: AbortSignal) {
   if (run.input.grep) args.push("--grep", run.input.grep);
   const child = Bun.spawn(["npx", ...args], {
     cwd: playwrightDir,
-    env: childEnv({ CI: "1", FORCE_COLOR: "0" }),
+    env: childEnv({ CI: "1", FORCE_COLOR: "0", PLAYWRIGHT_BROWSERS_PATH: browsersDir }),
     stdout: "pipe",
     stderr: "pipe",
   });

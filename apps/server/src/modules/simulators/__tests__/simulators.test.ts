@@ -158,6 +158,8 @@ describe("simulators service", () => {
       url: "conty://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A19000&disableOnboarding=1",
       localPort: 19000,
       client: "dev",
+      bridged: [],
+      missing: [],
     });
     expect(calls.map((call) => call.op)).toEqual(["sim.tunnel", "sim.open_url"]);
     expect(calls[1].body.udid).toBe("U1");
@@ -166,6 +168,31 @@ describe("simulators service", () => {
     deviceCalls(() => ({ localPort: "x" }));
     await expect(openExpo({ serverId: id })).rejects.toThrow("não abriu a ponte");
     await expect(openExpo({ serverId: "nope" })).rejects.toThrow("não está no ar");
+  });
+
+  test("bridges the local API ports the app points to", async () => {
+    const api = await expoServer({});
+    const apiPort = getServer(api.id)?.port as number;
+    const other = await expoServer({});
+    const otherPort = getServer(other.id)?.port as number;
+    const { id } = await expoServer({
+      ".env": `EXPO_PUBLIC_API_URL=http://localhost:${apiPort}\nEXPO_PUBLIC_X=http://127.0.0.1:${otherPort}/v1\nEXPO_PUBLIC_SITE=https://conty.com\nSECRET_URL=http://localhost:1\n`,
+      ".env.local": "EXPO_PUBLIC_DOWN=http://localhost:65000\n",
+    });
+    const metroPort = getServer(id)?.port as number;
+    const local = `EXPO_PUBLIC_SELF=http://localhost:${metroPort}\n`;
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(join(getServer(id)?.target.path as string, ".env.development"), local);
+    const calls = deviceCalls((op, body) =>
+      op === "sim.tunnel" ? { localPort: body.port === metroPort ? 19000 : body.port === apiPort ? apiPort : 1 } : {},
+    );
+    const opened = await openExpo({ serverId: id, client: "go" });
+    expect(opened.bridged).toEqual([apiPort]);
+    expect(opened.missing.sort((a, b) => a - b)).toEqual([otherPort, 65000].sort((a, b) => a - b));
+    expect(calls.filter((call) => call.op === "sim.tunnel").map((call) => call.body.port)).toEqual([
+      metroPort,
+      ...[apiPort, otherPort].sort((a, b) => a - b),
+    ]);
   });
 
   test("refuses servers that are not Metro", async () => {
@@ -329,6 +356,16 @@ describe("simulator tools and routes", () => {
     const { id } = await expoServer({});
     expect((await call("simulator_open_expo", { server: id, udid: "U1", client: "go" })).content[0].text).toContain(
       "exp://127.0.0.1:19001",
+    );
+    const missing = await expoServer({ ".env": "EXPO_PUBLIC_API_URL=http://localhost:65001\n" });
+    expect((await call("simulator_open_expo", { server: missing.id })).content[0].text).toContain("localhost:65001");
+    const api = await expoServer({});
+    const apiPort = getServer(api.id)?.port as number;
+    for (const item of spies.splice(0)) item.mockRestore();
+    deviceCalls((op, body) => (op === "sim.tunnel" ? { localPort: body.port } : {}));
+    const bridged = await expoServer({ ".env": `EXPO_PUBLIC_API_URL=http://localhost:${apiPort}\n` });
+    expect((await call("simulator_open_expo", { server: bridged.id })).content[0].text).toContain(
+      `Ponte também para localhost:${apiPort}`,
     );
     expect(calls.map((item) => item.op)).toContain("sim.open_url");
     expect(events.filter((event) => event.type === "call.settled").length).toBeGreaterThanOrEqual(9);

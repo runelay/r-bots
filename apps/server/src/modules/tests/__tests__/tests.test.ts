@@ -91,6 +91,20 @@ const passingReport = {
   ],
 };
 
+function installReply(call: ProcessCall) {
+  if (call.command === "npm") {
+    mkdirSync(join(playwrightDir, "node_modules", "@playwright", "test"), { recursive: true });
+    writeFileSync(join(playwrightDir, "node_modules", "@playwright", "test", "package.json"), "{}");
+    return { code: 0, stdout: "added 3 packages" };
+  }
+  if (call.command === "npx" && call.args[1] === "install") {
+    expect((call.options.env as Record<string, string>).PLAYWRIGHT_BROWSERS_PATH).toBe(join(playwrightDir, "browsers"));
+    mkdirSync(join(playwrightDir, "browsers", "ffmpeg-1013"), { recursive: true });
+    return { code: 0 };
+  }
+  return undefined;
+}
+
 function playwrightProcesses(report: unknown, attachments: Record<string, string> = {}) {
   return codeProcesses((call: ProcessCall) => {
     if (call.command === "bash") {
@@ -99,6 +113,8 @@ function playwrightProcesses(report: unknown, attachments: Record<string, string
       item.listen({ port: Number(env.PORT), host: "127.0.0.1" }, () => listeners.push(item));
       return { hang: true };
     }
+    const installed = installReply(call);
+    if (installed) return installed;
     if (call.command === "npx") {
       const config = call.args[call.args.indexOf("--config") + 1];
       const source = Bun.file(config);
@@ -110,11 +126,6 @@ function playwrightProcesses(report: unknown, attachments: Record<string, string
         call.child.finish({ code: 0, stdout: "1 passed" });
       });
       return { hang: true };
-    }
-    if (call.command === "npm") {
-      mkdirSync(join(playwrightDir, "node_modules", "@playwright", "test"), { recursive: true });
-      writeFileSync(join(playwrightDir, "node_modules", "@playwright", "test", "package.json"), "{}");
-      return { code: 0, stdout: "added 3 packages" };
     }
     return undefined;
   });
@@ -389,11 +400,8 @@ describe("runs", () => {
   test("stops a Playwright run on abort and survives a deleted run folder", async () => {
     let child: ProcessCall["child"] | null = null;
     codeProcesses((call) => {
-      if (call.command === "npm") {
-        mkdirSync(join(playwrightDir, "node_modules", "@playwright", "test"), { recursive: true });
-        writeFileSync(join(playwrightDir, "node_modules", "@playwright", "test", "package.json"), "{}");
-        return { code: 0 };
-      }
+      const installed = installReply(call);
+      if (installed) return installed;
       if (call.command === "npx") {
         child = call.child;
         return { hang: true };
@@ -416,9 +424,18 @@ describe("runs", () => {
     expect(finished.status).not.toBe("running");
   });
 
-  test("fails the install when npm fails", async () => {
+  test("fails the install when npm or the ffmpeg download fails", async () => {
     codeProcesses((call) => (call.command === "npm" ? { code: 1, stderr: "sem rede" } : undefined));
     await expect(installPlaywright()).rejects.toThrow("sem rede");
+    codeProcesses((call) =>
+      call.command === "npm"
+        ? installReply(call)
+        : call.command === "npx"
+          ? { code: 1, stdout: "sem ffmpeg" }
+          : undefined,
+    );
+    await expect(installPlaywright()).rejects.toThrow("npx playwright install falhou: sem ffmpeg");
+    expect(await playwrightInstalled()).toBe(false);
   });
 });
 

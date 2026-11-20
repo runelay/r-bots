@@ -98,7 +98,16 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
         },
         context.signal,
       );
-      return { summary: `Abri ${result.url} (${result.client === "dev" ? "dev client" : "Expo Go"}).`, output: result };
+      const missing =
+        result.missing.length > 0
+          ? ` O app aponta para localhost:${result.missing.join(", localhost:")}, que não é um servidor do runelay bots no ar; suba a API nessa porta (server_start com port) para o simulador alcançar.`
+          : "";
+      const bridged =
+        result.bridged.length > 0 ? ` Ponte também para localhost:${result.bridged.join(", localhost:")}.` : "";
+      return {
+        summary: `Abri ${result.url} (${result.client === "dev" ? "dev client" : "Expo Go"}).${bridged}${missing}`,
+        output: result,
+      };
     },
   );
   tool(
