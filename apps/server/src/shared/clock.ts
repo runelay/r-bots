@@ -42,7 +42,7 @@ export function resetClock() {
   loading = null;
 }
 
-function offsetOf(date: Date, zone: string) {
+export function offsetOf(date: Date, zone: string) {
   const name =
     new Intl.DateTimeFormat("en-US", { timeZone: zone, timeZoneName: "longOffset" })
       .formatToParts(date)

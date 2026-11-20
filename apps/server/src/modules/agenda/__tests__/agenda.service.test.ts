@@ -3,7 +3,9 @@ import { agendaBlockId } from "@runelay-bots/protocol";
 import { and, eq } from "drizzle-orm";
 import { fakeAgenda, toolCallsOf } from "../../../../test/agenda-helpers";
 import { getDb } from "../../../db";
+import { writeSetting } from "../../../db/settings";
 import { calendarCache } from "../../../db/tables";
+import { noteClientTimezone, resetClock } from "../../../shared/clock";
 import { agendaVersion, type BlockError } from "../../blocks/services/blocks.shared";
 import * as runelay from "../../connectors/services/runelay.service";
 import {
@@ -17,6 +19,7 @@ import {
   externalAttendeesCached,
   listAccounts,
   listEvents,
+  localMidnight,
   needsApproval,
   toEvent,
   updateEvent,
@@ -702,5 +705,56 @@ describe("updateEvent", () => {
     expect(meet.message).toBe("O conector do Google Calendar ainda não cria link do Meet.");
     expect(account.created).toEqual([]);
     expect(account.deleted).toEqual([]);
+  });
+});
+
+describe("user time zone", () => {
+  afterEach(async () => {
+    resetClock();
+    await writeSetting("user.timezone", "America/Sao_Paulo");
+    resetClock();
+  });
+
+  test("uses the zone the app reported for date-only bounds, previews and new events", async () => {
+    resetClock();
+    noteClientTimezone("America/New_York");
+    const [account] = await fakeAgenda([
+      {
+        email: "ana@gmail.com",
+        events: {
+          primary: [
+            {
+              id: "late",
+              summary: "Jantar",
+              start: { dateTime: "2026-11-20T22:30:00-05:00" },
+              end: { dateTime: "2026-11-20T23:30:00-05:00" },
+            },
+          ],
+        },
+      },
+    ]);
+    const list = await listEvents({ start: "2026-11-20", end: "2026-11-21" });
+    expect(list.timezone).toBe("America/New_York");
+    expect(toolCallsOf(`${account.name}.calendar_list_events`).at(-1)?.args).toMatchObject({
+      timeMin: "2026-11-20T05:00:00Z",
+      timeMax: "2026-11-21T05:00:00Z",
+    });
+    const preview = await agendaPreview("2026-11-20T22:30:00-05:00", false, []);
+    expect([preview.timezone, preview.start, preview.end]).toEqual([
+      "America/New_York",
+      "2026-11-20T05:00:00.000Z",
+      "2026-11-21T05:00:00.000Z",
+    ]);
+    expect(localMidnight("2026-07-01", "America/New_York")).toBe("2026-07-01T00:00:00-04:00");
+    await createEvent(
+      `bot-${Math.random().toString(36).slice(2, 8)}`,
+      { accountId: account.name, title: "Café", start: "2026-11-21T08:00", end: "2026-11-21T08:30" },
+      "bot",
+    );
+    expect(toolCallsOf(`${account.name}.calendar_create_event`).at(-1)?.args).toMatchObject({
+      start: "2026-11-21T08:00:00-05:00",
+      end: "2026-11-21T08:30:00-05:00",
+      timeZone: "America/New_York",
+    });
   });
 });

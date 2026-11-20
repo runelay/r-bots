@@ -10,10 +10,21 @@ import { agendaBlockId } from "@runelay-bots/protocol";
 import { and, eq, like, lt } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { calendarCache } from "../../../db/tables";
+import { defaultTimezone, offsetOf, userTimezone, zonedDay } from "../../../shared/clock";
 import { BlockError, blockEvent, bumpAgendaVersion, nowIso } from "../../blocks/services/blocks.shared";
 import { type Connection, listConnections, runelayCall } from "../../connectors/services/runelay.service";
 
-export const agendaTimezone = "America/Sao_Paulo";
+export const agendaTimezone = defaultTimezone;
+
+function addDays(day: string, amount: number) {
+  const date = new Date(`${day}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + amount);
+  return date.toISOString().slice(0, 10);
+}
+
+export function localMidnight(day: string, zone: string) {
+  return `${day}T00:00:00${offsetOf(new Date(`${day}T12:00:00Z`), zone)}`;
+}
 const cacheTtlMs = 60_000;
 const maxRangeDays = 62;
 const palette = ["blue", "green", "violet", "orange", "pink", "teal"];
@@ -298,18 +309,19 @@ async function fetchEvents(
   return items;
 }
 
-function isoBound(value: unknown, field: string) {
+function isoBound(value: unknown, field: string, zone: string) {
   const text = String(value ?? "").trim();
   if (!text) throw new BlockError(`${field} é obrigatório.`);
-  const withZone = /^\d{4}-\d{2}-\d{2}$/.test(text) ? `${text}T00:00:00-03:00` : text;
+  const withZone = /^\d{4}-\d{2}-\d{2}$/.test(text) ? localMidnight(text, zone) : text;
   const parsed = Date.parse(withZone);
   if (Number.isNaN(parsed)) throw new BlockError(`${field} inválido.`);
   return new Date(parsed).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 export async function listEvents(query: Record<string, unknown>, fresh = false): Promise<AgendaList> {
-  const start = isoBound(query.start, "start");
-  const end = isoBound(query.end, "end");
+  const zone = await userTimezone();
+  const start = isoBound(query.start, "start", zone);
+  const end = isoBound(query.end, "end", zone);
   if (Date.parse(end) <= Date.parse(start)) throw new BlockError("end precisa ser depois de start.");
   if (Date.parse(end) - Date.parse(start) > maxRangeDays * 86_400_000)
     throw new BlockError(`Período de no máximo ${maxRangeDays} dias.`);
@@ -335,12 +347,12 @@ export async function listEvents(query: Record<string, unknown>, fresh = false):
   const items = lists
     .flat()
     .filter((item) => item.status !== "cancelled")
-    .sort((a, b) => sortKey(a) - sortKey(b));
-  return { timezone: agendaTimezone, items };
+    .sort((a, b) => sortKey(a, zone) - sortKey(b, zone));
+  return { timezone: zone, items };
 }
 
-function sortKey(event: AgendaEvent) {
-  return Date.parse(event.allDay ? `${event.start.slice(0, 10)}T00:00:00-03:00` : event.start);
+function sortKey(event: AgendaEvent, zone: string) {
+  return Date.parse(event.allDay ? localMidnight(event.start.slice(0, 10), zone) : event.start);
 }
 
 async function cachedEvent(accountId: string, calendarId: string, googleId: string) {
@@ -374,16 +386,16 @@ export async function needsApproval(input: Record<string, unknown>) {
   );
 }
 
-function dayBounds(value: string, allDay: boolean) {
-  const day = allDay
-    ? value.slice(0, 10)
-    : new Date(new Date(value).getTime() - 3 * 3_600_000).toISOString().slice(0, 10);
-  const start = new Date(`${day}T00:00:00-03:00`);
-  return { start: start.toISOString(), end: new Date(start.getTime() + 86_400_000).toISOString(), day };
+function dayBounds(value: string, allDay: boolean, zone: string) {
+  const day = allDay ? value.slice(0, 10) : zonedDay(new Date(value), zone);
+  const start = new Date(localMidnight(day, zone));
+  const end = new Date(localMidnight(addDays(day, 1), zone));
+  return { start: start.toISOString(), end: end.toISOString(), day };
 }
 
 export async function agendaPreview(around: string, allDay: boolean, eventIds: string[]): Promise<AgendaPreview> {
-  const { start, end } = dayBounds(around, allDay);
+  const zone = await userTimezone();
+  const { start, end } = dayBounds(around, allDay, zone);
   const accounts = (await listAccounts()).filter((item) => item.status === "ready");
   const list = await listEvents({ start, end }, true).catch(() => ({ items: [] as AgendaEvent[] }));
   const picked = list.items.slice(0, 20);
@@ -397,7 +409,7 @@ export async function agendaPreview(around: string, allDay: boolean, eventIds: s
     view: "day",
     start,
     end,
-    timezone: agendaTimezone,
+    timezone: zone,
     accounts: accounts.map(({ id, label, color }) => ({ id, label, color })),
     events: previewEvents(picked),
   };
@@ -419,8 +431,9 @@ function previewEvents(events: AgendaEvent[]) {
 
 export async function listEventsBlock(botId: string, query: Record<string, unknown>) {
   const list = await listEvents(query);
-  const start = isoBound(query.start, "start");
-  const end = isoBound(query.end, "end");
+  const zone = list.timezone;
+  const start = isoBound(query.start, "start", zone);
+  const end = isoBound(query.end, "end", zone);
   const accounts = (await listAccounts()).filter((item) => item.status === "ready");
   const view: AgendaPreview["view"] = Date.parse(end) - Date.parse(start) <= 26 * 3_600_000 ? "day" : "week";
   const preview: AgendaPreview = {
@@ -428,7 +441,7 @@ export async function listEventsBlock(botId: string, query: Record<string, unkno
     view,
     start,
     end,
-    timezone: agendaTimezone,
+    timezone: zone,
     accounts: accounts.map(({ id, label, color }) => ({ id, label, color })),
     events: previewEvents(list.items.slice(0, listPreviewLimit)),
   };
@@ -436,7 +449,7 @@ export async function listEventsBlock(botId: string, query: Record<string, unkno
   return { list, blockEvent: blockEvent("agenda", agendaBlockId, "Agenda", version, "bot", "edited", preview) };
 }
 
-function normalizeWhen(value: unknown, allDay: boolean, field: string) {
+function normalizeWhen(value: unknown, allDay: boolean, field: string, zone: string) {
   const text = String(value ?? "").trim();
   if (!text) throw new BlockError(`${field} é obrigatório.`);
   if (allDay) {
@@ -444,14 +457,17 @@ function normalizeWhen(value: unknown, allDay: boolean, field: string) {
     return text.slice(0, 10);
   }
   if (Number.isNaN(Date.parse(text))) throw new BlockError(`${field} inválido.`);
-  return /[zZ]|[+-]\d{2}:\d{2}$/.test(text) ? text : `${text.length === 16 ? `${text}:00` : text}-03:00`;
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(text)) return text;
+  const local = text.length === 16 ? `${text}:00` : text;
+  return `${local}${offsetOf(new Date(`${local}Z`), zone)}`;
 }
 
 async function createRaw(accountId: string, calendarId: string, body: Record<string, unknown>) {
   const allDay = Boolean(body.allDay);
   if (body.meet === true) throw new BlockError("O conector do Google Calendar ainda não cria link do Meet.");
-  const start = normalizeWhen(body.start, allDay, "start");
-  const end = normalizeWhen(body.end, allDay, "end");
+  const zone = await userTimezone();
+  const start = normalizeWhen(body.start, allDay, "start", zone);
+  const end = normalizeWhen(body.end, allDay, "end", zone);
   const title = String(body.title ?? "").trim();
   if (!title) throw new BlockError("title é obrigatório.");
   const attendees = Array.isArray(body.attendees) ? body.attendees.map(String).filter(Boolean) : [];
@@ -462,7 +478,7 @@ async function createRaw(accountId: string, calendarId: string, body: Record<str
       summary: title,
       start,
       end,
-      timeZone: agendaTimezone,
+      timeZone: zone,
       ...(body.description ? { description: String(body.description) } : {}),
       ...(body.location ? { location: String(body.location) } : {}),
       ...(attendees.length ? { attendees } : {}),

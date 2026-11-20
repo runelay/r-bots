@@ -75,6 +75,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v43 | origem pela requisição (sem `BETTER_AUTH_URL`), senha de 8 caracteres, chaves do Garage em `<dados>/secrets`, servidor sem `.env.local` | [auth](auth.md) |
 | v44 | `agenda_list` mostra o bloco de Agenda (`silent`), `calendarUrl` e link de vídeo do texto no evento, prompt manda agenda/nota/planilha para o bloco nativo | [blocks](blocks.md) |
 | v45 | desligar a chamada por voz (`call.hangup`, `action:"hangup"`), agradecimento sem ack duplicado, fuso da pessoa no prompt (`X-Timezone`) | [voice](voice.md) |
+| v46 | agenda no fuso da pessoa (`user.timezone`), sem `-03:00` fixo | [blocks](blocks.md) |
 
 ## Contrato
 

@@ -176,3 +176,15 @@ Pedido de agenda virava página HTML (`artifact_create`) porque só criar, mudar
 ```
 
 20 eventos das duas contas, nenhum `artifact.*` no turno. A resposta do bot veio em três linhas (hoje, dia mais cheio, possível duplicidade na quinta), sem repetir a lista.
+
+## v46 (20/11): agenda no fuso da pessoa
+
+A agenda deixou de fixar `-03:00`. Ela usa o fuso que o app manda (`X-Timezone`, v45), guardado em `user.timezone` por `shared/clock.ts`. O padrão continua `America/Sao_Paulo`.
+
+- `start`/`end` só com data (`"2026-11-20"`) viram meia-noite no fuso da pessoa, com o deslocamento do dia (horário de verão incluso).
+- `GET /agenda/events` e as prévias (`preview.timezone`) devolvem esse fuso. O dia da prévia de criar, mudar ou apagar é o dia local do evento.
+- Horário sem fuso em `agenda_create`/`agenda_update` (`"2026-11-21T08:00"`) recebe o deslocamento do fuso da pessoa. O evento vai ao Google com `timeZone` igual a esse fuso.
+
+### Verificado
+
+Teste com `noteClientTimezone("America/New_York")`: `listEvents({start:"2026-11-20",end:"2026-11-21"})` chama o conector com `timeMin:"2026-11-20T05:00:00Z"` e `timeMax:"2026-11-21T05:00:00Z"`, e devolve `timezone:"America/New_York"`. `createEvent` com `"2026-11-21T08:00"` manda `start:"2026-11-21T08:00:00-05:00"` e `timeZone:"America/New_York"`. `localMidnight("2026-07-01","America/New_York")` resulta em `"2026-07-01T00:00:00-04:00"`.
