@@ -56,7 +56,9 @@ struct MessageAttachments: View {
                 }
             }
             ForEach(attachments.filter { $0.kind == .video }) { ref in
-                InlineVideo(ref: ref)
+                InlineVideo(ref: ref, saving: saving == ref.id) {
+                    save(ref)
+                }
             }
             ForEach(attachments.filter { $0.kind == .audio }) { ref in
                 AudioAttachmentPlayer(ref: ref)
@@ -222,7 +224,10 @@ private struct PlayerSurface: NSViewRepresentable {
 struct InlineVideo: View {
     @Environment(AppModel.self) private var model
     let ref: AttachmentRef
+    var saving = false
+    var save: (() -> Void)?
     @State private var player: AVPlayer?
+    @State private var hovering = false
 
     var body: some View {
         let width: CGFloat = min(320, 220 * max(1, ref.aspectRatio))
@@ -274,7 +279,41 @@ struct InlineVideo: View {
             }
         }
         .frame(width: width, height: height)
+        .overlay(alignment: .topTrailing) {
+            if let save, hovering || saving {
+                Button(action: save) {
+                    ZStack {
+                        if saving {
+                            ProgressView()
+                                .controlSize(.small)
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "arrow.down.to.line")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .frame(width: 28, height: 28)
+                    .background(.black.opacity(0.55), in: Circle())
+                    .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .clickable()
+                .disabled(saving)
+                .help("Salvar em Downloads")
+                .padding(6)
+                .transition(.opacity)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+        .onHover { inside in
+            withAnimation(Motion.spring) { hovering = inside }
+        }
+        .contextMenu {
+            if let save {
+                Button("Salvar em Downloads", action: save)
+            }
+        }
         .onDisappear {
             player?.pause()
         }
