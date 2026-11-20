@@ -86,8 +86,8 @@ private struct SignInFormPane: View {
     private var canSubmit: Bool {
         guard !busy, email.contains("@") else { return false }
         switch variant {
-        case .setup: return !name.trimmingCharacters(in: .whitespaces).isEmpty && password.count >= 10
-        case .invite: return !name.trimmingCharacters(in: .whitespaces).isEmpty && !code.isEmpty && password.count >= 10
+        case .setup: return !name.trimmingCharacters(in: .whitespaces).isEmpty && password.count >= 8
+        case .invite: return !name.trimmingCharacters(in: .whitespaces).isEmpty && !code.isEmpty && password.count >= 8
         case .signin: return !password.isEmpty
         }
     }
@@ -305,7 +305,7 @@ private struct SignInFormPane: View {
                 label: "Senha",
                 systemImage: "lock",
                 text: $password,
-                prompt: variant == .signin ? "Sua senha" : "Pelo menos 10 caracteres",
+                prompt: variant == .signin ? "Sua senha" : "Pelo menos 8 caracteres",
                 content: variant == .signin ? .password : .newPassword,
                 secure: true
             )
