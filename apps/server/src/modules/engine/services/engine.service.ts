@@ -409,12 +409,16 @@ function escapeRegExp(value: string) {
 
 function requestText(delivery: Delivery) {
   let text = delivery.text;
+  let bare = delivery.text;
   for (const skill of delivery.skills ?? []) {
-    for (const name of [skill.name, skill.slug])
-      text = text.replace(new RegExp(`(^|\\s)/${escapeRegExp(name)}(?=\\s|$)`, "gi"), "$1");
+    for (const name of [skill.name, skill.slug]) {
+      const command = new RegExp(`(^|\\s)/${escapeRegExp(name)}(?=\\s|$|[.,;:!?)])`, "gi");
+      text = text.replace(command, (_, lead: string) => `${lead}[skill: ${skill.name}]`);
+      bare = bare.replace(command, "$1");
+    }
   }
   text = text.replace(/[ \t]{2,}/g, " ").trim();
-  if (text) return text;
+  if (bare.trim()) return text;
   if (delivery.skills?.length)
     return `Faça o que ${delivery.skills.length === 1 ? "a skill anexada pede" : "as skills anexadas pedem"}, nesta ordem: ${delivery.skills.map((skill) => skill.name).join(", ")}.`;
   return "";

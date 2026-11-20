@@ -299,14 +299,14 @@ describe("the system prompt", () => {
 describe("the user prompt", () => {
   const skill = (slug: string, name: string) => ({ slug, name, body: `Passos de ${name}.`, files: [] });
 
-  test("strips attached skill commands and explains the skills", async () => {
+  test("marks attached skill commands where they were typed and explains the skills", async () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);
     await run(session, { text: "/revisar   agora   /Revisar", skills: [skill("revisar", "Revisar")] });
     const prompt = lastRequest().prompt;
     expect(prompt).toContain("A pessoa anexou a skill “Revisar”");
     expect(prompt).toContain("Passos de Revisar.");
-    expect(prompt.endsWith("agora")).toBe(true);
+    expect(prompt.endsWith("[skill: Revisar] agora [skill: Revisar]")).toBe(true);
     expect((await factsOfType(session, "delivery.consumed"))[0].data.skills).toEqual([
       { slug: "revisar", name: "Revisar" },
     ]);
