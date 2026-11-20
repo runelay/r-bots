@@ -89,6 +89,18 @@ enum BrandAssets {
     static let grokOnLight: NSImage? = load("provider-grok-light")
     static let runelay: NSImage? = load("runelay")
 
+    static let github: NSImage? = simpleIcon("github")
+    static let linear: NSImage? = simpleIcon("linear")
+    static let googleCalendar: NSImage? = simpleIcon("googlecalendar")
+
+    private static func simpleIcon(_ slug: String) -> NSImage? {
+        guard let url = ResourceBundle.bundle?.url(forResource: slug, withExtension: "svg", subdirectory: "Logos/si"),
+              let image = NSImage(contentsOf: url)
+        else { return nil }
+        image.isTemplate = true
+        return image
+    }
+
     static func connector(_ key: String) -> NSImage? {
         for ext in ["svg", "png"] {
             if let url = ResourceBundle.bundle?.url(forResource: key, withExtension: ext, subdirectory: "Logos/connectors"),
@@ -110,6 +122,52 @@ enum BrandAssets {
             return nil
         }
         return NSImage(contentsOf: url)
+    }
+}
+
+enum BrandMark {
+    case github
+    case linear
+    case googleCalendar
+
+    @MainActor var image: NSImage? {
+        switch self {
+        case .github: BrandAssets.github
+        case .linear: BrandAssets.linear
+        case .googleCalendar: BrandAssets.googleCalendar
+        }
+    }
+
+    var fallbackSymbol: String {
+        switch self {
+        case .github: "arrow.triangle.pull"
+        case .linear: "circle.dashed"
+        case .googleCalendar: "calendar"
+        }
+    }
+
+    static let linearColor = Color.dynamic(light: Theme.rgb(0x5E6AD2), dark: Theme.rgb(0x8A93F0))
+}
+
+struct BrandMarkImage: View {
+    let mark: BrandMark
+    var size: CGFloat = 16
+
+    var body: some View {
+        if let image = mark.image {
+            Image(nsImage: image)
+                .renderingMode(.template)
+                .resizable()
+                .interpolation(.high)
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: mark.fallbackSymbol)
+                .font(.system(size: size * 0.9, weight: .medium))
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        }
     }
 }
 

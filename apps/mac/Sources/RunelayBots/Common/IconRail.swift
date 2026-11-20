@@ -14,27 +14,41 @@ struct IconRail: View {
     @Environment(\.appReduceMotion) private var reduceMotion
     @AppStorage(PreferenceKeys.sidebarCollapsed) private var sidebarCollapsed = false
 
+    private var showsLauncher: Bool {
+        model.section != .conversations || model.settingsPresented || sidebarCollapsed
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             RailLogo()
                 .padding(.bottom, Spacing.s)
             ForEach(AppSection.railCases) { section in
                 RailButton(
-                    systemImage: section.systemImage,
-                    help: section.title,
+                    help: help(for: section),
                     isSelected: model.section == section && !model.settingsPresented
                 ) {
-                    if section == .conversations, model.section == .conversations, !model.settingsPresented {
-                        sidebarCollapsed.toggle()
-                        return
-                    }
-                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                        model.closeSettings()
-                        model.section = section
+                    select(section)
+                } icon: {
+                    if let mark = section.brandMark {
+                        BrandMarkImage(mark: mark, size: 18)
+                    } else {
+                        Image(systemName: section.systemImage)
+                            .font(.system(size: 17, weight: .regular))
                     }
                 }
             }
             Spacer(minLength: 0)
+            if showsLauncher {
+                RailButton(help: "Atalhos", isSelected: model.launcherPresented) {
+                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                        model.launcherPresented.toggle()
+                    }
+                } icon: {
+                    GridPlusIcon()
+                        .rotationEffect(.degrees(model.launcherPresented && !reduceMotion ? 90 : 0))
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
             UsageRailIndicator()
                 .padding(.bottom, Spacing.xs)
             RailButton(systemImage: "gearshape", help: "Configurações (⌘,)", isSelected: model.settingsPresented) {
@@ -51,6 +65,26 @@ struct IconRail: View {
         .padding(.bottom, FrameMetrics.panelInset + Spacing.xs)
         .frame(width: FrameMetrics.railWidth)
         .frame(maxHeight: .infinity)
+        .animation(Motion.animation(reduceMotion: reduceMotion), value: showsLauncher)
+    }
+
+    private func help(for section: AppSection) -> String {
+        switch section {
+        case .conversations: "Conversas (⌥⌘1)"
+        case .git: "Git (⌥⌘2)"
+        case .linear: "Linear (⌥⌘3)"
+        default: section.title
+        }
+    }
+
+    private func select(_ section: AppSection) {
+        if section == .conversations, model.section == .conversations, !model.settingsPresented {
+            sidebarCollapsed.toggle()
+            return
+        }
+        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+            model.go(to: section)
+        }
     }
 }
 
@@ -69,18 +103,24 @@ struct RailLogo: View {
     }
 }
 
-struct RailButton: View {
-    let systemImage: String
+struct RailButton<Icon: View>: View {
     let help: String
     let isSelected: Bool
     let action: () -> Void
+    @ViewBuilder let icon: () -> Icon
 
     @State private var isHovering = false
 
+    init(help: String, isSelected: Bool, action: @escaping () -> Void, @ViewBuilder icon: @escaping () -> Icon) {
+        self.help = help
+        self.isSelected = isSelected
+        self.action = action
+        self.icon = icon
+    }
+
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 17, weight: .regular))
+            icon()
                 .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
                 .frame(width: 40, height: 40)
                 .background(
@@ -98,5 +138,22 @@ struct RailButton: View {
         .help(help)
         .accessibilityLabel(help)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+extension RailButton where Icon == RailSymbol {
+    init(systemImage: String, help: String, isSelected: Bool, action: @escaping () -> Void) {
+        self.init(help: help, isSelected: isSelected, action: action) {
+            RailSymbol(systemImage: systemImage)
+        }
+    }
+}
+
+struct RailSymbol: View {
+    let systemImage: String
+
+    var body: some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 17, weight: .regular))
     }
 }

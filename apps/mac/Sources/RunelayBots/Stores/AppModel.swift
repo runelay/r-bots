@@ -91,7 +91,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case git
     case linear
 
-    static let railCases: [AppSection] = [.conversations, .routines]
+    static let railCases: [AppSection] = [.conversations, .routines, .git, .linear]
 
     var id: String { rawValue }
 
@@ -115,6 +115,18 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .git: "arrow.triangle.pull"
         case .linear: "circle.dashed"
         }
+    }
+
+    var brandMark: BrandMark? {
+        switch self {
+        case .git: .github
+        case .linear: .linear
+        default: nil
+        }
+    }
+
+    var isBoard: Bool {
+        self == .git || self == .linear
     }
 }
 
@@ -1410,6 +1422,15 @@ final class AppModel {
 
     func closeSettings() {
         settingsPresented = false
+    }
+
+    func go(to target: AppSection) {
+        launcherPresented = false
+        settingsPresented = false
+        if target == .conversations, section != .conversations {
+            UserDefaults.standard.set(false, forKey: PreferenceKeys.sidebarCollapsed)
+        }
+        section = target
     }
 
     private func applyMeta(_ loaded: ServerMeta?) {

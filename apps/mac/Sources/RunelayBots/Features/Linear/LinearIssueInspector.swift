@@ -261,8 +261,7 @@ private struct LinearPullCard: View {
             }
         } label: {
             HStack(spacing: Spacing.m) {
-                Image(systemName: link.state == "merged" ? "arrow.triangle.merge" : "arrow.triangle.pull")
-                    .font(.system(size: 14, weight: .semibold))
+                BrandMarkImage(mark: .github, size: 15)
                     .foregroundStyle(link.state == "merged" ? Theme.merged : link.state == "closed" ? Theme.danger : link.draft ? Theme.textTertiary : Theme.success)
                     .frame(width: 32, height: 32)
                     .background(Theme.background, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
@@ -350,10 +349,16 @@ private struct LinearLinkRow: View {
             BoardLinks.open(link.url)
         } label: {
             HStack(spacing: Spacing.s) {
-                Image(systemName: link.url.contains("github.com") ? "arrow.triangle.pull" : "link")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 16)
+                Group {
+                    if link.url.contains("github.com") {
+                        BrandMarkImage(mark: .github, size: 12)
+                    } else {
+                        Image(systemName: "link")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: 16)
                 Text(link.title)
                     .font(TypeScale.rowSubtitle)
                     .foregroundStyle(Theme.textPrimary)

@@ -332,3 +332,35 @@ enum BoardLinks {
         NSWorkspace.shared.open(url)
     }
 }
+
+struct BoardBackShortcuts: View {
+    var escapes = true
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.appReduceMotion) private var reduceMotion
+
+    private var blocked: Bool {
+        model.launcherPresented || model.activeSheet != nil || model.settingsPresented
+    }
+
+    var body: some View {
+        ZStack {
+            if escapes {
+                Button("Voltar às conversas", action: back)
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(blocked)
+            }
+            Button("Voltar às conversas", action: back)
+                .keyboardShortcut("[", modifiers: .command)
+                .disabled(blocked)
+        }
+        .opacity(0)
+        .accessibilityHidden(true)
+    }
+
+    private func back() {
+        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+            model.go(to: .conversations)
+        }
+    }
+}

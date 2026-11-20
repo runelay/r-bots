@@ -11,8 +11,6 @@ enum LauncherDestination: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    static let quickRow: [LauncherDestination] = [.routines, .linear, .git, .agenda, .connectors, .notes]
-
     var title: String {
         switch self {
         case .git: "Git"
@@ -37,10 +35,19 @@ enum LauncherDestination: String, CaseIterable, Identifiable {
         }
     }
 
+    var brandMark: BrandMark? {
+        switch self {
+        case .git: .github
+        case .linear: .linear
+        case .agenda: .googleCalendar
+        default: nil
+        }
+    }
+
     var tint: Color {
         switch self {
-        case .git: Theme.success
-        case .linear: Theme.accent("indigo")
+        case .git: Theme.textPrimary
+        case .linear: BrandMark.linearColor
         case .agenda: Theme.accent("blue")
         case .notes: Theme.attention
         case .routines: Theme.brandText
@@ -116,18 +123,6 @@ private struct LauncherPanel: View {
                 BoardIconButton(systemImage: "xmark", help: "Fechar (Esc)", action: close)
             }
 
-            HStack(spacing: 0) {
-                ForEach(Array(LauncherDestination.quickRow.enumerated()), id: \.element) { index, destination in
-                    LauncherQuickButton(destination: destination, isEnabled: isAvailable(destination)) {
-                        open(destination)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .opacity(appeared ? 1 : 0)
-                    .offset(y: appeared || reduceMotion ? 0 : 6)
-                    .animation(reduceMotion ? Motion.reduced : Motion.spring.delay(Double(index) * 0.03), value: appeared)
-                }
-            }
-
             VStack(spacing: Spacing.xxs) {
                 ForEach(Array(LauncherDestination.allCases.enumerated()), id: \.element) { index, destination in
                     LauncherTile(
@@ -140,7 +135,7 @@ private struct LauncherPanel: View {
                     }
                     .opacity(appeared ? 1 : 0)
                     .offset(x: appeared || reduceMotion ? 0 : -10)
-                    .animation(reduceMotion ? Motion.reduced : Motion.spring.delay(0.08 + Double(index) * 0.025), value: appeared)
+                    .animation(reduceMotion ? Motion.reduced : Motion.spring.delay(Double(index) * 0.025), value: appeared)
                 }
             }
         }
@@ -263,33 +258,6 @@ private struct LauncherPanel: View {
     }
 }
 
-private struct LauncherQuickButton: View {
-    let destination: LauncherDestination
-    let isEnabled: Bool
-    let action: () -> Void
-
-    @State private var hovering = false
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: destination.symbol)
-                .font(.system(size: 15, weight: .regular))
-                .foregroundStyle(hovering ? destination.tint : Theme.textSecondary)
-                .frame(width: 40, height: 40)
-                .glassSurface(Circle(), interactive: true, tint: hovering ? destination.tint.opacity(0.14) : nil, fallback: hovering ? Theme.surfaceRaised : Theme.surface)
-                .contentShape(Circle())
-                .scaleEffect(hovering ? 1.06 : 1)
-        }
-        .buttonStyle(PressableButtonStyle())
-        .disabled(!isEnabled)
-        .opacity(isEnabled ? 1 : 0.4)
-        .onHover { hovering = $0 && isEnabled }
-        .springAnimation(value: hovering)
-        .blockTooltip(destination.title, edge: .leading)
-        .accessibilityLabel(destination.title)
-    }
-}
-
 private struct LauncherTile: View {
     let destination: LauncherDestination
     let summary: String
@@ -302,8 +270,7 @@ private struct LauncherTile: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: Spacing.m) {
-                Image(systemName: destination.symbol)
-                    .font(.system(size: 14, weight: .medium))
+                LauncherGlyph(destination: destination)
                     .foregroundStyle(destination.tint)
                     .frame(width: 34, height: 34)
                     .background(destination.tint.opacity(hovering || isActive ? 0.18 : 0.11), in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
@@ -338,5 +305,18 @@ private struct LauncherTile: View {
         .springAnimation(value: hovering)
         .springAnimation(value: summary)
         .accessibilityLabel("\(destination.title), \(summary)")
+    }
+}
+
+private struct LauncherGlyph: View {
+    let destination: LauncherDestination
+
+    var body: some View {
+        if let mark = destination.brandMark {
+            BrandMarkImage(mark: mark, size: 16)
+        } else {
+            Image(systemName: destination.symbol)
+                .font(.system(size: 14, weight: .medium))
+        }
     }
 }

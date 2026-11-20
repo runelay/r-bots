@@ -57,7 +57,7 @@ struct SidebarAccountBar: View {
     }
 }
 
-private struct GridPlusIcon: View {
+struct GridPlusIcon: View {
     var body: some View {
         Canvas { context, size in
             let cell: CGFloat = 6.5

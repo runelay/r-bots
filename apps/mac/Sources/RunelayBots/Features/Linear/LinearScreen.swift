@@ -43,10 +43,14 @@ struct LinearScreen: View {
                 .keyboardShortcut("r", modifiers: .command)
                 .opacity(0)
                 .accessibilityHidden(true)
-            Button("") { store.select(nil) }
-                .keyboardShortcut(.cancelAction)
-                .opacity(0)
-                .accessibilityHidden(true)
+            if store.selectedID != nil {
+                Button("") { store.select(nil) }
+                    .keyboardShortcut(.cancelAction)
+                    .disabled(model.launcherPresented)
+                    .opacity(0)
+                    .accessibilityHidden(true)
+            }
+            BoardBackShortcuts(escapes: store.selectedID == nil)
         }
         .task {
             store.attach(model.client)
@@ -104,9 +108,8 @@ private struct LinearHeader: View {
     var body: some View {
         HStack(spacing: Spacing.m) {
             HStack(spacing: Spacing.s) {
-                Image(systemName: "circle.dashed")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.brandText)
+                BrandMarkImage(mark: .linear, size: 18)
+                    .foregroundStyle(BrandMark.linearColor)
                 Text("Linear")
                     .font(BrandFonts.sans(18, weight: .semibold))
                     .tracking(-0.18)
@@ -378,8 +381,7 @@ struct LinearPullChip: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: link.state == "merged" ? "arrow.triangle.merge" : "arrow.triangle.pull")
-                    .font(.system(size: 9.5, weight: .semibold))
+                BrandMarkImage(mark: .github, size: 10)
                     .foregroundStyle(tint)
                 Text("#\(link.number)")
                     .font(BrandFonts.mono(10.5))

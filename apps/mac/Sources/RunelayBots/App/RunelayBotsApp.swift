@@ -229,6 +229,19 @@ struct AppCommands: Commands {
                 model.toggleInspector()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
+            Divider()
+            Button("Conversas") {
+                model.go(to: .conversations)
+            }
+            .keyboardShortcut("1", modifiers: [.command, .option])
+            Button("Git") {
+                model.go(to: .git)
+            }
+            .keyboardShortcut("2", modifiers: [.command, .option])
+            Button("Linear") {
+                model.go(to: .linear)
+            }
+            .keyboardShortcut("3", modifiers: [.command, .option])
         }
         CommandGroup(after: .pasteboard) {
             Button("Limpar conversa") {

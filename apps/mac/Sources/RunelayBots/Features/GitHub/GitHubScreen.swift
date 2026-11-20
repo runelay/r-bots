@@ -38,6 +38,7 @@ struct GitHubScreen: View {
                 .keyboardShortcut("r", modifiers: .command)
                 .opacity(0)
                 .accessibilityHidden(true)
+            BoardBackShortcuts()
         }
         .task {
             store.attach(model.client)
@@ -60,9 +61,8 @@ private struct GitRepoColumn: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 HStack(spacing: Spacing.s) {
-                    Image(systemName: "arrow.triangle.pull")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Theme.brandText)
+                    BrandMarkImage(mark: .github, size: 18)
+                        .foregroundStyle(Theme.textPrimary)
                     Text("Git")
                         .font(BrandFonts.sans(18, weight: .semibold))
                         .tracking(-0.18)
@@ -438,8 +438,8 @@ struct LinearKeyChip: View {
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "circle.dashed")
-                    .font(.system(size: 9.5, weight: .semibold))
+                BrandMarkImage(mark: .linear, size: 10)
+                    .foregroundStyle(hovering ? BrandMark.linearColor : Theme.textSecondary)
                 Text(identifier)
                     .font(BrandFonts.mono(10.5))
             }
