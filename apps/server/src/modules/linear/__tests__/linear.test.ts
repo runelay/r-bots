@@ -248,8 +248,11 @@ describe("routes", () => {
   });
 
   test("handles saved views and unknown views", async () => {
-    const view = await request<{ searchable: boolean }>("/linear/board?view=view:v1");
+    const view = await request<{ searchable: boolean; columns: Array<{ count: number }> }>(
+      "/linear/board?view=view:v1",
+    );
     expect(view.body.searchable).toBe(false);
+    expect(view.body.columns.every((column) => column.count > 0)).toBe(true);
     expect((await request("/linear/board?view=view:v1&q=x")).status).toBe(400);
     const loose = await request<{ view: { name: string } }>("/linear/board?view=view:zzz");
     expect(loose.body.view.name).toBe("Visão");

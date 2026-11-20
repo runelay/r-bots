@@ -9,6 +9,7 @@ import {
   linearSummary,
   listLabels,
   listProjects,
+  listUsers,
   listViews,
   moveIssue,
   parseFilterValue,
@@ -40,6 +41,7 @@ export async function handleLinear(req: Req, res: Res, url: URL, method: string,
       if (first === "views") return sendJson(res, 200, { views: await listViews(refresh) });
       if (first === "labels") return sendJson(res, 200, { labels: await listLabels(refresh) });
       if (first === "projects") return sendJson(res, 200, { projects: await listProjects(refresh) });
+      if (first === "users") return sendJson(res, 200, { users: await listUsers(refresh) });
       if (first === "board")
         return sendJson(
           res,

@@ -93,7 +93,7 @@ Contrato verificado entre o servidor do r/bots (gateway em `127.0.0.1:2000`, exp
 | v55 | conversas secundárias: `POST /bots/:id/conversations/:sessionId/side`, `parentSessionId` na conversa, fork da sessão Claude da mãe, ferramentas `thread_side`, `thread_create`, `thread_list` e `thread_read` com `threadId`, `side` no `delivery.consumed` do resultado | [conversations](conversations.md) |
 | v56 | orçamento de `test_playwright` por turno, system prompt estável com `## Contexto desta mensagem` no prompt, recall sem repetir na sessão, compactação do Claude em 200k, linha `turn.summary` no log | [simulators](simulators.md) |
 | v57 | Git e Linear no app: `GET /github/summary`, `GET /github/pulls`, `GET/POST /github/repos/:dono/:nome/pulls/:n[/merge\|review\|comment\|reply\|ready\|rerun]`, `GET /linear/summary\|views\|board`, `GET/POST /linear/issues/:id[/state\|assign\|start]`, só do dono | [github-linear](github-linear.md) |
-| v58 | `icon`/`color` nas visões do Linear, visões `project:<uuid>`, `GET /linear/labels\|projects`, `label`/`project` no quadro, `<linear-image>` vira imagem, `GET /github/asset`, review: `GET /review`, `PUT /review/presets`, `POST /review/run` | [github-linear](github-linear.md) |
+| v58 | `icon`/`color` nas visões do Linear, visões `project:<uuid>`, `GET /linear/labels\|projects\|users`, `label`/`project` no quadro, `<linear-image>` vira imagem, `GET /github/asset`, review: `GET /review`, `PUT /review/presets`, `POST /review/run` | [github-linear](github-linear.md) |
 
 ## Contrato
 

@@ -47,6 +47,14 @@ export interface LinearProject {
   stateType: string | null;
 }
 
+export interface LinearUser {
+  id: string;
+  name: string;
+  displayName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+}
+
 export interface LinearState {
   id: string;
   name: string;
@@ -274,6 +282,21 @@ export function listLabels(refresh = false): Promise<LinearLabel[]> {
       labels.push({ id, name, color: str(item.color) });
     }
     return labels.sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  });
+}
+
+export function listUsers(refresh = false): Promise<LinearUser[]> {
+  return cached("users", statesTtlMs, refresh, async () => {
+    const raw = await pages("list_users", {}, "users", 6, 250);
+    return raw
+      .filter((item) => str(item.id) && item.isActive !== false)
+      .map((item) => ({
+        id: str(item.id) ?? "",
+        name: str(item.name) ?? str(item.displayName) ?? "",
+        displayName: str(item.displayName),
+        email: str(item.email),
+        avatarUrl: str(item.avatarUrl),
+      }));
   });
 }
 
@@ -515,7 +538,7 @@ export function board(input: BoardInput): Promise<Board> {
       else columns.set(issue.column, { key: issue.column, name: issue.state, type: issue.stateType, count: 1 });
     }
     const ordered = sortStates([...columns.values()]).filter(
-      (column) => column.count > 0 || !["canceled", "duplicate"].includes(column.type),
+      (column) => column.count > 0 || (view.kind !== "view" && !["canceled", "duplicate"].includes(column.type)),
     );
     return {
       view,
