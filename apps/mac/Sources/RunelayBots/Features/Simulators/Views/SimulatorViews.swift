@@ -81,54 +81,199 @@ struct SimulatorPanel: View {
     @State private var mirror = SimulatorMirror()
     @State private var openingURL = false
     @State private var url = ""
+    @State private var chosen = ""
 
     private var store: SimulatorStore { .shared }
     private var presentation: BlockPresentation { .shared }
-    private var device: SimDevice? { store.device(ref.id) }
+    private var device: SimDevice? { store.device(ref.id) ?? store.device(chosen) }
+
+    private var expoServer: DevServerInfo? {
+        ServerStore.shared.servers.first { $0.isMobile && $0.status == .running }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             ZStack {
-                if device?.booted == true {
-                    MirrorView(mirror: mirror)
-                        .padding(Spacing.l)
-                        .opacity(mirror.state == .live ? 1 : 0)
-                    if case .failed(let message) = mirror.state {
-                        PanelEmptyState(systemImage: "rectangle.dashed", title: "Sem espelho", message: message)
-                            .transition(.opacity)
-                    } else if mirror.state != .live {
-                        ProgressView()
-                            .controlSize(.small)
-                            .transition(.opacity)
-                    }
-                } else {
-                    VStack(spacing: Spacing.m) {
-                        PanelEmptyState(systemImage: "iphone", title: "Simulador desligado", message: "Ligue para ver a tela aqui.")
-                        if let device {
-                            ServerCardButton(title: "Ligar", systemImage: "power") {
-                                store.toggle(device)
-                            }
+                MirrorView(mirror: mirror)
+                    .padding(Spacing.l)
+                    .opacity(mirror.source == nil ? 0 : 1)
+                    .overlay(alignment: .bottom) {
+                        if mirror.source != nil {
+                            liveFooter
+                                .padding(.bottom, Spacing.l + Spacing.s)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
-                    .transition(.opacity)
+                if mirror.source == nil {
+                    emptyState
+                        .frame(maxWidth: 320)
+                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(Motion.spring, value: mirror.state)
+            .animation(Motion.spring, value: device?.state)
         }
-        .task(id: device?.booted == true) {
-            guard device?.booted == true else {
-                mirror.stop()
+        .task(id: "\(device?.udid ?? "")#\(device?.booted == true)") {
+            guard let device else {
+                if store.devices.isEmpty { await store.refresh() }
                 return
             }
-            await mirror.start(deviceName: device?.name ?? ref.title)
+            if device.booted, mirror.source == nil, !mirror.busy {
+                await mirror.start(device)
+            } else if !device.booted, store.pendingApp[device.udid] != nil, !mirror.busy {
+                await mirror.boot(device)
+            }
+        }
+        .onChange(of: mirror.source) { _, source in
+            guard source != nil, let device, let server = store.takePending(device.udid) else { return }
+            store.openExpo(server: server, client: model.client)
         }
         .onDisappear {
             mirror.stop()
         }
-        .task {
-            if store.devices.isEmpty { await store.refresh() }
+    }
+
+    private var stateKey: String {
+        switch mirror.state {
+        case .booting: "booting"
+        case .opening: "opening"
+        case .failed: "failed"
+        default: device.map { $0.booted ? "booted" : "off" } ?? "picker"
+        }
+    }
+
+    private var emptyState: some View {
+        emptyContent
+            .id(stateKey)
+            .transition(.opacity)
+            .animation(Motion.crossFade, value: stateKey)
+    }
+
+    @ViewBuilder
+    private var emptyContent: some View {
+        VStack(spacing: Spacing.m) {
+            switch mirror.state {
+            case .booting, .opening:
+                ProgressView()
+                    .controlSize(.small)
+                Text(mirror.state.label ?? "")
+                    .font(TypeScale.rowSubtitle)
+                    .foregroundStyle(Theme.textSecondary)
+                    .contentTransition(.opacity)
+            case .failed(let message):
+                stateText(icon: "exclamationmark.triangle", title: "Não deu para mostrar a tela", message: message)
+                Button("Tentar de novo") { retry() }
+                    .buttonStyle(.brandPrimary)
+            default:
+                if let device {
+                    if device.booted {
+                        stateText(icon: "iphone", title: device.name, message: "O simulador está ligado, mas a tela ainda não apareceu aqui.")
+                        Button("Mostrar simulador") {
+                            Task { await mirror.showWindow() }
+                        }
+                        .buttonStyle(.brandPrimary)
+                    } else {
+                        stateText(icon: "iphone", title: device.name, message: "\(device.runtime) · desligado")
+                        Button("Ligar simulador") {
+                            Task { await mirror.boot(device) }
+                        }
+                        .buttonStyle(.brandPrimary)
+                    }
+                } else {
+                    picker
+                }
+            }
+        }
+        .multilineTextAlignment(.center)
+    }
+
+    private func stateText(icon: String, title: String, message: String) -> some View {
+        VStack(spacing: Spacing.s) {
+            Image(systemName: icon)
+                .font(.system(size: 22, weight: .regular))
+                .foregroundStyle(Theme.textTertiary)
+            Text(title)
+                .font(TypeScale.sectionTitle)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+            Text(message)
+                .font(TypeScale.caption)
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var picker: some View {
+        let ios = store.devices.filter { $0.platform == "ios" }
+        if ios.isEmpty {
+            stateText(icon: "iphone.slash", title: "Nenhum simulador", message: store.loading ? "Procurando no Xcode…" : "Crie um simulador no Xcode e volte aqui.")
+        } else {
+            stateText(icon: "iphone", title: "Escolha um simulador", message: "Ele liga e a tela aparece aqui.")
+            HStack(spacing: Spacing.s) {
+                GlassSelect(
+                    options: ios.map { GlassSelectOption("\($0.name) · \($0.runtime)", value: $0.udid, systemImage: "iphone") },
+                    selection: Binding(get: { chosen.isEmpty ? (ios.first?.udid ?? "") : chosen }, set: { chosen = $0 }),
+                    help: "Simulador",
+                    maxWidth: 200
+                )
+                Button("Ligar") {
+                    let udid = chosen.isEmpty ? (ios.first?.udid ?? "") : chosen
+                    chosen = udid
+                    guard let target = store.device(udid) else { return }
+                    Task { await mirror.boot(target) }
+                }
+                .buttonStyle(.brandPrimary)
+            }
+        }
+    }
+
+    private var liveFooter: some View {
+        HStack(spacing: Spacing.s) {
+            if let server = expoServer {
+                Button {
+                    SimulatorStore.shared.openExpo(server: server, client: model.client)
+                } label: {
+                    Label("Abrir \(server.name)", systemImage: "play.fill")
+                        .lineLimit(1)
+                }
+                .buttonStyle(.brandPrimary)
+                .disabled(store.busy.contains(server.id))
+            }
+            if mirror.source == .snapshots {
+                Button {
+                    if mirror.needsPermission {
+                        mirror.requestPermission()
+                    } else {
+                        Task { await mirror.showWindow() }
+                    }
+                } label: {
+                    Label(mirror.needsPermission ? "Permitir gravação de tela" : "Espelho fluido", systemImage: "bolt")
+                        .lineLimit(1)
+                }
+                .buttonStyle(.brandSecondary)
+                .help(mirror.needsPermission ? "Com a permissão, a tela vem em tempo real e aceita teclado." : "Abre o Simulator atrás das janelas para espelhar em tempo real.")
+            }
+            if mirror.tapping {
+                ProgressView()
+                    .controlSize(.mini)
+            }
+        }
+        .fixedSize()
+    }
+
+    private func retry() {
+        guard let device else { return }
+        Task {
+            await store.refresh()
+            let current = store.device(device.udid) ?? device
+            if current.booted {
+                await mirror.start(current)
+            } else {
+                await mirror.boot(current)
+            }
         }
     }
 
@@ -137,41 +282,27 @@ struct SimulatorPanel: View {
             Image(systemName: "iphone")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
-                .frame(width: 26, height: 26)
+                .frame(width: 28, height: 28)
                 .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: Spacing.xxs) {
                 Text(device?.name ?? ref.title)
                     .font(TypeScale.rowSubtitle.weight(.medium))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                 HStack(spacing: Spacing.xs + 2) {
-                    ServerStatusDot(status: device?.booted == true ? .running : .stopped)
-                    Text(device.map { "\($0.booted ? "Ligado" : "Desligado") · \($0.runtime)" } ?? "")
+                    ServerStatusDot(status: mirror.busy ? .starting : device?.booted == true ? .running : .stopped)
+                    Text(statusText)
                         .font(TypeScale.caption.monospacedDigit())
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
-                        .fixedSize()
+                        .contentTransition(.opacity)
                 }
             }
-            Spacer(minLength: Spacing.m)
+            .layoutPriority(1)
+            Spacer(minLength: Spacing.s)
             if let device, device.booted {
-                BlockHeaderButton(systemImage: "house", help: "Início  ⇧⌘H") { mirror.home() }
-                BlockHeaderButton(systemImage: "rotate.right", help: "Girar") { mirror.rotate() }
                 BlockHeaderButton(systemImage: "camera", help: "Print para a conversa") {
                     store.screenshot(udid: device.udid, into: model.selectedConversation)
-                }
-                BlockHeaderButton(systemImage: "link", help: "Abrir URL ou deep link", isActive: openingURL) {
-                    openingURL.toggle()
-                }
-                .glassPopup(isPresented: $openingURL, edge: .trailing) {
-                    OpenURLPopover(url: $url) {
-                        store.openURL(url, udid: device.udid)
-                    }
-                }
-            }
-            if let device {
-                BlockHeaderButton(systemImage: "power", help: device.booted ? "Desligar" : "Ligar") {
-                    store.toggle(device)
                 }
             }
             BlockHeaderButton(
@@ -181,12 +312,53 @@ struct SimulatorPanel: View {
             ) {
                 presentation.toggleFullScreen()
             }
+            if let device {
+                GlassMenuButton(edge: .trailing, help: "Mais", items: { menuItems(device) }) { isOpen in
+                    BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen || openingURL)
+                }
+                .fixedSize()
+                .glassPopup(isPresented: $openingURL, edge: .trailing) {
+                    OpenURLPopover(url: $url) {
+                        store.openURL(url, udid: device.udid)
+                    }
+                }
+            }
             BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
                 presentation.close()
             }
+            .layoutPriority(2)
         }
         .padding(.horizontal, Spacing.m)
         .frame(height: 48)
+    }
+
+    private var statusText: String {
+        if let label = mirror.state.label { return label }
+        guard let device else { return "Nenhum simulador escolhido" }
+        return "\(device.booted ? "Ligado" : "Desligado") · \(device.runtime)"
+    }
+
+    private func menuItems(_ device: SimDevice) -> [GlassMenuItem] {
+        var items: [GlassMenuItem] = []
+        if device.booted {
+            items.append(GlassMenuItem("Início", systemImage: "house", shortcut: "⇧⌘H") { mirror.home() })
+            items.append(GlassMenuItem("Girar", systemImage: "rotate.right") { mirror.rotate() })
+            items.append(GlassMenuItem("Abrir URL ou deep link", systemImage: "link") { openingURL = true })
+            if let server = expoServer {
+                items.append(GlassMenuItem("Abrir \(server.name)", systemImage: "play") {
+                    SimulatorStore.shared.openExpo(server: server, client: model.client)
+                })
+            }
+        }
+        items.append(GlassMenuItem(device.booted ? "Desligar" : "Ligar", systemImage: "power", destructive: device.booted, startsSection: device.booted) {
+            if device.booted {
+                mirror.stop()
+                store.toggle(device)
+            } else {
+                Task { await mirror.boot(device) }
+            }
+        })
+        return items
     }
 }
 
@@ -216,113 +388,5 @@ private struct OpenURLPopover: View {
         guard !url.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         open()
         dismiss()
-    }
-}
-
-struct SimulatorRow: View {
-    let device: SimDevice
-    let botID: String
-
-    @Environment(AppModel.self) private var model
-
-    private var store: SimulatorStore { .shared }
-    private var busy: Bool { store.busy.contains(device.udid) }
-
-    var body: some View {
-        InspectorRowCard {
-            store.openPanel(device, botID: botID, client: model.client)
-        } leading: {
-            Image(systemName: device.platform == "android" ? "smartphone" : "iphone")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.textSecondary)
-                .frame(width: 32, height: 32)
-                .background(Theme.background.opacity(0.6), in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-        } content: {
-            Text(device.name)
-                .font(TypeScale.rowTitle)
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(1)
-            HStack(alignment: .center, spacing: Spacing.xs + 2) {
-                ServerStatusDot(status: busy ? .starting : device.booted ? .running : .stopped)
-                Text(busy ? (device.booted ? "Desligando" : "Ligando") : device.booted ? "Ligado" : "Desligado")
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-                    .fixedSize()
-                    .contentTransition(.opacity)
-                Text("·")
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .fixedSize()
-                Text(device.runtime)
-                    .font(TypeScale.caption.monospacedDigit())
-                    .foregroundStyle(Theme.textTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .layoutPriority(-1)
-            }
-        } trailing: { hovering in
-            Button {
-                store.toggle(device)
-            } label: {
-                BlockHeaderIcon(systemImage: "power", isActive: device.booted)
-            }
-            .buttonStyle(PressableButtonStyle())
-            .accessibilityLabel(device.booted ? "Desligar" : "Ligar")
-            .opacity(hovering || device.booted ? 1 : 0.0001)
-        }
-        .springAnimation(value: device.state)
-        .springAnimation(value: busy)
-    }
-}
-
-struct SimulatorsSection: View {
-    let bot: Bot
-
-    @State private var showAll = false
-
-    private var store: SimulatorStore { .shared }
-
-    private var shown: [SimDevice] {
-        let booted = store.devices.filter(\.booted)
-        if showAll || booted.isEmpty { return Array(store.devices.prefix(showAll ? 40 : 3)) }
-        return booted
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.s) {
-            SectionCaption(title: "Simuladores") {
-                if store.devices.count > shown.count || showAll {
-                    Button(showAll ? "Menos" : "Todos") { showAll.toggle() }
-                        .buttonStyle(.plain)
-                        .font(TypeScale.sectionCaption)
-                        .foregroundStyle(Theme.textSecondary)
-                        .clickable()
-                }
-            }
-            if store.devices.isEmpty {
-                Text(store.loading ? "Procurando simuladores…" : "Nenhum simulador no Xcode deste Mac.")
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .padding(.horizontal, Spacing.l)
-            } else {
-                VStack(spacing: Spacing.s) {
-                    ForEach(shown) { device in
-                        SimulatorRow(device: device, botID: bot.id)
-                            .transition(.opacity)
-                    }
-                }
-            }
-            if let failure = store.failure {
-                Text(failure)
-                    .font(TypeScale.caption)
-                    .foregroundStyle(Theme.danger)
-                    .padding(.horizontal, Spacing.l)
-                    .transition(.opacity)
-            }
-        }
-        .springAnimation(value: shown.map(\.id))
-        .springAnimation(value: store.failure)
-        .task { await store.refresh() }
     }
 }

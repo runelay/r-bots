@@ -125,9 +125,9 @@ enum ServerActions {
                 store.copyURL(server)
             })
         }
-        if server.isMobile, server.status == .running, let client = store.client {
-            items.append(GlassMenuItem("Abrir no simulador", systemImage: "iphone") {
-                SimulatorStore.shared.openExpo(server: server, client: client)
+        if server.isMobile, let device = SimulatorStore.shared.preferredDevice {
+            items.append(GlassMenuItem(device.booted ? "Desligar \(device.name)" : "Ligar \(device.name)", systemImage: "power") {
+                SimulatorStore.shared.toggle(device)
             })
         }
         items.append(GlassMenuItem("Logs", systemImage: "text.alignleft", startsSection: server.status != .running) {
@@ -149,15 +149,31 @@ enum ServerActions {
     }
 }
 
-struct InspectorRowCard<Leading: View, Content: View, Trailing: View>: View {
+struct InspectorRowCard<Leading: View, Content: View, Trailing: View, Footer: View>: View {
     let action: () -> Void
     @ViewBuilder let leading: Leading
     @ViewBuilder let content: Content
     @ViewBuilder let trailing: (_ hovering: Bool) -> Trailing
+    @ViewBuilder var footer: Footer
 
     @State private var hovering = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: Spacing.xs) {
+            row
+            footer
+                .padding(.leading, 32 + Spacing.m)
+        }
+        .padding(.leading, Spacing.l)
+        .padding(.trailing, Spacing.s)
+        .padding(.vertical, Spacing.s)
+        .frame(minHeight: Metrics.rowHeight)
+        .background(hovering ? Theme.surfaceRaised : Theme.surface, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
+        .onHover { hovering = $0 }
+        .springAnimation(value: hovering)
+    }
+
+    private var row: some View {
         HStack(alignment: .center, spacing: Spacing.m) {
             Button(action: action) {
                 HStack(alignment: .center, spacing: Spacing.m) {
@@ -175,12 +191,45 @@ struct InspectorRowCard<Leading: View, Content: View, Trailing: View>: View {
             trailing(hovering)
                 .frame(width: 28, height: 28)
         }
-        .padding(.leading, Spacing.l)
-        .padding(.trailing, Spacing.s)
-        .frame(minHeight: Metrics.rowHeight)
-        .background(hovering ? Theme.surfaceRaised : Theme.surface, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-        .onHover { hovering = $0 }
-        .springAnimation(value: hovering)
+    }
+}
+
+extension InspectorRowCard where Footer == EmptyView {
+    init(action: @escaping () -> Void, @ViewBuilder leading: () -> Leading, @ViewBuilder content: () -> Content, @ViewBuilder trailing: @escaping (_ hovering: Bool) -> Trailing) {
+        self.init(action: action, leading: leading, content: content, trailing: trailing, footer: { EmptyView() })
+    }
+}
+
+enum ProjectOpen {
+    @MainActor
+    static func open(_ server: DevServerInfo, botID: String) {
+        let store = ServerStore.shared
+        if server.isMobile, let client = store.client {
+            SimulatorStore.shared.openApp(server, botID: botID, client: client)
+        } else if server.tool == "wrangler" || server.status != .running {
+            store.openPanel(server, botID: botID, tab: .logs)
+        } else {
+            store.openPanel(server, botID: botID, tab: .preview)
+        }
+    }
+}
+
+struct DevicePicker: View {
+    private var store: SimulatorStore { .shared }
+
+    var body: some View {
+        let ios = store.iosDevices
+        if let current = store.preferredDevice {
+            GlassSelect(
+                options: ios.map { GlassSelectOption("\($0.name) · \($0.runtime)", value: $0.udid, systemImage: "iphone", subtitle: $0.booted ? "Ligado" : nil) },
+                selection: Binding(get: { current.udid }, set: { store.preferredUDID = $0 }),
+                prefix: "no",
+                title: current.name,
+                help: "Trocar o aparelho",
+                maxWidth: 190
+            )
+            .fixedSize()
+        }
     }
 }
 
@@ -190,7 +239,7 @@ struct ServerRow: View {
 
     var body: some View {
         InspectorRowCard {
-            ServerStore.shared.openPanel(server, botID: botID, tab: server.status == .running && !server.isMobile ? .preview : .logs)
+            ProjectOpen.open(server, botID: botID)
         } leading: {
             ServerToolTile(tool: server.tool)
         } content: {
@@ -212,6 +261,10 @@ struct ServerRow: View {
                 .fixedSize()
                 .opacity(hovering ? 1 : 0.0001)
             }
+        } footer: {
+            if server.isMobile, server.status == .running {
+                DevicePicker()
+            }
         }
         .accessibilityLabel("\(server.title), \(server.status.label), porta \(server.port)\(server.branch.map { ", branch \($0)" } ?? "")")
     }
@@ -226,7 +279,7 @@ struct ServersSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
-            SectionCaption(title: "Servidores") {
+            SectionCaption(title: "Projetos rodando") {
                 Button {
                     running.toggle()
                 } label: {
@@ -241,7 +294,7 @@ struct ServersSection: View {
                 }
             }
             if store.visible.isEmpty {
-                Text("Nada rodando. Suba o app, a API ou o Expo de um repositório liberado.")
+                Text("Nada rodando. O servidor roda o código; a prévia (web) ou o simulador (iPhone) mostram o app.")
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .padding(.horizontal, Spacing.l)
@@ -263,6 +316,9 @@ struct ServersSection: View {
             }
         }
         .springAnimation(value: store.visible.map(\.id))
+        .task(id: store.visible.contains { $0.isMobile }) {
+            if store.visible.contains(where: \.isMobile) { await SimulatorStore.shared.refresh() }
+        }
         .springAnimation(value: store.failure)
     }
 }

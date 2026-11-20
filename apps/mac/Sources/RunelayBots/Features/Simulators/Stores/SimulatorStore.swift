@@ -13,6 +13,32 @@ final class SimulatorStore {
     private(set) var busy: Set<String> = []
     private(set) var failure: String?
     private(set) var maestroInstalled = false
+    var pendingApp: [String: String] = [:]
+    var preferredUDID: String = UserDefaults.standard.string(forKey: "simulators.preferred") ?? "" {
+        didSet { UserDefaults.standard.set(preferredUDID, forKey: "simulators.preferred") }
+    }
+
+    var preferredDevice: SimDevice? {
+        let ios = iosDevices
+        return ios.first { $0.udid == preferredUDID } ?? ios.first(where: \.booted) ?? ios.first
+    }
+
+    func openApp(_ server: DevServerInfo, botID: String, client: BotsClient) {
+        Task {
+            if devices.isEmpty { await refresh() }
+            guard let device = preferredDevice else {
+                flash("Nenhum simulador no Xcode deste Mac.")
+                return
+            }
+            pendingApp[device.udid] = server.id
+            openPanel(device, botID: botID, client: client)
+        }
+    }
+
+    func takePending(_ udid: String) -> DevServerInfo? {
+        guard let id = pendingApp.removeValue(forKey: udid) else { return nil }
+        return ServerStore.shared.server(id: id)
+    }
 
     @ObservationIgnored private var failureTask: Task<Void, Never>?
 

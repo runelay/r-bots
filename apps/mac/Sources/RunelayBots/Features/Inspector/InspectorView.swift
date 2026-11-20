@@ -137,7 +137,6 @@ struct ActivitySection: View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             if !bot.isGroup && !bot.isPending {
                 ServersSection(bot: bot)
-                SimulatorsSection(bot: bot)
             }
 
             if bot.hasBrowser {

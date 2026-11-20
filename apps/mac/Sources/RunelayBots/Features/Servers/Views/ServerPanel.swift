@@ -26,23 +26,35 @@ struct ServerPanel: View {
         VStack(spacing: 0) {
             header
                 .zIndex(1)
-            Group {
+            if let server, !server.isMobile {
+                HStack {
+                    PillTabs(tabs: ServerStore.PanelTab.allCases, selection: tab) { $0.title }
+                        .fixedSize()
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, Spacing.m)
+                .padding(.bottom, Spacing.s)
+            }
+            ZStack {
                 if let server {
-                    switch tab.wrappedValue {
-                    case .preview:
+                    let showsPreview = tab.wrappedValue == .preview && !server.isMobile
+                    if !server.isMobile {
                         preview(server)
-                            .transition(.opacity)
-                    case .logs:
-                        ServerLogView(store: logs)
-                            .transition(.opacity)
+                            .opacity(showsPreview ? 1 : 0)
+                            .allowsHitTesting(showsPreview)
+                            .accessibilityHidden(!showsPreview)
                     }
+                    ServerLogView(store: logs)
+                        .opacity(showsPreview ? 0 : 1)
+                        .allowsHitTesting(!showsPreview)
+                        .accessibilityHidden(showsPreview)
                 } else {
                     PanelEmptyState(systemImage: "stop.circle", title: "Servidor encerrado", message: "Ele foi parado ou saiu da lista.")
                         .frame(maxHeight: .infinity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .springAnimation(value: tab.wrappedValue)
+            .animation(Motion.spring, value: tab.wrappedValue)
         }
         .onAppear {
             if let client = store.client {
@@ -63,29 +75,15 @@ struct ServerPanel: View {
                         .font(TypeScale.rowSubtitle.weight(.medium))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
-                    ServerStatusLabel(server: server)
+                    ServerStatusLabel(server: server, showsBranch: true)
                 }
                 .layoutPriority(1)
             }
-            Spacer(minLength: Spacing.m)
-            if let server, !server.isMobile {
-                PillTabs(tabs: ServerStore.PanelTab.allCases, selection: tab) { $0.title }
-                    .scaleEffect(0.9)
-                    .fixedSize()
-            }
-            if let server {
-                if server.status == .running, !server.isMobile {
-                    BlockHeaderButton(systemImage: "arrow.clockwise.circle", help: "Recarregar a prévia") {
-                        reloadToken += 1
-                    }
-                    BlockHeaderButton(systemImage: "safari", help: "Abrir no navegador") {
-                        store.openInBrowser(server)
-                    }
+            Spacer(minLength: Spacing.s)
+            if let server, server.status == .running, !server.isMobile {
+                BlockHeaderButton(systemImage: "safari", help: "Abrir no navegador") {
+                    store.openInBrowser(server)
                 }
-                GlassMenuButton(edge: .trailing, help: "Ações do servidor", items: { ServerActions.items(server, botID: ref.botID) }) { isOpen in
-                    BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen)
-                }
-                .fixedSize()
             }
             BlockHeaderButton(
                 systemImage: presentation.fullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
@@ -94,13 +92,32 @@ struct ServerPanel: View {
             ) {
                 presentation.toggleFullScreen()
             }
+            if let server {
+                GlassMenuButton(edge: .trailing, help: "Mais", items: { menuItems(server) }) { isOpen in
+                    BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen)
+                }
+                .fixedSize()
+            }
             BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
                 presentation.close()
             }
+            .layoutPriority(2)
         }
         .padding(.horizontal, Spacing.m)
         .frame(height: 48)
         .springAnimation(value: server?.status)
+    }
+
+    private func menuItems(_ server: DevServerInfo) -> [GlassMenuItem] {
+        var items: [GlassMenuItem] = []
+        if server.status == .running, !server.isMobile {
+            items.append(GlassMenuItem("Recarregar a prévia", systemImage: "arrow.clockwise.circle") {
+                reloadToken += 1
+                store.panelTabs[ref.id] = .preview
+            })
+        }
+        items += ServerActions.items(server, botID: ref.botID).filter { $0.id != "Abrir no painel" && $0.id != "Logs" && $0.id != "Abrir no navegador" }
+        return items
     }
 
     @ViewBuilder
