@@ -5,6 +5,7 @@ enum FloatingMenuID: Hashable {
     case sidebarNew
     case connectorsAdd
     case connectorOptions(String)
+    case tabPicker
 
     var alignsTrailing: Bool {
         switch self {
@@ -89,7 +90,13 @@ struct FloatingMenuLayer: View {
                     .frame(width: 0, height: 0)
 
                     let corner: UnitPoint = id.alignsTrailing ? .topTrailing : .topLeading
-                    FloatingMenuPanel(items: items(for: id))
+                    Group {
+                        if id == .tabPicker {
+                            BotQuickPicker()
+                        } else {
+                            FloatingMenuPanel(items: items(for: id))
+                        }
+                    }
                         .id(id)
                         .fixedSize()
                         .frame(width: id.alignsTrailing ? rect.maxX : nil, alignment: .topTrailing)
@@ -140,6 +147,8 @@ struct FloatingMenuLayer: View {
             model.catalog.addMenuItems(model: model)
         case .connectorOptions(let id):
             model.catalog.optionItems(for: id, model: model)
+        case .tabPicker:
+            []
         }
     }
 }

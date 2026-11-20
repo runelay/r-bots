@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SidebarView: View {
@@ -286,7 +287,9 @@ struct BotChatList: View {
             },
             collapse: collapseAction(for: bot)
         ) {
-            model.selectBot(bot.id)
+            model.openFromSidebar(newTab: NSEvent.modifierFlags.contains(.command)) {
+                model.selectBot(bot.id)
+            }
         }
         .onHover { hovering in
             if hovering {
@@ -295,6 +298,13 @@ struct BotChatList: View {
         }
         .contextMenu {
             menu(for: bot)
+        }
+        .overlay {
+            MiddleClickArea {
+                model.openFromSidebar(newTab: true) {
+                    model.selectBot(bot.id)
+                }
+            }
         }
         .transition(.opacity)
     }
@@ -330,10 +340,19 @@ struct BotChatList: View {
                 }
             }
         ) {
-            model.openLatestConversation(bot.id)
+            model.openFromSidebar(newTab: NSEvent.modifierFlags.contains(.command)) {
+                model.openLatestConversation(bot.id)
+            }
         }
         .contextMenu {
             menu(for: bot)
+        }
+        .overlay {
+            MiddleClickArea {
+                model.openFromSidebar(newTab: true) {
+                    model.openLatestConversation(bot.id)
+                }
+            }
         }
         .transition(.opacity)
     }
@@ -376,7 +395,9 @@ struct BotChatList: View {
                 model.archiveConversation(conversation)
             }
         ) {
-            model.selectConversation(botID: bot.id, sessionID: conversation.sessionId)
+            model.openFromSidebar(newTab: NSEvent.modifierFlags.contains(.command)) {
+                model.selectConversation(botID: bot.id, sessionID: conversation.sessionId)
+            }
         }
         .onHover { hovering in
             if hovering {
@@ -385,6 +406,13 @@ struct BotChatList: View {
         }
         .contextMenu {
             conversationMenu(bot, conversation)
+        }
+        .overlay {
+            MiddleClickArea {
+                model.openFromSidebar(newTab: true) {
+                    model.selectConversation(botID: bot.id, sessionID: conversation.sessionId)
+                }
+            }
         }
         .transition(.opacity)
     }
@@ -423,6 +451,10 @@ struct BotChatList: View {
 
     @ViewBuilder
     private func menu(for bot: Bot) -> some View {
+        Button("Abrir em nova aba") {
+            model.open(bot.id, placement: .new)
+        }
+        Divider()
         if bot.isGroup {
             groupMenu(for: bot)
         } else {

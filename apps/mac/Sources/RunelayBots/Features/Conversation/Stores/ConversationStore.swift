@@ -66,6 +66,7 @@ final class ConversationStore {
     private(set) var phase: ConversationPhase = .idle
     private(set) var tokens = 0
     private(set) var connection: StreamConnection = .idle
+    private(set) var isSuspended = false
     private(set) var isCreating = false
     private(set) var lastError: String?
 
@@ -198,7 +199,8 @@ final class ConversationStore {
     }
 
     var botStatus: BotStatus {
-        switch phase {
+        if isSuspended { return .idle }
+        return switch phase {
         case .idle: .idle
         case .working: .working
         case .awaitingInput: .awaitingApproval
@@ -306,7 +308,8 @@ final class ConversationStore {
     }
 
     var mood: CharacterMood {
-        switch phase {
+        if isSuspended { return .idle }
+        return switch phase {
         case .idle: .idle
         case .working: isSpeaking ? .speaking : .thinking
         case .awaitingInput: .waiting
@@ -458,6 +461,23 @@ final class ConversationStore {
     func stop() {
         streamTask?.cancel()
         streamTask = nil
+    }
+
+    func suspend() {
+        guard !isSuspended else { return }
+        isSuspended = true
+        stop()
+        flushCatchUp()
+        dropStreamingParts()
+        if connection != .ended {
+            connection = .idle
+        }
+    }
+
+    func resume() {
+        guard isSuspended else { return }
+        isSuspended = false
+        start()
     }
 
     func clearDraft() {

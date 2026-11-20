@@ -159,7 +159,7 @@ struct TopStrip: View {
 
     var body: some View {
         HStack(spacing: Spacing.s) {
-            if model.section == .conversations && !model.settingsPresented, let bot = model.selectedBot {
+            if model.section == .conversations && !model.settingsPresented {
                 ZStack(alignment: .leading) {
                     Color.clear
                     HeaderIconButton(
@@ -172,37 +172,34 @@ struct TopStrip: View {
                     .padding(.leading, 84)
                 }
                 .frame(width: max((sidebarCollapsed ? FrameMetrics.railWidth + Spacing.l : FrameMetrics.railWidth + FrameMetrics.sidebarWidth + 1) - Spacing.s, 128))
-                BotTagButton(bot: bot, mood: model.mood(for: bot.id)) {
-                    model.openProfile(bot)
-                }
-                .padding(.leading, Spacing.s + (sidebarCollapsed ? ChromeTabShape.flare : 0))
-                .padding(.trailing, Spacing.xs)
-                .padding(.top, Spacing.xs)
-                .padding(.bottom, Spacing.xs + 1)
-                .padding(.trailing, ChromeTabShape.flare)
-                .background(ChromeTabShape(leftFlush: !sidebarCollapsed).fill(Theme.background))
-                .offset(y: 1)
-                .frame(maxHeight: .infinity, alignment: .bottom)
-                Spacer(minLength: Spacing.m)
-                if !bot.isPending, !bot.isGroup {
-                    ModelPicker(bot: bot)
-                    PermissionPill(bot: bot)
-                }
-                if bot.hasComputer {
-                    HeaderIconButton(
-                        systemImage: bot.hasBrowser ? "globe" : "desktopcomputer",
-                        help: "Abrir o computador de \(bot.name)",
-                        isActive: model.computerMode
-                    ) {
-                        model.toggleComputer()
+                BotTabStrip(leadingFlush: !sidebarCollapsed)
+                    .frame(maxHeight: .infinity)
+                if let bot = model.selectedBot {
+                    HStack(spacing: Spacing.s) {
+                        if !bot.isPending, !bot.isGroup {
+                            ModelPicker(bot: bot)
+                            PermissionPill(bot: bot)
+                        }
+                        if bot.hasComputer {
+                            HeaderIconButton(
+                                systemImage: bot.hasBrowser ? "globe" : "desktopcomputer",
+                                help: "Abrir o computador de \(bot.name)",
+                                isActive: model.computerMode
+                            ) {
+                                model.toggleComputer()
+                            }
+                        }
+                        HeaderIconButton(
+                            systemImage: "sidebar.right",
+                            help: "Mostrar ou ocultar o painel (⌥⌘I)",
+                            isActive: model.inspectorPresented
+                        ) {
+                            model.toggleInspector()
+                        }
                     }
-                }
-                HeaderIconButton(
-                    systemImage: "sidebar.right",
-                    help: "Mostrar ou ocultar o painel (⌥⌘I)",
-                    isActive: model.inspectorPresented
-                ) {
-                    model.toggleInspector()
+                    .fixedSize()
+                    .padding(.leading, Spacing.s)
+                    .layoutPriority(1)
                 }
             } else {
                 Spacer(minLength: 0)

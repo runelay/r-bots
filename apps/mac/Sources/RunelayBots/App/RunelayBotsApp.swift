@@ -126,6 +126,16 @@ struct BotWindowView: View {
         }
         .frame(minWidth: 480, minHeight: 520)
         .background(Theme.background)
+        .onAppear {
+            if let botID {
+                model.attachWindow(botID: botID)
+            }
+        }
+        .onDisappear {
+            if let botID {
+                model.detachWindow(botID: botID)
+            }
+        }
         .navigationTitle(botID.flatMap { model.bot(id: $0)?.name } ?? "Conversa")
     }
 }
@@ -133,6 +143,20 @@ struct BotWindowView: View {
 struct AppCommands: Commands {
     let model: AppModel
     @AppStorage(PreferenceKeys.sidebarCollapsed) private var sidebarCollapsed = false
+
+    @MainActor
+    private func closeTabOrWindow() {
+        let key = NSApp.keyWindow
+        if let key, let main = WindowChrome.shared.mainWindow, key !== main {
+            key.performClose(nil)
+        } else if model.activeSheet != nil {
+            model.dismissSheet()
+        } else if model.section == .conversations, !model.settingsPresented, model.activeTabID != nil {
+            model.closeActiveTab()
+        } else {
+            key?.performClose(nil)
+        }
+    }
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
@@ -152,6 +176,37 @@ struct AppCommands: Commands {
             .keyboardShortcut("n", modifiers: [.command, .shift])
             Button("Bots arquivados") {
                 model.openSettings(.bots)
+            }
+            Divider()
+            Button("Nova aba") {
+                model.openTabPicker()
+            }
+            .keyboardShortcut("t", modifiers: .command)
+            Button("Fechar aba") {
+                closeTabOrWindow()
+            }
+            .keyboardShortcut("w", modifiers: .command)
+            Button("Reabrir aba fechada") {
+                model.reopenClosedTab()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+        }
+        CommandMenu("Abas") {
+            Button("Próxima aba") {
+                model.cycleTab(by: 1)
+            }
+            .keyboardShortcut("}", modifiers: .command)
+            Button("Aba anterior") {
+                model.cycleTab(by: -1)
+            }
+            .keyboardShortcut("{", modifiers: .command)
+            Divider()
+            ForEach(1..<10, id: \.self) { number in
+                Button(number == 9 ? "Última aba" : "Aba \(number)") {
+                    model.selectTab(at: number == 9 ? Int.max : number - 1)
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
+                .disabled(model.modelPickerOpen)
             }
         }
         CommandGroup(replacing: .appSettings) {

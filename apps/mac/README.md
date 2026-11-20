@@ -48,6 +48,12 @@ defaults write com.runelay.bots codeEditorHost "<seu-usuário>@<servidor>"
 | Atalho | Ação |
 |---|---|
 | `⌘N` | Nova conversa com o bot selecionado |
+| `⌘T` | Nova aba (seletor de bots com busca) |
+| `⌘W` | Fechar a aba |
+| `⇧⌘T` | Reabrir a última aba fechada |
+| `⌘1`…`⌘9` | Ir para a aba N (`⌘9` vai para a última) |
+| `⇧⌘]` / `⇧⌘[` | Próxima aba / aba anterior |
+| `⌘`-clique ou clique do meio | Abrir o bot da barra lateral em aba nova; o clique do meio numa aba fecha |
 | `⌘↩` | Enviar mensagem |
 | `Esc` | Limpar o campo de mensagem |
 | `⌥⌘I` | Mostrar ou ocultar o inspetor |

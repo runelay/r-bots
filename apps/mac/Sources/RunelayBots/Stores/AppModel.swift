@@ -237,6 +237,9 @@ final class AppModel {
     var activeSheet: AppSheet?
     var codeFocusPath: String?
     let browser = BrowserStore()
+    let tabs = BotTabs(profileID: ServerProfiles.shared.active.id)
+    @ObservationIgnored private var tabsRestored = false
+    @ObservationIgnored private var windowBots: [String: Int] = [:]
 
     private var threads: [String: ConversationStore] = [:]
     private var resolvingThreads: Set<String> = []
@@ -313,6 +316,7 @@ final class AppModel {
     func loadGroups() async {
         if let list = await client.groups() {
             groups = list
+            pruneTabs(groups: true)
         }
     }
 
@@ -411,11 +415,11 @@ final class AppModel {
         guard !started else { return }
         started = true
         async let metaResult = client.meta()
+        await loadGroups()
         await loadBots()
         warmTranscripts()
         applyMeta(await metaResult)
         await loadSections()
-        await loadGroups()
         await loadAccounts()
         await loadConnectors()
         startRefreshing()
@@ -441,10 +445,15 @@ final class AppModel {
             if !metaLoaded {
                 applyMeta(await client.meta())
             }
-            if let selectedBotID, list.contains(where: { $0.id == selectedBotID }) {
+            pruneTabs(groups: false)
+            if let selectedBotID, bot(id: selectedBotID) != nil {
                 selectBot(selectedBotID)
-            } else if let first = sortedBots.first {
-                selectBot(first.id)
+            } else if !tabsRestored {
+                restoreTabs()
+            } else if let next = tabs.order.first(where: { bot(id: $0) != nil }) {
+                activateTab(next)
+            } else if selectedBotID != nil {
+                clearSelection()
             }
         } catch {
             let message = ErrorMessage.describe(error)
@@ -708,7 +717,10 @@ final class AppModel {
     func deleteBot(_ bot: Bot) {
         guard let index = loadedBots.firstIndex(where: { $0.id == bot.id }) else { return }
         mutateBots { $0.removeAll { $0.id == bot.id } }
-        if selectedBotID == bot.id {
+        if tabs.contains(bot.id) {
+            closeTab(bot.id, remember: false)
+            threads.removeValue(forKey: bot.id)?.stop()
+        } else if selectedBotID == bot.id {
             threads[bot.id]?.stop()
             threads[bot.id] = nil
             if let next = visibleBots.first {
@@ -846,16 +858,22 @@ final class AppModel {
     func ensureThread(for botID: String) {
         guard let bot = bot(id: botID), !bot.isPending, !botID.hasPrefix("group:pending"),
               threads[botID] == nil, !resolvingThreads.contains(botID) else { return }
+        guard streamsLive(botID) else {
+            if let session = tabs.session(for: botID) ?? bot.thread?.sessionId {
+                TranscriptCache.shared.warm(client: client, basePath: bot.sessionBasePath, sessionID: session)
+            }
+            return
+        }
         if bot.isGroup {
             let store = makeStore(bot: bot, sessionId: bot.thread?.sessionId)
             threads[botID] = store
-            store.start()
+            startIfLive(store, botID: botID)
             return
         }
         if let knownSession = bot.thread?.sessionId {
             let store = makeStore(bot: bot, sessionId: knownSession)
             threads[botID] = store
-            store.start()
+            startIfLive(store, botID: botID)
             return
         }
         resolvingThreads.insert(botID)
@@ -869,8 +887,236 @@ final class AppModel {
             guard threads[botID] == nil, let current = self.bot(id: botID) else { return }
             let store = makeStore(bot: current, sessionId: sessionId)
             threads[botID] = store
+            startIfLive(store, botID: botID)
+        }
+    }
+
+    private func streamsLive(_ botID: String) -> Bool {
+        botID == selectedBotID || windowBots[botID] != nil || serverStatus(for: botID) == .awaitingApproval
+    }
+
+    private func startIfLive(_ store: ConversationStore, botID: String) {
+        if streamsLive(botID) {
+            store.resume()
+            store.start()
+        } else {
+            store.suspend()
+        }
+    }
+
+    private func syncTabStreams() {
+        for (botID, store) in threads where !streamsLive(botID) {
+            store.suspend()
+        }
+        if let selectedBotID, let store = threads[selectedBotID] {
+            store.resume()
             store.start()
         }
+    }
+
+    func attachWindow(botID: String) {
+        windowBots[botID, default: 0] += 1
+        ensureThread(for: botID)
+        threads[botID]?.resume()
+        threads[botID]?.start()
+    }
+
+    func detachWindow(botID: String) {
+        guard let count = windowBots[botID] else { return }
+        windowBots[botID] = count > 1 ? count - 1 : nil
+        syncTabStreams()
+    }
+
+    var activeTabID: String? {
+        guard let selectedBotID, tabs.contains(selectedBotID) else { return nil }
+        return selectedBotID
+    }
+
+    func tabHasAttention(_ botID: String) -> Bool {
+        guard botID != selectedBotID else { return false }
+        return tabs.attention.contains(botID) || (unreadCounts[botID] ?? 0) > 0
+    }
+
+    func tabMood(_ botID: String) -> CharacterMood {
+        mood(for: botID)
+    }
+
+    private func revealConversations() {
+        activeSheet = nil
+        settingsPresented = false
+        section = .conversations
+    }
+
+    func activateTab(_ botID: String) {
+        revealConversations()
+        if threads[botID] == nil, let session = tabs.session(for: botID),
+           conversations(for: botID).contains(where: { $0.sessionId == session && !$0.isMain }) {
+            selectConversation(botID: botID, sessionID: session)
+        } else {
+            selectBot(botID)
+        }
+    }
+
+    func open(_ botID: String, placement: TabPlacement) {
+        if tabs.contains(botID) {
+            activateTab(botID)
+            return
+        }
+        tabs.placement = placement
+        openConversation(botID)
+        tabs.placement = nil
+    }
+
+    func openFromSidebar(newTab: Bool, _ action: () -> Void) {
+        tabs.placement = newTab ? .new : .current
+        action()
+        tabs.placement = nil
+    }
+
+    func selectTab(at index: Int) {
+        let order = tabs.order
+        guard !order.isEmpty else { return }
+        let target = index == Int.max ? order.count - 1 : index
+        guard order.indices.contains(target) else { return }
+        activateTab(order[target])
+    }
+
+    func openTabPicker() {
+        revealConversations()
+        floatingMenu = .tabPicker
+    }
+
+    func cycleTab(by offset: Int) {
+        let order = tabs.order
+        guard order.count > 1 else { return }
+        let current = activeTabID.flatMap { tabs.index(of: $0) } ?? 0
+        let next = (current + offset + order.count) % order.count
+        activateTab(order[next])
+    }
+
+    func moveTab(_ botID: String, to index: Int) {
+        tabs.move(botID, to: index)
+        saveTabs()
+    }
+
+    func prefetchTab(_ botID: String) {
+        guard botID != selectedBotID, threads[botID] == nil, let bot = bot(id: botID), !bot.isPending,
+              let session = tabs.session(for: botID) ?? bot.thread?.sessionId
+        else { return }
+        TranscriptCache.shared.warm(client: client, basePath: bot.sessionBasePath, sessionID: session)
+    }
+
+    func closeOtherTabs(keeping botID: String) {
+        for other in tabs.order where other != botID {
+            closeTab(other)
+        }
+        if selectedBotID != botID {
+            activateTab(botID)
+        }
+    }
+
+    func closeActiveTab() {
+        guard let botID = activeTabID else { return }
+        closeTab(botID)
+    }
+
+    func closeTab(_ botID: String, remember: Bool = true) {
+        guard let index = tabs.index(of: botID) else { return }
+        let wasActive = selectedBotID == botID
+        let session = draftBots.contains(botID) ? nil : activeConversationID(for: botID)
+        if wasActive {
+            stashArtifact(of: botID)
+        }
+        tabs.close(botID, sessionID: session, remember: remember)
+        if wasActive {
+            let order = tabs.order
+            if let next = order.indices.contains(index) ? order[index] : order.last {
+                activateTab(next)
+            } else {
+                clearSelection()
+            }
+        }
+        syncTabStreams()
+        saveTabs()
+    }
+
+    func reopenClosedTab() {
+        guard let closed = tabs.popClosed(where: { bot(id: $0.botID) != nil }) else { return }
+        tabs.insert(closed.botID, at: closed.index)
+        revealConversations()
+        if let session = closed.sessionID, threads[closed.botID]?.sessionId != session,
+           conversations(for: closed.botID).contains(where: { $0.sessionId == session }) {
+            selectConversation(botID: closed.botID, sessionID: session)
+        } else {
+            selectBot(closed.botID)
+        }
+    }
+
+    private func clearSelection() {
+        if let current = selectedBotID {
+            discardDraft(current)
+        }
+        selectedBotID = nil
+        modelPickerOpen = false
+        closeComputer()
+        browser.reset(botID: nil)
+        syncTabStreams()
+    }
+
+    private func stashArtifact(of botID: String) {
+        let center = ArtifactCenter.shared
+        guard let ref = center.current, !center.presenting else { return }
+        if tabs.contains(botID) {
+            tabs.artifacts[botID] = ref
+        }
+        center.close()
+    }
+
+    private func pruneTabs(groups: Bool) {
+        let removed = tabs.remove { id in
+            guard id.contains("pending") || id.hasPrefix("group:") == groups else { return false }
+            return bot(id: id) == nil
+        }
+        guard !removed.isEmpty else { return }
+        for id in removed {
+            threads[id]?.suspend()
+        }
+        if let selectedBotID, removed.contains(selectedBotID), tabsRestored {
+            if let next = tabs.order.first(where: { bot(id: $0) != nil }) {
+                activateTab(next)
+            } else {
+                clearSelection()
+            }
+        }
+        saveTabs()
+    }
+
+    private func restoreTabs() {
+        tabsRestored = true
+        let saved = tabs.order.filter { bot(id: $0) != nil || $0.hasPrefix("group:") }
+        let active = tabs.savedActive.flatMap { id in saved.contains(id) && bot(id: id) != nil ? id : nil }
+            ?? saved.first { bot(id: $0) != nil }
+        for botID in saved where botID != active {
+            if let session = tabs.session(for: botID) ?? bot(id: botID)?.thread?.sessionId, let bot = bot(id: botID), !bot.isPending {
+                TranscriptCache.shared.warm(client: client, basePath: bot.sessionBasePath, sessionID: session)
+            }
+        }
+        if let active {
+            activateTab(active)
+        } else if !tabs.hasSavedState, let first = sortedBots.first {
+            selectBot(first.id)
+        }
+    }
+
+    private func saveTabs() {
+        guard tabsRestored else { return }
+        var sessions: [String: String] = [:]
+        for botID in tabs.order where !draftBots.contains(botID) {
+            if let session = threads[botID]?.sessionId {
+                sessions[botID] = session
+            }
+        }
+        tabs.save(active: activeTabID, sessions: sessions)
     }
 
     func conversation(for botID: String) -> ConversationStore? {
@@ -1077,14 +1323,14 @@ final class AppModel {
                 await loadExtraBots()
             }
         }
+        if settingsSection == .aiAccounts {
+            Task { await loadAccounts() }
+        }
     }
 
     func closeSettings() {
         settingsPresented = false
     }
-        if settingsSection == .aiAccounts {
-            Task { await loadAccounts() }
-        }
 
     private func applyMeta(_ loaded: ServerMeta?) {
         guard let loaded else { return }
@@ -1122,6 +1368,7 @@ final class AppModel {
         resolvingThreads = []
         unreadCounts = [:]
         selectedBotID = nil
+        tabsRestored = false
         bots = .idle
         archivedBots = .idle
         browser.reset(botID: nil)
@@ -1277,6 +1524,7 @@ final class AppModel {
         }
         switchStore(botID: botID, sessionID: sessionID)
         markRead(botID: botID, sessionID: sessionID)
+        saveTabs()
     }
 
     func openConversation(_ botID: String, sessionID: String?) {
@@ -1293,6 +1541,7 @@ final class AppModel {
         if let current = threads[botID] {
             if current.sessionId == sessionID { return }
             if let id = current.sessionId {
+                current.suspend()
                 park(current, sessionID: id)
             }
         }
@@ -1300,7 +1549,7 @@ final class AppModel {
         let store = parkedStores.removeValue(forKey: sessionID) ?? makeStore(bot: bot, sessionId: sessionID)
         threads[botID] = store
         resolvingThreads.remove(botID)
-        store.start()
+        startIfLive(store, botID: botID)
     }
 
     private func prepareDelegated(botID: String, sessionID: String?) {
@@ -1488,10 +1737,16 @@ final class AppModel {
 
     func selectBot(_ botID: String) {
         let changed = selectedBotID != botID
-        if changed, let previousID = selectedBotID {
-            discardDraft(previousID)
+        let previousID = selectedBotID
+        tabs.place(botID, current: previousID)
+        if changed, let previousID {
+            if !tabs.contains(previousID) {
+                discardDraft(previousID)
+            }
+            stashArtifact(of: previousID)
         }
         selectedBotID = botID
+        tabs.clearFlag(botID)
         guard let bot = bot(id: botID) else { return }
         markRead(bot)
         if changed {
@@ -1502,8 +1757,15 @@ final class AppModel {
             } else if computerMode {
                 openComputer()
             }
+            if let ref = tabs.artifacts.removeValue(forKey: botID) {
+                ArtifactCenter.shared.open(ref, client: client)
+            }
         }
         ensureThread(for: botID)
+        if changed {
+            syncTabStreams()
+            saveTabs()
+        }
     }
 
     func openComputer() {
@@ -1703,6 +1965,28 @@ final class AppModel {
     }
 
     private func applyStatusLine(_ value: JSONValue) {
+        let watched = Array(Set(tabs.order).union(threads.keys)).filter { $0 != selectedBotID }
+        let before = watched.map { status(for: $0) }
+        applyStatusValue(value)
+        guard !watched.isEmpty else { return }
+        for (index, botID) in watched.enumerated() {
+            let after = status(for: botID)
+            let previous = before[index]
+            guard after != previous else { continue }
+            if after == .awaitingApproval || (previous == .working && after == .idle) || after == .error {
+                tabs.flag(botID)
+            }
+            if after == .awaitingApproval {
+                ensureThread(for: botID)
+                threads[botID]?.resume()
+                threads[botID]?.start()
+            } else if previous == .awaitingApproval {
+                syncTabStreams()
+            }
+        }
+    }
+
+    private func applyStatusValue(_ value: JSONValue) {
         switch value["type"]?.stringValue {
         case "snapshot":
             var next: [String: BotStatus] = [:]

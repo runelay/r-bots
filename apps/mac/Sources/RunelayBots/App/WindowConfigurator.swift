@@ -6,6 +6,7 @@ import SwiftUI
 final class WindowChrome {
     static let shared = WindowChrome()
     var stripHeight: CGFloat = 40
+    @ObservationIgnored weak var mainWindow: NSWindow?
 }
 
 final class WindowConfiguringView: NSView {
@@ -16,6 +17,7 @@ final class WindowConfiguringView: NSView {
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
         guard let window else { return }
+        WindowChrome.shared.mainWindow = window
         window.titlebarSeparatorStyle = .none
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
