@@ -1,7 +1,6 @@
 import AppKit
 import AuthenticationServices
 import Foundation
-import WebKit
 
 enum AuthState: Equatable {
     case checking
@@ -27,6 +26,8 @@ final class AuthSession: NSObject {
     @ObservationIgnored private var browserTask: Task<Void, Never>?
     @ObservationIgnored private var webSession: ASWebAuthenticationSession?
     @ObservationIgnored private var onSignedIn: (() -> Void)?
+    @ObservationIgnored private var cookieKey: String?
+    @ObservationIgnored private var cookieTask: Task<Bool, Never>?
 
     var user: AuthUser? {
         if case .signedIn(let user) = state { return user }
@@ -255,7 +256,10 @@ final class AuthSession: NSObject {
 
     private func clearLocal() {
         AuthStore.remove(.session)
-        removeCookies()
+        cookieKey = nil
+        if let host = server.host() {
+            Task { await WebSession.removeSessionCookies(host: host) }
+        }
     }
 
     private func finish(token: String) async throws {
@@ -268,8 +272,39 @@ final class AuthSession: NSObject {
     }
 
     private func apply(_ profile: AuthProfile) {
-        installCookie(profile)
+        if let token = AuthStore.read(.session) {
+            let key = cookieKey(token: token)
+            Task { await self.installCookie(profile, key: key) }
+        }
         store(profile.user)
+    }
+
+    private func cookieKey(token: String) -> String {
+        "\(AuthStore.origin(of: server) ?? "")|\(token.hashValue)"
+    }
+
+    func prepareWebCookie(force: Bool = false) async -> Bool {
+        guard let token = AuthStore.read(.session) else { return true }
+        let key = cookieKey(token: token)
+        if !force, cookieKey == key { return true }
+        if let cookieTask { return await cookieTask.value }
+        let client = client
+        let task = Task { [weak self] () -> Bool in
+            do {
+                let profile = try await client.profile(token: token)
+                await self?.installCookie(profile, key: key)
+                return true
+            } catch AuthFailure.server(401, _) {
+                self?.sessionExpired()
+                return false
+            } catch {
+                return false
+            }
+        }
+        cookieTask = task
+        let ready = await task.value
+        cookieTask = nil
+        return ready
     }
 
     private func ensureRunnerKey(token: String, force: Bool = false) {
@@ -279,7 +314,7 @@ final class AuthSession: NSObject {
         }
     }
 
-    private func installCookie(_ profile: AuthProfile) {
+    private func installCookie(_ profile: AuthProfile, key: String) async {
         guard let cookie = profile.cookie, let host = server.host() else { return }
         var properties: [HTTPCookiePropertyKey: Any] = [
             .domain: host,
@@ -292,22 +327,8 @@ final class AuthSession: NSObject {
             properties[.secure] = "TRUE"
         }
         guard let item = HTTPCookie(properties: properties) else { return }
-        HTTPCookieStorage.shared.setCookie(item)
-        WKWebsiteDataStore.default().httpCookieStore.setCookie(item)
-    }
-
-    private func removeCookies() {
-        guard let host = server.host() else { return }
-        let storage = HTTPCookieStorage.shared
-        for cookie in storage.cookies ?? [] where cookie.domain == host && cookie.name.hasSuffix("session_token") {
-            storage.deleteCookie(cookie)
-        }
-        let store = WKWebsiteDataStore.default().httpCookieStore
-        store.getAllCookies { cookies in
-            for cookie in cookies where cookie.domain == host && cookie.name.hasSuffix("session_token") {
-                store.delete(cookie)
-            }
-        }
+        await WebSession.install(item)
+        cookieKey = key
     }
 }
 

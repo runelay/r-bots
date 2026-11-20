@@ -328,9 +328,7 @@ final class ArtifactPDFRenderer: NSObject, WKNavigationDelegate {
     private var loaded: CheckedContinuation<Void, Error>?
 
     override init() {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        webView = WKWebView(frame: CGRect(origin: .zero, size: Self.pageSize), configuration: configuration)
+        webView = WKWebView(frame: CGRect(origin: .zero, size: Self.pageSize), configuration: WebSession.configuration())
         window = NSWindow(
             contentRect: CGRect(x: -20000, y: -20000, width: Self.pageSize.width, height: Self.pageSize.height),
             styleMask: [.borderless],
@@ -345,6 +343,7 @@ final class ArtifactPDFRenderer: NSObject, WKNavigationDelegate {
     }
 
     func render(url: URL, slides: Bool) async throws -> Data {
+        _ = await AuthSession.shared.prepareWebCookie()
         window.orderBack(nil)
         defer { window.orderOut(nil) }
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -402,6 +401,14 @@ final class ArtifactPDFRenderer: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         loaded?.resume(throwing: ArtifactPDFError.load)
         loaded = nil
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+        if navigationResponse.isForMainFrame, let http = navigationResponse.response as? HTTPURLResponse, http.statusCode >= 400 {
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

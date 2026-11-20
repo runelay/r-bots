@@ -42,6 +42,7 @@ final class ArtifactSnapshotter: NSObject, WKNavigationDelegate {
                 waiting.removeFirst().resume()
             }
         }
+        _ = await AuthSession.shared.prepareWebCookie()
         let view = prepare()
         window?.orderBack(nil)
         defer { window?.orderOut(nil) }
@@ -62,8 +63,7 @@ final class ArtifactSnapshotter: NSObject, WKNavigationDelegate {
         if let webView {
             return webView
         }
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
+        let configuration = WebSession.configuration()
         let size = ArtifactPDFRenderer.pageSize
         let view = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: configuration)
         let host = NSWindow(contentRect: CGRect(x: -20000, y: -20000, width: size.width, height: size.height), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -100,6 +100,14 @@ final class ArtifactSnapshotter: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         finish(false)
+    }
+
+    func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+        if navigationResponse.isForMainFrame, let http = navigationResponse.response as? HTTPURLResponse, http.statusCode >= 400 {
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
