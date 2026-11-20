@@ -74,8 +74,6 @@ const codexOk =
     return undefined;
   };
 
-const iso = (msFromNow: number) => new Date(Date.now() + msFromNow).toISOString();
-
 beforeEach(async () => {
   await resetData();
   await resetUsageTables();
@@ -98,7 +96,7 @@ afterAll(async () => {
 describe("limit windows", () => {
   test("claude windows prefer the limits list and fall back to five_hour/seven_day", async () => {
     const { claudeWindows } = await fresh();
-    const reset = iso(150 * 60_000);
+    const reset = new Date(Math.round((Date.now() + 150 * 60_000) / 60_000) * 60_000).toISOString();
     const windows = claudeWindows({
       limits: [
         { kind: "session", percent: 42.345, resets_at: reset },
@@ -124,7 +122,7 @@ describe("limit windows", () => {
         label: "Semanal",
         usedPercent: 100,
         remainingPercent: 0,
-        resetsAt: "not a date",
+        resetsAt: null,
         windowMinutes: 10_080,
         pacePercent: null,
       },
@@ -151,6 +149,20 @@ describe("limit windows", () => {
     ]);
   });
 
+  test("claude resets that jitter between reads land on the same minute", async () => {
+    const { claudeWindows, stableReset } = await fresh();
+    const reads = [
+      "2026-11-20T03:59:59.509217+00:00",
+      "2026-11-20T03:59:59.730163+00:00",
+      "2026-11-20T04:00:00.10+00:00",
+    ];
+    const resets = reads.map(
+      (value) => claudeWindows({ five_hour: { utilization: 95, resets_at: value } })[0]?.resetsAt,
+    );
+    expect(new Set(resets)).toEqual(new Set(["2026-11-20T04:00:00.000Z"]));
+    expect(stableReset(null)).toBeNull();
+  });
+
   test("codex windows classify by duration and use the plan fallback", async () => {
     const { codexWindows } = await fresh();
     const resetsAt = Math.floor(Date.now() / 1000) + 3600;
@@ -161,7 +173,7 @@ describe("limit windows", () => {
         secondary: { usedPercent: 30, windowDurationMins: 10_080, resetsAt: null },
       }).map((window) => [window.kind, window.label, window.windowMinutes, window.resetsAt]),
     ).toEqual([
-      ["session", "Sessão", 300, new Date(resetsAt * 1000).toISOString()],
+      ["session", "Sessão", 300, new Date(Math.round(resetsAt / 60) * 60_000).toISOString()],
       ["weekly", "Semanal", 10_080, null],
     ]);
     expect(

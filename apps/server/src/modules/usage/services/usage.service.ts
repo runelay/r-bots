@@ -89,6 +89,13 @@ function paceOf(resetsAt: string | null, windowMinutes: number | null) {
   return Math.round((1 - elapsed) * 100);
 }
 
+export function stableReset(value: string | null) {
+  if (!value) return null;
+  const at = Date.parse(value);
+  if (!Number.isFinite(at)) return null;
+  return new Date(Math.round(at / 60_000) * 60_000).toISOString();
+}
+
 function makeWindow(
   kind: LimitWindow["kind"],
   label: string,
@@ -97,6 +104,7 @@ function makeWindow(
   windowMinutes: number | null,
 ): LimitWindow {
   const usedPercent = clampPercent(used);
+  resetsAt = stableReset(resetsAt);
   return {
     kind,
     label,
