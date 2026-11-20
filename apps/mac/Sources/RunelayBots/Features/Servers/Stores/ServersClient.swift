@@ -60,6 +60,10 @@ extension BotsClient {
         _ = try await serversSend(Self.serverPath(id) + "/stop", method: "POST", timeout: 20)
     }
 
+    func previewLink(id: String) async throws -> String? {
+        try await serversSend(Self.serverPath(id) + "/preview-link", method: "POST", timeout: 15)["path"]?.stringValue
+    }
+
     func restartServer(id: String) async throws {
         _ = try await serversSend(Self.serverPath(id) + "/restart", method: "POST", timeout: 30)
     }

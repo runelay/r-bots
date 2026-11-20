@@ -99,18 +99,26 @@ final class ServerStore {
     }
 
     func openInBrowser(_ server: DevServerInfo, location: String? = nil) {
-        guard let root = previewURL(for: server) else { return }
-        guard let location, let url = PreviewAddress.proxyURL(root: root, location: location) else {
-            NSWorkspace.shared.open(root)
-            return
+        Task {
+            guard let url = await browserURL(server, location: location) else { return }
+            NSWorkspace.shared.open(url)
         }
-        NSWorkspace.shared.open(url)
     }
 
     func copyURL(_ server: DevServerInfo) {
-        guard let url = previewURL(for: server) else { return }
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        Task {
+            guard let url = await browserURL(server, location: nil) else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+        }
+    }
+
+    private func browserURL(_ server: DevServerInfo, location: String?) async -> URL? {
+        guard let client,
+              let path = try? await client.previewLink(id: server.id),
+              let root = try? client.request(path: path).url else { return nil }
+        guard let location else { return root }
+        return PreviewAddress.proxyURL(root: root, location: location) ?? root
     }
 
     func start(path: String?, script: String?, profile: String?) async -> DevServerInfo? {
