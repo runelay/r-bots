@@ -9,9 +9,14 @@ struct SetupGuide: View {
 
     private var steps: [SetupStepID] { SetupStepID.allCases }
 
-    private var bots: [Bot] {
+    private var visibleBots: [Bot]? {
         if case .loaded(let list) = model.bots { return list.filter { !$0.isPending } }
-        return []
+        return nil
+    }
+
+    private var bots: [Bot] {
+        guard let baseline = store.baseline, let visibleBots else { return [] }
+        return visibleBots.filter { !baseline.contains($0.id) }
     }
 
     private func answered(_ step: SetupStepID) -> Bool {
@@ -57,40 +62,42 @@ struct SetupGuide: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 0) {
-                SetupRail(progress: progress, say: say) { step in
-                    store.picked = step
-                }
-                .frame(width: 272)
-                .frame(maxHeight: .infinity)
-                .background(Theme.sidebarBackground)
+        HStack(spacing: 0) {
+            SetupRail(progress: progress, say: say) { step in
+                store.picked = step
+            }
+            .frame(width: SetupLayout.railWidth)
+            .frame(maxHeight: .infinity)
+            .background(Theme.sidebarBackground)
+            GeometryReader { geometry in
                 ScrollView {
-                    HStack(alignment: .top, spacing: Spacing.xxl + Spacing.l) {
-                        stepColumn
-                            .frame(maxWidth: 540, alignment: .leading)
-                        if geometry.size.width >= 1160 {
-                            SetupPreview(bots: bots, awake: !model.readyAccounts.isEmpty, macReady: macReady)
-                                .frame(width: 280)
-                                .padding(.top, Spacing.xxl + Spacing.l)
-                                .transition(.opacity)
-                        }
-                    }
-                    .padding(.horizontal, Spacing.xxl)
-                    .padding(.top, FrameMetrics.stripHeight + Spacing.xl)
-                    .padding(.bottom, Spacing.xxl)
-                    .frame(maxWidth: .infinity)
+                    stepColumn
+                        .frame(maxWidth: formWidth, alignment: .leading)
+                        .padding(.horizontal, Spacing.xxl)
+                        .padding(.top, FrameMetrics.stripHeight + Spacing.xl)
+                        .padding(.bottom, Spacing.xxl * 3)
+                        .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .center)
                 }
                 .scrollEdgesHidden()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.background)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.background)
         }
         .animation(Motion.animation(reduceMotion: reduceMotion), value: current)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: reached)
+        .task(id: visibleBots == nil) {
+            if let visibleBots { store.guideStarted(visibleBots: visibleBots.map(\.id)) }
+        }
         .task {
             await model.loadAccounts()
             activity.refreshPermissions()
+        }
+    }
+
+    private var formWidth: CGFloat {
+        switch current {
+        case .integrations, .connectors: SetupLayout.wideForm
+        default: SetupLayout.form
         }
     }
 
@@ -123,47 +130,34 @@ struct SetupGuide: View {
 
     @ViewBuilder
     private var stepColumn: some View {
-        VStack(alignment: .leading, spacing: Spacing.xl) {
-            backRow
-            Group {
-                if let current {
-                    SetupStepBody(
-                        step: current,
-                        index: steps.firstIndex(of: current) ?? 0,
-                        total: steps.count,
-                        bots: bots,
-                        macReady: macReady
-                    )
-                } else {
-                    SetupDoneBody(bots: bots)
-                }
-            }
-            .id(current)
-            .transition(SetupMotion.step(reduceMotion: reduceMotion))
-        }
-    }
-
-    private var backRow: some View {
-        HStack {
-            if let back = previous {
-                Button {
-                    store.picked = back
-                } label: {
-                    Label("Voltar", systemImage: "chevron.left")
-                        .labelStyle(.titleAndIcon)
-                }
-                .buttonStyle(OnboardingGhostButtonStyle())
-                .padding(.leading, -Spacing.m)
-                .transition(.opacity)
+        Group {
+            if let current {
+                SetupStepBody(
+                    step: current,
+                    index: steps.firstIndex(of: current) ?? 0,
+                    total: steps.count,
+                    bots: bots,
+                    macReady: macReady,
+                    back: previous.map { step -> () -> Void in { store.picked = step } }
+                )
+            } else {
+                SetupDoneBody(bots: bots)
             }
         }
-        .frame(height: 32, alignment: .leading)
+        .id(current)
+        .transition(SetupMotion.step(reduceMotion: reduceMotion))
     }
 
     private var previous: SetupStepID? {
         guard let current, let index = steps.firstIndex(of: current), index > 0 else { return nil }
         return steps[index - 1]
     }
+}
+
+enum SetupLayout {
+    static let railWidth: CGFloat = 272
+    static let form: CGFloat = 440
+    static let wideForm: CGFloat = 560
 }
 
 struct SetupProgress {
@@ -437,6 +431,7 @@ private struct SetupStepBody: View {
     let total: Int
     let bots: [Bot]
     let macReady: Bool
+    let back: (() -> Void)?
 
     @Environment(AppModel.self) private var model
     @State private var name = AuthSession.shared.user?.name ?? ""
@@ -465,13 +460,8 @@ private struct SetupStepBody: View {
                     .lineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if step == .connectors {
-                actions
-                content
-            } else {
-                content
-                actions
-            }
+            content
+            actions
         }
     }
 
@@ -512,7 +502,12 @@ private struct SetupStepBody: View {
         switch step {
         case .profile:
             VStack(alignment: .leading, spacing: Spacing.l) {
-                AccountPhotoGroup(hasPhoto: session.user?.image != nil)
+                VStack(alignment: .leading, spacing: Spacing.xs + 2) {
+                    Text("Foto")
+                        .font(TypeScale.captionStrong)
+                        .foregroundStyle(Theme.textPrimary)
+                    AccountPhotoGroup(hasPhoto: session.user?.image != nil, caption: nil)
+                }
                 OnboardingField(label: "Seu nome") {
                     TextField("", text: $name, prompt: Text("Como te chamam"))
                         .focused($nameFocused)
@@ -548,69 +543,44 @@ private struct SetupStepBody: View {
         }
     }
 
-    @ViewBuilder
     private var actions: some View {
-        VStack(alignment: .leading, spacing: Spacing.m) {
+        SetupActionBar(back: back, skip: skip) {
             switch step {
             case .profile:
-                primary("Continuar", systemImage: "arrow.right", busy: saving, action: saveProfile)
+                SetupPrimaryButton(title: "Continuar", busy: saving, action: saveProfile)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || saving)
             case .bot:
                 if bots.isEmpty {
-                    primary("Criar bot", systemImage: "plus") { model.openEditor(for: nil) }
-                        .keyboardShortcut(.defaultAction)
-                    later(note: "Você cria os bots depois, um por um.", label: "Criar depois")
+                    SetupPrimaryButton(title: "Criar bot", systemImage: "plus") { model.openEditor(for: nil) }
                 } else {
-                    primary("Continuar", systemImage: "arrow.right") { store.mark(.bot) }
-                        .keyboardShortcut(.defaultAction)
-                    Button("Criar outro bot") { model.openEditor(for: nil) }
+                    Button("Criar outro") { model.openEditor(for: nil) }
                         .buttonStyle(OnboardingGhostButtonStyle())
-                        .padding(.leading, -Spacing.m)
+                    SetupPrimaryButton(title: "Continuar") { store.mark(.bot) }
                 }
             case .accounts:
                 if accountsReady {
-                    primary("Continuar", systemImage: "arrow.right") { store.mark(.accounts) }
-                        .keyboardShortcut(.defaultAction)
+                    SetupPrimaryButton(title: "Continuar") { store.mark(.accounts) }
                 } else {
-                    primary("Procurar de novo", systemImage: "arrow.clockwise", busy: model.isRefreshingAccounts, busyTitle: "Procurando…") {
+                    SetupPrimaryButton(title: "Procurar de novo", systemImage: "arrow.clockwise", busy: model.isRefreshingAccounts, busyTitle: "Procurando…") {
                         model.refreshAccounts()
                     }
                     .disabled(model.isRefreshingAccounts)
-                    later(note: "Sem uma conta, os bots não respondem.", label: "Conectar depois")
                 }
-            case .integrations:
-                primary("Continuar", systemImage: "arrow.right") { store.mark(.integrations) }
-                later(note: "Fica em Ajustes › Integrações.", label: "Pular esta etapa")
-            case .connectors:
-                primary("Continuar", systemImage: "arrow.right") { store.mark(.connectors) }
-                later(note: "O catálogo fica em Conectores, na barra lateral.", label: "Pular esta etapa")
-            case .computer:
-                primary("Continuar", systemImage: "arrow.right") { store.mark(.computer) }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(!macReady)
-                later(note: "Os bots trabalham sem o Mac; só não veem a tela.", label: "Deixar para depois")
+            case .integrations, .connectors, .computer:
+                SetupPrimaryButton(title: "Continuar") { store.mark(step) }
+                    .disabled(step == .computer && !macReady)
             }
         }
     }
 
-    private func primary(
-        _ title: String,
-        systemImage: String,
-        busy: Bool = false,
-        busyTitle: String? = nil,
-        action: @escaping () -> Void
-    ) -> some View {
-        OnboardingPrimaryButton(title: title, systemImage: systemImage, busy: busy, busyTitle: busyTitle, action: action)
-            .frame(maxWidth: 320)
-    }
-
-    private func later(note: String, label: String) -> some View {
-        HStack(spacing: Spacing.xs) {
-            Text(note)
-                .font(TypeScale.caption)
-                .foregroundStyle(Theme.textTertiary)
-            Button(label) { store.skip(step) }
-                .buttonStyle(SetupLinkButtonStyle())
+    private var skip: SetupSkip? {
+        switch step {
+        case .profile: nil
+        case .bot: bots.isEmpty ? SetupSkip(note: "Você cria os bots depois, um por um.") { store.skip(.bot) } : nil
+        case .accounts: accountsReady ? nil : SetupSkip(note: "Sem uma conta, os bots não respondem.") { store.skip(.accounts) }
+        case .integrations: SetupSkip(note: "Fica em Ajustes › Integrações.") { store.skip(.integrations) }
+        case .connectors: SetupSkip(note: "O catálogo fica em Conectores, na barra lateral.") { store.skip(.connectors) }
+        case .computer: SetupSkip(note: "Os bots trabalham sem o Mac; só não veem a tela.") { store.skip(.computer) }
         }
     }
 
@@ -634,18 +604,78 @@ private struct SetupStepBody: View {
     }
 }
 
-private struct SetupLinkButtonStyle: ButtonStyle {
-    @State private var hovering = false
+struct SetupSkip {
+    let note: String
+    let action: () -> Void
+}
 
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(TypeScale.captionStrong)
-            .foregroundStyle(Theme.textPrimary)
-            .underline(hovering)
-            .opacity(configuration.isPressed ? 0.6 : 1)
-            .contentShape(Rectangle())
-            .clickable()
-            .onHover { hovering = $0 }
+private struct SetupActionBar<Trailing: View>: View {
+    let back: (() -> Void)?
+    let skip: SetupSkip?
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: Spacing.xs) {
+            if let back {
+                Button(action: back) {
+                    Label("Voltar", systemImage: "chevron.left")
+                        .labelStyle(.titleAndIcon)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                .buttonStyle(OnboardingGhostButtonStyle())
+            }
+            if let skip {
+                Button(action: skip.action) {
+                    Text("Pular")
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                .buttonStyle(OnboardingGhostButtonStyle())
+                .help(skip.note)
+                .accessibilityHint(skip.note)
+            }
+            Spacer(minLength: Spacing.m)
+            HStack(spacing: Spacing.s) {
+                trailing
+            }
+        }
+        .padding(.top, Spacing.s)
+    }
+}
+
+private struct SetupPrimaryButton: View {
+    let title: String
+    var systemImage: String?
+    var busy = false
+    var busyTitle: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Spacing.xs + 2) {
+                if busy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Theme.onAccent)
+                } else if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                Text(busy ? (busyTitle ?? title) : title)
+                    .lineLimit(1)
+                    .fixedSize()
+                if systemImage == nil && !busy {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+            }
+            .frame(minWidth: 88)
+            .frame(height: 40)
+        }
+        .buttonStyle(.brandPrimary)
+        .keyboardShortcut(.defaultAction)
+        .fixedSize()
     }
 }
 
@@ -671,111 +701,18 @@ private struct SetupDoneBody: View {
             if !bots.isEmpty {
                 SetupBotsStrip(bots: bots, mood: model.readyAccounts.isEmpty ? .sleeping : .idle)
             }
-            OnboardingPrimaryButton(title: "Entrar no app", systemImage: "arrow.right") {
-                store.finish()
-            }
-            .frame(maxWidth: 320)
-            .keyboardShortcut(.defaultAction)
-            Text("Dá para refazer tudo em Ajustes › Conta.")
-                .font(TypeScale.caption)
-                .foregroundStyle(Theme.textTertiary)
-        }
-    }
-}
-
-private struct SetupPreview: View {
-    let bots: [Bot]
-    let awake: Bool
-    let macReady: Bool
-
-    @Environment(\.appReduceMotion) private var reduceMotion
-    private let session = AuthSession.shared
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.m) {
-            Text("O seu time, enquanto você configura")
-                .font(TypeScale.caption)
-                .foregroundStyle(Theme.textTertiary)
-            VStack(alignment: .leading, spacing: Spacing.xs) {
-                HStack(spacing: Spacing.m) {
-                    UserAvatar(size: 30)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(session.user?.name ?? "Você")
-                            .font(BrandFonts.sans(13, weight: .semibold))
-                            .foregroundStyle(Theme.textPrimary)
-                            .lineLimit(1)
-                        Text("Dono da conta")
-                            .font(TypeScale.caption)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-                .padding(Spacing.s + 2)
-                if bots.isEmpty {
-                    HStack(spacing: Spacing.m) {
-                        Circle()
-                            .fill(Theme.textPrimary.opacity(0.06))
-                            .frame(width: 30, height: 30)
-                            .overlay {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 11, weight: .semibold))
-                                    .foregroundStyle(Theme.textTertiary)
-                            }
-                        Text("O seu bot aparece aqui")
-                            .font(TypeScale.caption)
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-                    .padding(Spacing.s + 2)
-                    .transition(.opacity)
-                } else {
-                    ForEach(bots.prefix(5)) { bot in
-                        HStack(spacing: Spacing.m) {
-                            BotCharacter(bot: bot, mood: awake ? .idle : .sleeping, size: 30)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(bot.name)
-                                    .font(BrandFonts.sans(13, weight: .semibold))
-                                    .foregroundStyle(Theme.textPrimary)
-                                    .lineLimit(1)
-                                Text(awake ? "Pronto para conversar" : "Dormindo até ter uma IA")
-                                    .font(TypeScale.caption)
-                                    .foregroundStyle(awake ? Theme.success : Theme.textSecondary)
-                                    .contentTransition(.opacity)
-                            }
-                        }
-                        .padding(Spacing.s + 2)
-                        .transition(SetupMotion.step(reduceMotion: reduceMotion))
-                    }
+            HStack(spacing: Spacing.m) {
+                Text("Dá para refazer tudo em Ajustes › Conta.")
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+                Spacer(minLength: Spacing.m)
+                SetupPrimaryButton(title: "Entrar no app") {
+                    store.finish()
                 }
             }
-            .padding(Spacing.xs)
-            .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-            HStack(spacing: Spacing.s) {
-                SetupPreviewChip(systemImage: "sparkles", text: awake ? "IA conectada" : "Sem IA", on: awake)
-                SetupPreviewChip(systemImage: "desktopcomputer", text: macReady ? "Mac liberado" : "Mac fechado", on: macReady)
-            }
+            .padding(.top, Spacing.s)
         }
-        .animation(Motion.animation(reduceMotion: reduceMotion), value: bots.map(\.id))
-        .animation(Motion.animation(reduceMotion: reduceMotion), value: awake)
-        .accessibilityElement(children: .combine)
-    }
-}
-
-private struct SetupPreviewChip: View {
-    let systemImage: String
-    let text: String
-    let on: Bool
-
-    var body: some View {
-        HStack(spacing: Spacing.xs + 1) {
-            Image(systemName: systemImage)
-                .font(.system(size: 10, weight: .semibold))
-            Text(text)
-                .font(TypeScale.caption)
-                .lineLimit(1)
-        }
-        .foregroundStyle(on ? Theme.success : Theme.textTertiary)
-        .padding(.horizontal, Spacing.s + 2)
-        .frame(height: 26)
-        .background((on ? Theme.success.opacity(0.12) : Theme.textPrimary.opacity(0.05)), in: Capsule())
     }
 }
 

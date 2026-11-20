@@ -368,7 +368,7 @@ struct Bot: Identifiable, Hashable, Sendable, Decodable {
         capabilities = try? container.decodeIfPresent(BotCapabilitySet.self, forKey: .capabilities)
         hasBrowser = (try? container.decodeIfPresent(Bool.self, forKey: .hasBrowser)) ?? capabilities?.browser ?? false
         instructions = (try? container.decodeIfPresent(String.self, forKey: .instructions)) ?? ""
-        glyph = (try? container.decodeIfPresent(String.self, forKey: .glyph)).map(CharacterGlyph.canonicalFace)
+        glyph = try? container.decodeIfPresent(String.self, forKey: .glyph)
         archivedAt = try? container.decodeIfPresent(String.self, forKey: .archivedAt)
         thread = try? container.decodeIfPresent(BotThread.self, forKey: .thread)
         engine = try? container.decodeIfPresent(BotEngine.self, forKey: .engine)

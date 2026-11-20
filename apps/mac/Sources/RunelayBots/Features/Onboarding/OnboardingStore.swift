@@ -44,6 +44,8 @@ private struct ServerProgress: Codable {
     var finished = false
     var marks: [SetupStepID] = []
     var skipped: [SetupStepID] = []
+    var startedEmpty: Bool?
+    var baseline: [String]?
 }
 
 @MainActor
@@ -74,15 +76,15 @@ final class OnboardingStore {
         return "onboarding.v2.\(origin).\(user)"
     }
 
+    private var stored: ServerProgress? {
+        let key = key
+        if let cached = progress[key] { return cached }
+        guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
+        return (try? JSONDecoder().decode(ServerProgress.self, from: data)) ?? ServerProgress(finished: true)
+    }
+
     private var current: ServerProgress {
-        get {
-            let key = key
-            if let cached = progress[key] { return cached }
-            guard let data = UserDefaults.standard.data(forKey: key),
-                  let stored = try? JSONDecoder().decode(ServerProgress.self, from: data)
-            else { return ServerProgress() }
-            return stored
-        }
+        get { stored ?? ServerProgress() }
         set {
             let key = key
             progress[key] = newValue
@@ -92,7 +94,7 @@ final class OnboardingStore {
         }
     }
 
-    func stage(for session: AuthSession) -> OnboardingStage? {
+    func stage(for session: AuthSession, serverHasBots: Bool?) -> OnboardingStage? {
         if let intro { return intro }
         switch session.state {
         case .checking:
@@ -104,8 +106,26 @@ final class OnboardingStore {
         case .signedOut:
             return .account
         case .signedIn:
-            return current.finished ? nil : .setup
+            if let saved = stored {
+                return saved.finished || saved.startedEmpty != true ? nil : .setup
+            }
+            guard let serverHasBots else { return .checking }
+            return serverHasBots ? nil : .setup
         }
+    }
+
+    var baseline: Set<String>? { stored?.baseline.map(Set.init) }
+
+    func guideStarted(visibleBots: [String]) {
+        if let saved = stored {
+            guard saved.startedEmpty == true, saved.baseline == nil else { return }
+            var next = saved
+            next.baseline = visibleBots
+            current = next
+            return
+        }
+        guard visibleBots.isEmpty else { return }
+        current = ServerProgress(startedEmpty: true, baseline: [])
     }
 
     var marks: [SetupStepID] { current.marks }
@@ -151,7 +171,7 @@ final class OnboardingStore {
     }
 
     func restart() {
-        current = ServerProgress()
+        current = ServerProgress(startedEmpty: true)
         picked = SetupStepID.allCases.first
     }
 }

@@ -19,6 +19,7 @@ struct AccountSettings: View {
 
 struct AccountPhotoGroup: View {
     let hasPhoto: Bool
+    var caption: String? = "Foto"
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var busy = false
     @State private var targeted = false
@@ -27,7 +28,7 @@ struct AccountPhotoGroup: View {
     private let identity = UserIdentity.shared
 
     var body: some View {
-        SettingsGroup(caption: "Foto") {
+        SettingsGroup(caption: caption) {
             HStack(spacing: Spacing.l) {
                 UserAvatar(size: 64)
                     .overlay {
@@ -199,20 +200,21 @@ private struct PasswordGroup: View {
     @State private var fresh = ""
     @State private var confirm = ""
     @State private var busy = false
+    @State private var isOpen = false
     @State private var feedback: (text: String, failed: Bool)?
     private let session = AuthSession.shared
 
     private var mismatch: Bool { !confirm.isEmpty && confirm != fresh }
 
     private var canSave: Bool {
-        !busy && !current.isEmpty && fresh.count >= 10 && fresh == confirm
+        !busy && !current.isEmpty && fresh.count >= 8 && fresh == confirm
     }
 
     var body: some View {
-        SettingsGroup(caption: "Senha") {
+        SettingsDisclosure(title: "Trocar senha", icon: SettingsIcon("key.fill", SettingsTint.graphite), isOpen: $isOpen) {
             VStack(alignment: .leading, spacing: Spacing.m) {
                 field("Senha atual", text: $current, content: .password)
-                field("Nova senha (10 caracteres ou mais)", text: $fresh, content: .newPassword)
+                field("Nova senha (8 caracteres ou mais)", text: $fresh, content: .newPassword)
                 field("Repita a nova senha", text: $confirm, content: .newPassword)
                 HStack(spacing: Spacing.s) {
                     if mismatch {
@@ -250,7 +252,10 @@ private struct PasswordGroup: View {
                     .disabled(!canSave)
                 }
             }
-            .padding(Spacing.l)
+            .frame(maxWidth: Metrics.formWidth, alignment: .leading)
+            .padding(.horizontal, Spacing.l)
+            .padding(.top, Spacing.xs)
+            .padding(.bottom, Spacing.l)
         }
         .animation(Motion.animation(reduceMotion: reduceMotion), value: mismatch)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: feedback?.text)

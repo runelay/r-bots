@@ -65,12 +65,6 @@ struct CharacterGlyph: Sendable {
 
     static let faceIDs: [String] = presetIDs + (1...11).map { "face-\($0)" }
 
-    private static let presetAliases: [String: String] = ["boss": "crown", "davi": "visor", "lia": "antenna"]
-
-    static func canonicalFace(_ name: String) -> String {
-        presetAliases[name] ?? name
-    }
-
     private static let faceRecipes: [(eyes: Int, mouth: Int, accessory: Int)] = [
         (0, 0, 0), (1, 1, 0), (2, 2, 1), (3, 0, 2), (4, 1, 3),
         (0, 3, 4), (1, 4, 5), (2, 0, 3), (3, 2, 0), (4, 4, 1), (0, 1, 2)
@@ -100,7 +94,7 @@ struct CharacterGlyph: Sendable {
     }
 
     static func compactPreset(_ name: String) -> CharacterGlyph? {
-        switch canonicalFace(name) {
+        switch name {
         case "crown":
             CharacterGlyph(
                 rows: [".#.#.#.", ".#####.", ".......", ".##.##.", ".......", "..###..", "......."],
@@ -125,7 +119,7 @@ struct CharacterGlyph: Sendable {
     }
 
     private static func preset(_ name: String) -> CharacterGlyph? {
-        switch canonicalFace(name) {
+        switch name {
         case "crown": crown
         case "visor": visor
         case "antenna": antenna

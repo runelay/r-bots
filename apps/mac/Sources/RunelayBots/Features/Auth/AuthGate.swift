@@ -8,7 +8,15 @@ struct AuthGate: ViewModifier {
     private let onboarding = OnboardingStore.shared
 
     private var stage: OnboardingStage? {
-        onboarding.stage(for: session)
+        onboarding.stage(for: session, serverHasBots: serverHasBots)
+    }
+
+    private var serverHasBots: Bool? {
+        switch model.bots {
+        case .loaded(let list): list.contains { !$0.isPending }
+        case .failed: true
+        case .idle, .loading: nil
+        }
     }
 
     private var editingBot: Bool {
@@ -34,6 +42,10 @@ struct AuthGate: ViewModifier {
                 Task { await model.reloadAfterSignIn() }
             }
             await session.bootstrap()
+        }
+        .task(id: stage == .checking && session.user != nil) {
+            guard stage == .checking, session.user != nil else { return }
+            if case .idle = model.bots { await model.loadBots() }
         }
     }
 }
