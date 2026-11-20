@@ -101,13 +101,13 @@ struct SidebarHeader: View {
 enum SidebarItem: Identifiable {
     case header(String, Int?, Bool, BotSection?)
     case bot(Bot)
-    case conversation(Bot, BotConversation, Bool)
+    case conversation(Bot, BotConversation, Bool, Int)
 
     var id: String {
         switch self {
         case .header(let title, _, _, let section): "header-\(section?.id ?? title)"
         case .bot(let bot): "bot-\(bot.id)"
-        case .conversation(_, let conversation, _): "conversation-\(conversation.sessionId)"
+        case .conversation(_, let conversation, _, _): "conversation-\(conversation.sessionId)"
         }
     }
 }
@@ -138,9 +138,10 @@ struct BotChatList: View {
             for bot in fresh {
                 result.append(.bot(bot))
                 guard model.showsConversations(bot), !model.collapsedBots.contains(bot.id) else { continue }
-                let children = model.conversations(for: bot.id)
-                for (index, conversation) in children.enumerated() {
-                    result.append(.conversation(bot, conversation, index == children.count - 1))
+                let children = model.conversationTree(for: bot.id)
+                let lastRoot = children.lastIndex { $0.depth == 0 } ?? 0
+                for (index, entry) in children.enumerated() {
+                    result.append(.conversation(bot, entry.conversation, index >= lastRoot, entry.depth))
                 }
             }
         }
@@ -186,8 +187,8 @@ struct BotChatList: View {
                             } else {
                                 row(bot)
                             }
-                        case .conversation(let bot, let conversation, let isLast):
-                            conversationRow(bot, conversation, isLast: isLast)
+                        case .conversation(let bot, let conversation, let isLast, let depth):
+                            conversationRow(bot, conversation, isLast: isLast, depth: depth)
                         }
                     }
                 } else {
@@ -378,8 +379,9 @@ struct BotChatList: View {
         return (collapsed, toggle)
     }
 
-    private func conversationRow(_ bot: Bot, _ conversation: BotConversation, isLast: Bool) -> some View {
-        ConversationRow(
+    private func conversationRow(_ bot: Bot, _ conversation: BotConversation, isLast: Bool, depth: Int) -> some View {
+        let childCount = model.childThreadCount(of: conversation)
+        return ConversationRow(
             conversation: conversation,
             provider: ModelNames.provider(bot.engine?.account ?? "vps:claude"),
             status: model.conversationStatus(conversation),
@@ -401,6 +403,12 @@ struct BotChatList: View {
             },
             archive: conversation.isMain ? nil : {
                 model.archiveConversation(conversation)
+            },
+            depth: depth,
+            childCount: childCount,
+            childrenCollapsed: model.collapsedThreads.contains(conversation.sessionId),
+            toggleChildren: childCount == 0 ? nil : {
+                model.toggleThreadChildren(conversation)
             }
         ) {
             model.openFromSidebar(newTab: NSEvent.modifierFlags.contains(.command)) {
@@ -432,6 +440,13 @@ struct BotChatList: View {
             renamingConversationID = conversation.sessionId
         } label: {
             Label("Renomear", systemImage: "pencil")
+        }
+        if conversation.parentSessionId != nil {
+            Button {
+                model.showSide(conversation)
+            } label: {
+                Label("Abrir ao lado", systemImage: "rectangle.split.2x1")
+            }
         }
         Button {
             model.markConversationUnread(conversation)
@@ -821,6 +836,7 @@ enum ConversationTree {
     static let iconWidth: CGFloat = 12
     static let iconGap: CGFloat = Spacing.s - 2
     static let pillX: CGFloat = guideX + 11
+    static let nestStep: CGFloat = 14
     static let headerHeight: CGFloat = 56
     static let rowHeight: CGFloat = 30
     static let rowGap: CGFloat = 2
@@ -968,6 +984,10 @@ struct ConversationRow: View {
     var cancelRename: () -> Void = {}
     var startRename: () -> Void = {}
     var archive: (() -> Void)? = nil
+    var depth = 0
+    var childCount = 0
+    var childrenCollapsed = false
+    var toggleChildren: (() -> Void)? = nil
     let select: () -> Void
 
     @State private var isHovering = false
@@ -980,6 +1000,11 @@ struct ConversationRow: View {
     var body: some View {
         Button(action: select) {
             HStack(spacing: ConversationTree.iconGap) {
+                if depth > 0 {
+                    Text("↳")
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                }
                 ConversationStateIcon(status: status, provider: provider)
                 if isRenaming {
                     TextField("Nome da conversa", text: renameText)
@@ -1004,6 +1029,12 @@ struct ConversationRow: View {
                 }
                 Spacer(minLength: Spacing.xs)
                 if !showsActions {
+                    if childrenCollapsed && childCount > 0 {
+                        Text("+\(childCount)")
+                            .font(TypeScale.caption)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.textTertiary)
+                    }
                     if unread > 0 {
                         Text(unread > 99 ? "99+" : "\(unread)")
                             .font(TypeScale.counter)
@@ -1029,13 +1060,20 @@ struct ConversationRow: View {
                 in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
             )
             .contentShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-            .padding(.leading, ConversationTree.pillX)
+            .padding(.leading, ConversationTree.pillX + CGFloat(depth) * ConversationTree.nestStep)
         }
         .buttonStyle(.plain)
         .clickable()
         .overlay(alignment: .trailing) {
             if showsActions {
                 HStack(spacing: 0) {
+                    if let toggleChildren {
+                        RowActionButton(
+                            systemImage: childrenCollapsed ? "chevron.right" : "chevron.down",
+                            help: childrenCollapsed ? "Mostrar secundárias" : "Recolher secundárias",
+                            action: toggleChildren
+                        )
+                    }
                     RowActionButton(systemImage: "pencil", help: "Renomear", action: startRename)
                     if let archive {
                         RowActionButton(systemImage: "archivebox", help: "Arquivar", action: archive)
@@ -1046,7 +1084,7 @@ struct ConversationRow: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            ConversationBranch(isLast: isLast)
+            ConversationBranch(isLast: isLast, nested: depth > 0)
         }
         .onHover { isHovering = $0 }
         .springAnimation(value: isSelected)
@@ -1089,6 +1127,7 @@ struct ConversationStateIcon: View {
 
 struct ConversationBranch: View {
     let isLast: Bool
+    var nested = false
 
     var body: some View {
         let x = ConversationTree.guideX
@@ -1096,6 +1135,13 @@ struct ConversationBranch: View {
         let end = ConversationTree.pillX - 2
         let radius: CGFloat = 7
         Path { path in
+            if nested {
+                if !isLast {
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: ConversationTree.rowHeight + ConversationTree.rowGap))
+                }
+                return
+            }
             path.move(to: CGPoint(x: x, y: 0))
             path.addLine(to: CGPoint(x: x, y: mid - radius))
             path.addQuadCurve(to: CGPoint(x: x + radius, y: mid), control: CGPoint(x: x, y: mid))

@@ -357,7 +357,11 @@ struct ComposerView: View {
                     model.activeSheet = .repoPicker(target.id)
                 }
             },
-        ]
+        ] + (target.isGroup ? [] : [
+            SlashCommand(id: "side", title: "/side", subtitle: "Conversa secundária ao lado, com o contexto desta", systemImage: "rectangle.split.2x1") {
+                openSide(text: store.draft.trimmingCharacters(in: .whitespacesAndNewlines))
+            },
+        ])
         return all.filter { query.isEmpty || $0.id.contains(query) || $0.subtitle.lowercased().contains(query) }
     }
 
@@ -385,6 +389,12 @@ struct ComposerView: View {
         }
     }
 
+    private func openSide(text: String) {
+        model.openSide(from: store, text: text)
+        store.clearDraft()
+        focus()
+    }
+
     private var mentionQuery: String? {
         guard !mentionables.isEmpty else { return nil }
         let last = store.draft.split(separator: " ", omittingEmptySubsequences: false).last.map(String.init) ?? ""
@@ -410,6 +420,10 @@ struct ComposerView: View {
     private func send() {
         if isListening {
             voice.stop(send: true)
+            return
+        }
+        if !bot.isGroup, let text = SideThread.command(in: store.draft) {
+            openSide(text: text)
             return
         }
         guard store.canSend, !voice.isBusy(for: store) else { return }

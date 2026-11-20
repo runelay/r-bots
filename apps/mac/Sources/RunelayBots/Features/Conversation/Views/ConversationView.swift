@@ -204,6 +204,7 @@ struct ConversationView: View {
     @Bindable var store: ConversationStore
     let bot: Bot
     let focusToken: Int
+    var compact = false
     @Environment(\.appReduceMotion) private var reduceMotion
     @Environment(\.conversationFontSize) private var conversationFontSize
     @State private var hoveredItemID: String?
@@ -254,7 +255,9 @@ struct ConversationView: View {
         }
         .springAnimation(value: isDropTargeted)
         .overlay(alignment: .top) {
-            CallOverlay(bot: bot)
+            if !compact {
+                CallOverlay(bot: bot)
+            }
         }
     }
 
@@ -377,7 +380,7 @@ struct ConversationView: View {
             content: AnyView(
                 content
                     .frame(maxWidth: Metrics.transcriptWidth, alignment: .leading)
-                    .padding(.horizontal, Spacing.xxl)
+                    .padding(.horizontal, compact ? Spacing.l : Spacing.xxl)
                     .frame(maxWidth: .infinity)
                     .environment(model)
                     .environment(\.appReduceMotion, reduceMotion)
@@ -491,8 +494,8 @@ struct ConversationView: View {
             }
         }
         .frame(maxWidth: Metrics.transcriptWidth + Spacing.l * 2)
-        .padding(.horizontal, Spacing.xl)
-        .padding(.bottom, Spacing.xl)
+        .padding(.horizontal, compact ? Spacing.m : Spacing.xl)
+        .padding(.bottom, compact ? Spacing.m : Spacing.xl)
         .padding(.top, Spacing.xs)
         .frame(maxWidth: .infinity)
         .springAnimation(value: store.lastError)

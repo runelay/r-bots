@@ -268,6 +268,10 @@ final class AppModel {
     var collapsedBots: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "sidebar.collapsedBots") ?? []) {
         didSet { UserDefaults.standard.set(Array(collapsedBots), forKey: "sidebar.collapsedBots") }
     }
+    var collapsedThreads: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "sidebar.collapsedThreads") ?? []) {
+        didSet { UserDefaults.standard.set(Array(collapsedThreads), forKey: "sidebar.collapsedThreads") }
+    }
+    private(set) var sideStore: ConversationStore?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var isRefreshing = false
@@ -1463,6 +1467,8 @@ final class AppModel {
         for store in parkedStores.values {
             store.stop()
         }
+        sideStore?.stop()
+        sideStore = nil
         for store in draftReturns.values {
             store.stop()
         }
@@ -1619,6 +1625,13 @@ final class AppModel {
                 park(current, sessionID: id)
             }
         }
+        if let side = sideStore, side.sessionId == sessionID {
+            sideStore = nil
+            park(side, sessionID: sessionID)
+            if ArtifactCenter.shared.current?.kind == SideThread.panelKind {
+                BlockPresentation.shared.close()
+            }
+        }
         parkedOrder.removeAll { $0 == sessionID }
         let store = parkedStores.removeValue(forKey: sessionID) ?? makeStore(bot: bot, sessionId: sessionID)
         threads[botID] = store
@@ -1647,6 +1660,96 @@ final class AppModel {
     func prefetchConversation(botID: String, sessionID: String) {
         guard threads[botID]?.sessionId != sessionID, parkedStores[sessionID] == nil, let bot = bot(id: botID) else { return }
         TranscriptCache.shared.warm(client: client, basePath: bot.sessionBasePath, sessionID: sessionID)
+    }
+
+    func conversationTree(for botID: String) -> [(conversation: BotConversation, depth: Int)] {
+        let list = conversations(for: botID)
+        let ids = Set(list.map(\.sessionId))
+        var children: [String: [BotConversation]] = [:]
+        var roots: [BotConversation] = []
+        for item in list {
+            if let parent = item.parentSessionId, parent != item.sessionId, ids.contains(parent) {
+                children[parent, default: []].append(item)
+            } else {
+                roots.append(item)
+            }
+        }
+        var result: [(conversation: BotConversation, depth: Int)] = []
+        var seen: Set<String> = []
+        func walk(_ item: BotConversation, depth: Int) {
+            guard seen.insert(item.sessionId).inserted else { return }
+            result.append((item, depth))
+            guard !collapsedThreads.contains(item.sessionId) else { return }
+            for child in (children[item.sessionId] ?? []).sorted(by: { $0.createdAt < $1.createdAt }) {
+                walk(child, depth: depth + 1)
+            }
+        }
+        for root in roots {
+            walk(root, depth: 0)
+        }
+        return result
+    }
+
+    func childThreadCount(of conversation: BotConversation) -> Int {
+        conversations(for: conversation.botId).filter { $0.parentSessionId == conversation.sessionId }.count
+    }
+
+    func toggleThreadChildren(_ conversation: BotConversation) {
+        if collapsedThreads.contains(conversation.sessionId) {
+            collapsedThreads.remove(conversation.sessionId)
+        } else {
+            collapsedThreads.insert(conversation.sessionId)
+        }
+    }
+
+    func openSide(from store: ConversationStore, text: String) {
+        let botID = store.bot.id
+        guard let sessionID = store.sessionId, let bot = bot(id: botID), !bot.isGroup, !bot.isPending else {
+            showNotice("Mande a primeira mensagem antes de abrir uma conversa secundária.")
+            return
+        }
+        let client = client
+        Task {
+            do {
+                let created = try await client.sideConversation(botID: botID, sessionID: sessionID, message: text)
+                upsertConversation(created)
+                collapsedBots.remove(botID)
+                collapsedThreads.remove(sessionID)
+                showSide(created)
+            } catch {
+                showNotice(ErrorMessage.describe(error))
+            }
+        }
+    }
+
+    func showSide(_ conversation: BotConversation) {
+        let botID = conversation.botId
+        let sessionID = conversation.sessionId
+        guard let bot = bot(id: botID), !bot.isGroup else { return }
+        guard threads[botID]?.sessionId != sessionID else {
+            showNotice("Essa conversa já está aberta no centro.")
+            return
+        }
+        if sideStore?.sessionId != sessionID {
+            if let previous = sideStore, let id = previous.sessionId {
+                park(previous, sessionID: id)
+            }
+            parkedOrder.removeAll { $0 == sessionID }
+            let store = parkedStores.removeValue(forKey: sessionID) ?? makeStore(bot: bot, sessionId: sessionID)
+            sideStore = store
+            store.resume()
+            store.start()
+        }
+        markRead(botID: botID, sessionID: sessionID)
+        ArtifactCenter.shared.open(
+            ArtifactRef(botID: botID, id: sessionID, title: conversation.title, kind: SideThread.panelKind, version: 1),
+            client: client
+        )
+    }
+
+    func promoteSide() {
+        guard let store = sideStore, let sessionID = store.sessionId else { return }
+        selectConversation(botID: store.bot.id, sessionID: sessionID)
     }
 
     private func warmTranscripts() {

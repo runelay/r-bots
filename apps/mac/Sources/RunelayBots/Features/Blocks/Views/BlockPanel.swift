@@ -22,7 +22,9 @@ struct BlockStage: View {
                         Group {
                             if ServerStore.isPaneKind(ref.kind) {
                                 Group {
-                                    if ref.kind == SimulatorStore.panelKind {
+                                    if ref.kind == SideThread.panelKind {
+                                        SideThreadPanel(ref: ref)
+                                    } else if ref.kind == SimulatorStore.panelKind {
                                         SimulatorPanel(ref: ref)
                                     } else if ref.kind == TestStore.panelKind {
                                         TestPanel(ref: ref)

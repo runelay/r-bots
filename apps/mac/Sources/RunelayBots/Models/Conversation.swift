@@ -60,6 +60,7 @@ struct BotConversation: Identifiable, Hashable, Sendable {
     var effectivePermission: PermissionMode
     var delegatedByName: String?
     var repoName: String?
+    var parentSessionId: String?
 
     var id: String { sessionId }
 
@@ -93,6 +94,7 @@ struct BotConversation: Identifiable, Hashable, Sendable {
         effectivePermission = PermissionMode(server: json["effectivePermission"]?.stringValue)
         delegatedByName = json["delegatedBy"]?["name"]?.stringValue
         repoName = json["code"]?["repoName"]?.stringValue
+        parentSessionId = json["parentSessionId"]?.stringValue
     }
 }
 
@@ -128,6 +130,15 @@ extension BotsClient {
         if !skills.isEmpty { body["skills"] = .array(skills.map(JSONValue.string)) }
         if !attachments.isEmpty { body["attachments"] = .array(attachments.map(JSONValue.string)) }
         guard let conversation = BotConversation(try await conversationSend(Self.conversationsRoot(botID), method: "POST", body: .object(body))) else {
+            throw ClientError.invalidResponse
+        }
+        return conversation
+    }
+
+    func sideConversation(botID: String, sessionID: String, message: String) async throws -> BotConversation {
+        var body: [String: JSONValue] = [:]
+        if !message.isEmpty { body["message"] = .string(message) }
+        guard let conversation = BotConversation(try await conversationSend("\(Self.conversationsRoot(botID))/\(sessionID)/side", method: "POST", body: .object(body))) else {
             throw ClientError.invalidResponse
         }
         return conversation
