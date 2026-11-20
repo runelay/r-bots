@@ -54,6 +54,8 @@ enum Theme {
     static let warning = Color.brand(light: 0xD58D25, dark: 0xEEB154)
     static let danger = Color.brand(light: 0xD33A3C, dark: 0xEF6661)
     static let merged = Color.brand(light: 0x8250DF, dark: 0xA371F7)
+    static let spotify = Color.brand(light: 0x1DB954, dark: 0x1ED760)
+    static let spotifyMark = Color.brand(light: 0x000000, dark: 0x000000)
 
     static let elevationShadow = Color.dynamic(light: rgb(0x000000), dark: rgb(0x000000), lightAlpha: 0.06, darkAlpha: 0.10)
     static let elevationShadowLifted = Color.dynamic(light: rgb(0x000000), dark: rgb(0x000000), lightAlpha: 0.08, darkAlpha: 0.12)

@@ -28,6 +28,7 @@ struct SidebarView: View {
         .bottomBar {
             VStack(spacing: 0) {
                 SidebarFooter()
+                SpotifyMiniPlayer()
                 SidebarAccountBar()
             }
         }

@@ -57,7 +57,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>O r/bots transcreve sua fala no próprio Mac para escrever a mensagem para os bots.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Os bots com acesso ao seu Mac usam AppleScript para agir no Finder, Safari, Mail e outros apps, sempre com a sua aprovação.</string>
+    <string>O r/bots controla a música do Spotify que está tocando. Os bots com acesso ao seu Mac usam AppleScript para agir no Finder, Safari, Mail e outros apps, sempre com a sua aprovação.</string>
     <key>NSDesktopFolderUsageDescription</key>
     <string>Os bots com acesso ao seu Mac listam e organizam arquivos da Mesa quando você libera essa pasta.</string>
     <key>NSDocumentsFolderUsageDescription</key>
