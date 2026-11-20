@@ -55,7 +55,7 @@ The live browser refresh was measured during the Lia turn: `/bots/lia/browser` `
 
 ## v21 (19/11): runner do Mac embutido no app
 
-O processo Node `~/runelay-bots/runner` (launchd `com.runelay.bots.runner`) saiu. O app runelay bots abre uma conexão de saída com o servidor e faz o papel do runner enquanto estiver aberto.
+O processo Node `~/runelay-bots/runner` (launchd `com.runelay.bots.runner`) saiu. O app r/bots abre uma conexão de saída com o servidor e faz o papel do runner enquanto estiver aberto.
 
 - `GET wss://<servidor>/runner/connect` com `Authorization: Bearer $RUNNER_TOKEN`. O app lê a chave em `~/Library/Application Support/runelay bots/runner.token` (chmod 600). Uma conexão por vez; a nova substitui a antiga. O servidor manda ping a cada 15 s; o app, a cada 20 s.
 - Frames JSON (texto):
@@ -122,7 +122,7 @@ Cada Mac é um dispositivo da conta. O token é uma chave `rbk_` do better-auth 
 ### Contas por Mac
 
 - O primeiro Mac registrado (ordem de `registeredAt`) usa `mac:<provedor>`; os outros, `mac-<8 primeiros caracteres do id>:<provedor>`. `runner` continua `"mac"` e cada conta traz `device: {id, name, connected}`; o rótulo vira `Claude · <nome do Mac>`.
-- Mac registrado e app fechado: `status:"offline"`, `detail:"Mac desconectado: abra o app runelay bots nele."`. Nenhum Mac na conta: `mac:*` com `device:null` e `detail:"Nenhum Mac na conta: entre no app runelay bots no Mac."`.
+- Mac registrado e app fechado: `status:"offline"`, `detail:"Mac desconectado: abra o app r/bots nele."`. Nenhum Mac na conta: `mac:*` com `device:null` e `detail:"Nenhum Mac na conta: entre no app r/bots no Mac."`.
 - Turno para um Mac fora da conexão termina com `done {ok:false, message:"Mac desconectado."}`. Computador, cofre, uso e arquivos usam o Mac conectado mais antigo.
 
 ### Runner Node antigo
@@ -151,7 +151,7 @@ turno em mac:claude (claude-haiku-5-5): call.requested computer_apps -> call.set
   -> "São 12 apps abertos. Um deles é o Finder."  (CLI no Mac -> proxy local -> conexão -> /mcp -> computer.tool -> executor)
 DELETE /devices/7619b352-…  -> {"ok":true,"revoked":true,"disconnected":true}
 log: mac runner disconnected (7619b352-…); 25 s sem reconexão
-GET /accounts: mac:claude offline "Nenhum Mac na conta: entre no app runelay bots no Mac."
+GET /accounts: mac:claude offline "Nenhum Mac na conta: entre no app r/bots no Mac."
 
 POST /devices {"name":"Mac de teste",…,"machineId":"doc-capture"} -> 201
   {"ok":true,"device":{"id":"60f5b9fb-…","name":"Mac de teste","model":"Mac17,3","osVersion":"26.6.2","appVersion":"0.5.0","userId":"fZtW…","registeredAt":"2026-11-19T23:59:23.137Z","connected":false,"connectedAt":null,"lastSeenAt":null},"token":"rbk_…"}
@@ -208,7 +208,7 @@ Só para contas `added`. Conta achada sozinha → 400 `{"field":"id"}`. Também 
 Próxima pasta livre e o comando de login; o app mostra os passos e um botão de copiar. Não há login guiado pelo app: o `claude auth login` precisa de navegador e do código colado no terminal.
 
 ```json
-{"provider":"claude","dir":"~/.claude-3","command":"CLAUDE_CONFIG_DIR=~/.claude-3 claude auth login","steps":["Abra um terminal no servidor onde o runelay bots roda, com o mesmo usuário dele.","Rode o comando abaixo e entre com a outra conta do Claude Code no navegador.","O diretório fica dentro da sua pasta pessoal, então o servidor já enxerga. Volte aqui e toque em Procurar de novo."]}
+{"provider":"claude","dir":"~/.claude-3","command":"CLAUDE_CONFIG_DIR=~/.claude-3 claude auth login","steps":["Abra um terminal no servidor onde o r/bots roda, com o mesmo usuário dele.","Rode o comando abaixo e entre com a outra conta do Claude Code no navegador.","O diretório fica dentro da sua pasta pessoal, então o servidor já enxerga. Volte aqui e toque em Procurar de novo."]}
 ```
 
 Codex: `mkdir -p ~/.codex-2 && CODEX_HOME=~/.codex-2 codex login`.
@@ -253,7 +253,7 @@ Ordem quando a conta do turno bate o limite **ou está fora do ar** (sem login, 
 `mac-runner.test.ts`:
 
 ```
-só Mac de membro conectado -> macRunnerConnected() = false, turno sem chave -> {"type":"done","ok":false,"message":"O app runelay bots não está conectado."}
+só Mac de membro conectado -> macRunnerConnected() = false, turno sem chave -> {"type":"done","ok":false,"message":"O app r/bots não está conectado."}
 macAccounts("member-mac") -> responde pelo Mac do membro
 mesmo deviceKey com outro userId -> close 4003 "device conflict"
 ```

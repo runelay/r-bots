@@ -1,6 +1,6 @@
 # Servidores de desenvolvimento
 
-Servidores que o runelay bots sobe para rodar os projetos liberados (web, API, app Expo): lista global, logs ao vivo, perfis salvos e ferramentas do bot. O `dev_server_*` do modo código (v19) continua por tarefa e entra na mesma lista.
+Servidores que o r/bots sobe para rodar os projetos liberados (web, API, app Expo): lista global, logs ao vivo, perfis salvos e ferramentas do bot. O `dev_server_*` do modo código (v19) continua por tarefa e entra na mesma lista.
 
 ## v48 (20/11): servidores, logs ao vivo, perfis e ferramentas do bot
 
@@ -83,7 +83,7 @@ O app mostra um card do servidor na conversa (um por servidor, id `server-<serve
 - O cookie `rb_preview` é um por origem: abrir a prévia de outro servidor no mesmo navegador troca a prévia ativa.
 - Caminhos que batem com rotas da API (`/auth`, `/health`, `/api`, `/bots`…) não chegam ao servidor na prévia; para uma API, use os logs ou `curl` no próprio servidor.
 - O wrangler roda sem Docker no container: projetos com Containers do Cloudflare precisam de `--enable-containers=false` (o perfil `api dev` usa).
-- Processos de dev que não foram subidos pelo runelay bots não aparecem.
+- Processos de dev que não foram subidos pelo r/bots não aparecem.
 
 ### Verificado
 

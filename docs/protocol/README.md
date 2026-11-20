@@ -1,6 +1,6 @@
-# Protocolo do runelay bots
+# Protocolo do r/bots
 
-Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v39, de 19 e 20/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
+Contrato verificado entre o servidor do r/bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v39, de 19 e 20/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
 
 ## Arquivos
 
@@ -30,7 +30,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 
 | Versão | Assunto | Arquivo(s) |
 | --- | --- | --- |
-| v1 (sem número, "runelay bots: verified protocol") | base eve | [overview](overview.md) (desvios, base), [bots](bots.md) (`GET /bots`), [conversations](conversations.md) (sessões, API de sessão, erros), [events](events.md) (stream, renderização), [approvals](approvals.md) (responder aprovação), [computer](computer.md) (rotas do navegador) |
+| v1 (sem número, "r/bots: verified protocol") | base eve | [overview](overview.md) (desvios, base), [bots](bots.md) (`GET /bots`), [conversations](conversations.md) (sessões, API de sessão, erros), [events](events.md) (stream, renderização), [approvals](approvals.md) (responder aprovação), [computer](computer.md) (rotas do navegador) |
 | v2 | motor Claude Agent SDK | [overview](overview.md) (introdução), [events](events.md) (diferenças, turnos capturados), [conversations](conversations.md) (thread principal, sessões, erros), [bots](bots.md) (bots como dados), [schedules-groups-sections](schedules-groups-sections.md) (rotinas na thread) |
 | v3 | proxy com contas conectadas | [accounts](accounts.md) (contas, motor, runners), [events](events.md) (diferenças, histórico paginado), [overview](overview.md) (endpoint MCP), [computer](computer.md) (navegador ao vivo, comportamento) |
 | v4 | navegador ao vivo e operável | [computer](computer.md) |

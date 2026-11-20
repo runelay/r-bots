@@ -128,7 +128,7 @@ No log do boot: `auth waiting for the owner (…)` no modo automático sem usuá
 Ganhou `required` e `methods`. O app decide o fluxo só por esta resposta:
 
 - `404`: servidor sem login (antigo ou `BOTS_AUTH=off`). O app pula o fluxo de conta.
-- `needsOwner: true`: ninguém criou conta ainda. O app mostra "Configurar este runelay bots".
+- `needsOwner: true`: ninguém criou conta ainda. O app mostra "Configurar este r/bots".
 - `required: false`: o portão ainda não está ligado (modo automático sem dono). O app oferece "Agora não" e segue sem conta até a próxima abertura.
 - `methods.passwordReset`: `false` enquanto o servidor não tem e-mail configurado. O app só mostra "Esqueci a senha" com `true`.
 
@@ -150,7 +150,7 @@ Ganhou `required` e `methods`. O app decide o fluxo só por esta resposta:
 ### App
 
 - Fluxo no molde da runelay: boas-vindas e endereço do servidor (só numa instalação nova), conta (dono, entrar ou convite) e "Primeiros passos" num trilho de 6 etapas: perfil (nome e foto), primeiro bot, contas de IA, integrações, conectores e uso do Mac. As três últimas são opcionais; cada etapa tem "depois". O progresso fica salvo no Mac por servidor e por conta (`onboarding.v2.<origem>.<userId>`), então toda conta nova vê o setup, inclusive o dono criado num servidor que já tinha sido usado antes do login. Ajustes › Conta › "Configurar de novo" e o menu do app "Configurar de novo…" reabrem. O nome muda por `POST /api/auth/update-user` (bearer).
-- Instalação que já tinha dados e servidor sem dono: abre direto em "Configurar este runelay bots", avisando que os bots e conversas continuam e passam a ser da conta.
+- Instalação que já tinha dados e servidor sem dono: abre direto em "Configurar este r/bots", avisando que os bots e conversas continuam e passam a ser da conta.
 - Sessão no Keychain (`com.runelay.bots.auth`), como na v32. Sair e trocar senha em Ajustes › Conta.
 
 ### Verificado
@@ -349,8 +349,8 @@ GET /auth/providers -> 200
 
 ### App
 
-- Tela dividida: formulário à esquerda (sem cabeçalho de logo desde 20/11; "Não tem conta?" + "Usar convite" no canto superior direito, na altura dos botões da janela; selo com o ícone do app (`RunelayAppMark`, o mesmo da barra) no halo em todas as variantes, título, botões sociais e "OU" só quando `providers` não está vazio, e-mail e senha com rótulo, asterisco, ícone e olho, "Manter conectado", "Esqueci a senha?" só com `methods.passwordReset`, botão escuro "Entrar", rodapé com "© 2026 runelay bots", o servidor (volta para a escolha do endereço) e "PT"). À direita, numa superfície de contraste com grade sutil: três personagens de pontos animados e três frases que trocam a cada 6 s com fade, param com o mouse em cima e têm indicador clicável.
-- Primeiro acesso ("Configure seus bots na runelay", subtítulo "Crie a conta dona deste servidor para começar."; até 20/11 era "Configurar este runelay bots") e convite ("Criar conta com convite") usam o mesmo layout, trocando título e campos.
+- Tela dividida: formulário à esquerda (sem cabeçalho de logo desde 20/11; "Não tem conta?" + "Usar convite" no canto superior direito, na altura dos botões da janela; selo com o ícone do app (`RunelayAppMark`, o mesmo da barra) no halo em todas as variantes, título, botões sociais e "OU" só quando `providers` não está vazio, e-mail e senha com rótulo, asterisco, ícone e olho, "Manter conectado", "Esqueci a senha?" só com `methods.passwordReset`, botão escuro "Entrar", rodapé com "© 2026 r/bots", o servidor (volta para a escolha do endereço) e "PT"). À direita, numa superfície de contraste com grade sutil: três personagens de pontos animados e três frases que trocam a cada 6 s com fade, param com o mouse em cima e têm indicador clicável.
+- Primeiro acesso ("Configure seu r/bots" (até 20/11 "Configure seus bots na runelay"), subtítulo "Crie a conta dona deste servidor para começar."; até 20/11 era "Configurar este runelay bots") e convite ("Criar conta com convite") usam o mesmo layout, trocando título e campos.
 - Abaixo de 900 pt de largura o painel da direita some.
 - Touch ID continua como "Entrar com Touch ID" abaixo do botão principal.
 
@@ -498,7 +498,7 @@ A página `/device` mostra o formulário "Criar a conta do dono" (código, nome,
 - Antes de "Liberar", mostra quem pediu, o endereço e a hora, com o aviso "Só libere se foi você que pediu agora, no seu Mac. Se alguém te mandou este link, recuse." Os dados vêm de `GET /auth/device/info?user_code=…` (precisa de sessão):
 
 ```
-GET /auth/device/info?user_code=<código> -> {"ok":true,"clientName":"app runelay bots para Mac","ip":"100.64.1.2","requestedAt":"…"}
+GET /auth/device/info?user_code=<código> -> {"ok":true,"clientName":"app r/bots para Mac","ip":"100.64.1.2","requestedAt":"…"}
 GET /auth/device/info?user_code=NOPE -> 404 {"ok":false,"error":"Pedido não encontrado ou vencido.","code":"not_found"}
 ```
 

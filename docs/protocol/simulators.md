@@ -15,12 +15,12 @@ Simuladores iOS (e emuladores Android) do Mac da pessoa, a ponte do Metro até e
 WebSocket `GET /runner/tunnel?port=<porta>` com `Authorization: Bearer <token de dispositivo>` (o mesmo do `/runner/connect`):
 
 - sem token de dispositivo → `401`;
-- porta que não é de um servidor do runelay bots no ar (`starting` ou `running`) → `404`;
+- porta que não é de um servidor do r/bots no ar (`starting` ou `running`) → `404`;
 - aceito → cada mensagem binária é um pedaço do fluxo TCP, nos dois sentidos, até `127.0.0.1:<porta>` (ou `::1`, se o servidor só ouve em IPv6). Fechar um lado fecha o outro. Não há protocolo por cima.
 
 No Mac, o app abre `127.0.0.1:<porta>` (a mesma porta da VPS quando está livre) e cria um WebSocket por conexão TCP. A ponte vive enquanto o app estiver aberto.
 
-Ao abrir um app Expo, o servidor também lê as `EXPO_PUBLIC_*` de `.env`, `.env.development`, `.env.local` e `.env.development.local` (só as chaves que apontam para `http(s)://localhost:<porta>` ou `127.0.0.1:<porta>`) e abre a ponte dessas portas quando elas são de um servidor do runelay bots no ar. As que não são voltam em `missing`, e o bot avisa para subir a API nessa porta.
+Ao abrir um app Expo, o servidor também lê as `EXPO_PUBLIC_*` de `.env`, `.env.development`, `.env.local` e `.env.development.local` (só as chaves que apontam para `http(s)://localhost:<porta>` ou `127.0.0.1:<porta>`) e abre a ponte dessas portas quando elas são de um servidor do r/bots no ar. As que não são voltam em `missing`, e o bot avisa para subir a API nessa porta.
 
 ### Operações do runner (`type:"request"`, `op`, `body`)
 
@@ -97,9 +97,9 @@ Servidor de produção (`servers-6` a `servers-8`), app instalado a partir de `~
 
 Turno real do Engenheiro de Software: `simulator_list` → `{"devices":2}`, `server_list`, `simulator_boot` → `{"udid":"5FBF3402-…","state":"Booted"}`, `simulator_screenshot` → `{"width":505,"height":1100}`. O primeiro `simulator_open_expo` falhou com "Simulator device failed to open conty://expo-development-client/…" porque o simulador tinha só o build Release (sem dev launcher).
 
-Ponte: `POST /simulators/open-expo {"server":"dev_fda47f5695","client":"go"}` → `{"ok":true,"url":"exp://127.0.0.1:5310","localPort":5310,"client":"go"}`; no Mac, `lsof` mostra o app runelay bots em `127.0.0.1:5310` e `curl -H "expo-platform: ios" http://127.0.0.1:5310/` devolve o manifest do Metro da VPS (`launchAsset.url` em `http://127.0.0.1:5310/…`). O Expo Go do SDK 58 recusou o projeto do SDK 57, e o do SDK 57 carregou o bundle (`iOS Bundled 31282ms … (4068 modules)`) e caiu em módulo nativo (Intercom).
+Ponte: `POST /simulators/open-expo {"server":"dev_fda47f5695","client":"go"}` → `{"ok":true,"url":"exp://127.0.0.1:5310","localPort":5310,"client":"go"}`; no Mac, `lsof` mostra o app r/bots em `127.0.0.1:5310` e `curl -H "expo-platform: ios" http://127.0.0.1:5310/` devolve o manifest do Metro da VPS (`launchAsset.url` em `http://127.0.0.1:5310/…`). O Expo Go do SDK 58 recusou o projeto do SDK 57, e o do SDK 57 carregou o bundle (`iOS Bundled 31282ms … (4068 modules)`) e caiu em módulo nativo (Intercom).
 
-Com um dev client Debug compilado do commit `7067247` do conty3.0 e o Metro numa worktree desse commit (`.env` ligado do checkout principal): `{"ok":true,"url":"conty://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A5313&disableOnboarding=1","localPort":5313,"client":"dev"}`, `iOS Bundled 35160ms … (3956 modules)` sem erro de app; o app abre na splash e espera a API do `.env` (`http://localhost:8787`), que na VPS é um `workerd` de fora do runelay bots.
+Com um dev client Debug compilado do commit `7067247` do conty3.0 e o Metro numa worktree desse commit (`.env` ligado do checkout principal): `{"ok":true,"url":"conty://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A5313&disableOnboarding=1","localPort":5313,"client":"dev"}`, `iOS Bundled 35160ms … (3956 modules)` sem erro de app; o app abre na splash e espera a API do `.env` (`http://localhost:8787`), que na VPS é um `workerd` de fora do r/bots.
 
 `test_maestro` pelo bot com `.maestro/abre-o-app.yaml` (`openLink` do dev client, `extendedWaitUntil` "Conty.*", `takeScreenshot`) → `test.result` `passed`, alvo "iPhone 17 Pro · iOS 26.5", `screenshot:true`. Os passos vieram vazios; o Maestro 2.12 grava `<debug>/<flow>/commands.json` e `takeScreenshot/`, e a leitura foi corrigida para procurar nas subpastas (saída real: `Open conty://… COMPLETED`, `Assert that "Conty.*" is visible… COMPLETED`, `Wait for animation to end… COMPLETED`, `Take screenshot tela-inicial… COMPLETED`).
 

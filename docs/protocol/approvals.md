@@ -1,6 +1,6 @@
 # Aprovações, Jev e modos de permissão
 
-## runelay bots: verified protocol
+## r/bots: verified protocol
 
 ### eve session API (under `sessionBasePath`, e.g. `/bots/lia/eve/v1`)
 

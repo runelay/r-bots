@@ -60,7 +60,7 @@ O app mostra o card com `SecureField`, o motivo, os sites e "Salvar no cofre" (l
 - `DELETE /vault/secrets/:name` → `{ok:true}` (apaga metadados e a cópia cifrada, esquece a máscara)
 - `PUT /vault/secrets/:name/server-copy` `{value}` (≤ 16 KB) / `DELETE …/server-copy`
 - `GET /vault/audit?name=&limit=` (mais novo primeiro) / `POST /vault/audit` `{name, outcome: used|denied|revealed, botId?, botName?, tool?, domain?, reason?}`
-- Sem token → `401 {"ok":false,"error":"O cofre só responde ao app runelay bots."}`. `POST /vault/exec/:ticket` é a única rota sem token (tíquete de uso único).
+- Sem token → `401 {"ok":false,"error":"O cofre só responde ao app r/bots."}`. `POST /vault/exec/:ticket` é a única rota sem token (tíquete de uso único).
 
 ### Endurecimento junto
 

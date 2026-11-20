@@ -1,6 +1,6 @@
 # Bots
 
-## runelay bots: verified protocol
+## r/bots: verified protocol
 
 ### Custom routes
 

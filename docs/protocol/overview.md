@@ -1,6 +1,6 @@
 # Visão geral: base, transporte e convenções
 
-## runelay bots: verified protocol
+## r/bots: verified protocol
 
 Every body below was captured from the running server (eve 1.1.0, stream version 27) on 2026-11-19.
 The approval flow (`interaction.opened` → answer → `interaction.settled`, `call.*`, `content.completed`, `usage.recorded`) was captured from a temporary copy of Lia that used a mock model and the real `browser_click` tool, because there are no model credentials on the VPS yet. With real credentials the shapes are the same; only text, ids and token counts change.

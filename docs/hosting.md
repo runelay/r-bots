@@ -1,6 +1,6 @@
 # Caminho para o produto hospedado
 
-Hoje o runelay bots é uma instalação de uma pessoa: um servidor, um dono, as assinaturas de IA logadas na máquina e o Mac dela como executor. Este documento lista o que muda para virar um serviço hospedado com várias pessoas, na ordem em que vale fazer.
+Hoje o r/bots é uma instalação de uma pessoa: um servidor, um dono, as assinaturas de IA logadas na máquina e o Mac dela como executor. Este documento lista o que muda para virar um serviço hospedado com várias pessoas, na ordem em que vale fazer.
 
 ## O que já ajuda
 

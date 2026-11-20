@@ -1,4 +1,4 @@
-# runelay bots: server
+# r/bots: server
 
 The bots gateway: one Node 24 process (tsx, raw `node:http`, no database) on `127.0.0.1:2000` that serves every route of the contract in [docs/protocol](../../docs/protocol/README.md). It runs each turn on the Claude Agent SDK logged in through the Claude subscription of the local Claude Code (`~/.claude/.credentials.json`), or on Codex, Grok and Cursor through `@runelay-bots/providers`. No `ANTHROPIC_API_KEY`: `start.sh` and `src/index.ts` unset it. `tailscale serve` on 10447 (tailnet only) points at it.
 

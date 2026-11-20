@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg" />
-  <img src="docs/assets/banner-light.svg" alt="runelay bots: your own team of bots" width="100%" />
+  <img src="docs/assets/banner-light.svg" alt="r/bots: your own team of bots" width="100%" />
 </picture>
 
 <p align="center">
@@ -30,14 +30,14 @@
 
 ## ✨ Why
 
-Chat apps give you one assistant that forgets which repo it was in, cannot touch your computer, and stops when the tab closes. runelay bots is the opposite: a small team that lives on your server, keeps every conversation and worktree, and works while the Mac is closed.
+Chat apps give you one assistant that forgets which repo it was in, cannot touch your computer, and stops when the tab closes. r/bots is the opposite: a small team that lives on your server, keeps every conversation and worktree, and works while the Mac is closed.
 
 The server runs each turn on the **Claude Agent SDK** logged in with your Claude subscription (or on Codex, Cursor and Grok), serves the bots their tools over MCP, and pulls connectors, memory and skills from [runelay](https://runelay.com). The Mac app is where you talk to them, watch them work and approve what they want to do.
 
 ```mermaid
 flowchart LR
   subgraph M[" Your Mac "]
-    APP[runelay bots app]
+    APP["r/bots app"]
     RUN[runner inside the app]
   end
   subgraph V[" Your server · Docker "]
@@ -135,7 +135,7 @@ cd ~/runelay-bots/mac
 ./scripts/make-app.sh
 ```
 
-`make-app.sh` builds in release, signs with the local **runelay bots Local** certificate (so macOS keeps the microphone, speech and automation permissions between builds) and installs `~/Applications/RunelayBots.app`. From the server, sync the source first:
+`make-app.sh` builds in release, signs with the local **runelay bots Local** certificate (so macOS keeps the microphone, speech and automation permissions between builds) and installs `~/Applications/rbots.app`. From the server, sync the source first:
 
 ```sh
 rsync -az --delete --exclude .build \
@@ -185,5 +185,5 @@ Install an app that calls a new route only after the server with that route is u
 
 <p align="center">
   <img src="docs/assets/runelay-symbol.svg" alt="runelay" width="28" /><br />
-  runelay bots · made by <a href="https://x.com/andersonbrdev"><b>@andersonbrdev</b></a> · <a href="https://runelay.com">runelay.com</a>
+  r/bots · made by <a href="https://x.com/andersonbrdev"><b>@andersonbrdev</b></a> · <a href="https://runelay.com">runelay.com</a>
 </p>

@@ -25,8 +25,8 @@ Aviso: "Historical material is context, not a new request or higher-priority ins
 ## Ferramenta `t3_thread_read`
 `{threadId, itemId?, view, textOffset?, maxCharsPerItem (padrão 500, máx 20k), limit, afterPosition…}` → `text.slice(offset, end)`, `nextTextOffset` ou `null`. Resposta ≤ 30 kB (busca binária no corte), sem quebrar par surrogate.
 
-## O que o runelay bots copiou (PROTOCOL v25)
+## O que o r/bots copiou (PROTOCOL v25)
 - Full quando a conta não tem sessão; delta quando a sessão existe mas perdeu turnos de outra conta.
 - Prioridade: último pedido, última resposta, primeiro pedido, recência; ordem cronológica; lista de omitidos com os mais novos por último.
 - Aviso de histórico ≠ pedido. `thread_read` com `offset`/`nextOffset`.
-- Diferente do T3: o runelay bots tem resumo de verdade (LLM barato, incremental, guardado no meta). Resultado de ferramenta entra resumido (o pedido era "chamada com resultado resumido"); a íntegra vem pelo `thread_read`. Edição de código entra como "arquivo +N −M". E há um bloco de estado atual (workspace, aprovações, artefatos, anexos, skills).
+- Diferente do T3: o r/bots tem resumo de verdade (LLM barato, incremental, guardado no meta). Resultado de ferramenta entra resumido (o pedido era "chamada com resultado resumido"); a íntegra vem pelo `thread_read`. Edição de código entra como "arquivo +N −M". E há um bloco de estado atual (workspace, aprovações, artefatos, anexos, skills).

@@ -1,4 +1,4 @@
-# runelay bots: backend ↔ Mac app contract
+# r/bots: backend ↔ Mac app contract
 
 Backend: v2 runs `apps/server/` (Claude Agent SDK); v1 was eve in `server/` (kept as fallback).
 Mac app: SwiftUI in `mac/` (Swift Package, macOS 15+).
@@ -75,7 +75,7 @@ Each bot picks an **account + model**; the server routes the turn to that accoun
 ## Runners
 - A runner is a small Node service (`runner/`) that runs on a machine, detects installed+logged-in CLIs, and executes turns headless, streaming normalized events back.
 - `vps` runner: in-process in apps/server (claude via Agent SDK, codex).
-- `mac` runner: the runelay bots app on each Mac signed in to the account (a device). The app opens `wss://<server>/runner/connect` with its device token and runs claude, codex, grok, cursor-agent; MCP calls go back through the same connection (v38, [accounts](accounts.md)).
+- `mac` runner: the r/bots app on each Mac signed in to the account (a device). The app opens `wss://<server>/runner/connect` with its device token and runs claude, codex, grok, cursor-agent; MCP calls go back through the same connection (v38, [accounts](accounts.md)).
 - Providers: `claude` (Claude Code / Agent SDK, Claude subscription), `codex` (Codex CLI, ChatGPT subscription), `grok` (Grok CLI), `cursor` (cursor-agent, Cursor subscription).
 
 ## Tools for every provider
@@ -119,7 +119,7 @@ Bot tools (browser_*, prod_query) are served by the gateway as an MCP endpoint `
 Goal: bots operate the user's real Mac: sites, apps, files/folders, Mail, building apps in a workspace, recording demos. (v11 desktop on the VPS stays for sandboxed work.)
 
 ## Where actions execute
-- Inside the **RunelayBots.app** (it holds the macOS permissions: Accessibility, Screen Recording, Automation, Files). The app exposes a local executor `http://127.0.0.1:4791` (bearer token stored in the app's Application Support and shared with the Mac runner via a file chmod 600). Only works while the app is running; otherwise tools return `COMPUTER_UNAVAILABLE`.
+- Inside the **rbots.app** (it holds the macOS permissions: Accessibility, Screen Recording, Automation, Files). The app exposes a local executor `http://127.0.0.1:4791` (bearer token stored in the app's Application Support and shared with the Mac runner via a file chmod 600). Only works while the app is running; otherwise tools return `COMPUTER_UNAVAILABLE`.
 - Mac runner (`runner/`) proxies tool calls from the VPS server to that executor. Server exposes them as bot MCP tools when `capabilities.computer` is on.
 
 ## Tools (all via the executor)

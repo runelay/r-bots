@@ -1,6 +1,6 @@
 # Navegador, computador virtual e Mac
 
-## runelay bots: verified protocol
+## r/bots: verified protocol
 
 ### Custom routes
 
@@ -154,7 +154,7 @@ Bot MCP tool → server → `computer.tool` request over the app's `/runner/conn
   - failure: `{"ok":false,"code":"…","error":"pt-BR message"}`. `code` `stopped` (Parar) or `user_took_over` cancels the turn. The executor enforces roots and workspace limits too.
 - `GET /events` → NDJSON `{"type":"stop"|"user_took_over","botId?":"lia"}`. While a computer-capable bot's turn runs, the server follows this stream through the runner and cancels the turn: `turn.settled {"outcome":"cancelled","reason":"A pessoa apertou Parar."|"Você assumiu o computador."}`.
 
-Unavailable (app closed, no token file, executor down): the runner answers `503 {"ok":false,"code":"COMPUTER_UNAVAILABLE","error":"O app runelay bots não está disponível no Mac (…)."}`. The tool returns `COMPUTER_UNAVAILABLE: …` to the model, and `call.settled` has `error.code:"COMPUTER_UNAVAILABLE"`. `GET /computer/health` on the server goes through the runner to the executor's `/health`.
+Unavailable (app closed, no token file, executor down): the runner answers `503 {"ok":false,"code":"COMPUTER_UNAVAILABLE","error":"O app r/bots não está disponível no Mac (…)."}`. The tool returns `COMPUTER_UNAVAILABLE: …` to the model, and `call.settled` has `error.code:"COMPUTER_UNAVAILABLE"`. `GET /computer/health` on the server goes through the runner to the executor's `/health`.
 
 ### Tools (bot MCP, when `capabilities.computer`)
 

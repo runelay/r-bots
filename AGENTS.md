@@ -2,7 +2,7 @@
 
 Rules for any agent working in this repo. Read this before changing code.
 
-runelay bots is a self-hosted team of bots: a TypeScript server (Bun) that runs each turn on the Claude Agent SDK (or Codex, Cursor, Grok), serves bot tools over MCP and pulls connectors, memory and skills from runelay; and a native SwiftUI Mac app that talks to it.
+r/bots is a self-hosted team of bots: a TypeScript server (Bun) that runs each turn on the Claude Agent SDK (or Codex, Cursor, Grok), serves bot tools over MCP and pulls connectors, memory and skills from runelay; and a native SwiftUI Mac app that talks to it.
 
 ## Repo map
 
@@ -66,7 +66,7 @@ Mac app (on the Mac, inside `apps/mac`):
 ```sh
 swift build                 # debug build
 swift run                   # run from the terminal
-./scripts/make-app.sh       # release build, icon, sign with "runelay bots Local", install ~/Applications/RunelayBots.app
+./scripts/make-app.sh       # release build, icon, sign with "runelay bots Local", install ~/Applications/rbots.app
 ```
 
 ## Testing (hard rule)

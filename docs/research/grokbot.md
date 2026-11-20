@@ -1,4 +1,4 @@
-# Grok Bot por dentro: o que aprender para o runelay bots
+# Grok Bot por dentro: o que aprender para o r/bots
 
 Pesquisa de 19/11/2026, só leitura, no Mac (macOS 26). Grok Bot 1.2.3, CLI `grok` 1.0.77.
 Fontes: o bundle (`app.asar`, extraído numa pasta temporária e apagado depois), `~/.grok`, `~/.grokbot`, `~/Library/Application Support/Grok Bot`, os processos e conexões, e a documentação da CLI que vem instalada em `~/.grok/docs/user-guide/`.
@@ -49,7 +49,7 @@ Não copiei código. Não guardei nenhum segredo nem conteúdo de conversa: nest
 - `~/.grokbot/local-exec-daemon.json` (`pid, startedAt, servingAt, inflightCount, filesKeyId, generation`) e `local-exec-supervisor.json` (`pid, at`)
 - `~/.grok/docs/user-guide/15-agent-mode.md`
 
-### O que o runelay bots deveria adotar
+### O que o r/bots deveria adotar
 - **Canal de saída do Mac para o servidor**, não um servidor local. Hoje o v12 usa runner → `http://127.0.0.1:4791` com token em arquivo, e precisa do app aberto e de uma porta escutando. O desenho deles é melhor: o Mac abre o stream (SSE ou WebSocket), se apresenta com `hello` + `capabilities` + `generation`, recebe *frames* de pedido e responde por POST. Assim não tem porta exposta, a reconexão é simples e o servidor sabe quem está online (`ReportGrokBotClientPresence`, `last_seen_at_ms`).
 - **Daemon supervisionado e versionado.** Os arquivos `local-exec-daemon.json` e `local-exec-supervisor.json` têm `generation` e `inflightCount`, e existe um `update-lease`. Isso permite trocar o executor sem matar o que está rodando.
 - **Gates como arquivos marcadores.** O app escreve `local-computer-use-gate.json {isOn}`, `mac-device-tools-gate.json` e `mac-mail-tools-gate.json`, e o daemon lê antes de agir. O interruptor da UI vale mesmo se o daemon estiver em outro processo.
@@ -162,7 +162,7 @@ Não copiei código. Não guardei nenhum segredo nem conteúdo de conversa: nest
 - **App:** `RollBackGrokBotConversation {agent_id, session_id}` e `StartFreshGrokBotConversation`. A VM tem snapshot e restauração do armazenamento, mas só por admin (`AdminSnapshotSandBoxStore` / `AdminRestoreSandBoxStoreSnapshot`).
 - **Na prática,** o undo de código é o git: o worktree descartável, mais o PR.
 
-**Adotar.** Aqui o runelay bots pode ser **melhor** que o Grok:
+**Adotar.** Aqui o r/bots pode ser **melhor** que o Grok:
 - **Checkpoint por turno = commit oculto no worktree** (`git stash create` ou `git commit-tree` numa ref `refs/runelay/<sessão>/<turno>`), gravado em `checkpoints.jsonl {turnId, ref, files}`. "Voltar a este ponto" faz `git read-tree`/`checkout` dessa ref **e** trunca a conversa. Barato, sem banco, e sobrevive a reinício.
 - **`revertFile` (já existe) continua sendo o undo por arquivo,** e o "voltar turno" é o undo do conjunto.
 - **Deixar claro na UI** o que volta (conversa, arquivos ou os dois). O Grok acerta ao avisar que só volta a conversa.

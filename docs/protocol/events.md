@@ -1,6 +1,6 @@
 # Stream de eventos
 
-## runelay bots: verified protocol
+## r/bots: verified protocol
 
 ### eve session API (under `sessionBasePath`, e.g. `/bots/lia/eve/v1`)
 
