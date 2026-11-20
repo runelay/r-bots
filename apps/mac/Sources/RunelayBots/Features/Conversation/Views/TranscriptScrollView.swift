@@ -107,7 +107,6 @@ final class TranscriptListView: NSScrollView {
     private var heldAnchor: (id: String, offset: CGFloat)?
 
     private static let topPadding = Spacing.l + Spacing.s
-    private static let margin: CGFloat = 1.0
 
     init() {
         super.init(frame: .zero)
@@ -127,11 +126,21 @@ final class TranscriptListView: NSScrollView {
         }
         documentView = document
         NotificationCenter.default.addObserver(self, selector: #selector(boundsChanged), name: NSView.boundsDidChangeNotification, object: contentView)
+        NotificationCenter.default.addObserver(self, selector: #selector(liveScrollStarted), name: NSScrollView.willStartLiveScrollNotification, object: self)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError()
+    }
+
+    @objc private func liveScrollStarted() {
+        pendingRestore = nil
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        pendingRestore = nil
+        super.scrollWheel(with: event)
     }
 
     override func viewDidMoveToWindow() {
@@ -169,7 +178,7 @@ final class TranscriptListView: NSScrollView {
             if !pinned, heldAnchor == nil {
                 heldAnchor = captureAnchor()
             }
-            contentInsets = insets
+            adjust { contentInsets = insets }
         }
         if !pinned, heldAnchor == nil, rows.map(\.id) != newRows.map(\.id) {
             heldAnchor = captureAnchor()
@@ -189,6 +198,7 @@ final class TranscriptListView: NSScrollView {
             }
         }
         positions = []
+        positionsKey = nil
         document.needsLayout = true
     }
 
@@ -218,12 +228,20 @@ final class TranscriptListView: NSScrollView {
         heights[id] ?? estimate
     }
 
+    private var positionsKey: CGFloat?
+    private var positionsHeight: CGFloat = 0
+
     private func computePositions() -> CGFloat {
+        if positionsKey == estimate, positions.count == rows.count {
+            return positionsHeight
+        }
         var y = Self.topPadding
         positions = rows.map { row in
             defer { y += height(of: row.id) }
             return y
         }
+        positionsKey = estimate
+        positionsHeight = y
         return y
     }
 
@@ -258,14 +276,14 @@ final class TranscriptListView: NSScrollView {
                 heldAnchor = captureAnchor()
             }
             measuredWidth = width
+            positionsKey = nil
             for host in mounted.values {
                 host.needsMeasure = true
             }
         }
         var anchor: (id: String, offset: CGFloat)?
-        if let restore = pendingRestore, index[restore.anchorID] != nil {
+        if let restore = pendingRestore, index[restore.anchorID] != nil, viewportHeight > 1 {
             anchor = (restore.anchorID, restore.anchorOffset)
-            pendingRestore = nil
         } else if !pinned {
             anchor = heldAnchor ?? captureAnchor()
         }
@@ -280,6 +298,7 @@ final class TranscriptListView: NSScrollView {
             if lift > 0 {
                 positions = positions.map { $0 + lift }
                 contentHeight += lift
+                positionsKey = nil
             }
             let docHeight = max(contentHeight, minHeight)
             if document.frame.size != CGSize(width: width, height: docHeight) {
@@ -302,6 +321,29 @@ final class TranscriptListView: NSScrollView {
         report()
     }
 
+    private func firstRow(below y: CGFloat) -> Int {
+        var low = 0
+        var high = rows.count - 1
+        while low < high {
+            let mid = (low + high) / 2
+            if positions[mid] + height(of: rows[mid].id) < y {
+                low = mid + 1
+            } else {
+                high = mid
+            }
+        }
+        return low
+    }
+
+    private func rowIndices(from top: CGFloat, to bottom: CGFloat) -> Range<Int> {
+        let start = firstRow(below: top)
+        var end = start
+        while end < rows.count, positions[end] <= bottom {
+            end += 1
+        }
+        return start..<end
+    }
+
     private func mountVisible(width: CGFloat) -> Bool {
         guard !rows.isEmpty, positions.count == rows.count else {
             for host in mounted.values { recycle(host) }
@@ -309,48 +351,19 @@ final class TranscriptListView: NSScrollView {
             return false
         }
         let origin = contentView.bounds.origin.y
-        let span = viewportHeight * Self.margin
-        let top = origin - span
-        let bottom = origin + viewportHeight + span
-        var low = 0
-        var high = rows.count - 1
-        while low < high {
-            let mid = (low + high) / 2
-            if positions[mid] + height(of: rows[mid].id) < top {
-                low = mid + 1
-            } else {
-                high = mid
-            }
-        }
-        var wanted: Set<String> = []
-        var position = low
-        while position < rows.count, positions[position] <= bottom {
-            wanted.insert(rows[position].id)
-            position += 1
-        }
-        var changed = false
-        for (id, host) in mounted where !wanted.contains(id) {
+        let screen = viewportHeight
+        let required = rowIndices(from: origin - screen * 0.25, to: origin + screen * 1.25)
+        let keep = rowIndices(from: origin - screen * 4, to: origin + screen * 5)
+        let keepIDs = Set(keep.map { rows[$0].id })
+        for (id, host) in mounted where !keepIDs.contains(id) {
             recycle(host)
             mounted[id] = nil
         }
-        for id in wanted {
-            let host: TranscriptRowHost
-            if let existing = mounted[id] {
-                host = existing
-            } else {
-                host = pool.popLast() ?? TranscriptRowHost()
-                host.id = id
-                host.onHeight = { [weak self] id, height in
-                    self?.rowResized(id: id, height: height)
-                }
-                if let row = index[id].map({ rows[$0] }) {
-                    host.set(content: content(for: row))
-                }
-                document.addSubview(host.view)
-                mounted[id] = host
-                host.needsMeasure = true
-            }
-            if host.needsMeasure {
+        var changed = false
+        for position in required {
+            let id = rows[position].id
+            let host = mounted[id] ?? mount(id)
+            if host.needsMeasure || heights[id] == nil {
                 host.needsMeasure = false
                 let measured = host.measure(width: width)
                 if abs(measured - (heights[id] ?? -1)) > 0.5 {
@@ -362,8 +375,56 @@ final class TranscriptListView: NSScrollView {
         if changed {
             let values = heights.values
             estimate = max(60, values.reduce(0, +) / CGFloat(max(1, values.count)))
+            positionsKey = nil
         }
+        schedulePrefetch()
         return changed
+    }
+
+    @discardableResult
+    private func mount(_ id: String) -> TranscriptRowHost {
+        let host = pool.popLast() ?? TranscriptRowHost()
+        host.id = id
+        host.needsMeasure = true
+        host.onHeight = { [weak self] id, height in
+            self?.rowResized(id: id, height: height)
+        }
+        if let row = index[id].map({ rows[$0] }) {
+            host.set(content: content(for: row))
+        }
+        document.addSubview(host.view)
+        mounted[id] = host
+        if let position = index[id], positions.count == rows.count {
+            host.view.frame = CGRect(x: 0, y: positions[position], width: contentView.bounds.width, height: height(of: id))
+        }
+        return host
+    }
+
+    private var prefetchScheduled = false
+
+    private func nextPrefetch() -> String? {
+        guard !rows.isEmpty, positions.count == rows.count else { return nil }
+        let origin = contentView.bounds.origin.y
+        let screen = viewportHeight
+        let zone = rowIndices(from: origin - screen * 2.5, to: origin + screen * 3.5)
+        let center = origin + screen / 2
+        return zone.lazy
+            .map { self.rows[$0].id }
+            .filter { self.mounted[$0] == nil }
+            .min { abs(self.positions[self.index[$0] ?? 0] - center) < abs(self.positions[self.index[$1] ?? 0] - center) }
+    }
+
+    private func schedulePrefetch() {
+        guard !prefetchScheduled, window != nil, nextPrefetch() != nil else { return }
+        prefetchScheduled = true
+        perform(#selector(prefetchTick), with: nil, afterDelay: 0, inModes: [.default, .eventTracking])
+    }
+
+    @objc private func prefetchTick() {
+        prefetchScheduled = false
+        guard let id = nextPrefetch() else { return }
+        mount(id)
+        schedulePrefetch()
     }
 
     private func placeMounted(width: CGFloat) {
@@ -396,7 +457,9 @@ final class TranscriptListView: NSScrollView {
             heldAnchor = captureAnchor()
         }
         heights[id] = height
+        mounted[id]?.needsMeasure = false
         positions = []
+        positionsKey = nil
         document.needsLayout = true
     }
 
@@ -442,8 +505,8 @@ final class TranscriptListView: NSScrollView {
         let size = contentView.bounds.size
         let resized = size != lastClipSize
         lastClipSize = size
-        if adjusting { return }
-        if animating || resized {
+        if adjusting || reflowing { return }
+        if animating || resized || pendingRestore != nil {
             reflow()
             return
         }

@@ -286,8 +286,8 @@ struct ConversationView: View {
         return Color.clear
             .background {
                 list
-                    .mask {
-                        transcriptMask
+                    .overlay(alignment: .top) {
+                        transcriptFade
                     }
                     .ignoresSafeArea(.container, edges: .bottom)
             }
@@ -427,12 +427,10 @@ struct ConversationView: View {
         OpenTiming.shown(store.sessionId, source: store.isRestored ? "cache" : "network")
     }
 
-    private var transcriptMask: some View {
-        VStack(spacing: 0) {
-            LinearGradient(colors: [Color.clear, Color.black], startPoint: .top, endPoint: .bottom)
-                .frame(height: topInset + Spacing.l + Spacing.s)
-            Color.black
-        }
+    private var transcriptFade: some View {
+        LinearGradient(colors: [Theme.background, Theme.background.opacity(0)], startPoint: .top, endPoint: .bottom)
+            .frame(height: topInset + Spacing.l + Spacing.s)
+            .allowsHitTesting(false)
     }
 
     private func fillIfShort() {

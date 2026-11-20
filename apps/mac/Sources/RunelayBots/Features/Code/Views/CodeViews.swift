@@ -218,7 +218,7 @@ struct DiffCard: View, Equatable {
             }
             .padding(.horizontal, Spacing.xs)
 
-            DiffBlocksView(blocks: limited.blocks, language: CodeSyntax.language(for: edit.path))
+            TranscriptDiffBlocks(blocks: limited.blocks, language: CodeSyntax.language(for: edit.path))
 
             if limited.hidden > 0, let botID = model.selectedBot?.id {
                 Button {
