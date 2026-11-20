@@ -88,6 +88,8 @@ enum AppSection: String, CaseIterable, Identifiable {
     case routines
     case connectors
     case usage
+    case git
+    case linear
 
     static let railCases: [AppSection] = [.conversations, .routines]
 
@@ -99,6 +101,8 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .routines: "Rotinas"
         case .connectors: "Conectores"
         case .usage: "Uso"
+        case .git: "Git"
+        case .linear: "Linear"
         }
     }
 
@@ -108,6 +112,8 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .routines: "clock.arrow.circlepath"
         case .connectors: "puzzlepiece.extension"
         case .usage: "gauge.with.dots.needle.33percent"
+        case .git: "arrow.triangle.pull"
+        case .linear: "circle.dashed"
         }
     }
 }
@@ -213,6 +219,7 @@ final class AppModel {
     private(set) var isRefreshingAccounts = false
     private(set) var searchResults: LoadState<[Bot]> = .idle
     var section: AppSection = .conversations
+    var launcherPresented = false
     private(set) var computerMode = false
     private(set) var computerSurface = "browser"
     private(set) var liveSession: BrowserLiveSession?

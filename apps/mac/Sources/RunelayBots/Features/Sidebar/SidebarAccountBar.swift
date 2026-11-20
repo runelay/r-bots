@@ -28,22 +28,23 @@ struct SidebarAccountBar: View {
 
             Button {
                 withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                    model.closeSettings()
-                    model.section = .connectors
+                    model.launcherPresented.toggle()
                 }
             } label: {
                 GridPlusIcon()
-                    .foregroundStyle(isHovering ? Theme.textPrimary : Theme.textSecondary)
+                    .foregroundStyle(isHovering || model.launcherPresented ? Theme.textPrimary : Theme.textSecondary)
+                    .rotationEffect(.degrees(model.launcherPresented && !reduceMotion ? 90 : 0))
                     .frame(width: 40, height: 40)
-                    .glassSurface(Circle(), interactive: true, fallback: Theme.surface)
+                    .glassSurface(Circle(), interactive: true, tint: model.launcherPresented ? Theme.selection : nil, fallback: model.launcherPresented ? Theme.surfaceRaised : Theme.surface)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .clickable()
             .onHover { isHovering = $0 }
             .springAnimation(value: isHovering)
-            .help("Catálogo")
-            .accessibilityLabel("Catálogo")
+            .springAnimation(value: model.launcherPresented)
+            .help("Atalhos: Git, Linear, Agenda e mais")
+            .accessibilityLabel("Atalhos")
         }
         .padding(.horizontal, Spacing.l)
         .padding(.vertical, Spacing.m)

@@ -35,6 +35,9 @@ struct RootView: View {
 
             ModelPickerRootLayer()
 
+            LauncherLayer()
+                .zIndex(1.8)
+
             if model.computerMode, let bot = model.selectedBot, bot.hasComputer {
                 GeometryReader { geometry in
                     ModalOverlay(
@@ -74,6 +77,7 @@ struct RootView: View {
         .animation(Motion.animation(reduceMotion: reduceMotion), value: model.activeSheet?.id)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: model.settingsPresented)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: model.section)
+        .animation(Motion.animation(reduceMotion: reduceMotion), value: model.launcherPresented)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: model.computerMode)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: sidebarCollapsed)
         .animation(.easeOut(duration: 0.18), value: model.selectedBotID)
@@ -148,6 +152,14 @@ struct RootView: View {
                     .transition(.opacity)
             case .usage:
                 UsageScreen()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
+            case .git:
+                GitHubScreen()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity)
+            case .linear:
+                LinearScreen()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity)
             }
