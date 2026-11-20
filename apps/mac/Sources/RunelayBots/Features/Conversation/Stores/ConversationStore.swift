@@ -817,6 +817,15 @@ final class ConversationStore {
                 }
                 ArtifactCenter.shared.noteChange(ref, byUser: byUser)
             }
+        case "test.result":
+            if let runID = data["id"]?.stringValue {
+                TestStore.shared.apply(data)
+                let id = "test-\(runID)"
+                if !entries.contains(where: { $0.id == id }) {
+                    let ref = ArtifactRef(botID: bot.id, id: runID, title: data["title"]?.stringValue ?? "Teste", kind: TestStore.panelKind, version: 1)
+                    append(TranscriptEntry(id: id, kind: .artifact(ref)), date: currentLineDate)
+                }
+            }
         case "server.card":
             if let serverID = data["serverId"]?.stringValue {
                 ServerStore.shared.applyLine(.object(["server": data["server"] ?? .null]))

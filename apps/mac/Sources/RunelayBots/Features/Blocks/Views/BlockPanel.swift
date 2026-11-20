@@ -20,10 +20,18 @@ struct BlockStage: View {
                                 .zIndex(1)
                         }
                         Group {
-                            if ServerStore.isServerKind(ref.kind) {
-                                ServerPanel(ref: ref)
-                                    .id(ref.id)
-                                    .background { BlockPanelShortcuts() }
+                            if ServerStore.isPaneKind(ref.kind) {
+                                Group {
+                                    if ref.kind == SimulatorStore.panelKind {
+                                        SimulatorPanel(ref: ref)
+                                    } else if ref.kind == TestStore.panelKind {
+                                        TestPanel(ref: ref)
+                                    } else {
+                                        ServerPanel(ref: ref)
+                                    }
+                                }
+                                .id("\(ref.kind)-\(ref.id)")
+                                .background { BlockPanelShortcuts() }
                             } else if center.isBlock {
                                 BlockPanel(ref: ref)
                             } else {

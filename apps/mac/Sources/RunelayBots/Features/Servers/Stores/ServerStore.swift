@@ -29,6 +29,10 @@ final class ServerStore {
 
     static func isServerKind(_ kind: String) -> Bool { kind == panelKind }
 
+    static func isPaneKind(_ kind: String) -> Bool {
+        kind == panelKind || kind == SimulatorStore.panelKind || kind == TestStore.panelKind
+    }
+
     func attach(_ client: BotsClient) {
         self.client = client
     }

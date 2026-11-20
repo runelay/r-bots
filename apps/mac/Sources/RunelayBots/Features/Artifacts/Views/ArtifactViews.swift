@@ -43,6 +43,8 @@ struct ArtifactCard: View {
     var body: some View {
         if ServerStore.isServerKind(ref.kind) {
             ServerCard(ref: ref)
+        } else if ref.kind == TestStore.panelKind {
+            TestResultCard(ref: ref)
         } else if BlockKind.isBlockKind(ref.kind) {
             BlockCard(ref: ref)
         } else {

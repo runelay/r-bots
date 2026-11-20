@@ -66,24 +66,41 @@ struct ServerToolTile: View {
             .foregroundStyle(Theme.textSecondary)
             .frame(width: size, height: size)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-            .help(ServerTool.label(tool))
+            .accessibilityLabel(ServerTool.label(tool))
     }
 }
 
 struct ServerStatusLabel: View {
     let server: DevServerInfo
+    var showsBranch = false
 
     var body: some View {
-        HStack(spacing: Spacing.xs + 2) {
+        HStack(alignment: .center, spacing: Spacing.xs + 2) {
             ServerStatusDot(status: server.status)
             Text(server.status.label)
-                .font(TypeScale.captionStrong)
+                .font(TypeScale.caption)
                 .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+                .fixedSize()
                 .contentTransition(.opacity)
             if server.status.isLive {
-                Text(":\(server.port)")
-                    .font(TypeScale.monoInline)
+                Text(verbatim: ":\(server.port)")
+                    .font(TypeScale.caption.monospacedDigit())
                     .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            if showsBranch, !server.subtitle.isEmpty {
+                Text("·")
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize()
+                Text(server.subtitle)
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(-1)
             }
         }
         .springAnimation(value: server.status)
@@ -94,9 +111,11 @@ enum ServerActions {
     @MainActor
     static func items(_ server: DevServerInfo, botID: String) -> [GlassMenuItem] {
         let store = ServerStore.shared
-        var items: [GlassMenuItem] = []
+        var items: [GlassMenuItem] = [
+            GlassMenuItem(server.branch ?? server.name, id: "about", systemImage: server.branch == nil ? "folder" : "arrow.triangle.branch", subtitle: server.command, isEnabled: false) {},
+        ]
         if server.status == .running {
-            items.append(GlassMenuItem("Abrir no painel", systemImage: "sidebar.right") {
+            items.append(GlassMenuItem("Abrir no painel", systemImage: "sidebar.right", startsSection: true) {
                 store.openPanel(server, botID: botID, tab: .preview)
             })
             items.append(GlassMenuItem("Abrir no navegador", systemImage: "safari") {
@@ -106,7 +125,12 @@ enum ServerActions {
                 store.copyURL(server)
             })
         }
-        items.append(GlassMenuItem("Logs", systemImage: "text.alignleft", startsSection: server.status == .running) {
+        if server.isMobile, server.status == .running, let client = store.client {
+            items.append(GlassMenuItem("Abrir no simulador", systemImage: "iphone") {
+                SimulatorStore.shared.openExpo(server: server, client: client)
+            })
+        }
+        items.append(GlassMenuItem("Logs", systemImage: "text.alignleft", startsSection: server.status != .running) {
             store.openPanel(server, botID: botID, tab: .logs)
         })
         items.append(GlassMenuItem(server.status.isLive ? "Reiniciar" : "Rodar de novo", systemImage: "arrow.clockwise") {
@@ -125,59 +149,71 @@ enum ServerActions {
     }
 }
 
-struct ServerRow: View {
-    let server: DevServerInfo
-    let botID: String
+struct InspectorRowCard<Leading: View, Content: View, Trailing: View>: View {
+    let action: () -> Void
+    @ViewBuilder let leading: Leading
+    @ViewBuilder let content: Content
+    @ViewBuilder let trailing: (_ hovering: Bool) -> Trailing
 
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: Spacing.m) {
-            Button {
-                ServerStore.shared.openPanel(server, botID: botID, tab: server.status == .running && !server.isMobile ? .preview : .logs)
-            } label: {
-                HStack(spacing: Spacing.m) {
-                    ServerToolTile(tool: server.tool)
+        HStack(alignment: .center, spacing: Spacing.m) {
+            Button(action: action) {
+                HStack(alignment: .center, spacing: Spacing.m) {
+                    leading
+                        .frame(width: 32, height: 32)
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        Text(server.title)
-                            .font(TypeScale.rowTitle)
-                            .foregroundStyle(Theme.textPrimary)
-                            .lineLimit(1)
-                        HStack(spacing: Spacing.s) {
-                            ServerStatusLabel(server: server)
-                            if !server.subtitle.isEmpty {
-                                Text(server.subtitle)
-                                    .font(TypeScale.caption)
-                                    .foregroundStyle(Theme.textTertiary)
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                            }
-                        }
+                        content
                     }
-                    Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .clickable()
-            .help(server.command)
+            trailing(hovering)
+                .frame(width: 28, height: 28)
+        }
+        .padding(.leading, Spacing.l)
+        .padding(.trailing, Spacing.s)
+        .frame(minHeight: Metrics.rowHeight)
+        .background(hovering ? Theme.surfaceRaised : Theme.surface, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
+        .onHover { hovering = $0 }
+        .springAnimation(value: hovering)
+    }
+}
 
+struct ServerRow: View {
+    let server: DevServerInfo
+    let botID: String
+
+    var body: some View {
+        InspectorRowCard {
+            ServerStore.shared.openPanel(server, botID: botID, tab: server.status == .running && !server.isMobile ? .preview : .logs)
+        } leading: {
+            ServerToolTile(tool: server.tool)
+        } content: {
+            Text(server.title)
+                .font(TypeScale.rowTitle)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            ServerStatusLabel(server: server, showsBranch: true)
+        } trailing: { hovering in
             if ServerStore.shared.busy.contains(server.id) {
                 ProgressView()
                     .controlSize(.mini)
                     .transition(.opacity)
+            } else {
+                GlassMenuButton(edge: .trailing, help: "Ações do servidor", items: { ServerActions.items(server, botID: botID) }) { isOpen in
+                    BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen)
+                }
+                .fixedSize()
+                .opacity(hovering ? 1 : 0.0001)
             }
-            GlassMenuButton(edge: .trailing, help: "Ações do servidor", items: { ServerActions.items(server, botID: botID) }) { isOpen in
-                BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen)
-            }
-            .fixedSize()
-            .opacity(hovering ? 1 : 0.0001)
         }
-        .padding(.vertical, Spacing.xs)
-        .padding(.horizontal, Spacing.s)
-        .background(hovering ? Theme.hover : .clear, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-        .onHover { hovering = $0 }
-        .springAnimation(value: hovering)
+        .accessibilityLabel("\(server.title), \(server.status.label), porta \(server.port)\(server.branch.map { ", branch \($0)" } ?? "")")
     }
 }
 
@@ -208,10 +244,10 @@ struct ServersSection: View {
                 Text("Nada rodando. Suba o app, a API ou o Expo de um repositório liberado.")
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.textTertiary)
-                    .padding(.horizontal, Spacing.xs)
+                    .padding(.horizontal, Spacing.l)
                     .transition(.opacity)
             } else {
-                VStack(spacing: Spacing.xxs) {
+                VStack(spacing: Spacing.s) {
                     ForEach(store.visible) { server in
                         ServerRow(server: server, botID: bot.id)
                             .transition(.opacity.combined(with: .move(edge: .top)))
@@ -222,7 +258,7 @@ struct ServersSection: View {
                 Text(failure)
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.danger)
-                    .padding(.horizontal, Spacing.xs)
+                    .padding(.horizontal, Spacing.l)
                     .transition(.opacity)
             }
         }
@@ -283,7 +319,6 @@ struct ServerCard: View {
         .onHover { hovering = $0 }
         .springAnimation(value: hovering)
         .springAnimation(value: server.status)
-        .help(server.command)
     }
 }
 

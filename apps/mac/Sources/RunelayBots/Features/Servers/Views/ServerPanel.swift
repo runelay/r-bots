@@ -57,8 +57,8 @@ struct ServerPanel: View {
     private var header: some View {
         HStack(spacing: Spacing.s) {
             if let server {
-                ServerToolTile(tool: server.tool, size: 26)
-                VStack(alignment: .leading, spacing: 0) {
+                ServerToolTile(tool: server.tool, size: 28)
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
                     Text(server.title)
                         .font(TypeScale.rowSubtitle.weight(.medium))
                         .foregroundStyle(Theme.textPrimary)

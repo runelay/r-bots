@@ -97,7 +97,7 @@ final class ArtifactCenter {
     func open(_ ref: ArtifactRef, client: BotsClient) {
         self.client = client
         canvas?.flush()
-        if ServerStore.isServerKind(ref.kind) {
+        if ServerStore.isPaneKind(ref.kind) {
             BlockCenter.shared.close()
             canvas = nil
             presenting = false

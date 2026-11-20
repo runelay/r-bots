@@ -105,7 +105,7 @@ struct SectionCaption<Trailing: View>: View {
             Spacer(minLength: 0)
             trailing
         }
-        .padding(.horizontal, Spacing.xs)
+        .padding(.horizontal, Spacing.l)
     }
 }
 
@@ -137,6 +137,7 @@ struct ActivitySection: View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             if !bot.isGroup && !bot.isPending {
                 ServersSection(bot: bot)
+                SimulatorsSection(bot: bot)
             }
 
             if bot.hasBrowser {

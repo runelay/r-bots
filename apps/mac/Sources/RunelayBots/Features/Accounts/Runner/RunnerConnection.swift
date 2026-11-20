@@ -155,7 +155,7 @@ final class RunnerConnection {
             "type": .string("hello"),
             "app": .string("runelay bots"),
             "version": .string(AppInfo.version),
-            "capabilities": .array([.string("turns"), .string("accounts"), .string("computer"), .string("transcribe"), .string("vault"), .string("usage"), .string("files"), .string("mcp-proxy")]),
+            "capabilities": .array([.string("turns"), .string("accounts"), .string("computer"), .string("transcribe"), .string("vault"), .string("usage"), .string("files"), .string("mcp-proxy"), .string("simulators")]),
         ])
         return String(decoding: (try? JSONEncoder().encode(hello)) ?? Data(), as: UTF8.self)
     }
@@ -331,6 +331,14 @@ final class RunnerConnection {
                 } catch {
                     sender.send(["type": .string("response"), "id": .string(id), "ok": .bool(false), "error": .string(error.localizedDescription)])
                 }
+            }
+        case let name where name.hasPrefix("sim.") || name.hasPrefix("maestro."):
+            let body = message["body"] ?? .object([:])
+            Task.detached(priority: .userInitiated) {
+                var reply = await SimulatorRunner.perform(op: name, body: body)
+                reply["type"] = .string("response")
+                reply["id"] = .string(id)
+                sender.send(reply)
             }
         default:
             sender.send(["type": .string("response"), "id": .string(id), "ok": .bool(false), "error": .string("Pedido desconhecido: \(op).")])
