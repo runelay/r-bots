@@ -1403,8 +1403,10 @@ final class AppModel {
 
     private func applyMeta(_ loaded: ServerMeta?) {
         guard let loaded else { return }
-        metaLoaded = true
-        meta = ServerMeta(
+        if !metaLoaded {
+            metaLoaded = true
+        }
+        let next = ServerMeta(
             accents: loaded.accents.isEmpty ? ServerMeta.fallback.accents : loaded.accents,
             capabilities: loaded.capabilities.isEmpty ? ServerMeta.fallback.capabilities : loaded.capabilities,
             engine: loaded.engine,
@@ -1412,6 +1414,9 @@ final class AppModel {
             version: loaded.version,
             integrations: loaded.integrations
         )
+        if next != meta {
+            meta = next
+        }
     }
 
     func refreshMeta() async {
@@ -2461,9 +2466,7 @@ final class AppModel {
         let started = clock.now
         guard let list = try? await client.bots() else { return }
         lastLatencyMs = Self.milliseconds(started.duration(to: clock.now))
-        if !metaLoaded {
-            applyMeta(await client.meta())
-        }
+        applyMeta(await client.meta())
         let fresh = list.filter { !$0.isArchived }
         let pending = loadedBots.filter(\.isPending)
         withAnimation(Motion.spring) {

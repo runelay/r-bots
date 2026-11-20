@@ -435,7 +435,7 @@ struct MetaCapability: Identifiable, Hashable, Sendable, Decodable {
     }
 }
 
-struct ServerMeta: Sendable, Decodable {
+struct ServerMeta: Equatable, Sendable, Decodable {
     let accents: [String]
     let capabilities: [MetaCapability]
     var engine: String? = nil

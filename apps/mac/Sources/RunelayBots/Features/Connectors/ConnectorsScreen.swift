@@ -58,6 +58,9 @@ struct ConnectorsCatalog<Header: View>: View {
             }
         }
         .springAnimation(value: store.detail)
+        .task {
+            await model.refreshMeta()
+        }
         .task(id: model.meta.integrationOn("runelay")) {
             await store.load(model: model)
             await model.loadConnectors()
