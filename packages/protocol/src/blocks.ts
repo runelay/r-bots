@@ -290,6 +290,7 @@ export interface AgendaEvent extends AgendaEventPreview {
   location: string | null;
   description: string | null;
   meetUrl: string | null;
+  calendarUrl: string | null;
   attendees: Array<{
     email: string;
     name: string | null;

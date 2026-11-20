@@ -7,6 +7,7 @@ import {
   externalAttendeesCached,
   listAccounts,
   listEvents,
+  listEventsBlock,
   needsApproval,
   updateEvent,
 } from "../../agenda/services/agenda.service";
@@ -307,16 +308,26 @@ export function blockTools(botId: string): BotTool[] {
     {
       name: "agenda_list",
       description:
-        "Lista eventos de um período (start/end ISO com fuso, no máximo 62 dias) em todas as contas ligadas ou só nas de accounts (ids separados por vírgula). q filtra pelo texto no Google.",
+        'Mostra a agenda da pessoa: lista os eventos de um período (start/end ISO com fuso, no máximo 62 dias) em todas as contas ligadas, ou só nas de accounts (ids separados por vírgula). A resposta já aparece na conversa como o bloco nativo de Agenda (prévia + abrir no painel). Use SEMPRE que pedirem agenda, calendário, compromissos, reuniões ou "minha semana": uma chamada por período, com todas as contas, e nunca monte página HTML de agenda. q filtra pelo texto no Google. silent:true só para consulta interna (ex.: checar conflito antes de criar), sem bloco na conversa.',
       shape: {
         start: z.string().min(10).max(40),
         end: z.string().min(10).max(40),
         accounts: z.string().max(200).optional(),
         q: z.string().max(200).optional(),
+        silent: z.boolean().optional(),
       },
       approval: null,
-      label: () => "Viu a agenda",
-      run: async (input) => listEvents(input),
+      label: (input) =>
+        input.silent === true
+          ? "Conferiu a agenda"
+          : Date.parse(String(input.end)) - Date.parse(String(input.start)) <= 26 * 3_600_000
+            ? "Mostrou a agenda do dia"
+            : "Mostrou a agenda",
+      run: async (input) => {
+        if (input.silent === true) return listEvents(input);
+        const { list, blockEvent } = await listEventsBlock(botId, input);
+        return { ...list, blockEvent };
+      },
     },
     {
       name: "agenda_create",
@@ -412,8 +423,9 @@ export const blocksGuide = [
   "Você tem três blocos seus, que a pessoa vê e edita no app ao seu lado. Use direto, sem pedir permissão:",
   "- **Notas** (`note_*`): texto que a pessoa vai reler, em markdown estilo Obsidian. Ligue notas com `[[Título]]` e marque com `#tag`. Para mudar um trecho use `note_patch`; para reescrever tudo, `note_write` com id. Pastas com `/`.",
   "- **Planilhas** (`sheet_*`): números, listas com colunas e contas. Sempre escreva fórmula (`=SOMA(B2:B9)`, `=PROCV(...)`, `=Resumo!B2`), nunca um valor que você calculou de cabeça. Leia com `sheet_read` antes de mudar uma planilha que já existe.",
-  "- **Agenda** (`agenda_*`): só as contas Google ligadas na runelay. Antes de criar, confirme horário e conta com a pessoa em uma linha; convidado de fora pede aprovação porque recebe e-mail.",
+  '- **Agenda** (`agenda_*`): as contas Google ligadas na runelay (pessoal e trabalho juntas). Pedido de agenda, calendário, compromissos, reuniões ou "minha semana/meu dia" é SEMPRE `agenda_list` do período inteiro com todas as contas: o bloco de Agenda aparece sozinho na conversa e a pessoa abre no painel. Depois, no máximo três linhas de leitura (conflitos, dia mais cheio, próximo compromisso), sem repetir a lista. Antes de criar, confirme horário e conta com a pessoa em uma linha; convidado de fora pede aprovação porque recebe e-mail. O conector não cria link do Meet nem edita evento com convidados ou recorrente: diga isso em uma frase e sugira ajustar no Google Calendar.',
   "- **Exportar** (`export_create`): docx, pdf ou md da nota; xlsx, csv ou pdf da planilha. Com `send:true` o arquivo vai na conversa.",
+  "Nota, planilha e agenda têm bloco nativo: NUNCA use `artifact_create` (página HTML) para mostrar agenda, texto para reler ou tabela de números. Página HTML só para o que não tem bloco (apresentação, dashboard visual, página livre).",
   "Depois de criar ou editar, diga em uma frase o que mudou: a pessoa vê o bloco na conversa e não precisa de link nem id.",
 ].join("\n");
 

@@ -20,6 +20,7 @@ import {
   needsApproval,
   toEvent,
   updateEvent,
+  videoLinkIn,
 } from "../services/agenda.service";
 
 const range = { start: "2026-11-20T00:00:00-03:00", end: "2026-11-21T00:00:00-03:00" };
@@ -133,6 +134,7 @@ describe("event ids and mapping", () => {
       allDay: false,
       meet: true,
       meetUrl: "https://meet/x",
+      calendarUrl: null,
       location: "Sala 2",
       description: "Pauta",
       attendees: [
@@ -169,6 +171,22 @@ describe("event ids and mapping", () => {
       recurringEventId: "base",
     });
     expect(allDay).toMatchObject({ allDay: true, meetUrl: "https://meet/h", recurring: true, status: "confirmed" });
+  });
+
+  test("finds a video link in the location or description when the connector drops the conference", async () => {
+    const zoom = toEvent("acc", "primary", {
+      id: "e4",
+      location: "Sala 3",
+      description: "Entrar: https://empresa.zoom.us/j/123?pwd=abc e pauta",
+      htmlLink: "https://www.google.com/calendar/event?eid=x",
+    });
+    expect(zoom).toMatchObject({
+      meet: true,
+      meetUrl: "https://empresa.zoom.us/j/123?pwd=abc",
+      calendarUrl: "https://www.google.com/calendar/event?eid=x",
+    });
+    expect(videoLinkIn(null, "https://meet.google.com/abc-defg-hij")).toBe("https://meet.google.com/abc-defg-hij");
+    expect(videoLinkIn(undefined, "sem link")).toBeNull();
   });
 
   test("external attendees ignore the person's own e-mails", async () => {

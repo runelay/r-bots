@@ -156,3 +156,23 @@ Desvios do contrato:
 - A resposta de `…/cells` traz as células escritas e as dependentes **da mesma aba**; dependentes de outras abas são recalculadas e gravadas, mas a célula não tem `tabId` para ir junto (o app relê a aba ao trocar).
 - `agenda_create` com convidado de fora das contas ligadas passa pelo card de aprovação existente; sem convidado, ou com `permission: full`, roda direto.
 - O download sai pelo servidor em `GET /bots/:id/exports/:exportId/file` (stream do BlobStore, atrás do portão de auth).
+
+## v44 (20/11): `agenda_list` mostra o bloco de Agenda
+
+Pedido de agenda virava página HTML (`artifact_create`) porque só criar, mudar e apagar evento geravam bloco. Agora a leitura também gera.
+
+- `agenda_list` aceita `silent?: boolean`. Sem `silent`, depois do `call.settled` o servidor grava `block.updated` (`kind: "agenda"`, `id: "agenda"`, `action: "edited"`, `author: "bot"`) com a prévia **do período pedido**: `view` é `"day"` quando o período tem até 26 h e `"week"` acima disso; `start`/`end` são os limites pedidos em UTC; `events` traz até 80 eventos (a prévia de criar/mudar/apagar continua com até 20 do dia). Cada listagem sobe a revisão da agenda, então o bloco anterior vira "Versão anterior" na conversa. `silent: true` devolve só a lista, sem bloco (consulta interna, como checar conflito antes de criar).
+- Rótulo: `Mostrou a agenda do dia` (até 26 h), `Mostrou a agenda` (mais longo), `Conferiu a agenda` (`silent`).
+- `AgendaEvent` ganha `calendarUrl` (o `htmlLink` do Google, para abrir o evento no Google Calendar) e `meetUrl` passa a cair no primeiro link de vídeo (Meet, Zoom ou Teams) do local ou da descrição quando o Google não manda a conferência. O conector da runelay não devolve `hangoutLink` nem `conferenceData` (só `id`, `summary`, `description`, `location`, `start`, `end`, `status`, `attendees`, `htmlLink`), então Meet só aparece quando o link está no texto.
+- Prompt (`blocksGuide`, `artifactGuide` e descrições de `agenda_list`/`artifact_create`): agenda, calendário, compromissos e "minha semana" são sempre `agenda_list` do período inteiro com todas as contas; nota é `note_write`, tabela de números é `sheet_create`; `artifact_create` só para o que não tem bloco (apresentação, dashboard, página livre).
+
+### Verificado
+
+20/11, produção (só leitura na agenda), bot de teste `t1-4dr9hc`, mensagem "minha agenda desta semana":
+
+```json
+{"type":"call.requested","data":{"capability":{"kind":"tool","name":"agenda_list","label":"Mostrou a agenda"},"input":{"start":"2026-11-16T00:00:00-03:00","end":"2026-11-22T23:59:59-03:00"}}}
+{"type":"block.updated","data":{"kind":"agenda","id":"agenda","title":"Agenda","version":1,"author":"bot","action":"edited","preview":{"kind":"agenda","view":"week","start":"2026-11-16T03:00:00Z","end":"2026-11-23T02:59:59Z","timezone":"America/Sao_Paulo","accounts":[{"id":"google_calendar","label":"Pessoal","color":"blue"},{"id":"google_calendar_2","label":"Appconty","color":"green"}],"events":[{"id":"…","accountId":"google_calendar_2","title":"Escritório","start":"2026-11-16","end":"2026-11-17","allDay":true,"meet":false},{"id":"…","accountId":"google_calendar_2","title":"Planning Conty [Ops x Tech]","start":"2026-11-16T09:00:00-03:00","end":"2026-11-16T10:00:00-03:00","allDay":false,"meet":false},…]},"botId":"t1-4dr9hc","callId":"call_WuMaSx-w1JWG"}}
+```
+
+20 eventos das duas contas, nenhum `artifact.*` no turno. A resposta do bot veio em três linhas (hoje, dia mais cheio, possível duplicidade na quinta), sem repetir a lista.

@@ -47,6 +47,18 @@ interface GoogleEvent {
   conferenceData?: { entryPoints?: Array<{ uri?: string; entryPointType?: string }> };
   recurringEventId?: string;
   updated?: string;
+  htmlLink?: string | null;
+}
+
+const videoLink =
+  /https:\/\/(?:meet\.google\.com\/[a-z0-9-]+|[\w.-]*zoom\.us\/[^\s"'<>)]+|teams\.microsoft\.com\/[^\s"'<>)]+|teams\.live\.com\/[^\s"'<>)]+)/i;
+
+export function videoLinkIn(...texts: Array<string | null | undefined>) {
+  for (const text of texts) {
+    const found = text?.match(videoLink)?.[0];
+    if (found) return found;
+  }
+  return null;
 }
 
 const identities = new Map<string, { at: number; email: string; calendars: GoogleCalendar[] }>();
@@ -158,7 +170,9 @@ export function decodeEventId(eventId: string) {
 export function toEvent(accountId: string, calendarId: string, raw: GoogleEvent): AgendaEvent {
   const allDay = Boolean(raw.start?.date && !raw.start?.dateTime);
   const meetUrl =
-    raw.hangoutLink ?? raw.conferenceData?.entryPoints?.find((item) => item.entryPointType === "video")?.uri ?? null;
+    raw.hangoutLink ??
+    raw.conferenceData?.entryPoints?.find((item) => item.entryPointType === "video")?.uri ??
+    videoLinkIn(raw.location, raw.description);
   const responses: AttendeeResponse[] = ["accepted", "declined", "tentative", "needsAction"];
   return {
     id: encodeEventId(accountId, calendarId, raw.id),
@@ -170,6 +184,7 @@ export function toEvent(accountId: string, calendarId: string, raw: GoogleEvent)
     allDay,
     meet: Boolean(meetUrl),
     meetUrl,
+    calendarUrl: raw.htmlLink ?? null,
     location: raw.location ?? null,
     description: raw.description ?? null,
     attendees: (raw.attendees ?? []).map((item) => ({
@@ -384,16 +399,41 @@ export async function agendaPreview(around: string, allDay: boolean, eventIds: s
     end,
     timezone: agendaTimezone,
     accounts: accounts.map(({ id, label, color }) => ({ id, label, color })),
-    events: picked.map(({ id, accountId, title, start: s, end: e, allDay: a, meet }) => ({
-      id,
-      accountId,
-      title,
-      start: s,
-      end: e,
-      allDay: a,
-      meet,
-    })),
+    events: previewEvents(picked),
   };
+}
+
+const listPreviewLimit = 80;
+
+function previewEvents(events: AgendaEvent[]) {
+  return events.map(({ id, accountId, title, start, end, allDay, meet }) => ({
+    id,
+    accountId,
+    title,
+    start,
+    end,
+    allDay,
+    meet,
+  }));
+}
+
+export async function listEventsBlock(botId: string, query: Record<string, unknown>) {
+  const list = await listEvents(query);
+  const start = isoBound(query.start, "start");
+  const end = isoBound(query.end, "end");
+  const accounts = (await listAccounts()).filter((item) => item.status === "ready");
+  const view: AgendaPreview["view"] = Date.parse(end) - Date.parse(start) <= 26 * 3_600_000 ? "day" : "week";
+  const preview: AgendaPreview = {
+    kind: "agenda",
+    view,
+    start,
+    end,
+    timezone: agendaTimezone,
+    accounts: accounts.map(({ id, label, color }) => ({ id, label, color })),
+    events: previewEvents(list.items.slice(0, listPreviewLimit)),
+  };
+  const version = await bumpAgendaVersion(botId);
+  return { list, blockEvent: blockEvent("agenda", agendaBlockId, "Agenda", version, "bot", "edited", preview) };
 }
 
 function normalizeWhen(value: unknown, allDay: boolean, field: string) {

@@ -198,7 +198,7 @@ export function artifactTools(botId: string): BotTool[] {
     {
       name: "artifact_create",
       description:
-        "Cria um artefato visual (apresentação, dashboard ou página) que a pessoa vê renderizado no app. html é um documento HTML único e autocontido. Devolve o id para atualizar depois com artifact_update.",
+        "Cria um artefato visual (apresentação, dashboard ou página livre) que a pessoa vê renderizado no app. html é um documento HTML único e autocontido. Nunca para agenda (use agenda_list), texto para reler (note_write) ou tabela de números (sheet_create): esses têm bloco nativo. Devolve o id para atualizar depois com artifact_update.",
       shape: {
         title: z.string().min(1).max(120),
         kind: z.enum(kinds),
@@ -261,6 +261,7 @@ export function artifactTools(botId: string): BotTool[] {
 export const artifactGuide = [
   "## Artefatos visuais",
   "Quando a resposta fica melhor vista do que lida (apresentação, dashboard, relatório visual), monte um artefato com `artifact_create` e ajuste com `artifact_update`. A pessoa vê o resultado renderizado no app; na conversa, diga em uma frase o que montou, sem colar o HTML.",
+  "- Agenda, calendário e compromissos nunca viram artefato: use `agenda_list`, que já mostra o bloco nativo de Agenda. Nota vira `note_write` e planilha ou tabela de números vira `sheet_create`. Artefato só para o que não tem bloco nativo.",
   "- HTML único e autocontido: CSS e JS inline. Scripts só de cdnjs.cloudflare.com ou cdn.jsdelivr.net, com versão exata (ex.: https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js). Fontes só do Google Fonts. Nada de fetch, imagens externas ou iframes: a página roda bloqueada para fora. Imagem só como SVG inline ou data: URI.",
   "- Tema escuro elegante: fundo quase preto (#0b0d10), texto #e8eaed, texto secundário #9aa0a6, uma cor de destaque só. Fonte Inter (Google Fonts) ou system-ui. Responsivo do celular a 1920px.",
   '- slides: cada slide é um `<section class="slide">` de 16:9 que ocupa a tela inteira, um slide por seção do conteúdo, só um visível por vez. Navegação por setas ←/→ (e espaço, PageUp/PageDown), contador discreto "2 / 6" num canto. Exponha `window.slideCount` (número de slides) e `window.goToSlide(i)` (índice a partir de 0): o app usa isso para exportar um PDF com uma página por slide. Nada de animação longa.',

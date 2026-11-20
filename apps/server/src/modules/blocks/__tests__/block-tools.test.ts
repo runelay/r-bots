@@ -66,6 +66,7 @@ describe("tool list", () => {
     expect(tools.filter((item) => item.approval).map((item) => item.name)).toEqual(["agenda_create"]);
     expect(blocksGuide).toContain("## Notas, planilhas e agenda");
     expect(blocksGuide).toContain("`export_create`");
+    expect(blocksGuide).toContain("NUNCA use `artifact_create`");
   });
 });
 
@@ -231,11 +232,28 @@ describe("agenda", () => {
     const accounts = (await toolOf("agenda_accounts").run({}, signal)) as Array<{ id: string; email: string }>;
     expect(accounts.map((item) => item.email)).toEqual(["dona@casa.com"]);
 
-    expect(await label("agenda_list", {})).toBe("Viu a agenda");
+    expect(await label("agenda_list", { start: "2026-11-20", end: "2026-11-21" })).toBe("Mostrou a agenda do dia");
+    expect(await label("agenda_list", { start: "2026-11-16", end: "2026-11-23" })).toBe("Mostrou a agenda");
+    expect(await label("agenda_list", { start: "2026-11-16", end: "2026-11-23", silent: true })).toBe(
+      "Conferiu a agenda",
+    );
     const list = (await run("agenda_list", { start: "2026-11-20", end: "2026-11-21" })) as {
       items: Array<{ title: string }>;
     };
     expect(list.items.map((item) => item.title)).toEqual(["Foco"]);
+    expect(list.blockEvent?.type).toBe("block.updated");
+    expect(list.blockEvent?.data).toMatchObject({
+      kind: "agenda",
+      id: "agenda",
+      author: "bot",
+      preview: { kind: "agenda", view: "day", events: [{ title: "Foco", allDay: false }] },
+    });
+    const week = await run("agenda_list", { start: "2026-11-16", end: "2026-11-23" });
+    expect(week.blockEvent?.data.preview).toMatchObject({ view: "week", start: "2026-11-16T03:00:00Z" });
+    expect((week.blockEvent?.data.version ?? 0) > (list.blockEvent?.data.version ?? 0)).toBe(true);
+    const silent = await run("agenda_list", { start: "2026-11-20", end: "2026-11-21", silent: true });
+    expect(silent.blockEvent).toBeUndefined();
+    expect((silent as unknown as { items: unknown[] }).items).toHaveLength(1);
 
     const create = toolOf("agenda_create");
     const input = {
