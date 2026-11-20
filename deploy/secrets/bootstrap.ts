@@ -29,4 +29,4 @@ async function ensureSecret(name: string) {
 await mkdir(root, { recursive: true });
 if ((await stat(root)).uid === 0) await chown(root, uid, gid);
 for (const dir of [secretsDir, join(root, "postgres"), join(root, "redis")]) await ensureDir(dir);
-for (const name of ["postgres.password", "redis.password"]) await ensureSecret(name);
+for (const name of ["postgres.password", "postgres-app.password", "redis.password"]) await ensureSecret(name);

@@ -4,9 +4,10 @@ import { host, port } from "../../../config/env";
 import { Req } from "../../../shared/http";
 import type { Socket } from "../../../shared/ws";
 import type { AuthModule } from "../../auth";
-import { gate, useAuthModule } from "../../auth/gate";
+import { gate, notifyUserRevoked, useAuthModule } from "../../auth/gate";
 import {
   disconnectMacDevice,
+  disconnectMacUser,
   isRunnerUpgrade,
   MacRunnerUnavailable,
   macAccounts,
@@ -34,8 +35,8 @@ import {
   watchMacComputerEvents,
 } from "../services/mac-runner.service";
 
-function device(key: string, rank: number, name = `Mac ${key}`) {
-  return { kind: "runner", deviceKey: key, rank, deviceName: name, userId: "u1" };
+function device(key: string, rank: number, name = `Mac ${key}`, extra: Record<string, unknown> = {}) {
+  return { kind: "runner", deviceKey: key, rank, deviceName: name, userId: "u1", owner: true, ...extra };
 }
 
 type Sent = {
@@ -199,17 +200,33 @@ describe("authorization", () => {
     const devicePrincipal = {
       ...principal,
       method: "api-key" as const,
+      apiKeyId: "key-1",
       device: { id: "dev-1", name: "MacBook", registeredAt: "2026-11-19T10:00:00.000Z" },
     };
-    const undated = { ...devicePrincipal, device: { id: "dev-2", name: "", registeredAt: "" } };
+    const undated = {
+      ...devicePrincipal,
+      role: "member",
+      apiKeyId: undefined,
+      device: { id: "dev-2", name: "", registeredAt: "" },
+    };
+    const touched: string[] = [];
     useAuthModule({
       authenticate: async (request: Request) => {
         const header = request.headers.get("authorization");
         if (header === "Bearer device") return { kind: "principal", principal: devicePrincipal };
         if (header === "Bearer undated") return { kind: "principal", principal: undated };
+        if (header === "Bearer broken")
+          return { kind: "principal", principal: { ...devicePrincipal, apiKeyId: "key-broken" } };
         return header ? { kind: "principal", principal } : { kind: "public" };
       },
       handle: async () => null,
+      devices: {
+        touchKey: async (id: string) => {
+          touched.push(id);
+          if (id === "key-broken") throw new Error("db down");
+          return true;
+        },
+      },
     } as unknown as AuthModule);
     const signed = new Request("http://127.0.0.1/runner/connect", { headers: { authorization: "Bearer s" } });
     const fromDevice = new Request("http://127.0.0.1/runner/connect", { headers: { authorization: "Bearer device" } });
@@ -227,8 +244,21 @@ describe("authorization", () => {
       rank: Date.parse("2026-11-19T10:00:00.000Z"),
       deviceName: "MacBook",
       userId: "u1",
+      owner: true,
     });
-    expect(runnerUpgradeData(new Req(fromUndated))).toMatchObject({ deviceKey: "dev-2", rank: 0, deviceName: null });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(touched).toEqual(["key-1"]);
+    const broken = new Request("http://127.0.0.1/runner/connect", { headers: { authorization: "Bearer broken" } });
+    expect(await gate(broken)).toBeNull();
+    expect(runnerUpgradeData(new Req(broken))).toMatchObject({ deviceKey: "dev-1" });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(touched).toEqual(["key-1", "key-broken"]);
+    expect(runnerUpgradeData(new Req(fromUndated))).toMatchObject({
+      deviceKey: "dev-2",
+      rank: 0,
+      deviceName: null,
+      owner: false,
+    });
     expect(runnerUpgradeData(new Req(anonymous))).toBeNull();
   });
 });
@@ -290,6 +320,43 @@ describe("several Macs", () => {
     };
     expect(disconnectMacDevice("dev-y")).toBe(true);
     expect(macRunnerConnected("dev-y")).toBe(false);
+  });
+
+  test("never picks a member's Mac by default and serves it only when addressed", async () => {
+    const member = await connect(device("member-mac", 1, "Mac do membro", { userId: "u2", owner: false }));
+    expect(macRunnerConnected()).toBe(false);
+    expect(macRunnerInfo()).toMatchObject({ connected: false });
+    await expect(macComputerHealth()).rejects.toThrow("não está conectado");
+    const events: ProviderEvent[] = [];
+    await runMacTurn(turn("m0"), new AbortController().signal, (event) => events.push(event));
+    expect(events).toEqual([{ type: "done", ok: false, message: "O app runelay bots não está conectado." }]);
+    expect(macRunnerConnected("member-mac")).toBe(true);
+    const listed = macAccounts("member-mac");
+    const asked = member.sent.find((item) => item.op === "accounts");
+    member.say({ type: "response", id: asked?.id, ok: true, result: [] });
+    expect(await listed).toEqual([]);
+    const owner = await connect(device("owner-mac", 50));
+    expect(macRunnerInfo()).toMatchObject({ connected: true });
+    owner.sent.splice(0);
+    const health = macComputerHealth();
+    const probe = owner.sent.find((item) => item.op === "computer.health");
+    owner.say({ type: "response", id: probe?.id, body: { ok: true } });
+    expect(await health).toEqual({ ok: true });
+  });
+
+  test("refuses a socket for the same device from another account and drops a revoked user", async () => {
+    const mine = await connect(device("shared", 1));
+    const stranger = await connect(device("shared", 1, "Mac", { userId: "u9" }));
+    expect(stranger.closed).toEqual([[4003, "device conflict"]]);
+    expect(mine.closed).toEqual([]);
+    expect(macRunnerConnections().find((item) => item.key === "shared")?.userId).toBe("u1");
+    await connect(device("other", 2));
+    expect(disconnectMacUser("u1")).toBe(2);
+    expect(disconnectMacUser("u1")).toBe(0);
+    expect(macRunnerConnected("shared")).toBe(false);
+    await connect(device("again", 3));
+    notifyUserRevoked("u1", ["again"]);
+    expect(macRunnerConnected("again")).toBe(false);
   });
 
   test("a replaced socket that fails to close is still dropped", async () => {
@@ -416,7 +483,7 @@ describe("mcp over the connection", () => {
       ["r2", 404],
       ["", 502],
     ]);
-    expect(String(runner.sent[2].body)).toContain("refused");
+    expect(JSON.parse(String(runner.sent[2].body))).toEqual({ ok: false, error: "O servidor não respondeu ao MCP." });
     runner.say({ type: "mcp.request", id: "r3", method: "POST", path: "/mcp/a/b" });
     runner.ws.readyState = 3;
     await Bun.sleep(0);

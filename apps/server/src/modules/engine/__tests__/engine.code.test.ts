@@ -23,6 +23,7 @@ import * as actions from "../../code/services/actions.service";
 import * as devServers from "../../code/services/dev-server.service";
 import * as hooks from "../../code/services/hooks.service";
 import { CodeLive } from "../../code/services/live-diff.service";
+import * as sandbox from "../../code/services/sandbox.service";
 import type { InstallState, WorkspaceState } from "../../code/services/workspace.service";
 import * as workspaces from "../../code/services/workspace.service";
 import * as handoff from "../../conversations/services/handoff.service";
@@ -91,6 +92,7 @@ describe("an open workspace", () => {
     await run(session, { text: "muda o botão" });
     const request = lastRequest();
     expect(request.code).toEqual({ cwd: open.path, readOnly: true });
+    expect(request.nativeShell).toBe(false);
     expect(fakeProviders.turns[0].hooks).toBe(nativeHooks);
     expect(made).toHaveBeenCalledTimes(1);
     expect(checkpoint).toHaveBeenCalledWith(session, open, "turn_0");
@@ -147,6 +149,42 @@ describe("an open workspace", () => {
     await run(session);
     expect((await settledOf(session))?.outcome).toBe("completed");
     expect(console.warn).toHaveBeenCalledWith("checkpoint failed", expect.any(Error));
+  });
+});
+
+describe("tool sandbox around a coding turn", () => {
+  const saved = process.env.BOTS_TOOL_SANDBOX;
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.BOTS_TOOL_SANDBOX;
+    else process.env.BOTS_TOOL_SANDBOX = saved;
+  });
+
+  test("native shells stay on in full and default access, with or without the sandbox", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    session.meta.permission = "full";
+    await run(session);
+    expect(lastRequest().nativeShell).toBe(true);
+    process.env.BOTS_TOOL_SANDBOX = "uid";
+    const kill = track(spyOn(sandbox, "killSandboxed").mockResolvedValue(0));
+    await run(session);
+    expect(lastRequest().nativeShell).toBe(true);
+    session.meta.permission = "default";
+    await run(session);
+    expect(lastRequest().nativeShell).toBe(true);
+    expect(kill).not.toHaveBeenCalled();
+  });
+
+  test("kills what the turn left running as the sandbox user", async () => {
+    process.env.BOTS_TOOL_SANDBOX = "uid";
+    const kill = track(spyOn(sandbox, "killSandboxed").mockResolvedValue(1));
+    track(spyOn(workspaces, "createCheckpoint").mockResolvedValue(undefined as never));
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    session.meta.workspace = workspace();
+    await run(session);
+    expect(kill).toHaveBeenCalledWith(sandbox.sandboxMarker("sbx", "turn_0"));
   });
 });
 

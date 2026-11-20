@@ -6,7 +6,7 @@ import { type BotDefinition, createBot, setArchived, setDeleted } from "../../bo
 import * as sessions from "../../conversations/services/sessions.service";
 import * as engine from "../../engine/services/engine.service";
 import { handleVoice } from "../routes/voice.routes";
-import { endAllCalls, findCall } from "../services/voice.service";
+import { endAllCalls, findCall, resetTokenLimits } from "../services/voice.service";
 
 const eleven = fakeElevenLabs();
 const fast = fakeFastLayer();
@@ -50,6 +50,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  resetTokenLimits();
   endAllCalls();
   jest.useRealTimers();
 });
@@ -173,7 +174,7 @@ describe("/bots/:id/voice/session", () => {
         method: "POST",
         body: { text: "oi" },
       });
-      expect(failed).toMatchObject({ status: 500, body: { ok: false, error: "engine down" } });
+      expect(failed).toMatchObject({ status: 500, body: { ok: false } });
     } finally {
       error.mockRestore();
     }

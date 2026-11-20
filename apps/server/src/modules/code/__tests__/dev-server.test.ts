@@ -11,6 +11,7 @@ import {
   resetData,
 } from "../../../../test/helpers";
 import {
+  devLimits,
   devServerLogs,
   devServersOf,
   findPreviewByToken,
@@ -31,7 +32,9 @@ import {
   stopDevServers,
   toolOf,
   viewServer,
+  withHost,
 } from "../services/dev-server.service";
+import { resetSandboxProbe, sandboxMissingMessage } from "../services/sandbox.service";
 import { codeDataDir, type WorkspaceState } from "../services/workspace.service";
 
 const portBase = 5310;
@@ -155,13 +158,14 @@ describe("starting dev servers", () => {
       ["npm run dev -- --enable-containers=false", (port) => `npm run dev -- --enable-containers=false --port ${port}`],
       ["pnpm dev", (port) => `pnpm dev --port ${port}`],
       ["bun run dev", (port) => `bun run dev --port ${port}`],
-      ["npx vite", (port) => `npx vite --port ${port}`],
-      ["wrangler dev", (port) => `wrangler dev --port ${port} --ip 127.0.0.1`],
+      ["npx vite", (port) => `npx vite --host 127.0.0.1 --port ${port}`],
+      ["wrangler dev", (port) => `wrangler dev --ip 127.0.0.1 --port ${port}`],
       ["wrangler dev --ip 0 --port 9", () => "wrangler dev --ip 0 --port 9"],
-      ["next dev", (port) => `next dev --port ${port} --hostname 127.0.0.1`],
+      ["next dev", (port) => `next dev -H 127.0.0.1 --port ${port}`],
       ["npx expo start", (port) => `npx expo start --port ${port} --localhost`],
       ["expo start {port}", (port) => `expo start ${port} --localhost`],
       ["npx expo start --lan", (port) => `npx expo start --lan --port ${port}`],
+      ["astro dev --host 127.0.0.1", (port) => `astro dev --host 127.0.0.1 --port ${port}`],
     ];
     for (const [cmd, expected] of cases) {
       const started = await startDevServer(workspace(), { cmd }, () => undefined);
@@ -340,5 +344,98 @@ describe("registry", () => {
     expect(changes.at(-1)?.[1]).toBe(true);
     expect(toolOf(null, "cargo run")).toBe("rust");
     expect(toolOf("echo")).toBe("process");
+  });
+});
+
+describe("loopback and limits", () => {
+  test("refuses public binds and keeps explicit loopback hosts", () => {
+    expect(() => withHost("vite --host 0.0.0.0")).toThrow("só pode ouvir em 127.0.0.1");
+    expect(() => withHost("vite --host")).toThrow("só pode ouvir em 127.0.0.1");
+    expect(() => withHost("next dev -H 0.0.0.0")).toThrow("só pode ouvir em 127.0.0.1");
+    expect(() => withHost("HOST=0.0.0.0 node app.js")).toThrow("só pode ouvir em 127.0.0.1");
+    expect(withHost("vite --host=127.0.0.1")).toBe("vite --host=127.0.0.1");
+    expect(withHost("node app.js")).toBe("node app.js");
+  });
+
+  test("caps the servers of one workspace and expires them after the lifetime", async () => {
+    bash(serving);
+    const ws = workspace();
+    const limit = devLimits.perWorkspace;
+    const minutes = devLimits.maxMinutes;
+    devLimits.perWorkspace = 1;
+    devLimits.maxMinutes = 0.0005;
+    try {
+      const first = await startDevServer(ws, { cmd: "node a.js" }, () => undefined);
+      await expect(startDevServer(ws, { cmd: "node b.js" }, () => undefined)).rejects.toThrow(
+        "Já há 1 servidores rodando nesta tarefa.",
+      );
+      for (let attempt = 0; attempt < 200 && serversOf(ws)[0].status !== "stopped"; attempt++) await Bun.sleep(2);
+      expect(serversOf(ws).find((item) => item.id === first.id)?.status).toBe("stopped");
+    } finally {
+      devLimits.perWorkspace = limit;
+      devLimits.maxMinutes = minutes;
+    }
+  });
+});
+
+describe("dev servers in the tool sandbox", () => {
+  const saved = { mode: process.env.BOTS_TOOL_SANDBOX, sudo: process.env.BOTS_SANDBOX_SUDO };
+
+  beforeEach(() => {
+    process.env.BOTS_TOOL_SANDBOX = "uid";
+    process.env.BOTS_SANDBOX_SUDO = "/fake/sudo";
+    resetSandboxProbe();
+  });
+
+  afterEach(() => {
+    if (saved.mode === undefined) delete process.env.BOTS_TOOL_SANDBOX;
+    else process.env.BOTS_TOOL_SANDBOX = saved.mode;
+    if (saved.sudo === undefined) delete process.env.BOTS_SANDBOX_SUDO;
+    else process.env.BOTS_SANDBOX_SUDO = saved.sudo;
+    resetSandboxProbe();
+  });
+
+  test("runs through sudo and the wrapper and is killed by its marker", async () => {
+    const servers: FakeChild[] = [];
+    const fake = fakeProcesses((call) => {
+      if (call.command !== "/fake/sudo") return undefined;
+      if (call.args.includes("--probe")) return { stdout: "ok 1502 bwrap=0\n" };
+      if (call.args.includes("--sweep")) return { stdout: "0\n" };
+      if (call.args.includes("--kill")) {
+        for (const child of servers) child.finish({ code: 143 });
+        return { stdout: "1\n" };
+      }
+      servers.push(call.child);
+      const port = Number(call.args.find((arg) => arg.startsWith("PORT="))?.slice(5));
+      void listen(port);
+      return { hang: true };
+    });
+    spyOn(process, "kill").mockImplementation((() => true) as typeof process.kill);
+    const ws = workspace();
+    const started = await startDevServer(ws, { cmd: "npx vite" }, () => undefined);
+    expect(started.status).toBe("running");
+    const spawn = fake.calls.find((call) => call.args.includes("--cwd"));
+    const args = spawn?.args ?? [];
+    expect(args.slice(0, 4)).toEqual(["-n", "-u", "runelaytool", "/usr/local/bin/rb-sandbox-exec"]);
+    expect(args).toContain("HOST=127.0.0.1");
+    expect(args[args.indexOf("--marker") + 1]).toMatch(/^rb\d+:dev:dev_[0-9a-f]+$/);
+    expect(args.at(-1)).toBe(`npx vite --host 127.0.0.1 --port ${started.port}`);
+    await stopDevServers(ws);
+    const kill = fake.calls.find((call) => call.args.includes("--kill"));
+    expect(kill?.args.at(-1)).toBe(args[args.indexOf("--marker") + 1]);
+    await startDevServer(workspace(), { cmd: "node x.js" }, () => undefined);
+    stopAllDevServers();
+    fake.restore();
+  });
+
+  test("refuses to start when sudo or the wrapper are missing", async () => {
+    const fake = fakeProcesses((call) =>
+      call.command === "/fake/sudo" ? { code: 1, stderr: "sudo: a password is required" } : undefined,
+    );
+    await expect(startDevServer(workspace(), { cmd: "npm run dev" }, () => undefined)).rejects.toThrow(
+      sandboxMissingMessage,
+    );
+    expect(fake.calls.some((call) => call.args.includes("--cwd"))).toBe(false);
+    fake.restore();
   });
 });

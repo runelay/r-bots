@@ -253,3 +253,84 @@ Nada de variável para repositório. O compose monta o HOME do host no mesmo cam
 - T1 (`claude-sonnet-5-5`, conta `vps:claude`), conversa nova `{"permission":"full"}`: quatro `Bash` sem `clearedBy` (sem card) → `gh auth status` exit 0, `supabase projects list` exit 0, `wrangler whoami` exit 0, `curl … https://api.github.com/zen` → `200`.
 - Davi (`claude-haiku-5-5`, Acesso total), conversa limpa com `POST /bots/davi/thread/reset`, mesmo prompt da CTY-1318 + "crie essa rotina": um `add_schedule` sem card → `{"ok":true,"summary":"Rotina \"monitor-cty-1318-prod\" criada: 0 */4 * * * (America/Sao_Paulo).","schedules":["watch","monitor-cty-1318-prod"]}`, nenhuma pergunta.
 - Davi, checagem 2 da rotina: `cd …/conty-api && supabase db query --remote --read-only "select pg_get_constraintdef(oid) …"` → `Target: project P2IA (wilmlcoeaxnakramxvpr) · production` e `UNIQUE (provider, provider_account_id, owner_type)`; o mesmo em `--remote=falggcsxytemkgxrnlxm` e `--remote=flguvsnqinfabikvypvo`, todos sem card.
+
+## v51 (20/11): sandbox de ferramentas e endurecimento do modo código
+
+Nenhuma rota nova nem corpo novo. Muda o que roda, com qual usuário, e o que o portão nega.
+
+### Sandbox de ferramentas (`BOTS_TOOL_SANDBOX`)
+- `BOTS_TOOL_SANDBOX=uid` (padrão na imagem) ou `off` (padrão fora do container e nos testes). Valor desconhecido conta como `uid` (falha fechada).
+- Em `uid`, todo comando que o modelo pede roda como o usuário `runelaytool` (uid 1502, grupo próprio 1502, membro de `rbwork` 1503), via `sudo -n -u runelaytool /usr/local/bin/rb-sandbox-exec`. O `sudoers` só libera esse wrapper (`app ALL=(runelaytool) NOPASSWD: /usr/local/bin/rb-sandbox-exec`); `sudo -u runelaytool /bin/sh` e `sudo id` pedem senha e falham.
+- Vale para: Bash do Claude (o hook `PreToolUse` reescreve o comando; o cwd é o `$PWD` do shell persistente), testes e builds pesados (o `flock` da fila de testes fica fora do sandbox, o limite de memória, o `nice` e o `timeout` ficam dentro), `dev_server_start` e a instalação automática de dependências.
+- Comando reescrito pelo cofre (`rb-secret-run.mjs`, montado pelo servidor) continua rodando como `app`, fora do sandbox: o segredo nunca chega ao usuário do modelo.
+- O wrapper (dono root, 0755): ambiente mínimo (`PATH` de sistema, `HOME=/home/runelaytool`, `LANG`, `TERM=dumb`, `TMPDIR`, mais `NODE_OPTIONS`, `NODE_ENV`, `PORT`, `HOST`, `BROWSER`, `FORCE_COLOR`, `CI`, `TZ`, `VITEST_*`, `JEST_WORKERS`, `GIT_TERMINAL_PROMPT` se o servidor passar), `umask 002`, cwd resolvido com `realpath` e recusado fora de `/etc/rb-sandbox/roots` (a pasta de worktrees), `timeout -k 10s` por comando. Com `bwrap` funcionando (sondado uma vez no boot; o container sem user namespaces dá `bwrap=0`), também esconde com tmpfs `/data`, `/backups`, `/run`, `/home/app` e as pastas de conta de IA e chaves do HOME do host (`.claude*`, `.codex*`, `.grok`, `.cursor`, `.ssh`, `.gnupg`, `.aws`, dados do runelay bots); `~/.config/gh`, `~/.supabase` e `~/.config/.wrangler` do host ficam visíveis (o entrypoint liga `/home/runelaytool/.config/gh` e `/home/runelaytool/.config/.wrangler` nelas por link e cria `/home/runelaytool/.supabase` própria com link só para o `access-token`, porque o CLI grava telemetria ali; ACL de leitura em `gh` e `.supabase`, de escrita no `wrangler`, que renova o token), para `gh`, `supabase` e `wrangler` funcionarem; com `/proc` e PIDs próprios.
+- Processos ficam marcados (`RUNELAY_TURN=rb<porta>:sbx:<turnId>`, `rb<porta>:dev:<id>`, `rb<porta>:install:<workspace>`). No fim de cada turno com código o servidor mata o que o turno deixou (`--kill`); a primeira sondagem varre órfãos do boot anterior (`--sweep`).
+- `uid` configurado e sudo/wrapper sem funcionar: nenhum comando roda. Bash, `dev_server_start` e a instalação respondem "O sandbox de ferramentas está ligado (BOTS_TOOL_SANDBOX=uid), mas o servidor não conseguiu usar sudo com o rb-sandbox-exec. Por segurança, nenhum comando roda até isso ser corrigido na VPS…".
+- Worktrees: a pasta de worktrees é `app:rbwork` com setgid (2775); ao abrir ou reabrir uma tarefa o servidor passa a worktree, `objects`, `refs`, `logs` e a pasta admin da worktree no `.git` do repositório para o grupo `rbwork` (g+rwX, setgid nas pastas) e grava `core.sharedRepository=group`. `config` e `hooks` do repositório não são abertos.
+- Imagem: `/app` e os binários do servidor ficam com dono root e sem escrita para `app`; `~/.local/bin` saiu da frente do `PATH` (na busca de binários fica por último); `build-essential` saiu (a instalação roda sem scripts); `bubblewrap` entrou. O entrypoint deixa `/data`, `/backups` e `/data/secrets` em 0700, `runner.token`, `auth.secret`, `vault.key` e `secrets/*` em 0600, `/home/app` em 0750, põe `app` em `rbwork` e roda com `umask 002`.
+
+### Git do servidor
+- Todo `git` do servidor (e o `gh`, que chama git) roda com `GIT_CONFIG_NOSYSTEM=1` e, por `GIT_CONFIG_COUNT`, `core.hooksPath=/dev/null`, `core.fsmonitor=false`, `diff.external=`, `protocol.ext.allow=never`, `core.pager=cat`; `diff`, `show` e `log` ganham `--no-ext-diff --no-textconv`.
+- Dentro de uma worktree, o servidor fixa `GIT_DIR`, `GIT_COMMON_DIR` e `GIT_WORK_TREE` a partir do repositório liberado: trocar o arquivo `.git` (ou `commondir`) da worktree não muda o git que o servidor usa.
+- `workspace_deliver` faz commit e push com `--no-verify`. Se a entrega muda hooks ou scripts (`.husky/`, `.githooks/`, `.github/workflows/`, `lefthook.yml`, `.pre-commit-config.yaml`, `.npmrc`, `.yarnrc*`, `bunfig.toml`, ou `scripts`/`husky`/`simple-git-hooks` de algum `package.json`, inclusive `package.json` novo), abre card: "<rótulo>? Esta entrega muda hooks ou scripts: <arquivos>." com motivo "Hooks do git ou scripts de instalação mudaram nesta entrega." (Acesso total libera, como os outros cards).
+- Instalação automática com `--ignore-scripts` (`bun install --frozen-lockfile --ignore-scripts`, `pnpm/yarn install --frozen-lockfile --ignore-scripts`, `npm ci --no-audit --no-fund --ignore-scripts`). O `install.log` para em 5 MB (`CODE_INSTALL_LOG_MAX_BYTES`) com "[log cortado]".
+
+### Aprovações e permissões
+- Card de aprovação do modo código vence em `CODE_APPROVAL_TIMEOUT_SEC` (600 s, abaixo dos 900 s do hook): sai `interaction.settled {"interactionId":"…","outcome":"expired"}` e a ação é negada.
+- Claude: `canUseTool` nega toda chamada que o hook `PreToolUse` não liberou explicitamente para aquele `toolUseID` (hook que estoura o tempo ou dá erro = negado). Erro no hook vira "A checagem de segurança desta ferramenta falhou; a chamada foi negada."
+- Bash com `run_in_background` é negado: "Bash em segundo plano (run_in_background) não é permitido. Para servidor ou watcher, use dev_server_start; para ver a saída, dev_server_logs."
+- Codex, Cursor e Grok: `TurnRequest.nativeShell` é `true` em todo modo menos Somente leitura (Acesso total, Padrão e Editar), com ou sem o sandbox (ajuste do merge com a main, 20/11). Com `false`, o Codex roda sem `shell_tool`/`unified_exec` (inclusive no modo código) e sempre com `allow_login_shell=false` e `shell_environment_policy.inherit="core"`; o Cursor ganha `.cursor/cli.json` (0600) com `allow: ["Mcp(bots:*)"]` e `deny: ["Shell(*)", "Read(**)", "Write(**)", "WebFetch(*)"]`; o Grok ganha mais nomes de ferramenta nativa em `--disallowed-tools`. O shell nativo desses três roda como o usuário do servidor, fora do sandbox de uid.
+- `set_role`, `update_instructions` (append e replace) e `add_schedule` rodam direto em Editar, Padrão e Acesso total, sem card; no Somente leitura são negados (ajuste do merge com a main, 20/11: autoconfiguração não está na lista dura). Somente leitura nega `set_role`, `update_instructions`, `add_schedule`, `remove_schedule` e `memory_write`.
+- `shell_run` no Mac: o comando é separado em palavras antes da lista permitida; qualquer caractere especial de shell (`; & | $ \` ( ) < >`, aspas, curinga, `~`, `!`, `#`, quebra de linha) sempre abre card e o Jev não aprova sozinho. `computer_applescript` com `do shell script` sempre abre card.
+- `workspace_add` nega sem card `/`, o HOME inteiro (do host ou do container) e qualquer pasta que contenha ou fique dentro de uma pasta do servidor (`/data`, `/backups`, `/run`, `/proc`, `/sys`, `/etc`, pasta de dados, backups, worktrees, `/app`).
+
+### Portão do modo código (política)
+- Caminhos resolvidos com `realpath` (links simbólicos, `/proc/self/root`, pasta mais funda que existe para arquivo novo) antes de toda checagem.
+- Leitura nativa (Read, Grep, Glob) só na worktree, `/tmp`, repositórios liberados e pastas de sistema somente leitura (`/usr`, `/etc`, `/opt`, `/lib*`, `/bin`, `/sbin`). `/proc`, `/sys`, `/dev` (fora `/dev/null` e afins), `/run`, `/data`, `/backups` e a configuração das contas são negados em qualquer modo. Grep e Glob sem `path` procuram na worktree; padrão absoluto é checado pela parte fixa; `..` depois do curinga é negado.
+- Bash: argumento que existe fora da lista liberada é negado; curinga fora da worktree é negado; `cd`/`pushd`/`env -C` para fora da worktree ou de `/tmp` são negados; `file://` e `<` são checados como leitura; `ln` confere para onde o link aponta.
+- Somente leitura recusa expansão dinâmica (`$VAR`, `$(...)`, `${...}`, `$((...))`), heredoc sem aspas, prefixo `VAR=` ou `env`, `git -c`, `--output`, `-O`, `--ext-diff`, `--textconv`, `find -exec/-delete/-fprint`, `sort -o`, `tree -o`, `uniq` com arquivo de saída, `printf -v`, `rg --pre`, `fd -x`, `yq -i` e `curl` que não seja leitura em localhost; `sed` e `awk` deixam de ser leitura.
+- Lista dura: push normalizado (`refs/heads/`, `HEAD:` na branch protegida), push via `xargs`, `find -exec` ou destino montado na hora, `git -c` fora da lista segura, `GIT_CONFIG*`/`GIT_DIR`/`GIT_SSH*`/`LD_PRELOAD`/`BASH_ENV`, comandos que rodam outro por dentro (`flock`, `watch`, `strace`…) e `gh api` que escreve em merge/refs/contents ou faz mutation de merge no graphql pedem uma pessoa. Comando disfarçado (`$'...'`, chaves ou barra invertida no nome do comando, `$IFS`) é negado sem card, salvo se só lê. Push forçado com destino que não dá para conferir é proibido mesmo em Acesso total.
+
+### Servidores de desenvolvimento
+- Só em loopback: `HOST=127.0.0.1` e, quando o framework é conhecido, `--host 127.0.0.1` (vite, astro), `-H 127.0.0.1` (next) e `--ip 127.0.0.1` (wrangler). Comando com `--host 0.0.0.0`, `--host` sem valor, `-H 0.0.0.0`, `--ip 0.0.0.0` ou `HOST=0.0.0.0` é recusado: "O servidor de desenvolvimento só pode ouvir em 127.0.0.1. Tire o --host 0.0.0.0 do comando."
+- No máximo `CODE_DEV_SERVER_MAX` (3) servidores por tarefa ("Já há 3 servidores rodando nesta tarefa. Pare um com dev_server_stop antes de subir outro.") e cada um para sozinho depois de `CODE_DEV_SERVER_MAX_MIN` (240) minutos. Fechar a tarefa para os servidores dela.
+
+### Processos dos provedores
+- Ambiente dos processos filhos agora é lista permitida (`PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TZ`, `TERM`, `TMPDIR`, as pastas de configuração das CLIs, proxy, certificados, `DISPLAY`, `DESKTOP_CHROME`, `AGENT_BROWSER_*`); `run()` sem `env` usa essa lista em vez de herdar o ambiente do servidor.
+- O `--mcp-config` do Claude (com o token do MCP) vai num arquivo 0600 em `<trabalho>/.private` (0700), apagado quando a CLI sai, e não mais na linha de comando.
+- Turno tem tempo máximo de `BOTS_TURN_TIMEOUT_MIN` (120) minutos: "O turno passou do tempo máximo (120 min)." Saída capturada para em 64 MB e linha de stream em 8 MB.
+- O lock da fila de testes saiu de `/tmp` e foi para `<dados>/locks/tests.lock`.
+
+### O operador precisa
+- Manter as credenciais do HOME do host fechadas para outros usuários: `chmod 700 ~/.claude ~/.codex ~/.config/gh ~/.supabase ~/.ssh` e `chmod 600` nos arquivos delas (`~/.claude/.credentials.json`, `~/.codex/auth.json`, `~/.config/gh/hosts.yml`, `~/.claude.json`). O usuário do modelo não é dono nem do grupo delas.
+- O usuário do modelo precisa atravessar o caminho até a pasta de worktrees e os repositórios liberados. Com HOME 0750 (padrão do Ubuntu), libere só a travessia para o uid 1502: `setfacl -m u:1502:x ~ ~/.local ~/.local/share ~/<pasta dos repositórios>`. Tudo que for legível por "outros" nesse caminho fica legível para o modelo.
+- Commit pelo Bash do modelo precisa que `objects`, `refs` e `logs` do `.git` do repositório fiquem no grupo 1503; o servidor faz isso ao abrir a tarefa.
+
+### Verificado
+Imagem `runelay-bots-server:security-test`, entrypoint real, `HOST_HOME=/hh`, `BOTS_TOOL_SANDBOX=uid`:
+```
+uid=1000(app) gid=1000(app) groups=1000(app),1503(rbwork)
+drwxrwsr-x 2 app rbwork 4096 Nov 20 03:17 /hh/.local/share/runelay-bots-worktrees
+drwx------ 2 app app 4096 Nov 20 03:17 /data
+-rw------- 1 app app 7 Nov 20 03:17 /data/runner.token
+$ sudo -n -u runelaytool /usr/local/bin/rb-sandbox-exec --probe
+ok 1502 bwrap=0
+$ … --cwd <worktree> -- 'id; cat /data/runner.token; ls /data'
+uid=1502(runelaytool) gid=1502(runelaytool) groups=1502(runelaytool),1503(rbwork)
+cat: /data/runner.token: Permission denied
+ls: cannot open directory '/data': Permission denied
+$ … --cwd /tmp -- 'id'
+rb-sandbox-exec: a pasta /tmp fica fora das worktrees liberadas
+$ … --cwd <worktree>/../../../../ -- 'id'
+rb-sandbox-exec: a pasta /hh/.local fica fora das worktrees liberadas
+$ … --env LD_PRELOAD=/x -- 'true'
+rb-sandbox-exec: a variável LD_PRELOAD não passa para o sandbox
+$ sudo -n -u runelaytool /bin/sh -c id
+sudo: a password is required
+$ … -- 'echo hi > made.txt; mkdir d; ls -ln made.txt; ls -ldn d'
+-rw-rw-r-- 1 1502 1503 3 Nov 20 03:17 made.txt
+drwxrwsr-x 2 1502 1503 4096 Nov 20 03:17 d
+$ touch /app/apps/server/x
+touch: cannot touch '/app/apps/server/x': Permission denied
+$ … --timeout 2 -- 'sleep 30'   (sai em 2,0 s, código 124)
+```

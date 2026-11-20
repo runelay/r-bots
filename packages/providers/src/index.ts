@@ -148,17 +148,41 @@ export async function runTurn(
   hooks?: NativeToolHooks,
 ) {
   const workDir = join(baseDir, "work", request.workKey.replace(/[^\w/-]/g, "_"));
-  await mkdir(workDir, { recursive: true });
+  await mkdir(workDir, { recursive: true, mode: 0o700 });
+  const minutes = turnTimeoutMinutes();
+  const turn = new AbortController();
+  let expired = false;
+  const forward = () => turn.abort();
+  if (signal.aborted) turn.abort();
+  else signal.addEventListener("abort", forward, { once: true });
+  const timer = setTimeout(() => {
+    expired = true;
+    turn.abort();
+  }, minutes * 60_000);
+  const guarded = (event: ProviderEvent) =>
+    emit(event.type === "done" && expired ? { type: "done", ok: false, message: timeoutMessage(minutes) } : event);
   try {
-    if (request.provider === "claude") return await runClaude(request, workDir, signal, emit, hooks);
-    if (request.provider === "codex") return await runCodex(request, workDir, signal, emit);
-    if (request.provider === "cursor") return await runCursor(request, workDir, signal, emit);
-    return await runGrok({ ...request, code: null }, workDir, signal, emit);
+    if (request.provider === "claude") return await runClaude(request, workDir, turn.signal, guarded, hooks);
+    if (request.provider === "codex") return await runCodex(request, workDir, turn.signal, guarded);
+    if (request.provider === "cursor") return await runCursor(request, workDir, turn.signal, guarded);
+    return await runGrok({ ...request, code: null }, workDir, turn.signal, guarded);
   } catch (error) {
-    emit({
+    guarded({
       type: "done",
       ok: false,
-      message: signal.aborted ? "cancelled" : String(error instanceof Error ? error.message : error),
+      message: turn.signal.aborted ? "cancelled" : String(error instanceof Error ? error.message : error),
     });
+  } finally {
+    clearTimeout(timer);
+    signal.removeEventListener("abort", forward);
   }
+}
+
+export function turnTimeoutMinutes() {
+  const value = Number(process.env.BOTS_TURN_TIMEOUT_MIN ?? 120);
+  return Number.isFinite(value) && value > 0 ? value : 120;
+}
+
+export function timeoutMessage(minutes: number) {
+  return `O turno passou do tempo máximo (${minutes} min).`;
 }

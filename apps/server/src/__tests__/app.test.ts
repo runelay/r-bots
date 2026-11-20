@@ -6,7 +6,7 @@ import type { AuthModule } from "../modules/auth";
 import { useAuthModule } from "../modules/auth/gate";
 import * as desktop from "../modules/browser/services/desktop.service";
 import * as live from "../modules/browser/services/live-view.service";
-import * as codeRoutes from "../modules/code/routes/code.routes";
+import * as previewRoutes from "../modules/code/routes/preview.routes";
 import * as botCode from "../modules/code/services/bot-code.service";
 import * as tunnel from "../modules/simulators/services/tunnel.service";
 import * as status from "../modules/status/routes/status.routes";
@@ -108,16 +108,21 @@ describe("HTTP routing", () => {
     expect(accounts.status).toBe(404);
   });
 
-  test("turns a failing handler into a 500 with the reason", async () => {
+  test("turns a failing handler into a generic 500 with an error id", async () => {
     track(spyOn(console, "error").mockImplementation(() => undefined));
     track(
       spyOn(status, "handleMeta").mockImplementation(() => {
         throw new Error("meta exploded");
       }),
     );
-    const response = await request<{ ok: boolean; error: string }>("/meta");
+    const response = await request<{ ok: boolean; error: string; errorId: string }>("/meta");
     expect(response.status).toBe(500);
-    expect(response.body).toEqual({ ok: false, error: "meta exploded" });
+    expect(response.body).toEqual({
+      ok: false,
+      error: "Algo deu errado no servidor. Tente de novo.",
+      errorId: expect.stringMatching(/^[0-9a-f]{8}$/),
+    });
+    expect(response.text).not.toContain("exploded");
   });
 
   test("reports non-Error failures and closes a stream that already started", async () => {
@@ -128,7 +133,8 @@ describe("HTTP routing", () => {
       }),
     );
     const plain = await request<{ error: string }>("/health");
-    expect(plain.body.error).toBe("plain failure");
+    expect(plain.status).toBe(500);
+    expect(plain.text).not.toContain("plain failure");
     track(
       spyOn(status, "handleStatus").mockImplementation((res: Res) => {
         res.writeHead(200, { "content-type": "text/plain" });
@@ -160,7 +166,7 @@ describe("websocket upgrades", () => {
     });
     expect(refused.status).toBe(401);
     const events = recordSocket(macRunner.runnerSocket);
-    const data = { kind: "runner" as const, deviceKey: "d1", rank: 1, deviceName: "Mac", userId: "u1" };
+    const data = { kind: "runner" as const, deviceKey: "d1", rank: 1, deviceName: "Mac", userId: "u1", owner: true };
     track(spyOn(macRunner, "runnerUpgradeData").mockReturnValue(data));
     const runner = connect("/runner/connect");
     await runner.opened;
@@ -176,7 +182,7 @@ describe("websocket upgrades", () => {
   });
 
   test("answers 400 when the upgrade handshake is broken", async () => {
-    const data = { kind: "runner" as const, deviceKey: "d1", rank: 1, deviceName: "Mac", userId: "u1" };
+    const data = { kind: "runner" as const, deviceKey: "d1", rank: 1, deviceName: "Mac", userId: "u1", owner: true };
     track(spyOn(macRunner, "runnerUpgradeData").mockReturnValue(data));
     const broken = await fetch(`${server.url}/runner/connect`, { headers: { upgrade: "websocket" } });
     expect(broken.status).toBe(400);
@@ -200,9 +206,9 @@ describe("websocket upgrades", () => {
   });
 
   test("relays preview sockets with and without a subprotocol", async () => {
-    const events = recordSocket(codeRoutes.previewSocket);
+    const events = recordSocket(previewRoutes.previewSocket);
     track(
-      spyOn(codeRoutes, "previewUpgradeTarget").mockImplementation((req) =>
+      spyOn(previewRoutes, "previewUpgradeTarget").mockImplementation((req) =>
         req.url?.startsWith("/app")
           ? {
               port: 5310,

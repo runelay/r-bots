@@ -15,8 +15,10 @@ export interface ProbeStream {
   side_data_list?: Array<{ rotation?: number }>;
 }
 
+const probeFormatNames: Record<string, string> = { mov: "mov,mp4,m4a,3gp,3g2,mj2", matroska: "matroska,webm" };
+
 export interface ProbeResult {
-  format?: { duration?: string };
+  format?: { duration?: string; format_name?: string };
   streams?: ProbeStream[];
 }
 
@@ -45,7 +47,9 @@ export function mediaTools(initial: MediaToolOptions = {}) {
     if (call.command === "ffprobe") {
       const probe = typeof options.probe === "function" ? options.probe(call.args.at(-1) ?? "") : options.probe;
       if (!probe) return { code: 1, stderr: "probe failed" };
-      return { stdout: JSON.stringify(probe) };
+      const demuxer = call.args[call.args.indexOf("-f") + 1] ?? "";
+      const formatName = probeFormatNames[demuxer] ?? demuxer;
+      return { stdout: JSON.stringify({ ...probe, format: { format_name: formatName, ...probe.format } }) };
     }
     if (call.command === "pdftotext") {
       if (options.pdfText === null || options.pdfText === undefined) return { code: 1, stderr: "pdftotext failed" };
@@ -97,7 +101,14 @@ export function connectFakeRunner(capabilities: string[], reply: RunnerReply = (
   const requests: Array<{ op: string; body: Record<string, unknown> }> = [];
   const socket = {
     readyState: 1,
-    data: { kind: "runner", deviceKey: "test-mac", rank: 1, deviceName: "Mac de teste", userId: "test-user" },
+    data: {
+      kind: "runner",
+      deviceKey: "test-mac",
+      rank: 1,
+      deviceName: "Mac de teste",
+      userId: "test-user",
+      owner: true,
+    },
     send(raw: string) {
       const message = JSON.parse(raw) as { type: string; id: string; op: string; body?: Record<string, unknown> };
       if (message.type !== "request") return;

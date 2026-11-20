@@ -30,6 +30,7 @@ struct ArtifactWebView: View {
     var interactive = true
     var zoom: CGFloat = 1
     var focusToken = 0
+    var sameOrigin = false
     var onLoad: () -> Void = {}
 
     @State private var ready = false
@@ -46,6 +47,7 @@ struct ArtifactWebView: View {
                     zoom: zoom,
                     focusToken: focusToken,
                     reloadToken: reloadToken,
+                    sameOrigin: sameOrigin,
                     onLoad: onLoad,
                     onFailure: handle
                 )
@@ -116,6 +118,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
     var zoom: CGFloat = 1
     var focusToken = 0
     var reloadToken = 0
+    var sameOrigin = false
     var onLoad: () -> Void = {}
     var onFailure: (WebPageFailure) -> Void = { _ in }
 
@@ -162,12 +165,14 @@ struct AuthenticatedWebView: NSViewRepresentable {
         var interactive = true
         var focusToken = 0
         var reloadToken = 0
+        var sameOrigin = false
         var onLoad: () -> Void = {}
         var onFailure: (WebPageFailure) -> Void = { _ in }
         private var refused = false
 
         func sync(_ parent: AuthenticatedWebView) {
             interactive = parent.interactive
+            sameOrigin = parent.sameOrigin
             onLoad = parent.onLoad
             onFailure = parent.onFailure
         }
@@ -180,12 +185,34 @@ struct AuthenticatedWebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-            if navigationAction.navigationType == .linkActivated, let target = navigationAction.request.url {
-                NSWorkspace.shared.open(target)
+            guard let target = navigationAction.request.url else {
                 decisionHandler(.cancel)
                 return
             }
-            decisionHandler(.allow)
+            if Self.sameDocument(target, loadedURL) || (sameOrigin && Self.sameOrigin(target, loadedURL)) {
+                decisionHandler(.allow)
+                return
+            }
+            if navigationAction.navigationType == .linkActivated, ["http", "https"].contains(target.scheme?.lowercased() ?? "") {
+                NSWorkspace.shared.open(target)
+            }
+            decisionHandler(.cancel)
+        }
+
+        private static func sameOrigin(_ target: URL, _ loaded: URL?) -> Bool {
+            guard let loaded else { return false }
+            return target.scheme?.lowercased() == loaded.scheme?.lowercased()
+                && target.host?.lowercased() == loaded.host?.lowercased()
+                && target.port == loaded.port
+        }
+
+        private static func sameDocument(_ target: URL, _ loaded: URL?) -> Bool {
+            guard let loaded,
+                  var left = URLComponents(url: target, resolvingAgainstBaseURL: false),
+                  var right = URLComponents(url: loaded, resolvingAgainstBaseURL: false) else { return false }
+            left.fragment = nil
+            right.fragment = nil
+            return left.url == right.url
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {

@@ -1,6 +1,17 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import { join } from "node:path";
-import { accountEnv, capture, childEnv, findBinary, parseJson, runLines, searchPath } from "../proc";
+import {
+  accountEnv,
+  capture,
+  childEnv,
+  findBinary,
+  maxLineBytes,
+  parseJson,
+  run,
+  runBytes,
+  runLines,
+  searchPath,
+} from "../proc";
 import { fakeCli } from "./fakes";
 
 const savedPath = process.env.PATH;
@@ -35,10 +46,12 @@ describe("proc", () => {
     jest.useRealTimers();
   });
 
-  test("searchPath puts home and system dirs first and dedupes PATH", () => {
+  test("searchPath puts system dirs first, the home bin last and dedupes PATH", () => {
     process.env.PATH = `/custom/bin::/usr/bin:${join(fakeCli.home, ".local", "bin")}`;
     const dirs = searchPath().split(":");
-    expect(dirs[0]).toBe(join(fakeCli.home, ".local", "bin"));
+    expect(dirs[0]).toBe("/opt/homebrew/bin");
+    expect(dirs.at(-1)).toBe(join(fakeCli.home, ".local", "bin"));
+    expect(dirs.filter((dir) => dir === join(fakeCli.home, ".local", "bin"))).toHaveLength(1);
     expect(dirs).toContain("/custom/bin");
     expect(dirs.filter((dir) => dir === "/usr/bin")).toHaveLength(1);
     expect(dirs).not.toContain("");
@@ -55,17 +68,30 @@ describe("proc", () => {
     expect(findBinary(["rb-missing-tool"])).toBeNull();
   });
 
-  test("childEnv drops secrets, rewrites PATH and merges extras", () => {
-    process.env.OPENAI_API_KEY = "secret";
-    process.env.RUNELAY_MCP_TOKEN = "secret";
-    process.env.RB_KEEP = "kept";
+  test("childEnv keeps only allowlisted variables, rewrites PATH and merges extras", () => {
+    const set = {
+      OPENAI_API_KEY: "secret",
+      RUNELAY_MCP_TOKEN: "secret",
+      DATABASE_URL: "postgres://x",
+      BETTER_AUTH_SECRET: "s",
+      RB_DROP: "x",
+      LC_ALL: "C",
+      AGENT_BROWSER_HOME: "/b",
+      CODEX_HOME: "/c",
+      TZ: "UTC",
+    };
+    Object.assign(process.env, set);
     const env = childEnv({ EXTRA: "1" });
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.RUNELAY_MCP_TOKEN;
-    delete process.env.RB_KEEP;
+    for (const key of Object.keys(set)) delete process.env[key];
     expect(env.OPENAI_API_KEY).toBeUndefined();
     expect(env.RUNELAY_MCP_TOKEN).toBeUndefined();
-    expect(env.RB_KEEP).toBe("kept");
+    expect(env.DATABASE_URL).toBeUndefined();
+    expect(env.BETTER_AUTH_SECRET).toBeUndefined();
+    expect(env.RB_DROP).toBeUndefined();
+    expect(env.LC_ALL).toBe("C");
+    expect(env.AGENT_BROWSER_HOME).toBe("/b");
+    expect(env.CODEX_HOME).toBeUndefined();
+    expect(env.TZ).toBe("UTC");
     expect(env.EXTRA).toBe("1");
     expect(env.PATH).toBe(searchPath());
   });
@@ -81,6 +107,21 @@ describe("proc", () => {
     expect(accountEnv("codex", "/home/x/.codex-work")).toEqual({ CODEX_HOME: "/home/x/.codex-work" });
     expect(accountEnv("claude", null)).toEqual({});
     expect(accountEnv("grok", "/home/x/.grok")).toEqual({});
+  });
+
+  test("run without env passes the allowlisted environment only", async () => {
+    process.env.RB_SECRET_LEAK = "leak";
+    process.env.TZ = "UTC";
+    const result = await run("sh", ["-c", "echo ${RB_SECRET_LEAK:-none}-$TZ"]);
+    delete process.env.RB_SECRET_LEAK;
+    delete process.env.TZ;
+    expect(result.stdout.trim()).toBe("none-UTC");
+  });
+
+  test("runBytes truncates stdout at maxBytes", async () => {
+    const result = await runBytes("sh", ["-c", "printf abcdef; printf ghij"], { maxBytes: 4 });
+    expect(new TextDecoder().decode(result.stdout)).toBe("abcd");
+    expect(result.code).toBe(0);
   });
 
   test("capture resolves stdout, stderr and exit code", async () => {
@@ -148,6 +189,14 @@ describe("proc", () => {
     jest.advanceTimersByTime(3000);
     jest.useRealTimers();
     expect((await result).code).not.toBe(0);
+  });
+
+  test("runLines drops a single line that grows past the cap", async () => {
+    const big = maxLineBytes + 10;
+    const { lines, result } = collect(`head -c ${big} /dev/zero | tr '\\0' 'a'; printf '\\nok\\n'`);
+    expect((await result).code).toBe(0);
+    expect(lines.at(-1)).toBe("ok");
+    expect(lines.every((line) => line.length <= maxLineBytes)).toBe(true);
   });
 
   test("parseJson accepts objects only", () => {

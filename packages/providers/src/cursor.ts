@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ProviderEvent, TurnRequest, Usage } from "@runelay-bots/protocol";
 import { childEnv, findBinary, parseJson, runLines } from "./proc";
@@ -34,6 +34,13 @@ export function withInstructions(request: TurnRequest) {
   return `<instructions>\n${request.systemPrompt}\n</instructions>\n\n${request.prompt}`;
 }
 
+export const cursorPermissions = {
+  permissions: {
+    allow: ["Mcp(bots:*)"],
+    deny: ["Shell(*)", "Read(**)", "Write(**)", "WebFetch(*)"],
+  },
+};
+
 export async function runCursor(
   request: TurnRequest,
   workDir: string,
@@ -42,7 +49,10 @@ export async function runCursor(
 ) {
   const bin = findBinary(["cursor-agent", "agent"]);
   if (!bin) return emit({ type: "done", ok: false, message: "cursor-agent não está instalado." });
-  await mkdir(join(workDir, ".cursor"), { recursive: true });
+  await mkdir(join(workDir, ".cursor"), { recursive: true, mode: 0o700 });
+  const cliConfig = join(workDir, ".cursor", "cli.json");
+  if (request.nativeShell === true) await rm(cliConfig, { force: true });
+  else await writeFile(cliConfig, JSON.stringify(cursorPermissions, null, 2), { mode: 0o600 });
   const servers = request.mcp
     ? { bots: { url: request.mcp.url, headers: { Authorization: `Bearer ${request.mcp.token}` } } }
     : {};
@@ -62,6 +72,7 @@ export async function runCursor(
     "--model",
     request.model,
     ...(request.resume ? ["--resume", request.resume] : []),
+    "--",
     withInstructions(request),
   ];
   let failure: string | null = null;

@@ -2,6 +2,7 @@ import { afterAll, afterEach, describe, expect, mock, spyOn, test } from "bun:te
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fakeProcesses } from "../../../../test/helpers";
 import type { DecisionRecord } from "../../approvals/services/decisions.service";
 import * as decisions from "../../approvals/services/decisions.service";
 import type { PermissionMode } from "../../approvals/services/permissions.service";
@@ -11,9 +12,19 @@ import type { ApprovalResult, ToolContext } from "../../engine/services/mcp-gate
 import * as vaultTools from "../../vault/services/vault-tools.service";
 import { listGrants } from "../repositories/code.repository";
 import { ensureBotHome } from "../services/bot-home.service";
-import { beginCall, codeLabel, emitEdit, endCall, homeHooks, nativeHooks } from "../services/hooks.service";
+import {
+  approvalTimeoutMs,
+  beginCall,
+  codeLabel,
+  emitEdit,
+  endCall,
+  homeHooks,
+  nativeHooks,
+  sandboxedBash,
+} from "../services/hooks.service";
 import type { CodeLive } from "../services/live-diff.service";
 import type { Gate } from "../services/policy.service";
+import { resetSandboxProbe, sandboxMarker, sandboxMissingMessage } from "../services/sandbox.service";
 import type { WorkspaceState } from "../services/workspace.service";
 
 interface Emitted {
@@ -198,6 +209,7 @@ describe("beginCall", () => {
     expect(requestApproval).toHaveBeenCalledWith("Rodar sudo?", start.callId, null, {
       target: { label: "sudo ls", role: "command" },
       reason: "sudo",
+      timeoutMs: approvalTimeoutMs,
     });
     expect(decisionsSeen[0].outcome).toBe("human");
     expect(events.at(-1)?.data).toMatchObject({ cause: { interactionId: "int_9" }, outcome: "rejected" });
@@ -211,6 +223,7 @@ describe("beginCall", () => {
     expect(start.allowed).toBe(true);
     expect(first.requestApproval).toHaveBeenCalledWith("Rodar x?", start.callId, null, {
       grant: `make x em ${ws.repoName}`,
+      timeoutMs: approvalTimeoutMs,
     });
     expect(first.events.at(-1)?.data.clearedBy).toEqual({ interactionId: "int_2", remembered: true });
     expect((await listGrants()).some((grant) => grant.repo === ws.repo && grant.key === "make x")).toBe(true);
@@ -292,6 +305,7 @@ describe("beginCall", () => {
       expect(start.allowed).toBe(true);
       expect(requestApproval).toHaveBeenCalledWith("Rodar?", start.callId, null, {
         grant: `./run.sh em ${ws.repoName}`,
+        timeoutMs: approvalTimeoutMs,
       });
     });
 
@@ -299,7 +313,9 @@ describe("beginCall", () => {
       spy = spyOn(decisions, "decideApproval").mockResolvedValue(decision("human"));
       const { context, requestApproval } = makeContext();
       await beginCall(context, { name: "Bash", label: "x", input: {}, gate: { kind: "jev", prompt: "Rodar?" } });
-      expect(requestApproval).toHaveBeenCalledWith("Rodar?", expect.any(String), null, {});
+      expect(requestApproval).toHaveBeenCalledWith("Rodar?", expect.any(String), null, {
+        timeoutMs: approvalTimeoutMs,
+      });
     });
   });
 
@@ -361,6 +377,7 @@ describe("beginCall", () => {
       expect(result.allowed).toBe(true);
       expect(requestApproval).toHaveBeenCalledWith("Rodar coisa?", result.callId, null, {
         reason: "Modo Editar: comandos e entregas pedem sua confirmação.",
+        timeoutMs: approvalTimeoutMs,
       });
     });
 
@@ -372,7 +389,7 @@ describe("beginCall", () => {
         `Rodar SQL no banco remoto sem --read-only: supabase db query --remote=abc update t set a=1?`,
         write.result.callId,
         null,
-        { reason: "Escrita em produção só com o seu ok, mesmo em Acesso total." },
+        { reason: "Escrita em produção só com o seu ok, mesmo em Acesso total.", timeoutMs: approvalTimeoutMs },
       );
       const deploy = await start("full", "Bash", { command: "wrangler deploy" }, hard);
       expect(deploy.requestApproval).toHaveBeenCalledTimes(1);
@@ -674,6 +691,118 @@ describe("nativeHooks", () => {
     const count = events.length;
     await hooks.after("Glob", {}, {}, "missing", false);
     expect(events).toHaveLength(count);
+  });
+});
+
+describe("tool sandbox", () => {
+  const saved = { mode: process.env.BOTS_TOOL_SANDBOX, sudo: process.env.BOTS_SANDBOX_SUDO };
+
+  function sandboxOn(probe: { code?: number; stdout?: string; stderr?: string }) {
+    process.env.BOTS_TOOL_SANDBOX = "uid";
+    process.env.BOTS_SANDBOX_SUDO = "/fake/sudo";
+    resetSandboxProbe();
+    return fakeProcesses((call) => {
+      if (call.command !== "/fake/sudo") return undefined;
+      if (call.args.includes("--probe")) return probe;
+      return { stdout: "0\n" };
+    });
+  }
+
+  function commandOf(gate: unknown) {
+    return (gate as { input: { command: string } }).input.command;
+  }
+
+  afterEach(() => {
+    if (saved.mode === undefined) delete process.env.BOTS_TOOL_SANDBOX;
+    else process.env.BOTS_TOOL_SANDBOX = saved.mode;
+    if (saved.sudo === undefined) delete process.env.BOTS_SANDBOX_SUDO;
+    else process.env.BOTS_SANDBOX_SUDO = saved.sudo;
+    resetSandboxProbe();
+  });
+
+  test("background bash is denied and pointed to dev_server_start", async () => {
+    const { context } = makeContext();
+    const hooks = nativeHooks(context, workspace(), { scan: async () => undefined } as unknown as CodeLive);
+    const result = await hooks.before("Bash", { command: "npm run dev", run_in_background: true }, "bg1");
+    expect(result.allow).toBe(false);
+    expect(result.message).toContain("dev_server_start");
+  });
+
+  test("every bash command runs as the sandbox user in the persistent shell cwd", async () => {
+    const fake = sandboxOn({ stdout: "ok 1502 bwrap=0\n" });
+    try {
+      const { context } = makeContext();
+      const hooks = nativeHooks(context, workspace(), { scan: async () => undefined } as unknown as CodeLive);
+      const command = commandOf(await hooks.before("Bash", { command: "cat 'a b'", timeout: 5000 }, "sb1"));
+      const expected = [
+        "'/fake/sudo' '-n' '-u' 'runelaytool' '/usr/local/bin/rb-sandbox-exec'",
+        `'--cwd' "$PWD" '--marker' '${sandboxMarker("sbx", "turn1")}' '--timeout' '35' '--'`,
+        `'cat '\\''a b'\\'''`,
+      ].join(" ");
+      expect(command).toBe(expected);
+      const wrapped = commandOf(await hooks.before("Bash", { command: "vitest run" }, "sb2"));
+      expect(wrapped.startsWith("flock ")).toBe(true);
+      expect(wrapped).toContain("'/fake/sudo' '-n' '-u' 'runelaytool'");
+      expect(wrapped).toContain("'--timeout' '1230'");
+      expect(fake.calls.filter((call) => call.args.includes("--probe"))).toHaveLength(1);
+    } finally {
+      fake.restore();
+    }
+  });
+
+  test("the bot home shell runs as the sandbox user too", async () => {
+    const fake = sandboxOn({ stdout: "ok 1502 bwrap=0\n" });
+    try {
+      const { context } = makeContext();
+      const home = await ensureBotHome(`home-sandbox-${Date.now()}`);
+      const hooks = homeHooks(context, home);
+      const command = commandOf(await hooks.before("Bash", { command: "gh pr list", timeout: 5000 }, "hs1"));
+      expect(command.startsWith("'/fake/sudo' '-n' '-u' 'runelaytool' '/usr/local/bin/rb-sandbox-exec'")).toBe(true);
+      expect(command.endsWith("'gh pr list'")).toBe(true);
+      fake.restore();
+      const broken = sandboxOn({ code: 1, stderr: "sudo: a password is required" });
+      const denied = await homeHooks(context, home).before("Bash", { command: "ls" }, "hs2");
+      expect(denied).toEqual({ allow: false, message: sandboxMissingMessage });
+      broken.restore();
+      const background = await homeHooks(context, home).before(
+        "Bash",
+        { command: "npm run dev", run_in_background: true },
+        "hs3",
+      );
+      expect(background.allow).toBe(false);
+      expect(background.message).toContain("dev_server_start");
+    } finally {
+      fake.restore();
+    }
+  });
+
+  test("a vault rewrite stays outside the sandbox", async () => {
+    const fake = sandboxOn({ stdout: "ok 1502 bwrap=0\n" });
+    const secret = spyOn(vaultTools, "secretBashCommand").mockResolvedValue("HELPER");
+    try {
+      const { context } = makeContext();
+      expect(await sandboxedBash(context, "curl x", {})).toEqual({ command: "HELPER" });
+    } finally {
+      secret.mockRestore();
+      fake.restore();
+    }
+  });
+
+  test("a configured sandbox that does not work refuses the command", async () => {
+    const fake = sandboxOn({ code: 1, stderr: "sudo: a password is required" });
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const { context, events } = makeContext();
+      const hooks = nativeHooks(context, workspace(), { scan: async () => undefined } as unknown as CodeLive);
+      expect(await hooks.before("Bash", { command: "ls" }, "sb3")).toEqual({
+        allow: false,
+        message: sandboxMissingMessage,
+      });
+      expect(events.at(-1)?.data).toMatchObject({ outcome: "failed" });
+    } finally {
+      warn.mockRestore();
+      fake.restore();
+    }
   });
 });
 

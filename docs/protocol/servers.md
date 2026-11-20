@@ -118,3 +118,15 @@ Erros: `GET /servers/nope` → `400 {"ok":false,"error":"Esse servidor não exis
 Antes dos ajustes desta versão, os dois caíram e a lista mostrou `exited` com o motivo no log: o Vite com `TypeError: Class extends value undefined` (binding do rolldown desviado pelo `NAPI_RS_NATIVE_LIBRARY_PATH`) e o wrangler com `it's necessary to set a CLOUDFLARE_API_TOKEN` (login do host fora do `XDG_CONFIG_HOME`); a primeira subida do `api dev` abriu `*:5311` e foi parada à mão, o que levou ao `--ip` por ferramenta e à trava de exposição.
 
 Bot (turno real, Engenheiro de Software, Claude): "use server_list … e server_logs …" → respondeu "Estão no ar o conty-api (wrangler, porta 5311, branch feat/overlays-compartilha…".
+
+## v51 (20/11): servidores junto com o endurecimento de segurança
+
+- `POST/PATCH/PUT/DELETE /servers/**` e `/accounts/**` só para o dono da conta (`403 {"ok":false,"code":"forbidden","error":"Só o dono da conta pode fazer isso."}` para membro). `GET` continua para todos.
+- Comando com `--host 0.0.0.0`, `--host` sozinho, `-H 0.0.0.0`, `HOST=0.0.0.0` ou `::` é recusado antes de subir: "O servidor de desenvolvimento só pode ouvir em 127.0.0.1. Tire o --host 0.0.0.0 do comando." Vite e Astro ganham `--host 127.0.0.1`, Next `-H 127.0.0.1`, wrangler `--ip 127.0.0.1` quando o comando não diz o host.
+- Servidor da tarefa (`dev_server_start`): roda no sandbox de uid quando `BOTS_TOOL_SANDBOX=uid`, no máximo `CODE_DEV_SERVER_MAX` (3) por tarefa, e para sozinho depois de `CODE_DEV_SERVER_MAX_MIN` (240) minutos. Servidor de projeto subido pelo bot (`server_start`) também para depois desse tempo; o subido pela pessoa no app não.
+- Servidor de projeto roda como o usuário do servidor, fora do sandbox, com a configuração do host (v48). O navegador do bot (`browser_open`) alcança a porta de qualquer servidor de projeto no ar, além dos servidores das próprias tarefas.
+- A prévia usa o cookie de uso único da v51 ([code](code.md)): o link `previewPath` vale uma vez; abrir de novo no mesmo navegador segue pelo cookie da sessão.
+
+### Verificado
+
+Por testes: `dev-server.test.ts` (casos de porta e host, limite por tarefa, vencimento, sandbox), `policy.test.ts`, `browser-guard.test.ts` (porta de servidor de projeto liberada).

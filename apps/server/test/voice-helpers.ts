@@ -132,7 +132,7 @@ export function fakeFastLayer() {
 
 export function fakeElevenLabs() {
   const calls: Array<{ method: string; path: string; key: string | null }> = [];
-  const replies = new Map<string, (url: URL) => Response>();
+  const replies = new Map<string, (url: URL) => Response | Promise<Response>>();
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -150,7 +150,7 @@ export function fakeElevenLabs() {
   return {
     calls,
     url: `http://127.0.0.1:${server.port}`,
-    on(method: string, path: string, handler: (url: URL) => Response) {
+    on(method: string, path: string, handler: (url: URL) => Response | Promise<Response>) {
       replies.set(`${method} ${path}`, handler);
     },
     reset() {

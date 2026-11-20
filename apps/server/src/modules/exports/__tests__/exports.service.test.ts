@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { eq } from "drizzle-orm";
 import ExcelJS from "exceljs";
@@ -12,11 +13,18 @@ import { createSheet, formatCells, patchTab, writeCells } from "../../sheets/ser
 import { getBlobStore } from "../../storage/services/storage.service";
 import {
   createExport,
+  csvSafe,
   exportBytes,
   exportFile,
+  maxExportCells,
   mimeOf,
   noteDocx,
+  noteHtml,
+  pdfChromeFlags,
+  printCsp,
+  reachesNetwork,
   readExport,
+  safeUrl,
   sheetCsv,
   sheetXlsx,
 } from "../services/exports.service";
@@ -215,6 +223,73 @@ describe("note exports", () => {
   });
 });
 
+describe("note pdf isolation", () => {
+  test("raw html is escaped and dangerous urls are dropped", () => {
+    const html = noteHtml(
+      "T",
+      [
+        "<script>fetch('http://169.254.169.254/')</script>",
+        "",
+        "texto <img src=x onerror=alert(1)> fim",
+        "",
+        "[ok](https://example.com 'dica') [mail](mailto:a@b.c) [âncora](#topo) [js](javascript:alert(1)) [arquivo](file:///etc/passwd) [ruim](http://[::1)",
+        "",
+        "![pixel](data:image/png;base64,iVBORw0KGgo=) ![svg](data:image/svg+xml;base64,PHN2Zz4=) ![remoto](http://10.0.0.1/a.png) ![local](file:///etc/passwd)",
+      ].join("\n"),
+    );
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&lt;script&gt;fetch(&#39;http://169.254.169.254/&#39;)&lt;/script&gt;");
+    expect(html).not.toContain("<img src=x");
+    expect(html).toContain("&lt;img src=x onerror=alert(1)&gt;");
+    expect(html).toContain('<a href="https://example.com" title="dica">ok</a>');
+    expect(html).toContain('<a href="mailto:a@b.c">mail</a>');
+    expect(html).toContain('<a href="#topo">âncora</a>');
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("file://");
+    expect(html).toContain(" js ");
+    expect(html).toContain('<img src="data:image/png;base64,iVBORw0KGgo=" alt="pixel">');
+    expect(html).not.toContain("svg+xml");
+    expect(html).not.toContain("10.0.0.1");
+    expect(html).toContain("remoto");
+    expect(html.indexOf("<head>") + "<head>".length).toBe(
+      html.indexOf(`<meta http-equiv="Content-Security-Policy" content="${printCsp}">`),
+    );
+  });
+
+  test("safeUrl allows only web links, anchors, mail and inline images", () => {
+    expect(safeUrl(" https://a.b/c ", false)).toBe("https://a.b/c");
+    expect(safeUrl("view-source:https://a.b", false)).toBeNull();
+    expect(safeUrl("data:text/html,<b>", false)).toBeNull();
+    expect(safeUrl("relativo/x", false)).toBeNull();
+    expect(safeUrl("data:image/gif;base64,R0lG", true)).toBe("data:image/gif;base64,R0lG");
+    expect(safeUrl("https://a.b/x.png", true)).toBeNull();
+  });
+
+  test("chromium prints with javascript off, no network and a private input file", async () => {
+    const { note } = await createNote(bot, { title: "Isolada", content: "oi" }, "bot");
+    let mode = 0;
+    let dirMode = 0;
+    const fake = fakeProcesses((call: ProcessCall) => {
+      const input = call.args.at(-1)!.replace("file://", "");
+      mode = statSync(input).mode & 0o777;
+      dirMode = statSync(dirname(input)).mode & 0o777;
+      writeFileSync(call.args.find((arg) => arg.startsWith("--print-to-pdf="))!.slice(15), "%PDF-1.4 fake");
+      return { code: 0 };
+    });
+    const job = await createExport(bot, { kind: "note", id: note.id, format: "pdf" });
+    expect(job.status).toBe("ready");
+    const args = fake.calls[0].args;
+    for (const flag of pdfChromeFlags) expect(args).toContain(flag);
+    expect(args).toContain("--blink-settings=scriptEnabled=false");
+    expect(args).toContain("--host-resolver-rules=MAP * ~NOTFOUND");
+    expect(args).toContain("--proxy-server=127.0.0.1:9");
+    expect(args).toContain("--proxy-bypass-list=<-loopback>");
+    expect(args).not.toContain("--allow-file-access-from-files");
+    expect(mode).toBe(0o600);
+    expect(dirMode).toBe(0o700);
+  });
+});
+
 describe("sheet exports", () => {
   async function sample() {
     const { sheet } = await createSheet(
@@ -351,6 +426,69 @@ describe("sheet exports", () => {
     const blank = await createExport(bot, { kind: "sheet", id: sheet.id, format: "pdf", tabId: empty });
     expect(blank.status).toBe("ready");
     expect(chrome.pages[1]).toContain("<table><tr><th></th></tr></table>");
+  });
+
+  test("csv neutralizes formula injection but keeps negative numbers", async () => {
+    expect(csvSafe('=HYPERLINK("http://x")')).toBe('\'=HYPERLINK("http://x")');
+    expect(csvSafe("+5511999")).toBe("'+5511999");
+    expect(csvSafe("@SUM(A1)")).toBe("'@SUM(A1)");
+    expect(csvSafe("-cmd|' /C calc'!A0")).toBe("'-cmd|' /C calc'!A0");
+    expect(csvSafe("\tx")).toBe("'\tx");
+    expect(csvSafe("\rx")).toBe("'\rx");
+    expect(csvSafe("-5,0")).toBe("-5,0");
+    expect(csvSafe("-1.234,5%")).toBe("-1.234,5%");
+    expect(csvSafe("texto = ok")).toBe("texto = ok");
+    const { sheet } = await createSheet(
+      bot,
+      {
+        title: "Injeção",
+        cells: [
+          { a: "A1", input: "@SUM(1)" },
+          { a: "B1", input: "-2" },
+        ],
+      },
+      "bot",
+    );
+    expect((await sheetCsv(bot, sheet.id)).slice(1)).toBe("'@SUM(1),-2\r\n");
+  });
+
+  test("xlsx writes formulas that reach the network as plain text", async () => {
+    expect(reachesNetwork('=WEBSERVICE("http://169.254.169.254")')).toBe(true);
+    expect(reachesNetwork("=hyperlink(A1)")).toBe(true);
+    expect(reachesNetwork("=cmd|' /C calc'!A0")).toBe(true);
+    expect(reachesNetwork("=SOMA(A1:A2)")).toBe(false);
+    const { sheet } = await createSheet(
+      bot,
+      {
+        title: "Rede",
+        cells: [
+          { a: "A1", input: '=WEBSERVICE("http://169.254.169.254/")' },
+          { a: "B1", input: "=1+1" },
+        ],
+      },
+      "bot",
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load((await sheetXlsx(bot, sheet.id)).buffer as ArrayBuffer);
+    const ws = workbook.worksheets[0];
+    expect(ws.getCell("A1").value).toBe('=WEBSERVICE("http://169.254.169.254/")');
+    expect(ws.getCell("A1").numFmt).toBe("@");
+    expect(ws.getCell("B1").value).toEqual({ formula: "1+1", result: 2 });
+  });
+
+  test("csv and pdf refuse a used range past the cell limit", async () => {
+    const { sheet } = await createSheet(bot, { title: "Enorme", cells: [{ a: "A1", input: "x" }] }, "bot");
+    await getDb()
+      .update(sheetTabs)
+      .set({ rowCount: maxExportCells, colCount: 2 })
+      .where(eq(sheetTabs.sheetId, sheet.id));
+    const error = await errorOf(() => sheetCsv(bot, sheet.id));
+    expect(error.status).toBe(413);
+    expect(error.message).toBe(
+      "A aba tem 200000 linhas por 2 colunas em uso; o limite para exportar é de 200.000 células. Divida a aba ou exporte em xlsx.",
+    );
+    const job = await createExport(bot, { kind: "sheet", id: sheet.id, format: "pdf" });
+    expect(job).toMatchObject({ status: "failed", error: expect.stringContaining("o limite para exportar") });
   });
 
   test("xlsx and csv exports go through the job pipeline", async () => {

@@ -1,6 +1,5 @@
 import type { Req, Res } from "../../../shared/http";
 import { notFound, readBody, sendJson, validationResponse } from "../../../shared/http";
-import { requestOrigin } from "../../auth";
 import { currentAuthModule, principalOf } from "../../auth/gate";
 import { DevicesError, listDevices, registerDevice, revokeDevice } from "../services/devices.service";
 
@@ -14,7 +13,8 @@ export async function handleDevices(req: Req, res: Res, method: string, parts: s
       return sendJson(res, 200, { ok: true, devices: await listDevices(principal) }, noStore);
     if (parts.length === 1 && method === "POST") {
       const registered = await registerDevice(principal, await readBody(req));
-      await currentAuthModule()?.origins.remember(requestOrigin(req.raw));
+      const origins = currentAuthModule()?.origins;
+      if (origins) await origins.remember(origins.originOf(req.raw), principal);
       return sendJson(res, 201, { ok: true, ...registered }, noStore);
     }
     if (parts.length === 2 && method === "DELETE")

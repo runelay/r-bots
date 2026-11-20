@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDb } from "../../../../test/db-helpers";
@@ -25,6 +25,17 @@ function req(path: string, init: RequestInit & { token?: string } = {}) {
   return new Request(`${base}${path}`, { ...init, headers });
 }
 
+const gatewayBase = `http://127.0.0.1:${process.env.GATEWAY_PORT}`;
+
+function greq(path: string, init: RequestInit & { token?: string } = {}) {
+  const made = req(path, init);
+  return new Request(`${gatewayBase}${path}`, made);
+}
+
+function setupCode(module: AuthModule) {
+  return readFileSync(module.setupToken.issue(), "utf8").trim();
+}
+
 async function handle(request: Request) {
   const outcome = await mod.authenticate(request);
   if (outcome instanceof Response) return outcome;
@@ -47,6 +58,7 @@ beforeAll(async () => {
   const setup = await handle(
     req("/auth/setup", {
       method: "POST",
+      headers: { "x-setup-token": setupCode(mod) },
       body: JSON.stringify({ name: "Dona", email: "dona@example.com", password: "correct horse battery" }),
     }),
   );
@@ -297,41 +309,61 @@ describe("gate", () => {
       BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
     });
     expect(created?.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
-    expect(logs).toContain("auth on, waiting for the owner (origin from each request, secret from env)");
+    expect(logs).toContain(
+      `auth: waiting for the owner, first-run code in ${join(process.env.BOTS_DATA_DIR as string, "setup.token")}`,
+    );
+    expect(logs.join("\n")).not.toContain(
+      readFileSync(join(process.env.BOTS_DATA_DIR as string, "setup.token"), "utf8").trim(),
+    );
     expect(authActive()).toBe(true);
-    expect((await gate(req("/bots")))?.status).toBe(401);
-    expect((await gate(req("/status")))?.status).toBe(401);
-    expect(await gate(req("/health"))).toBeNull();
-    const status = await gate(req("/auth/setup"));
+    expect((await gate(greq("/bots")))?.status).toBe(401);
+    expect((await gate(greq("/status")))?.status).toBe(401);
+    expect(await gate(greq("/health"))).toBeNull();
+    const status = await gate(greq("/auth/setup"));
     expect(await status?.json()).toMatchObject({ ok: true, needsOwner: true, required: true });
-    const device = await gate(req("/device"));
+    const device = await gate(greq("/device"));
     expect(device?.status).toBe(200);
     const machineToken = runnerToken();
-    const machine = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${machineToken}` } });
+    const machine = new Request(`${gatewayBase}/status`, { headers: { authorization: `Bearer ${machineToken}` } });
     expect(await gate(machine)).toBeNull();
     expect(principalOf(machine)).toMatchObject({ userId: "internal", method: "internal" });
-    const invite = await gate(req("/auth/invites", { method: "POST", token: machineToken, body: "{}" }));
+    const machineBots = await gate(
+      new Request(`${gatewayBase}/bots`, { headers: { authorization: `Bearer ${machineToken}` } }),
+    );
+    expect(machineBots?.status).toBe(403);
+    const invite = await gate(greq("/auth/invites", { method: "POST", token: machineToken, body: "{}" }));
     expect(invite?.status).toBe(403);
+    const body = JSON.stringify({ name: "Ana", email: "ana@example.com", password: "correct horse battery" });
+    const noCode = await gate(greq("/auth/setup", { method: "POST", body }));
+    expect(noCode?.status).toBe(403);
+    expect(await noCode?.json()).toMatchObject({ code: "setup_token_required" });
+    const code = readFileSync(join(process.env.BOTS_DATA_DIR as string, "setup.token"), "utf8").trim();
     const setup = await gate(
-      req("/auth/setup", {
-        method: "POST",
-        body: JSON.stringify({ name: "Ana", email: "ana@example.com", password: "correct horse battery" }),
-      }),
+      greq("/auth/setup", { method: "POST", body: JSON.stringify({ ...JSON.parse(body), setupToken: code }) }),
     );
     expect(setup?.status).toBe(201);
+    expect(existsSync(join(process.env.BOTS_DATA_DIR as string, "setup.token"))).toBe(false);
     const { token, user } = (await (setup as Response).json()) as { token: string; user: { id: string } };
     expect((await readSetting<{ userId?: string }>("auth:owner", {})).userId).toBe(user.id);
-    expect((await gate(req("/bots")))?.status).toBe(401);
-    expect(await gate(req("/bots", { token }))).toBeNull();
-    const after = await gate(req("/auth/setup"));
+    expect((await gate(greq("/bots")))?.status).toBe(401);
+    expect(await gate(greq("/bots", { token }))).toBeNull();
+    const after = await gate(greq("/auth/setup"));
     expect(await after?.json()).toMatchObject({ needsOwner: false, required: true });
-    expect(await created?.origins.remember("https://perfil.example.ts.net:10447")).toBe(true);
+    expect(await created?.origins.remember("https://perfil.example.ts.net:10447")).toBe(false);
+    const owner = principalOf(
+      await (async () => {
+        const probe = greq("/bots", { token });
+        await gate(probe);
+        return probe;
+      })(),
+    );
+    expect(await created?.origins.remember("https://perfil.example.ts.net:10447", owner)).toBe(true);
     expect(await readSetting<string[]>("auth:origins", [])).toEqual(["https://perfil.example.ts.net:10447"]);
     const again = await initAuth({ BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
     expect(again).not.toBeNull();
     expect(again?.origins.list()).toEqual(["https://perfil.example.ts.net:10447"]);
     expect(logs).toContain("auth on (origin from each request, secret from env)");
-    const internal = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${runnerToken()}` } });
+    const internal = new Request(`${gatewayBase}/status`, { headers: { authorization: `Bearer ${runnerToken()}` } });
     expect(await gate(internal)).toBeNull();
     expect(principalOf(internal)).toMatchObject({ userId: user.id, method: "internal", role: "owner" });
   });
@@ -354,8 +386,11 @@ describe("gate", () => {
     await getDb().delete(user);
     await initAuth({ BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
     const setup = await gate(
-      req("/auth/setup", {
+      greq("/auth/setup", {
         method: "POST",
+        headers: {
+          "x-setup-token": readFileSync(join(process.env.BOTS_DATA_DIR as string, "setup.token"), "utf8").trim(),
+        },
         body: JSON.stringify({ name: "Bia", email: "bia@example.com", password: "correct horse battery" }),
       }),
     );

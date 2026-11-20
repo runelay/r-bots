@@ -32,8 +32,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     rm -f /etc/apt/apt.conf.d/docker-clean \
  && apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl wget git openssh-client jq ripgrep procps sudo less unzip xz-utils file \
-      build-essential python3 \
+      ca-certificates curl wget git openssh-client jq ripgrep procps sudo less unzip xz-utils file bubblewrap age acl \
+      python3 \
       ffmpeg poppler-utils xvfb xdotool openbox xterm x11-utils fonts-liberation fonts-noto-color-emoji \
  && install -m 0755 -d /etc/apt/keyrings \
  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli.gpg \
@@ -53,6 +53,16 @@ RUN userdel -r node \
  && chmod 750 /home/runelaybot \
  && echo "app ALL=(runelaybot) NOPASSWD: ALL" > /etc/sudoers.d/runelaybot \
  && chmod 440 /etc/sudoers.d/runelaybot \
+ && groupadd -g 1503 rbwork \
+ && groupadd -g 1502 runelaytool \
+ && useradd -m -u 1502 -g 1502 -G rbwork -s /bin/bash runelaytool \
+ && chmod 700 /home/runelaytool \
+ && usermod -a -G rbwork app \
+ && printf '%s\n' \
+      'Defaults!/usr/local/bin/rb-sandbox-exec !syslog, !pam_session, !lecture, env_reset' \
+      'app ALL=(runelaytool) NOPASSWD: /usr/local/bin/rb-sandbox-exec' > /etc/sudoers.d/runelaytool \
+ && chmod 440 /etc/sudoers.d/runelaytool \
+ && visudo -c -q \
  && mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 RUN --mount=type=cache,target=/root/.npm \
@@ -73,6 +83,18 @@ RUN HOME=/home/app agent-browser install --with-deps \
  && mkdir -p /home/app/.config/gh /home/app/.cache /home/app/.local/share /home/app/.supabase /home/app/.config/.wrangler /home/app/.claude /home/app/.codex \
  && chown -R app:app /home/app
 
+RUN printf '%s\n' \
+      '{' \
+      '  "URLBlocklist": ["file://*", "chrome://*", "view-source:*", "devtools://*", "chrome-extension://*"],' \
+      '  "URLAllowlist": [],' \
+      '  "DownloadRestrictions": 3' \
+      '}' > /tmp/runelay-policy.json \
+ && for dir in /etc/chromium/policies/managed /etc/opt/chrome/policies/managed /etc/opt/chrome_for_testing/policies/managed; do \
+      install -d -o root -g root -m 0755 "$dir" \
+      && install -o root -g root -m 0644 /tmp/runelay-policy.json "$dir/runelay.json"; \
+    done \
+ && rm /tmp/runelay-policy.json
+
 ENV HOME=/home/app \
     USER=app \
     LANG=C.UTF-8 \
@@ -80,11 +102,12 @@ ENV HOME=/home/app \
     DESKTOP_CHROME=/opt/runelay-chrome/chrome
 
 WORKDIR /app/apps/server
-RUN chown -R app:app /app
-COPY --from=build --chown=app:app /out/ /app/apps/server/
+COPY --from=build /out/ /app/apps/server/
+RUN chown -R root:root /app && chmod -R u=rwX,go=rX /app
 COPY --chmod=0755 apps/server/docker-entrypoint.sh /usr/local/bin/runelay-entrypoint
-ENV PATH=/home/app/.local/bin:$PATH \
-    BOTS_APP_DIR=/app/apps/server \
+COPY --chmod=0755 apps/server/rb-sandbox-exec.sh /usr/local/bin/rb-sandbox-exec
+ENV BOTS_APP_DIR=/app/apps/server \
+    BOTS_TOOL_SANDBOX=uid \
     CLAUDE_CODE_EXECUTABLE=/app/apps/server/claude-agent \
     NAPI_RS_NATIVE_LIBRARY_PATH=/app/apps/server/native/anydoc.linux-x64-gnu.node
 ENTRYPOINT ["/usr/local/bin/runelay-entrypoint"]

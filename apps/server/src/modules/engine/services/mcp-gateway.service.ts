@@ -40,6 +40,12 @@ import {
 import { registerThreadTools } from "../../conversations/services/handoff-tools.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
 import { createGroup, listGroups, setGroupArchived, updateGroup } from "../../groups/services/groups.service";
+import {
+  type QuestionOutcome,
+  type QuestionRequest,
+  registerQuestionTools,
+} from "../../questions/services/questions.service";
+import { registerServerTools } from "../../servers/services/server-tools.service";
 import { fileEventOf } from "../../uploads/services/uploads.service";
 import { onlyRefs } from "../../vault/services/vault.service";
 import {
@@ -47,12 +53,6 @@ import {
   prepareSecretInput,
   registerVaultTools,
 } from "../../vault/services/vault-tools.service";
-import {
-  type QuestionOutcome,
-  type QuestionRequest,
-  registerQuestionTools,
-} from "../../questions/services/questions.service";
-import { registerServerTools } from "../../servers/services/server-tools.service";
 import type { ApprovalDetails, BotTool } from "./bot-tools.service";
 
 export interface ApprovalResult {
@@ -80,7 +80,7 @@ export interface ToolContext {
     prompt: string,
     callId: string,
     origin: string | null,
-    details?: ApprovalDetails,
+    details?: ApprovalDetails & { timeoutMs?: number },
   ) => Promise<ApprovalResult>;
   askUser?: (request: QuestionRequest, callId: string, origin: string | null) => Promise<QuestionOutcome>;
   delegate: (targetId: string, message: string, callId: string) => Promise<string>;
@@ -180,11 +180,27 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
       context.emitDecision(decision);
     }
     const approvalPrompt = tool.approval ? await tool.approval(input) : null;
-    if (approvalPrompt && vaultOnly) {
+    const hard = approvalPrompt ? (tool.humanReason?.(input) ?? null) : null;
+    if (hard) {
+      context.emitDecision({
+        kind: "approval",
+        question: "Esta ação do bot é segura para rodar sem uma pessoa confirmar?",
+        answer: null,
+        confidence: null,
+        threshold: context.decisions.threshold,
+        outcome: "human",
+        latencyMs: 0,
+        model: null,
+        reason: hard,
+        tool: tool.name,
+        callId,
+      });
+    }
+    if (approvalPrompt && !hard && vaultOnly) {
       log.emit({ type: "call.started", data: { callId, clearedBy: { vault: true } }, scope: scopeOf(context) });
-    } else if (approvalPrompt && fullAccess) {
+    } else if (approvalPrompt && !hard && fullAccess) {
       log.emit({ type: "call.started", data: { callId, clearedBy: { permission: "full" } }, scope: scopeOf(context) });
-    } else if (approvalPrompt && decision?.outcome === "auto_approved") {
+    } else if (approvalPrompt && !hard && decision?.outcome === "auto_approved") {
       log.emit({
         type: "call.started",
         data: { callId, clearedBy: { decision: "jev", model: decision.model } },
@@ -231,7 +247,7 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
       log.emit({ type: "call.started", data: { callId }, scope: scopeOf(context) });
     }
     try {
-      const output = await tool.run(await prepareSecretInput(context, tool.name, input), context.signal);
+      const output = await tool.run(await prepareSecretInput(context, tool.name, input, callId), context.signal);
       if (output && typeof output === "object" && "imageBase64" in output) {
         const { imageBase64, ...meta } = output as Record<string, unknown>;
         log.emit({
@@ -358,7 +374,13 @@ async function runDelegate(context: ToolContext, target: string, message: string
   }
 }
 
-type ConfigGate = "jev" | "human" | "none";
+type ConfigGate = "jev" | "human" | "config" | "always" | "none";
+
+const configHumanReason: Record<string, string> = {
+  human: "Pedido de capacidade sempre passa por uma pessoa.",
+  config: "Mudar papel ou instruções do bot sempre passa por uma pessoa.",
+  always: "Criar rotina sempre passa por uma pessoa, em qualquer modo.",
+};
 
 interface ConfigChange {
   body: Record<string, unknown>;
@@ -416,8 +438,24 @@ async function runConfigTool(
       });
       return textResult(text, true);
     };
+    if (context.permission === "readonly") {
+      context.emitDecision({
+        kind: "approval",
+        question: "Esta ação do bot é segura para rodar sem uma pessoa confirmar?",
+        answer: null,
+        confidence: null,
+        threshold: context.decisions.threshold,
+        outcome: "blocked",
+        latencyMs: 0,
+        model: null,
+        reason: "Modo Somente leitura.",
+        tool: name,
+        callId,
+      });
+      return reject(null, readonlyRemoteMessage);
+    }
     let cleared: Record<string, unknown> | null = null;
-    if (gate !== "none" && context.permission !== "full") {
+    if (gate === "always" || (gate !== "none" && context.permission !== "full")) {
       let needsHuman = true;
       if (gate === "jev") {
         const decision = await decideApproval(await approvalState(context, name, input), context.decisions, callId);
@@ -436,7 +474,7 @@ async function runConfigTool(
           outcome: "human",
           latencyMs: 0,
           model: null,
-          reason: "Pedido de capacidade sempre passa por uma pessoa.",
+          reason: configHumanReason[gate],
           tool: name,
           callId,
         });
@@ -889,12 +927,12 @@ async function runComputerTool(context: ToolContext, spec: ComputerSpec, input: 
       scope: scopeOf(context),
     });
     let cleared: Record<string, unknown> | null = null;
-    if (spec.act && computerTypeSecretsOnly(spec.name, args)) {
+    const hard = spec.act ? computerHumanReason(spec.name, args) : null;
+    if (spec.act && !hard && computerTypeSecretsOnly(spec.name, args)) {
       cleared = { vault: true };
-    } else if (spec.act && context.permission === "full") {
+    } else if (spec.act && !hard && context.permission === "full") {
       cleared = { permission: "full" };
     } else if (spec.act) {
-      const hard = computerHumanReason(spec.name, args);
       let needsHuman = true;
       if (hard) {
         context.emitDecision({
@@ -1418,10 +1456,18 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
       inputSchema: { text: z.string().min(1).max(60) },
     },
     (args: Record<string, unknown>) =>
-      runConfigTool(context, "set_role", `Mudar papel para "${String(args.text)}"`, args, "none", "", (bot) => ({
-        body: { role: String(args.text) },
-        summary: `Papel: "${bot.role}" → "${String(args.text)}".`,
-      })),
+      runConfigTool(
+        context,
+        "set_role",
+        `Mudar papel para "${String(args.text)}"`,
+        args,
+        "none",
+        `Posso mudar o meu papel para "${String(args.text)}"?`,
+        (bot) => ({
+          body: { role: String(args.text) },
+          summary: `Papel: "${bot.role}" → "${String(args.text)}".`,
+        }),
+      ),
   );
   server.registerTool(
     "update_instructions",
@@ -1437,7 +1483,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
         args.mode === "replace" ? "Substituir instruções" : "Acrescentar às instruções",
         args,
         "none",
-        "",
+        `Posso ${args.mode === "replace" ? "substituir as minhas instruções por" : "acrescentar às instruções"}: ${brief(args.markdown, 300)}?`,
         (bot) => {
           const markdown = String(args.markdown).trim();
           const next = args.mode === "replace" ? markdown : `${bot.instructions.trim()}\n\n${markdown}`.trim();
@@ -1452,7 +1498,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
     "add_schedule",
     {
       description:
-        'Cria uma rotina recorrente. Converta o pedido da pessoa em cron de 5 campos (minuto hora dia mês dia-da-semana), por exemplo dias úteis às 9h = "0 9 * * 1-5". prompt é o que você vai fazer a cada execução. Crie direto quando a pessoa pedir; o servidor só abre card se o modo da conversa exigir.',
+        'Cria uma rotina recorrente. Converta o pedido da pessoa em cron de 5 campos (minuto hora dia mês dia-da-semana), por exemplo dias úteis às 9h = "0 9 * * 1-5". prompt é o que você vai fazer a cada execução. Crie direto quando a pessoa pedir.',
       inputSchema: {
         name: z.string().min(1).max(40),
         cron: z.string().min(1),

@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -98,7 +99,7 @@ describe("backup", () => {
     await expect(
       backup.snapshotDatabase({ ...local, tls: { rejectUnauthorized: false } }, target, now, broken.path),
     ).rejects.toThrow("pg_dump exited 2: connection refused");
-    expect(existsSync(join(target, "db", "2026-11-19", "runelay-bots.dump.tmp"))).toBe(false);
+    expect(existsSync(join(target, "db", "2026-11-19", "runelay-bots.dump.partial"))).toBe(false);
     expect(readFileSync(broken.log, "utf8")).toContain("PGSSLMODE=require");
     const store = new FsBlobStore(join(dir, "external-blobs"));
     const report = await backup.runBackup({
@@ -110,6 +111,62 @@ describe("backup", () => {
       now,
     });
     expect(report.snapshot).toBeNull();
+  });
+
+  test("keeps the backup private and encrypts the dump with age when configured", async () => {
+    const dump = fakeDump("pg_dump_private");
+    const age = join(dir, "age");
+    writeFileSync(
+      age,
+      `#!/bin/sh\nprintf '%s\\n' "$@" > ${JSON.stringify(`${age}.log`)}\nprintf 'age:' > "$4"\ncat "$5" >> "$4"\n`,
+    );
+    chmodSync(age, 0o755);
+    const store = new FsBlobStore(join(dir, "private-blobs"));
+    await store.put("doc.txt", "doc");
+    const target = join(dir, "private-backup");
+    const now = new Date("2026-11-19T12:00:00Z");
+    const options = { database: local, pgDump: dump.path, store, dir: target, voiceDir: join(dir, "none"), now };
+    const report = await backup.runBackup({ ...options, ageRecipient: "age1recipient", ageBin: age });
+    expect(report.snapshot).toBe(join(target, "db", "2026-11-19", "runelay-bots.dump.age"));
+    expect(readFileSync(report.snapshot as string, "utf8")).toBe("age:dump");
+    expect(readFileSync(`${age}.log`, "utf8").split("\n").slice(0, 2)).toEqual(["-r", "age1recipient"]);
+    expect(existsSync(join(target, "db", "2026-11-19", "runelay-bots.dump.partial"))).toBe(false);
+    expect(statSync(target).mode & 0o777).toBe(0o700);
+    expect(statSync(join(target, "db", "2026-11-19")).mode & 0o777).toBe(0o700);
+    expect(statSync(report.snapshot as string).mode & 0o777).toBe(0o600);
+    expect(statSync(join(target, "blobs", "doc.txt")).mode & 0o777).toBe(0o600);
+    const plain = await backup.runBackup({ ...options, dir: join(dir, "plain-backup"), ageRecipient: null });
+    expect(statSync(plain.snapshot as string).mode & 0o777).toBe(0o600);
+  });
+
+  test("refuses to back up without encryption when age is configured but missing or failing", async () => {
+    const dump = fakeDump("pg_dump_noage");
+    const options = {
+      database: local,
+      pgDump: dump.path,
+      store: new FsBlobStore(join(dir, "noage-blobs")),
+      dir: join(dir, "noage-backup"),
+      voiceDir: join(dir, "none"),
+      now: new Date("2026-11-19T12:00:00Z"),
+    };
+    process.env.BOTS_BACKUP_AGE_RECIPIENT = "age1recipient";
+    try {
+      await expect(backup.runBackup({ ...options, ageBin: join(dir, "no-age-here") })).rejects.toBeInstanceOf(
+        backup.BackupEncryptionUnavailable,
+      );
+    } finally {
+      delete process.env.BOTS_BACKUP_AGE_RECIPIENT;
+    }
+    const failing = join(dir, "age-failing");
+    writeFileSync(failing, "#!/bin/sh\necho 'bad recipient' >&2\nexit 1\n");
+    chmodSync(failing, 0o755);
+    await expect(backup.runBackup({ ...options, ageRecipient: "age1bad", ageBin: failing })).rejects.toThrow(
+      "age exited 1: bad recipient",
+    );
+    const day = join(options.dir, "db", "2026-11-19");
+    expect(existsSync(join(day, "runelay-bots.dump.partial"))).toBe(false);
+    expect(existsSync(join(day, "runelay-bots.dump.age.tmp"))).toBe(false);
+    expect(existsSync(join(day, "runelay-bots.dump.age"))).toBe(false);
   });
 
   test("skips blobs that vanish while syncing", async () => {

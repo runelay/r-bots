@@ -20,8 +20,10 @@ import {
   onUtterance,
   rateCall,
   repeatsReply,
+  resetTokenLimits,
   speakableReply,
   startCall,
+  tokenLimit,
   type VoiceCall,
   VoiceError,
   voiceEnabled,
@@ -86,6 +88,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  resetTokenLimits();
   await settleSaves();
   endAllCalls();
   await settleSaves();
@@ -212,6 +215,49 @@ describe("ElevenLabs tokens and voices", () => {
     expect(onlyTts.tts?.token).toBe("t1");
     const onlyStt = await credentials(bot, ["stt"]);
     expect(onlyStt.tts).toBeUndefined();
+  });
+
+  test("token minting is rate limited per person and capped in flight", async () => {
+    eleven.on("POST", "/v1/single-use-token/realtime_scribe", () => Response.json({ token: "s1" }));
+    eleven.on("POST", "/v1/single-use-token/tts_websocket", () => Response.json({ token: "t1" }));
+    const bot = botOf({ voiceId: "v", speed: 1, language: "pt" });
+    for (let index = 0; index < tokenLimit.perMinute / 2; index++) await credentials(bot, ["stt", "tts"], "u1");
+    const limited = await credentials(bot, ["stt"], "u1").catch((error: VoiceError) => error);
+    expect(limited).toBeInstanceOf(VoiceError);
+    expect((limited as VoiceError).status).toBe(429);
+    expect((await credentials(bot, ["stt"], "u2")).stt?.token).toBe("s1");
+    resetTokenLimits();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    eleven.on("POST", "/v1/single-use-token/tts_websocket", async () => {
+      await gate;
+      return Response.json({ token: "t2" });
+    });
+    const running = Array.from({ length: tokenLimit.concurrent }, () => credentials(bot, ["tts"], "u3"));
+    const extra = await credentials(bot, ["tts"], "u3").catch((error: VoiceError) => error);
+    expect((extra as VoiceError).status).toBe(429);
+    release();
+    expect((await Promise.all(running)).map((item) => item.tts?.token)).toEqual(
+      Array(tokenLimit.concurrent).fill("t2"),
+    );
+    expect((await credentials(bot, ["tts"], "u3")).tts?.token).toBe("t2");
+  });
+
+  test("an insecure ElevenLabs url falls back to the real one", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    const saved = process.env.ELEVENLABS_API_URL;
+    process.env.ELEVENLABS_API_URL = "http://evil.example.com";
+    const fetchSpy = spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ token: "x" }));
+    try {
+      await mintToken("tts_websocket");
+      expect(String(fetchSpy.mock.calls[0][0])).toBe("https://api.elevenlabs.io/v1/single-use-token/tts_websocket");
+    } finally {
+      fetchSpy.mockRestore();
+      warn.mockRestore();
+      process.env.ELEVENLABS_API_URL = saved;
+    }
   });
 });
 

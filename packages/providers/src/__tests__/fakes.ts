@@ -24,12 +24,13 @@ beforeEach(() => {
 });
 process.env.GATEWAY_PORT = `test${process.pid}`;
 process.env.RB_FAKE_DIR = stateDir;
+process.env.PATH = `${binDir}:/usr/bin:/bin`;
 for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CURSOR_API_KEY", "XAI_API_KEY"])
   delete process.env[key];
 afterAll(() => rmSync(root, { recursive: true, force: true }));
 
 const fakeScript = `#!/bin/sh
-dir="$RB_FAKE_DIR"
+dir="__STATE__"
 name=$(basename "$0")
 if [ $# -gt 0 ]; then printf '%s\\n' "$@"; fi > "$dir/$name.args"
 env > "$dir/$name.env"
@@ -52,7 +53,7 @@ export const fakeCli = {
   binDir,
   install(name: string) {
     const path = join(binDir, name);
-    writeFileSync(path, fakeScript);
+    writeFileSync(path, fakeScript.replace("__STATE__", stateDir));
     chmodSync(path, 0o755);
     return path;
   },

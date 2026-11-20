@@ -1,4 +1,5 @@
 import { notFound, type Req, type Res, sendJson } from "../../../shared/http";
+import { principalOf } from "../../auth/gate";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import {
   armIdle,
@@ -14,6 +15,10 @@ import {
   type VoiceCall,
   VoiceError,
 } from "../services/voice.service";
+
+function requester(req: Req) {
+  return principalOf(req.raw)?.userId ?? "local";
+}
 
 async function readJson(req: Req) {
   const chunks: Buffer[] = [];
@@ -71,7 +76,7 @@ export async function handleVoice(req: Req, res: Res, method: string, bot: BotDe
       if (bot.deletedAt) return sendJson(res, 409, { ok: false, code: "bot_deleted", error: "Esse bot foi excluído." });
       if (bot.archivedAt)
         return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
-      const [call, creds] = await Promise.all([startCall(bot), credentials(bot, ["stt", "tts"])]);
+      const [call, creds] = await Promise.all([startCall(bot), credentials(bot, ["stt", "tts"], requester(req))]);
       return sendJson(res, 201, {
         callId: call.id,
         sessionId: call.session.meta.sessionId,
@@ -91,7 +96,7 @@ export async function handleVoice(req: Req, res: Res, method: string, bot: BotDe
       const types: Array<"stt" | "tts"> = Array.isArray(body.types)
         ? (body.types as unknown[]).filter((item): item is "stt" | "tts" => item === "stt" || item === "tts")
         : ["stt", "tts"];
-      return sendJson(res, 200, await credentials(bot, types.length > 0 ? types : ["stt", "tts"]));
+      return sendJson(res, 200, await credentials(bot, types.length > 0 ? types : ["stt", "tts"], requester(req)));
     }
     if (action === "utterance" && method === "POST") {
       const body = await readJson(req);

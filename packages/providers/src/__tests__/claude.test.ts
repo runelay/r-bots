@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -9,7 +10,7 @@ import type {
   SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { NativeToolHooks } from "@runelay-bots/protocol";
-import { nativeTools, runClaude } from "../claude";
+import { hookFailureMessage, nativeTools, privateMcpArgs, runClaude, unclearedMessage } from "../claude";
 import { fakeCli, fakeSdk, type QueryParams, recorder, turnRequest } from "./fakes";
 
 const signal = () => new AbortController().signal;
@@ -259,8 +260,8 @@ describe("runClaude", () => {
     expect(options.permissionMode).toBe("default");
     expect(options.cwd).toBe(fakeCli.binDir);
     expect(await options.canUseTool?.("Read", { a: 1 }, {} as never)).toEqual({
-      behavior: "allow",
-      updatedInput: { a: 1 },
+      behavior: "deny",
+      message: unclearedMessage,
     });
 
     const registered = options.hooks as Partial<Record<HookEvent, HookCallbackMatcher[]>>;
@@ -320,6 +321,20 @@ describe("runClaude", () => {
     await post(input({ hook_event_name: "PostToolUseFailure", tool_name: "Bash", error: "bad" }), "u5", context);
     await post(input({ hook_event_name: "Stop" }), "u", context);
 
+    const permissionOptions = (id: string) => ({ toolUseID: id }) as never;
+    expect(await options.canUseTool?.("Bash", { c: 1 }, permissionOptions("u1"))).toEqual({
+      behavior: "deny",
+      message: unclearedMessage,
+    });
+    expect(await options.canUseTool?.("Edit", { file: "raw" }, permissionOptions("u2"))).toEqual({
+      behavior: "allow",
+      updatedInput: { file: "safe" },
+    });
+    expect(await options.canUseTool?.("Edit", { file: "raw" }, permissionOptions("u2"))).toEqual({
+      behavior: "deny",
+      message: unclearedMessage,
+    });
+
     expect(calls).toEqual([
       ["before", "Bash", { c: 1 }, "u1"],
       ["before", "Edit", {}, "u2"],
@@ -329,6 +344,101 @@ describe("runClaude", () => {
       ["after", "Bash", { c: 2 }, "bad", "u4", true],
       ["after", "Bash", {}, "bad", "u5", true],
     ]);
+  });
+
+  test("a hook that throws denies the call and canUseTool stays closed", async () => {
+    const hooks: NativeToolHooks = {
+      before: async () => {
+        throw new Error("boom");
+      },
+      after: async () => {},
+    };
+    replay([success]);
+    const { emit } = recorder();
+    await runClaude(turnRequest({ code: { cwd: fakeCli.binDir } }), fakeCli.home, signal(), emit, hooks);
+    const options = fakeSdk.calls[0].options ?? {};
+    const registered = options.hooks as Partial<Record<HookEvent, HookCallbackMatcher[]>>;
+    const pre = registered.PreToolUse?.[0].hooks[0] as HookCallback;
+    const output = await pre(
+      {
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: {},
+        tool_use_id: "t1",
+      } as unknown as Parameters<HookCallback>[0],
+      "t1",
+      { signal: new AbortController().signal },
+    );
+    expect(output).toEqual({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "deny",
+        permissionDecisionReason: hookFailureMessage,
+      },
+    });
+    expect(await options.canUseTool?.("Bash", {}, { toolUseID: "t1" } as never)).toMatchObject({ behavior: "deny" });
+  });
+
+  test("privateMcpArgs moves an inline mcp config into a private file", () => {
+    expect(privateMcpArgs(["-p"], fakeCli.home)).toEqual({ args: ["-p"], file: null });
+    expect(privateMcpArgs(["--mcp-config"], fakeCli.home)).toEqual({ args: ["--mcp-config"], file: null });
+    expect(privateMcpArgs(["--mcp-config", "/x.json"], fakeCli.home)).toEqual({
+      args: ["--mcp-config", "/x.json"],
+      file: null,
+    });
+    const json = '{"mcpServers":{"bots":{"headers":{"Authorization":"Bearer tok"}}}}';
+    const { args, file } = privateMcpArgs(["--x", "--mcp-config", json, "--y"], fakeCli.home);
+    expect(file).not.toBeNull();
+    expect(args).toEqual(["--x", "--mcp-config", file as string, "--y"]);
+    expect(readFileSync(file as string, "utf8")).toBe(json);
+    expect(statSync(file as string).mode & 0o777).toBe(0o600);
+    expect(statSync(join(fakeCli.home, ".private")).mode & 0o777).toBe(0o700);
+  });
+
+  test("the spawned CLI gets the mcp config as a file that is removed on exit", async () => {
+    let seen = "";
+    let path = "";
+    replay([success], async (params) => {
+      const spawnOptions: SpawnOptions = {
+        command: "sh",
+        args: ["-c", 'cat "$2" >/dev/null && printf %s "$2"', "sh", "--mcp-config", '{"token":"tok"}'],
+        cwd: fakeCli.home,
+        env: { PATH: process.env.PATH },
+        signal: new AbortController().signal,
+      };
+      const child = params.options?.spawnClaudeCodeProcess?.(spawnOptions) as unknown as NodeJS.EventEmitter & {
+        stdout: NodeJS.ReadableStream;
+      };
+      child.stdout.on("data", (chunk: Buffer) => {
+        seen += chunk.toString();
+      });
+      await new Promise((resolve) => child.on("close", resolve));
+    });
+    const { emit } = recorder();
+    await runClaude(turnRequest(), fakeCli.home, signal(), emit);
+    path = seen.trim();
+    expect(path).toStartWith(join(fakeCli.home, ".private", "mcp-"));
+    expect(existsSync(path)).toBe(false);
+  });
+
+  test("a spawn failure removes the private mcp file and rethrows", async () => {
+    let failure: unknown = null;
+    replay([success], async (params) => {
+      try {
+        params.options?.spawnClaudeCodeProcess?.({
+          command: "sh",
+          args: ["--mcp-config", '{"a":1}'],
+          cwd: fakeCli.home,
+          env: { PATH: process.env.PATH },
+          signal: "not a signal" as unknown as AbortSignal,
+        });
+      } catch (error) {
+        failure = error;
+      }
+    });
+    const { emit } = recorder();
+    await runClaude(turnRequest(), fakeCli.home, signal(), emit);
+    expect(failure).not.toBeNull();
   });
 
   test("on linux the CLI is spawned through spawnMarked with the turn marker", async () => {

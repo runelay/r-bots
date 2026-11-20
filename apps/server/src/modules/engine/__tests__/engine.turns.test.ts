@@ -426,6 +426,13 @@ describe("schedules", () => {
     );
     expect(lastRequest().resume).toBeNull();
     expect((await settledOf(session)).quiet).toBeUndefined();
+    expect(triage).toHaveBeenLastCalledWith(
+      bot.role,
+      "diaria",
+      "Resumo do dia.",
+      "Nada de novo hoje.",
+      "Nada de novo hoje.",
+    );
 
     await run(session, { source: "schedule", text: "Rotina sem nome." });
     expect(triage).toHaveBeenLastCalledWith(bot.role, "rotina", "Rotina sem nome.", "Nada de novo hoje.", null);

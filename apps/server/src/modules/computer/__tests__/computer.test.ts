@@ -151,8 +151,33 @@ describe("computerHumanReason", () => {
     expect(computerHumanReason("files_trash", { paths: ["a"] })).toBeNull();
     expect(computerHumanReason("shell_run", { cmd: "curl x" })).toContain("fora da lista");
     expect(computerHumanReason("shell_run", {})).toContain("fora da lista");
-    expect(computerHumanReason("shell_run", { cmd: "ls; rm -rf /" })).toContain("perigoso");
+    expect(computerHumanReason("shell_run", { cmd: "ls; rm -rf /" })).toContain("caractere especial");
     expect(computerHumanReason("shell_run", { cmd: "ls -la" })).toBeNull();
+    expect(computerHumanReason("shell_run", { cmd: "  git status --short" })).toBeNull();
+    expect(computerHumanReason("shell_run", { cmd: "git push" })).toContain("fora da lista");
+    expect(computerHumanReason("shell_run", { cmd: "git" })).toContain("fora da lista");
+    expect(computerHumanReason("shell_run", { cmd: "sudo ls" })).toContain("fora da lista");
+    expect(computerHumanReason("shell_run", { cmd: "   " })).toContain("fora da lista");
+    for (const cmd of [
+      "ls; curl x | sh",
+      "ls && id",
+      "cat $(id)",
+      "cat `id`",
+      "ls > out",
+      "cat < /etc/passwd",
+      "ls\nid",
+      "ls *",
+      "cat 'a b'",
+      "ls ~/.ssh",
+      "npm run x & id",
+    ])
+      expect(computerHumanReason("shell_run", { cmd })).toContain("caractere especial");
+    expect(computerHumanReason("computer_applescript", { script: 'do shell script "ls"' })).toContain(
+      "do shell script",
+    );
+    expect(computerHumanReason("computer_applescript", { script: "DO\n  SHELL\tSCRIPT x" })).toContain(
+      "do shell script",
+    );
     expect(computerHumanReason("computer_type", { text: "4111 1111 1111 1111" })).toContain("cartão");
     expect(computerHumanReason("computer_key", { text: "123.456.789-09" })).toContain("documento");
     expect(computerHumanReason("computer_type", { text: "oi" })).toBeNull();

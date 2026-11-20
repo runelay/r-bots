@@ -214,7 +214,7 @@ describe("schema", () => {
     const { getTableConfig, PgTable } = await import("drizzle-orm/pg-core");
     const auth = await import("../schema/auth");
     const all = Object.values(auth).filter((value) => value instanceof PgTable);
-    expect(all.map((table) => getTableConfig(table).indexes.length).reduce((sum, count) => sum + count, 0)).toBe(11);
+    expect(all.map((table) => getTableConfig(table).indexes.length).reduce((sum, count) => sum + count, 0)).toBe(13);
     const targets = all.flatMap((table) =>
       getTableConfig(table).foreignKeys.map((key) => getTableConfig(key.reference().foreignTable).name),
     );

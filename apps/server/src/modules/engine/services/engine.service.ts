@@ -51,10 +51,10 @@ import { touchWorktree } from "../../code/repositories/code.repository";
 import { mentionedRepo, openTaskWorkspace } from "../../code/services/actions.service";
 import { ensureBotHome, shellSupported } from "../../code/services/bot-home.service";
 import { codeModeSupported } from "../../code/services/code-tools.service";
-import { noteSessionAccount } from "../../usage/services/usage-scan.service";
 import { devServersOf } from "../../code/services/dev-server.service";
 import { homeHooks, nativeHooks } from "../../code/services/hooks.service";
 import { CodeLive } from "../../code/services/live-diff.service";
+import { killSandboxed, sandboxMarker, sandboxMode } from "../../code/services/sandbox.service";
 import {
   activeWorkspace,
   cachedRepoNames,
@@ -89,6 +89,7 @@ import {
   type UploadMeta,
   uploadGuide,
 } from "../../uploads/services/uploads.service";
+import { noteSessionAccount } from "../../usage/services/usage-scan.service";
 import { vaultGuide } from "../../vault/services/vault-tools.service";
 import { type ApprovalDetails, toolsFor } from "./bot-tools.service";
 import { type ApprovalResult, newToken, registerContext, type ToolContext } from "./mcp-gateway.service";
@@ -940,6 +941,7 @@ async function executeProvider(run: ProviderRun) {
             : home
               ? { cwd: home.path, ...(permission === "readonly" ? { readOnly: true } : {}) }
               : null,
+        nativeShell: permission !== "readonly",
       },
       runAbort.signal,
       run.onEvent,
@@ -953,6 +955,7 @@ async function executeProvider(run: ProviderRun) {
     turn.abort.signal.removeEventListener("abort", forwardAbort);
     if (turn.stopRun === stopRun) turn.stopRun = undefined;
     revoke();
+    if (coding && sandboxMode() === "uid") await killSandboxed(sandboxMarker("sbx", turn.turnId));
   }
 }
 
@@ -962,13 +965,15 @@ function requestApproval(
   prompt: string,
   callId: string,
   origin: string | null,
-  details?: ApprovalDetails,
+  details?: ApprovalDetails & { timeoutMs?: number },
 ) {
   const interactionId = randomBytes(12).toString("base64url").slice(0, 16);
   const scope = { turnId: turn.turnId };
   return new Promise<ApprovalResult>((resolve) => {
+    let expiry: ReturnType<typeof setTimeout> | undefined;
     turn.interactions.set(interactionId, {
       resolve: (choice, always) => {
+        if (expiry) clearTimeout(expiry);
         if (turn.interactions.size === 0) {
           turn.slot?.resume();
           turn.delegation?.onAwaiting(false);
@@ -1017,6 +1022,16 @@ function requestApproval(
     turn.delegation?.onAwaiting(true);
     turn.slot?.suspend();
     setStatus(turn.owner.sessionId, turn.owner.botId, "awaiting");
+    if (details?.timeoutMs) {
+      expiry = setTimeout(() => {
+        const pending = turn.interactions.get(interactionId);
+        if (!pending) return;
+        turn.interactions.delete(interactionId);
+        log.emit({ type: "interaction.settled", data: { interactionId, outcome: "expired" }, scope });
+        pending.resolve("deny");
+      }, details.timeoutMs);
+      expiry.unref();
+    }
     turn.abort.signal.addEventListener(
       "abort",
       () => {

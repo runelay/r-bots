@@ -26,6 +26,7 @@ export interface TurnRequest {
   workKey: string;
   code?: { cwd: string; readOnly?: boolean } | null;
   configDir?: string | null;
+  nativeShell?: boolean;
 }
 
 export interface NativeToolGate {

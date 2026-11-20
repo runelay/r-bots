@@ -55,6 +55,8 @@ describe("runCodex", () => {
     expect(args[args.indexOf("-C") + 1]).toBe(fakeCli.home);
     expect(args).toContain('developer_instructions="be brief"');
     expect(args).toContain("shell_tool");
+    expect(args).toContain("allow_login_shell=false");
+    expect(args).toContain('shell_environment_policy.inherit="core"');
     expect(args).not.toContain("resume");
     expect(args.some((arg) => arg.startsWith("model_reasoning_effort"))).toBe(false);
     expect(args.at(-1)).toBe("-");
@@ -92,6 +94,7 @@ describe("runCodex", () => {
         resume: "th-9",
         mcp: { url: "http://127.0.0.1:1/mcp", token: "tok" },
         code: { cwd: fakeCli.binDir },
+        nativeShell: true,
       }),
       fakeCli.home,
       signal(),
@@ -136,6 +139,17 @@ describe("runCodex", () => {
       () => {},
     );
     expect(fakeCli.env("codex")).toContain("CODEX_HOME=/home/x/.codex-work");
+  });
+
+  test("code turns without native shell keep the shell disabled", async () => {
+    fakeCli.lines("codex", [{ type: "turn.completed", usage: {} }]);
+    const { events, emit } = recorder();
+    await runCodex(turnRequest({ provider: "codex", code: { cwd: fakeCli.binDir } }), fakeCli.home, signal(), emit);
+    const args = fakeCli.args("codex");
+    expect(args[args.indexOf("-s") + 1]).toBe("workspace-write");
+    expect(args).toContain("shell_tool");
+    expect(args).toContain("unified_exec");
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
   });
 
   test("read-only code turns stay in the read-only sandbox", async () => {

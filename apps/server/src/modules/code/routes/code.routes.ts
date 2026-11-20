@@ -1,12 +1,11 @@
 import { type Req, type Res, sendJson } from "../../../shared/http";
-import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { type Fact, getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
 import { isBusy, isRunning } from "../../engine/services/engine.service";
 import { listGrants, listWorktrees, removeGrant, touchWorktree } from "../repositories/code.repository";
 import { closeTaskWorkspace, deliverWorkspace, openTaskWorkspace } from "../services/actions.service";
-import { devServersOf, findPreviewByToken, previewTarget, stopDevServers } from "../services/dev-server.service";
+import { devServersOf, stopDevServers } from "../services/dev-server.service";
 import { finishWorkspace, kickPr, refreshPr, reopenPr } from "../services/pull-request.service";
 import {
   activeWorkspace,
@@ -314,142 +313,3 @@ export async function handleBotCode(req: Req, res: Res, url: URL, method: string
     return fail(res, error);
   }
 }
-
-const apiPrefixes = new Set([
-  "health",
-  "meta",
-  "mcp",
-  "accounts",
-  "voice",
-  "skills",
-  "sections",
-  "groups",
-  "computer",
-  "connectors",
-  "bots",
-  "code",
-  "preview",
-  "api",
-  "auth",
-  "device",
-  "servers",
-  "runner",
-  "tests",
-  "simulators",
-  "status",
-  "jobs",
-  "devices",
-  "integrations",
-  "usage",
-  "vault",
-  "sections",
-  "groups",
-]);
-const cookieName = "rb_preview";
-
-function previewCookie(req: Req) {
-  const header = req.headers.cookie ?? "";
-  const match = header.match(new RegExp(`(?:^|;\\s*)${cookieName}=([\\w-]+)`));
-  return match ? findPreviewByToken(match[1]) : null;
-}
-
-function proxy(req: Req, res: Res, port: number, path: string) {
-  const headers = new Headers(req.raw.headers);
-  headers.set("host", `localhost:${port}`);
-  headers.set("accept-encoding", "identity");
-  const hasBody = req.method !== "GET" && req.method !== "HEAD";
-  fetch(`http://localhost:${port}${path}`, {
-    method: req.method,
-    headers,
-    body: hasBody ? req.raw.body : undefined,
-    redirect: "manual",
-  })
-    .then((answer) => res.respond(answer))
-    .catch((error: Error) => {
-      if (!res.headersSent)
-        sendJson(res, 502, { ok: false, error: `O servidor de desenvolvimento não respondeu: ${error.message}` });
-      else res.end();
-    });
-}
-
-export function isPreviewTraffic(request: Request) {
-  const first = new URL(request.url).pathname.split("/").filter(Boolean)[0] ?? "";
-  if (first === "preview") return true;
-  if (apiPrefixes.has(first)) return false;
-  const match = (request.headers.get("cookie") ?? "").match(new RegExp(`(?:^|;\\s*)${cookieName}=([\\w-]+)`));
-  return match ? findPreviewByToken(match[1]) !== null : false;
-}
-
-export function handlePreview(req: Req, res: Res, url: URL, parts: string[]) {
-  if (parts[0] === "preview") {
-    const port = Number(parts[2]);
-    const target = parts[1] && Number.isInteger(port) ? previewTarget(parts[1], port) : null;
-    if (!target || url.searchParams.get("t") !== target.token) {
-      sendJson(res, 403, { ok: false, error: "Prévia indisponível: o servidor parou ou o link venceu." });
-      return true;
-    }
-    const rest = `/${parts.slice(3).join("/")}`;
-    res.writeHead(302, {
-      location: rest,
-      "set-cookie": `${cookieName}=${target.token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200`,
-      "cache-control": "no-store",
-    });
-    res.end();
-    return true;
-  }
-  if (apiPrefixes.has(parts[0] ?? "")) return false;
-  const target = previewCookie(req);
-  if (!target) return false;
-  proxy(req, res, target.port, req.url ?? "/");
-  return true;
-}
-
-export function previewUpgradeTarget(req: Req) {
-  const url = new URL(req.url ?? "/", "http://gateway.local");
-  const first = url.pathname.split("/").filter(Boolean)[0] ?? "";
-  if (apiPrefixes.has(first)) return null;
-  const target = previewCookie(req);
-  if (!target) return null;
-  const protocols = (req.headers["sec-websocket-protocol"] ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return { port: target.port, path: req.url ?? "/", protocols };
-}
-
-type PreviewRelay = { upstream: WebSocket; queue: Array<string | Buffer> };
-const previewRelays = new WeakMap<Socket, PreviewRelay>();
-
-export const previewSocket: SocketHandler = {
-  open(client) {
-    const protocols = (client.data.protocols as string[] | undefined) ?? [];
-    const upstream = new WebSocket(
-      `ws://localhost:${client.data.port}${client.data.path}`,
-      protocols.length > 0 ? protocols : undefined,
-    );
-    upstream.binaryType = "arraybuffer";
-    const relay: PreviewRelay = { upstream, queue: [] };
-    previewRelays.set(client, relay);
-    upstream.addEventListener("open", () => {
-      for (const message of relay.queue) upstream.send(message);
-      relay.queue = [];
-    });
-    upstream.addEventListener("message", (event) => {
-      if (client.readyState !== socketOpen) return;
-      client.send(typeof event.data === "string" ? event.data : new Uint8Array(event.data as ArrayBuffer));
-    });
-    upstream.addEventListener("close", () => client.close());
-    upstream.addEventListener("error", () => client.close());
-  },
-  message(client, message) {
-    const relay = previewRelays.get(client);
-    if (!relay) return;
-    if (relay.upstream.readyState === WebSocket.OPEN) relay.upstream.send(message);
-    else relay.queue.push(message);
-  },
-  close(client) {
-    const relay = previewRelays.get(client);
-    previewRelays.delete(client);
-    if (relay && relay.upstream.readyState <= WebSocket.OPEN) relay.upstream.close();
-  },
-};

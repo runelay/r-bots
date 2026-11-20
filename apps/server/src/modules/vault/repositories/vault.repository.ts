@@ -1,4 +1,5 @@
-import { and, desc, eq, notInArray } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { and, asc, desc, eq, notInArray } from "drizzle-orm";
 import { type Db, getDb, writeTransaction } from "../../../db";
 import { extraOf, type Json } from "../../../db/rows";
 import { vaultAudit, vaultSecrets } from "../../../db/tables";
@@ -76,6 +77,12 @@ export async function writeSealed(name: string, sealed: Sealed | null, db: Db = 
     .where(eq(vaultSecrets.name, name));
 }
 
+export async function writeSealedMany(entries: { name: string; sealed: Sealed }[], db: Db = getDb()) {
+  await writeTransaction(async (tx) => {
+    for (const entry of entries) await writeSealed(entry.name, entry.sealed, tx);
+  }, db);
+}
+
 export async function readSealed(name: string, db: Db = getDb()): Promise<Sealed | null> {
   const [row] = await db
     .select({ iv: vaultSecrets.iv, tag: vaultSecrets.tag, ct: vaultSecrets.ciphertext })
@@ -96,8 +103,43 @@ export function auditColumns(entry: Json) {
   };
 }
 
+export const auditGenesis = "0".repeat(64);
+
+function auditHash(prevHash: string, columns: ReturnType<typeof auditColumns>) {
+  const { hash: _hash, prevHash: _prev, ...extra } = (columns.extra ?? {}) as Json;
+  const canonical = JSON.stringify([
+    new Date(columns.at).toISOString(),
+    columns.name,
+    columns.outcome,
+    columns.by,
+    extra,
+  ]);
+  return createHash("sha256").update(`${prevHash}\n${canonical}`).digest("hex");
+}
+
 export async function addAudit(entry: Json, db: Db = getDb()) {
-  await db.insert(vaultAudit).values(auditColumns(entry));
+  await writeTransaction(async (tx) => {
+    const [last] = await tx.select({ extra: vaultAudit.extra }).from(vaultAudit).orderBy(desc(vaultAudit.id)).limit(1);
+    const prevHash = typeof last?.extra?.hash === "string" ? (last.extra.hash as string) : auditGenesis;
+    const columns = auditColumns(entry);
+    const hash = auditHash(prevHash, columns);
+    await tx.insert(vaultAudit).values({ ...columns, extra: { ...(columns.extra ?? {}), prevHash, hash } });
+  }, db);
+}
+
+export async function verifyAuditChain(db: Db = getDb()) {
+  const rows = await db.select().from(vaultAudit).orderBy(asc(vaultAudit.id));
+  let prevHash: string | null = null;
+  for (const row of rows) {
+    const extra = (row.extra ?? {}) as Json;
+    if (typeof extra.hash !== "string") continue;
+    const expectedPrev = prevHash ?? (extra.prevHash as string);
+    const columns = { at: row.at, name: row.name, outcome: row.outcome, by: row.by, extra };
+    if (extra.prevHash !== expectedPrev || auditHash(expectedPrev, columns) !== extra.hash)
+      return { ok: false, brokenAt: row.id };
+    prevHash = extra.hash;
+  }
+  return { ok: true, brokenAt: null };
 }
 
 export async function readAuditRows(name: string | null, limit: number, db: Db = getDb()) {

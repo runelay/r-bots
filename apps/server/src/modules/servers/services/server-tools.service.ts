@@ -85,6 +85,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
             kind: "human",
             prompt: `Posso subir este comando como servidor? ${cmd.slice(0, 160)}`,
             reason: "Comando livre fora do package.json.",
+            hard: true,
           }
         : { kind: "allow" };
       const label = String(args.profile ?? args.script ?? cmd ?? "servidor");
