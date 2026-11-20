@@ -499,6 +499,7 @@ struct BotsClient: Sendable {
         var urlRequest = URLRequest(url: url)
         urlRequest.timeoutInterval = 20
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
+        urlRequest.setValue(TimeZone.current.identifier, forHTTPHeaderField: "X-Timezone")
         AuthStore.authorize(&urlRequest)
         return urlRequest
     }

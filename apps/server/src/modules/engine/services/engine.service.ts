@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import type { Provider, ProviderEvent, Usage } from "@runelay-bots/protocol";
 import { emptyUsage } from "@runelay-bots/protocol";
+import { nowNote, userTimezone } from "../../../shared/clock";
 import {
   type Account,
   findAccount,
@@ -1371,6 +1372,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       if (blocksNote) extraSystem = [extraSystem, blocksNote].filter(Boolean).join("\n\n");
     }
     if (delivery.voice) extraSystem = [extraSystem, voiceNote].filter(Boolean).join("\n\n");
+    extraSystem = [extraSystem, nowNote(await userTimezone())].filter(Boolean).join("\n\n");
     const liveBots = [bot, ...delegatesOf(bot)]
       .filter((item) => item.capabilities.browser || (item.id === bot.id && activeWorkspace(session)))
       .map((item) => item.id);

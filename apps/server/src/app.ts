@@ -27,6 +27,7 @@ import { handleHealth, handleMeta, handleStatus, handleStatusStream } from "./mo
 import { handleUsageRoute } from "./modules/usage/routes/usage.routes";
 import { handleVaultRoute } from "./modules/vault/routes/vault.routes";
 import { handleVoices } from "./modules/voice/routes/voice.routes";
+import { noteClientTimezone } from "./shared/clock";
 import { notFound, Req, Res, sendJson } from "./shared/http";
 import type { SocketData, SocketHandler } from "./shared/ws";
 
@@ -140,6 +141,7 @@ export function startServer(hostname: string, port: number) {
     },
     fetch(request, server) {
       return guarded(request, () => {
+        noteClientTimezone(request.headers.get("x-timezone"));
         if (request.headers.get("upgrade")?.toLowerCase() === "websocket") return upgrade(request, server);
         return run(request, route);
       });
