@@ -37,7 +37,7 @@ docker compose down
 systemctl --user enable --now runelay-bots
 ```
 
-Env: `GATEWAY_PORT` (2000), `GATEWAY_HOST` (127.0.0.1), `BOTS_MODEL` (`claude-sonnet-5-5`; aliases `sonnet`, `opus`, `haiku` also work), `BOTS_DATA_DIR` (`<repo>/data`), `BOTS_SCHEDULES` (`on`), `BOTS_MAX_TURNS` (3), `VOICE_MAX_WARM` (3), `VAULT_KEY_FILE` (default `<data>/vault.key`). Service keys (ElevenLabs, Jev, runelay) are set in the app, Settings › Integrations, and kept encrypted in SQLite ([integrations](../../docs/protocol/integrations.md)); `JEV_API_KEY`, `ELEVENLABS_API_KEY`, `RUNELAY_MCP_URL` and `RUNELAY_MCP_TOKEN` in `.env.local` still work as a fallback. `RUNNER_TOKEN` is generated into `<data>/runner.token` when unset. Optional in `.env.local`: `MAC_RUNNER_URL`, `PUBLIC_MCP_BASE`.
+Env: `GATEWAY_PORT` (2000), `GATEWAY_HOST` (127.0.0.1), `BOTS_MODEL` (`claude-sonnet-5-5`; aliases `sonnet`, `opus`, `haiku` also work), `BOTS_DATA_DIR` (`<repo>/data`), `BOTS_SCHEDULES` (`on`), `BOTS_MAX_TURNS` (3), `VOICE_MAX_WARM` (3), `VAULT_KEY_FILE` (default `<data>/vault.key`), `REDIS_URL` (`redis://127.0.0.1:6379`), `REDIS_PASSWORD_FILE` (`<data>/secrets/redis.password`). Service keys (ElevenLabs, Jev, runelay) are set in the app, Settings › Integrations, and kept encrypted in SQLite ([integrations](../../docs/protocol/integrations.md)); `JEV_API_KEY`, `ELEVENLABS_API_KEY`, `RUNELAY_MCP_URL` and `RUNELAY_MCP_TOKEN` in `.env.local` still work as a fallback. `RUNNER_TOKEN` is generated into `<data>/runner.token` when unset. Optional in `.env.local`: `MAC_RUNNER_URL`, `PUBLIC_MCP_BASE`.
 
 ## Layout
 
@@ -84,7 +84,7 @@ Each bot has `engine: {account, model, effort}`; `account` is `vps|mac:claude|co
 ## Limites de recurso (19/11)
 
 - Container: 6 GB de RAM sem swap extra (`BOTS_MEM_LIMIT`), 3 CPUs (`BOTS_CPUS`), core dumps desligados. A VPS tem 15 GB e 4 núcleos; o resto fica para os outros serviços.
-- Turnos: no máximo 3 ao mesmo tempo (`BOTS_MAX_TURNS`); o excedente fica na fila e a conversa mostra a posição. Voz não espera.
+- Turnos: no máximo 3 ao mesmo tempo (`BOTS_MAX_TURNS`); o excedente fica na fila do Redis (`modules/jobs`) e sobrevive a reinício. Voz não espera. Rotinas, exportações, captura de memória e preparo de anexos também são jobs; falhos em `GET /jobs?status=failed` ([v39](../../docs/protocol/usage-status-limits.md)).
 - Comandos de teste do modo código: um por vez, `nice 10`, 20 min de teto, 2 GB de heap por processo Node e 2 workers. Build/tsc/lint: mesmo teto, sem a trava.
 - Voz: no máximo 3 processos quentes, fecham após 5 min parados.
 - Chrome dos bots fecha após 10 min sem uso.

@@ -70,3 +70,54 @@ O filtro é feito no servidor.
 
 ### Container
 - `docker-compose.yml`: `mem_limit`/`memswap_limit` 6g (`BOTS_MEM_LIMIT`), `cpus` 3 (`BOTS_CPUS`), `pids_limit` 4096, `ulimits core 0`.
+
+## v39 (19/11): fila de jobs no Redis, `GET /jobs` e `POST /jobs/:id/retry`
+
+O trabalho que precisa sobreviver a um reinício saiu da memória do processo e foi para uma fila no Redis (BullMQ, prefixo `runelay-bots`, duas filas):
+
+- `turns`: um job `turn.run` por mensagem (`turn-<deliveryId>`), com prioridade delegado > chat > rotina. Concorrência = `BOTS_MAX_TURNS`, mais uma vaga para cada turno parado num card de aprovação ou esperando um delegado. Mensagens da mesma conversa rodam uma por vez e na ordem de chegada (lista `runelay-bots:turn-order:<sessionId>`). Voz não passa pela fila.
+- `tasks`: `memory.capture` (captura de memória depois do turno, 4 tentativas), `export.render` (exportação, 3 tentativas), `upload.prepare` (transcrição e extração do anexo, 4 tentativas), `schedule.fire` (rotina) e `connectors.refresh` (lista de conexões do runelay a cada 5 min).
+
+Comportamento:
+- Uma mensagem aceita (`202`) já está gravada no Redis; se o servidor cai, ela roda quando ele volta. No desligamento normal (`SIGTERM`) o turno em andamento volta para a fila na hora; se o processo morre, volta em até ~30 s (job travado). O turno interrompido aparece fechado com `turn.settled {"outcome":"cancelled","reason":"server_restart"}` e roda de novo do começo com o mesmo `deliveryId`. Uma mensagem que já tem `delivery.settled {"outcome":"handled"}` não roda de novo.
+- Rotinas viraram agendamentos repetíveis no Redis (`schedule.<botId>.<nome>`). Se o servidor estava fora na hora marcada, a rotina perdida roda uma vez assim que ele volta.
+- Falha em todas as tentativas leva o job para a lista de falhos, que é o dead-letter: fica 30 dias e pode ser tentado de novo pela rota abaixo.
+- `POST /bots/:id/exports` continua respondendo com o `ExportJob`: o servidor espera o job por até 90 s; se passar disso, volta `pending` e o app segue consultando como antes.
+
+### Rotas
+
+- `GET /status` passou a refletir a fila: `turns {running, queued, failed, max}` (rodando de fato, na fila incluindo os adiados, falhos) e `jobs {running, queued, failed, queues: {turns, tasks}}` com `{running, queued, delayed, failed}` por fila. `jobs` é `null` quando a fila não está ligada.
+- `GET /jobs?status=failed|active|waiting|delayed|completed&queue=turns|tasks&page=1&pageSize=20` → 200 `{"items":[JobView],"page","pageSize","total"}`. Paginação e filtro no servidor; `status` padrão `failed`, `pageSize` até 100. Filtro inválido → 400 `{"ok":false,"error","field"}`.
+- `JobView` = `{"id","queue","type","status","attempts","maxAttempts","ref":{"botId"?,"sessionId"?,"deliveryId"?,"exportId"?,"uploadId"?,"scheduleId"?},"createdAt","startedAt","finishedAt","error"}`. O payload do job não sai na rota; `ref` traz só os ids.
+- `POST /jobs/:id/retry` → 202 `{"ok":true,"job":JobView}` com as tentativas zeradas. Job que não está nos falhos → 400; id desconhecido → 404.
+- Sem Redis no boot o servidor não sobe. Com a fila desligada, `/jobs` responde 503 `{"ok":false,"error":"A fila não está ligada."}`.
+
+### Para quem grava no banco
+
+`enqueueInTx(tx, {type, payload, id?})` grava o job na tabela `job_outbox` dentro da mesma transação do Postgres; o relay (`startOutboxRelay(db)`) lê o outbox com `FOR UPDATE SKIP LOCKED`, publica no Redis com id `outbox-<id>` e marca `dispatched_at`. Tipo desconhecido é descartado com aviso; Redis fora deixa a linha para a próxima volta.
+
+### Verificado
+
+Instância separada (`:2100`, Postgres e Redis do compose em portas altas e volumes temporários, `BOTS_SCHEDULES=off` exceto no teste de rotina), bot com `claude-haiku-5-5`:
+
+- Três mensagens na mesma conversa, `SIGKILL` com a terceira no meio: no boot `settled 1 turns left open by a restart`; o job travado voltou e a terceira concluiu 20 s depois, na ordem. Com `SIGTERM` e as três pendentes (uma rodando, duas adiadas), o turno ativo voltou para a fila na hora e as três concluíram 8 s depois do boot, na ordem.
+- Exportação `md`, `docx` e `pdf` de uma nota pelos jobs `export.render`, todas `ready` na resposta do `POST`.
+- Rotina `* * * * *`: servidor parado às 23:55:51, a das 23:56:00 rodou no boot (23:56:19) e a próxima ficou para 23:57:00.
+- Retry: com o Chrome num caminho inexistente o PDF falhou 3 vezes e foi para os falhos; com o servidor de volta ao normal, o retry deixou a exportação `ready`.
+
+`GET /status` com um job falho:
+```json
+{"bots":{},"turns":{"running":0,"queued":0,"failed":0,"max":2},"jobs":{"running":0,"queued":1,"failed":1,"queues":{"turns":{"running":0,"queued":0,"delayed":0,"failed":0},"tasks":{"running":0,"queued":0,"delayed":1,"failed":1}}},"warmVoice":0,"appWatching":false}
+```
+
+`GET /jobs?status=failed&page=1&pageSize=20`:
+```json
+{"items":[{"id":"export-exp_01m7v3s00eapf1eckzxh2d7afk","queue":"tasks","type":"export.render","status":"failed","attempts":3,"maxAttempts":3,"ref":{"botId":"fila","exportId":"exp_01m7v3s00eapf1eckzxh2d7afk"},"createdAt":"2026-11-19T23:55:22.610Z","startedAt":"2026-11-19T23:55:25.657Z","finishedAt":"2026-11-19T23:55:25.955Z","error":"ENOENT: no such file or directory, posix_spawn '/nao/existe/chrome'"}],"page":1,"pageSize":20,"total":1}
+```
+
+`POST /jobs/export-exp_01m7v3s00eapf1eckzxh2d7afk/retry`:
+```json
+{"ok":true,"job":{"id":"export-exp_01m7v3s00eapf1eckzxh2d7afk","queue":"tasks","type":"export.render","status":"active","attempts":0,"maxAttempts":3,"ref":{"botId":"fila","exportId":"exp_01m7v3s00eapf1eckzxh2d7afk"},"createdAt":"2026-11-19T23:55:22.610Z","startedAt":"2026-11-19T23:55:35.143Z","finishedAt":null,"error":null}}
+```
+
+O mesmo retry de novo: `400 {"ok":false,"error":"Só um job falho pode ser tentado de novo.","field":"id"}`. `GET /jobs?status=sumido`: `400 {"ok":false,"error":"status precisa ser active, waiting, delayed, failed, completed.","field":"status"}`.

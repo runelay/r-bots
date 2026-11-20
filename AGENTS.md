@@ -24,9 +24,9 @@ runelay bots is a self-hosted team of bots: a TypeScript server (Bun) that runs 
 | `docs/protocol/` | The verified HTTP/WS contract, one file per topic |
 | `docs/research/` | Notes behind design decisions |
 | `data/` (`BOTS_DATA_DIR`, default `~/.local/share/runelay-bots`) | Runtime state: the SQLite database `runelay-bots.db`, blobs (uploads, artifacts) when `BLOB_DRIVER=fs`, workspaces. Git-ignored, never commit, never edit by hand from code changes |
-| `compose.yaml` | Production container |
+| `compose.yaml`, `deploy/` | Production stack: server, Postgres, Redis, Garage; `deploy/secrets` generates the Postgres and Redis passwords into `<data>/secrets/` |
 
-Server domains: `accounts`, `agenda`, `approvals`, `artifacts`, `auth`, `blocks`, `bots`, `browser`, `canvas`, `code`, `computer`, `connectors`, `conversations`, `engine`, `exports`, `groups`, `integrations`, `memory`, `notes`, `schedules`, `sections`, `sheets`, `skills`, `status`, `storage`, `uploads`, `usage`, `vault`, `voice`. Persistence goes through the domain's `repositories/` on the SQLite database; files go through the blob store in `storage`. Put new code in the domain that owns it; create a new module only for a new domain.
+Server domains: `accounts`, `agenda`, `approvals`, `artifacts`, `auth`, `blocks`, `bots`, `browser`, `canvas`, `code`, `computer`, `connectors`, `conversations`, `engine`, `exports`, `groups`, `integrations`, `jobs`, `memory`, `notes`, `schedules`, `sections`, `sheets`, `skills`, `status`, `storage`, `uploads`, `usage`, `vault`, `voice`. Persistence goes through the domain's `repositories/` on the SQLite database; files go through the blob store in `storage`. Put new code in the domain that owns it; create a new module only for a new domain.
 
 ## Commands
 
@@ -76,6 +76,7 @@ swift run                   # run from the terminal
 - New or changed code ships with its tests in the same PR. A PR that drops a file below the gate is not done.
 - Tests live next to the code in `src/**/__tests__/*.test.ts`. Shared helpers and fakes live in `apps/server/test/`; reuse them before writing a new one.
 - `apps/server/test/setup.ts` points `BOTS_DATA_DIR` at a temporary directory. Tests never read or write the real `data/`, `~/.claude`, `~/.codex` or `.env.local`.
+- Redis: queue tests start their own container with `startTestJobs()` (`test/jobs-helpers.ts`) or `startRedis()` (`test/redis.ts`) and stop it in `afterAll`. Never point a test at the production Redis.
 - Network: `127.0.0.1` only. Start local servers on an ephemeral port. No calls to runelay, ElevenLabs, GitHub, model APIs or any external host.
 - Never run a real CLI (`claude`, `codex`, `cursor-agent`, `grok`, `gh`, `git` against real repos, `agent-browser`, `supabase`) or the real Claude Agent SDK. Use the fakes.
 - Leave no live process: every server, child process, timer and interval a test starts is stopped in the test or its `afterEach`/`afterAll`.
@@ -102,6 +103,7 @@ swift run                   # run from the terminal
 - Routes stay thin: HTTP in `routes/`, logic in `services/`. Invalid input throws `ValidationError` (`src/shared/errors.ts`); `src/shared/http.ts` turns it into a 400.
 - Shared types between server and providers go in `packages/protocol`, not duplicated.
 - Do not add a dependency when Bun or Node built-ins cover it.
+- Work that must survive a restart (turns, routines, exports, retries of external calls) goes through `modules/jobs`: `defineJob` at module load, then `enqueue`, `runJob` or `schedule`. No fire-and-forget promise or in-memory cron for it. A job that must exist only if a database write commits is written with `enqueueInTx(tx, job)` in the same transaction; the outbox relay publishes it.
 
 ## Security
 

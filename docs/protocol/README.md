@@ -67,6 +67,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v35 | integrações pelo app (sem `.env.local`), `GET /meta.integrations`, tokens internos no `data/` | [integrations](integrations.md) |
 | v36 | primeiro acesso pelo app, portão automático quando existe dono, `RUNNER_TOKEN` com o portão ligado, troca de senha | [auth](auth.md) |
 | v37 | foto da conta: `PUT/DELETE /auth/me/avatar`, `GET /auth/avatars/:userId/:arquivo`, `user.image` no `/auth/me` | [auth](auth.md) |
+| v39 | fila de jobs no Redis (turnos, rotinas, exportações, captura, anexos), `GET /jobs`, `POST /jobs/:id/retry`, `/status` da fila | [usage-status-limits](usage-status-limits.md) |
 
 ## Contrato
 

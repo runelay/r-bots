@@ -88,7 +88,7 @@ docker compose up -d
 
 No `.env` and no variable to set: data in `~/.local/share/runelay-bots`, backups in `~/.local/share/runelay-bots-backups`, your Claude Code, Codex, gh and supabase logins mounted from `$HOME`, the vault key created in the data dir. The container adapts to the uid of your HOME. Bots only touch repositories you allow: when you ask for work in a new repo, the bot asks with a card (`workspace_add`) and remembers what the repo is.
 
-That builds `apps/server/Dockerfile` (Bun runtime plus the Claude Code, Codex, gh, supabase and agent-browser CLIs), starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `~/.local/share/runelay-bots`, outside the code. Service keys are not files: ElevenLabs (voice), Jev (automatic approvals) and runelay (connectors, memory, skills) are pasted in the app under **Settings › Integrations**, validated on the spot and stored encrypted on the server. All three are optional; without one, that part turns off and everything else works. The runner token and the session secret are generated on first boot into the data dir. `tailscale serve` exposes the port on the tailnet at `:10447`.
+That builds `apps/server/Dockerfile` (Bun runtime plus the Claude Code, Codex, gh, supabase, agent-browser and `pg_dump` CLIs), starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `~/.local/share/runelay-bots`, outside the code. Next to it run Postgres 17 (`127.0.0.1:5432`, data in `<data>/postgres`) and Redis 7 for the job queue (`127.0.0.1:6379`, AOF, data in `<data>/redis`); their passwords are generated on first boot into `<data>/secrets/` (mode 600) and the server reads them from there. Service keys are not files: ElevenLabs (voice), Jev (automatic approvals) and runelay (connectors, memory, skills) are pasted in the app under **Settings › Integrations**, validated on the spot and stored encrypted on the server. All three are optional; without one, that part turns off and everything else works. The runner token and the session secret are generated on first boot into the data dir. `tailscale serve` exposes the port on the tailnet at `:10447`.
 
 ```sh
 docker compose logs -f --tail 200   # logs
@@ -117,6 +117,8 @@ bun run test         # bun:test, coverage gate
 bun run check        # Biome: format and lint (writes fixes)
 bun run typecheck    # tsc --noEmit in every workspace
 ```
+
+Queue tests start their own throwaway Redis container (`redis:7.4-alpine`, random port on `127.0.0.1`), so Docker must be running.
 
 **Tests are part of the change.** The suite is `bun:test`, with a gate of 99% lines and 99% functions per file (`coverageThreshold` in each workspace's `bunfig.toml`). New code ships with its tests in the same PR. Tests live in `src/**/__tests__/*.test.ts`, use a temporary data dir, talk only to `127.0.0.1` and run every CLI and the Agent SDK through fakes. The Swift app is outside the gate.
 
@@ -153,7 +155,7 @@ Install an app that calls a new route only after the server with that route is u
 | [`docs/protocol`](docs/protocol/README.md) | The verified contract, split by topic (v1 to v30) |
 | `docs/research` | Notes behind design decisions |
 | `data/` | SQLite database and local blobs; default `~/.local/share/runelay-bots`, set by `BOTS_DATA_DIR` (git-ignored) |
-| `compose.yaml` | Production container |
+| `compose.yaml` | Production stack: server, Postgres, Redis, Garage and the secret bootstrap (`deploy/`) |
 
 ## 📖 Docs
 
@@ -162,6 +164,7 @@ Install an app that calls a new route only after the server with that route is u
 - [Contract](docs/protocol/CONTRACT.md): what the app and the server promise each other
 - [Server](apps/server/README.md): run, env, layout, engine and resource limits
 - [Mac app](apps/mac/README.md): build, settings and shortcuts
+- [Hosting](docs/hosting.md): the path to a hosted, multi-user product
 
 ## 🔒 Security
 
