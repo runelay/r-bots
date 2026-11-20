@@ -1,6 +1,6 @@
 import { copyFile, mkdir, rename, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { runBytes, run as runProcess } from "@runelay-bots/providers/proc";
+import { childEnv, runBytes, run as runProcess } from "@runelay-bots/providers/proc";
 import { botDir, env } from "../../../config/env";
 import { readJson, writeJson } from "../../../shared/json-file";
 import { assertBrowsable, browserLaunchArgs } from "./browser-guard.service";
@@ -14,6 +14,16 @@ export interface BrowserState {
 
 export function browserDir(botId: string) {
   return join(botDir(botId), "browser");
+}
+
+export function browserProfileDir(botId: string) {
+  return join(browserDir(botId), "profile");
+}
+
+const staleLocks = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
+
+function launchEnv(botId: string) {
+  return childEnv({ AGENT_BROWSER_PROFILE: browserProfileDir(botId) });
 }
 
 export function browserStateFile(botId: string) {
@@ -161,6 +171,9 @@ async function guardedArgs(botId: string) {
       viewportReady.delete(botId);
       await runProcess("agent-browser", ["--session", `runelay-${botId}`, "close"], { timeoutMs: 15_000 });
     }
+    const profile = browserProfileDir(botId);
+    await mkdir(profile, { recursive: true });
+    await Promise.all(staleLocks.map((name) => rm(join(profile, name), { force: true }).catch(() => undefined)));
   }
   return args;
 }
@@ -171,7 +184,7 @@ async function run(botId: string, args: string[], signal?: AbortSignal, timeoutM
   const { code, stdout, stderr } = await runProcess(
     "agent-browser",
     ["--session", `runelay-${botId}`, "--args", launch, "--json", ...args],
-    { timeoutMs, signal },
+    { timeoutMs, signal, env: launchEnv(botId) },
   );
   const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
   let parsed: { success?: boolean; data?: Record<string, unknown>; error?: string | null } = {};
@@ -338,6 +351,7 @@ async function runFillStdin(botId: string, ref: string, text: string, signal?: A
     {
       timeoutMs: 60_000,
       signal,
+      env: launchEnv(botId),
       stdin: JSON.stringify([
         ["fill", normalizeRef(ref), text],
         ["eval", mask],

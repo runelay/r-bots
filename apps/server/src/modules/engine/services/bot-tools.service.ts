@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { botDir } from "../../../config/env";
@@ -91,7 +91,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
       {
         name: "browser_open",
         description:
-          "Abre uma URL http ou https no navegador do bot e tira um print da página. Endereços internos (localhost, rede privada, tailnet, metadados) são bloqueados, exceto os servidores de dev que você abriu.",
+          "Abre uma URL http ou https no seu navegador (o Navegador do bot, que roda no servidor e não atrapalha a pessoa). É o padrão para qualquer site ou app web: use antes de pensar em computer_*. O login fica salvo entre as conversas. Devolve url e título; veja a página com browser_snapshot (texto e referências) ou browser_screenshot (imagem). Endereços internos (localhost, rede privada, tailnet, metadados) são bloqueados, exceto os servidores de dev que você abriu; para um app que roda no Mac da pessoa, peça uma URL pública (túnel).",
         shape: { url: webUrl },
         approval: null,
         label: (input) => `Abrir ${text(input.url)}`,
@@ -129,11 +129,15 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
       },
       {
         name: "browser_screenshot",
-        description: "Tira um print da página atual do navegador do bot.",
+        description: "Tira um print da página atual do seu navegador e devolve a imagem para você ver.",
         shape: {},
         approval: null,
         label: () => "Tirar print",
-        run: (_input, signal) => browserScreenshot(bot.id, signal),
+        run: async (_input, signal) => {
+          const page = await browserScreenshot(bot.id, signal);
+          const png = await readFile(page.screenshot);
+          return { ...page, imageBase64: png.toString("base64") };
+        },
       },
     );
   }

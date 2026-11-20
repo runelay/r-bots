@@ -338,12 +338,20 @@ function systemPromptFor(
       "",
       "Você pode consultar as memórias e skills da pessoa com `memory_search`, `memory_read` e `skill_read`.",
     );
+  if (bot.capabilities.browser) {
+    parts.push(
+      "",
+      "## Seu navegador",
+      "Você tem um navegador próprio no servidor (o Navegador do bot): `browser_open`, `browser_snapshot`, `browser_click`, `browser_fill` e `browser_screenshot`. Ele é o padrão para tudo que é web: sites, painéis (Meta, Google, Linear…), apps web e o app que você está testando. Não atrapalha a pessoa e o login fica salvo entre as conversas. Para entrar num site, use `segredo:nome` do cofre no `browser_fill` ou peça para a pessoa fazer o login no Navegador do bot, no app.",
+    );
+  }
   if (bot.capabilities.computer) {
     parts.push(
       "",
       "## Uso do Mac da pessoa",
       "Você opera o Mac real da pessoa pelas ferramentas computer_*, files_*, shell_run e record_*.",
-      "- Prefira `computer_ui_tree` e clique por `elementId`, ou `computer_applescript` para Mail, Finder e Safari. Use pixels (`computer_screenshot` + x,y) só quando não houver outro jeito.",
+      "- O Mac é o último recurso para web: use só para apps nativos do macOS (Mail, Finder, Xcode, Simulador…) ou quando a tarefa precisa da sessão logada no Mac e o seu navegador não consegue entrar. Usar o Mac toma a tela e o mouse da pessoa: antes de começar, diga em uma linha o que vai fazer e por quê, e espere ela concordar.",
+      "- Prefira `computer_ui_tree` e clique por `elementId`, ou `computer_applescript` para Mail e Finder. Use pixels (`computer_screenshot` + x,y) só quando não houver outro jeito.",
       "- Antes de qualquer coisa irreversível (enviar, apagar, comprar, mover muitos arquivos), pergunte à pessoa em uma linha.",
       "- Arquivos só nas pastas permitidas; escrita e comandos só em ~/runelay-bots-workspace. Nunca use sudo.",
       "- Se a ferramenta disser COMPUTER_UNAVAILABLE, avise que o app r/bots precisa estar aberto no Mac.",

@@ -261,7 +261,10 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
           data: {
             callId,
             outcome: "completed",
-            output: { ...meta, image: `/bots/${context.bot.id}/desktop/latest.png` },
+            output: {
+              ...meta,
+              image: `/bots/${context.bot.id}/${tool.name.startsWith("browser_") ? "browser" : "desktop"}/latest.png`,
+            },
           },
           scope: scopeOf(context),
         });
@@ -749,7 +752,8 @@ function computerDetails(botId: string, args: Record<string, unknown>): Approval
 const computerSpecs: ComputerSpec[] = [
   {
     name: "computer_screenshot",
-    description: "Print da tela do Mac (reduzido). Prefira computer_ui_tree para achar elementos.",
+    description:
+      "Print da tela do Mac real da pessoa (reduzido). Para site ou app web, use browser_screenshot no seu navegador. Prefira computer_ui_tree para achar elementos.",
     shape: {
       display: z.number().int().optional(),
       region: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).optional(),
@@ -774,7 +778,8 @@ const computerSpecs: ComputerSpec[] = [
   { name: "computer_windows", description: "Janelas abertas.", shape: {}, act: false, label: () => "Listar janelas" },
   {
     name: "computer_click",
-    description: "Clica num elemento (elementId do ui_tree, preferido) ou num ponto x,y.",
+    description:
+      "Clica no Mac real da pessoa e toma a tela dela. Para site ou app web, use browser_click. elementId do ui_tree (preferido) ou um ponto x,y.",
     shape: {
       ...point,
       button: z.enum(["left", "right"]).optional(),
@@ -786,7 +791,7 @@ const computerSpecs: ComputerSpec[] = [
   },
   {
     name: "computer_type",
-    description: "Digita texto onde estiver o foco.",
+    description: "Digita no Mac real da pessoa, onde estiver o foco. Para site ou app web, use browser_fill.",
     shape: { text: z.string().min(1).max(4000), reason: reasonField },
     act: true,
     label: (a) => `Digitar "${String(a.text).slice(0, 40)}"`,
@@ -815,7 +820,8 @@ const computerSpecs: ComputerSpec[] = [
   },
   {
     name: "computer_open",
-    description: "Abre um app, uma URL ou um arquivo.",
+    description:
+      "Abre um app, uma URL ou um arquivo no Mac real da pessoa, tomando a tela dela. Sites e apps web abrem no seu navegador com browser_open; use url aqui só quando a tarefa precisa da sessão logada no Mac e o seu navegador não consegue entrar.",
     shape: { app: z.string().optional(), url: z.string().optional(), path: z.string().optional(), reason: reasonField },
     act: true,
     label: (a) => `Abrir ${String(a.url ?? a.app ?? a.path ?? "")}`,

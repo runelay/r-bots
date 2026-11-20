@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { makeBot } from "../../../../test/engine-helpers";
@@ -53,7 +53,9 @@ describe("toolsFor", () => {
     spy(browser, "browserSnapshot").mockResolvedValue("snap" as never);
     const click = spy(browser, "browserClick").mockResolvedValue("clicked" as never);
     const fill = spy(browser, "browserFill").mockResolvedValue("filled" as never);
-    spy(browser, "browserScreenshot").mockResolvedValue("shot" as never);
+    const shotFile = join(testDataDir(), "shot.png");
+    await writeFile(shotFile, "png");
+    spy(browser, "browserScreenshot").mockResolvedValue({ url: "u", title: "t", updatedAt: "x", screenshot: shotFile });
     const target = spy(browser, "elementTarget");
     target.mockImplementation(((_: string, ref: string) =>
       ref === "@e1" ? { label: "Salvar", role: "button" } : null) as never);
@@ -97,7 +99,13 @@ describe("toolsFor", () => {
     expect(fill).toHaveBeenLastCalledWith(bot.id, "@e1", "", signal, false);
     const screenshot = find(tools, "browser_screenshot");
     expect(screenshot.label({})).toBe("Tirar print");
-    expect(await screenshot.run({}, signal)).toBe("shot");
+    expect(await screenshot.run({}, signal)).toEqual({
+      url: "u",
+      title: "t",
+      updatedAt: "x",
+      screenshot: shotFile,
+      imageBase64: Buffer.from("png").toString("base64"),
+    });
   });
 
   test("desktop tools wait for control and drive the virtual computer", async () => {
