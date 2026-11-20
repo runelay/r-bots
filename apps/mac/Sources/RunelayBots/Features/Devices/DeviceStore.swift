@@ -141,7 +141,7 @@ final class DeviceStore {
         do {
             let registered = try await client.registerDevice(sessionToken: sessionToken)
             guard AuthStore.save(registered.token, as: .device) else {
-                error = "Não deu para guardar a chave deste Mac no Keychain."
+                error = "Não deu para guardar a chave deste Mac."
                 return
             }
             DeviceIdentity.setCurrentId(registered.device.id)

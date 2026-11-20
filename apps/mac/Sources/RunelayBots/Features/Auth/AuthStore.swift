@@ -1,5 +1,4 @@
 import Foundation
-import Security
 import Synchronization
 
 enum AuthSecret: String, Sendable {
@@ -9,8 +8,7 @@ enum AuthSecret: String, Sendable {
 }
 
 enum AuthStore {
-    private static let service = "com.runelay.bots.auth"
-    private static let cache = Mutex<[String: String]>([:])
+    private static let book = Mutex<CredentialBook?>(nil)
 
     static func origin(of url: URL) -> String? {
         guard let scheme = url.scheme?.lowercased(), let host = url.host()?.lowercased() else { return nil }
@@ -28,8 +26,18 @@ enum AuthStore {
         return scope.map { "profile:\($0)|\(base)" } ?? base
     }
 
-    static func read(_ kind: AuthSecret, profile: ServerProfile) -> String? {
-        account(kind, origin: profile.origin, scope: profile.keychainScope).flatMap(read(account:))
+    static func read(_ kind: AuthSecret, profile: ServerProfile, migrate: Bool = true) -> String? {
+        account(kind, origin: profile.origin, scope: profile.keychainScope).flatMap { read(account: $0, kind: kind, migrate: migrate) }
+    }
+
+    static func hasLegacy(_ kind: AuthSecret, profile: ServerProfile) -> Bool {
+        guard let account = account(kind, origin: profile.origin, scope: profile.keychainScope) else { return false }
+        let settled = book.withLock { current in
+            let loaded = current ?? CredentialFile.load()
+            current = loaded
+            return loaded.settled.contains(account)
+        }
+        return !settled && LegacyAuthKeychain.exists(account: account)
     }
 
     static func removeAll(profile: ServerProfile) {
@@ -41,42 +49,35 @@ enum AuthStore {
     }
 
     static func read(_ kind: AuthSecret, server: URL = ServerConfig.currentURL()) -> String? {
-        account(kind, server: server).flatMap(read(account:))
+        account(kind, server: server).flatMap { read(account: $0, kind: kind, migrate: true) }
     }
 
-    private static func read(account: String) -> String? {
-        if let cached = cache.withLock({ $0[account] }) {
-            return cached.isEmpty ? nil : cached
+    private static func read(account: String, kind: AuthSecret, migrate: Bool) -> String? {
+        book.withLock { current in
+            var loaded = current ?? CredentialFile.load()
+            defer { current = loaded }
+            if let token = loaded.tokens[account] { return token }
+            guard migrate, !loaded.settled.contains(account) else { return nil }
+            guard LegacyAuthKeychain.exists(account: account) else {
+                loaded.settled.insert(account)
+                CredentialFile.save(loaded)
+                return nil
+            }
+            let token = kind == .session ? LegacyAuthKeychain.readOnce(account: account) : nil
+            CredentialFile.logger.notice("migrating legacy \(kind.rawValue, privacy: .public) found=\(token != nil, privacy: .public)")
+            if let token { loaded.tokens[account] = token }
+            loaded.settled.insert(account)
+            if CredentialFile.save(loaded) {
+                LegacyAuthKeychain.purge(account: account)
+            }
+            return token
         }
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        let value = status == errSecSuccess ? (item as? Data).map { String(decoding: $0, as: UTF8.self) } : nil
-        cache.withLock { $0[account] = value ?? "" }
-        return value
     }
 
     @discardableResult
     static func save(_ value: String, as kind: AuthSecret, server: URL = ServerConfig.currentURL()) -> Bool {
         guard let account = account(kind, server: server) else { return false }
-        let base: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(base as CFDictionary)
-        var attributes = base
-        attributes[kSecValueData as String] = Data(value.utf8)
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        let status = SecItemAdd(attributes as CFDictionary, nil)
-        cache.withLock { $0[account] = status == errSecSuccess ? value : "" }
-        return status == errSecSuccess
+        return write(account: account, value: value)
     }
 
     static func remove(_ kind: AuthSecret, server: URL = ServerConfig.currentURL()) {
@@ -85,13 +86,24 @@ enum AuthStore {
     }
 
     private static func remove(account: String) {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-        ]
-        SecItemDelete(query as CFDictionary)
-        cache.withLock { $0[account] = "" }
+        write(account: account, value: nil)
+    }
+
+    @discardableResult
+    private static func write(account: String, value: String?) -> Bool {
+        let (saved, legacy) = book.withLock { current in
+            var loaded = current ?? CredentialFile.load()
+            let legacy = !loaded.settled.contains(account)
+            loaded.tokens[account] = value
+            loaded.settled.insert(account)
+            let saved = CredentialFile.save(loaded)
+            current = loaded
+            return (saved, legacy)
+        }
+        if saved, legacy, LegacyAuthKeychain.exists(account: account) {
+            LegacyAuthKeychain.purge(account: account)
+        }
+        return saved
     }
 
     static func authorize(_ request: inout URLRequest) {

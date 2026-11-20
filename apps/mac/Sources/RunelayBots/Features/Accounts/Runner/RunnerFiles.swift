@@ -1,7 +1,7 @@
 import Foundation
 
 enum RunnerFiles {
-    private static let protectedPattern = #"(^|/)(\.ssh|\.gnupg|\.aws|\.claude|\.codex|\.config/gh|Library/Keychains|\.env[^/]*|\.git|\.runelay-signing)(/|$)"#
+    private static let protectedPattern = #"(^|/)(\.ssh|\.gnupg|\.aws|\.claude|\.codex|\.config/gh|Library/Keychains|\.env[^/]*|\.git|\.runelay-signing|Library/Application Support/runelay bots/credentials\.bin)(/|$)"#
 
     static func read(path raw: String, maxBytes: Int) -> [String: JSONValue] {
         let expanded = (raw as NSString).expandingTildeInPath

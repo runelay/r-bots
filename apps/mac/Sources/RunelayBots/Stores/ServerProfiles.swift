@@ -139,12 +139,15 @@ final class ServerProfiles {
     func refreshStatuses() {
         checkTask?.cancel()
         let profiles = book.profiles
+        let activeID = book.active.id
         checkTask = Task { [weak self] in
             await withTaskGroup(of: (String, ServerProfileStatus).self) { group in
                 for profile in profiles {
-                    let token = AuthStore.read(.session, profile: profile)
+                    let active = profile.id == activeID
+                    let token = AuthStore.read(.session, profile: profile, migrate: active)
+                    let pending = token == nil && !active && AuthStore.hasLegacy(.session, profile: profile)
                     group.addTask {
-                        (profile.id, await Self.probe(profile, token: token))
+                        (profile.id, await Self.probe(profile, token: token, pendingLogin: pending))
                     }
                 }
                 for await (id, status) in group {
@@ -155,7 +158,7 @@ final class ServerProfiles {
         }
     }
 
-    nonisolated static func probe(_ profile: ServerProfile, token: String?) async -> ServerProfileStatus {
+    nonisolated static func probe(_ profile: ServerProfile, token: String?, pendingLogin: Bool = false) async -> ServerProfileStatus {
         guard let url = profile.url else { return .offline }
         let client = AuthClient(baseURL: url)
         let clock = ContinuousClock()
@@ -173,7 +176,7 @@ final class ServerProfiles {
             return .needsOwner
         }
         guard let token else {
-            return .signedOut
+            return pendingLogin ? .connected(latency: latency) : .signedOut
         }
         do {
             _ = try await client.profile(token: token)
