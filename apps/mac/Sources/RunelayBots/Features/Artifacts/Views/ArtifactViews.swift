@@ -200,10 +200,7 @@ struct ArtifactViewerLayer: View {
 
     var body: some View {
         ZStack {
-            if let ref = center.current, center.isBlock {
-                BlockDock(ref: ref)
-                    .transition(Motion.panel(reduceMotion: reduceMotion))
-            } else if let ref = center.current, let url = center.currentURL {
+            if let ref = center.current, !center.isBlock, let url = center.currentURL {
                 GeometryReader { geometry in
                     let presenting = center.presenting
                     ZStack {

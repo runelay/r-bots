@@ -109,14 +109,17 @@ struct RootView: View {
                         .fill(Theme.paneDivider)
                         .frame(width: sidebarCollapsed ? 0 : 1)
                     GeometryReader { geometry in
+                        let blockInset = BlockPresentation.shared.inset(available: geometry.size.width)
                         let showsInspector = model.inspectorPresented
+                            && blockInset == 0
                             && geometry.size.width >= Metrics.conversationMinWidth + Metrics.inspectorWidth
                         ZStack(alignment: .trailing) {
                             DetailView()
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .background(Theme.background)
-                                .padding(.trailing, showsInspector ? Metrics.inspectorWidth : 0)
+                                .padding(.trailing, showsInspector ? Metrics.inspectorWidth : blockInset)
                                 .animation(nil, value: showsInspector)
+                                .animation(BlockPresentation.shared.dragging ? nil : Motion.animation(reduceMotion: reduceMotion), value: blockInset)
 
                             if showsInspector {
                                 HStack(spacing: 0) {
@@ -135,6 +138,9 @@ struct RootView: View {
                         .animation(Motion.animation(reduceMotion: reduceMotion), value: showsInspector)
                     }
                     .frame(minWidth: Metrics.conversationMinWidth)
+                }
+                .overlay {
+                    BlockStage(reserved: sidebarCollapsed ? 0 : FrameMetrics.sidebarWidth + 1)
                 }
             case .routines:
                 RoutinesScreen()

@@ -17,8 +17,7 @@ struct AgendaView: View {
                     AgendaAllDayRow(store: store)
                     AgendaTimeGrid(store: store)
                 }
-                .background(Theme.background, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-                .clipShape(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
+                .clipped()
                 if let event = store.selectedEvent {
                     AgendaEventDetail(store: store, event: event)
                         .frame(width: 300)

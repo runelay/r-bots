@@ -27,8 +27,6 @@ final class NoteEditorStore {
     private(set) var linkContext: LinkContext?
     private(set) var suggestions: [NoteSearchHit] = []
     var suggestionIndex = 0
-    var showsSidebar = true
-    var showsBacklinks = false
 
     @ObservationIgnored let client: any BlocksClient
     @ObservationIgnored var insertLink: ((String) -> Void)?
@@ -43,7 +41,7 @@ final class NoteEditorStore {
         self.botID = botID
         self.noteID = noteID
         self.client = client
-        sidebar = NoteSidebarStore(botID: botID, client: client)
+        sidebar = NoteSidebarStore.store(botID: botID, client: client)
     }
 
     var statusText: String {
@@ -61,11 +59,12 @@ final class NoteEditorStore {
             apply(loaded, replaceText: true)
             BlockCenter.shared.noteTitleChanged(botID: botID, id: noteID, title: loaded.title)
             ArtifactCenter.shared.retitle(ArtifactRef(botID: botID, id: noteID, title: loaded.title, kind: BlockKind.note.rawValue, version: loaded.version))
+            await sidebar.reveal(folder: loaded.folder)
             await loadBacklinks()
         } catch {
             failed = error.localizedDescription
+            await sidebar.load()
         }
-        await sidebar.load()
     }
 
     func userEdited(_ newText: String) {
@@ -272,23 +271,58 @@ enum TextRebase {
 final class NoteSidebarStore {
     let botID: String
     private(set) var levels: [String: NoteTreeLevel] = [:]
-    private(set) var expanded: Set<String> = [""]
+    private(set) var expanded: Set<String>
     private(set) var results: [NoteSearchHit] = []
     private(set) var searching = false
+    private(set) var revealRevision = 0
     var query = "" {
         didSet { if query != oldValue { scheduleSearch() } }
     }
 
-    @ObservationIgnored private let client: any BlocksClient
+    @ObservationIgnored private var client: any BlocksClient
     @ObservationIgnored private var searchTask: Task<Void, Never>?
+
+    private static var stores: [String: NoteSidebarStore] = [:]
+
+    static func store(botID: String, client: any BlocksClient) -> NoteSidebarStore {
+        if let cached = stores[botID] {
+            cached.client = client
+            return cached
+        }
+        let created = NoteSidebarStore(botID: botID, client: client)
+        stores[botID] = created
+        return created
+    }
+
+    private var expandedKey: String { "notes.tree.expanded.\(botID)" }
 
     init(botID: String, client: any BlocksClient) {
         self.botID = botID
         self.client = client
+        let stored = UserDefaults.standard.stringArray(forKey: "notes.tree.expanded.\(botID)") ?? []
+        expanded = Set(stored).union([""])
     }
 
     func load() async {
         await loadLevel("")
+    }
+
+    func reveal(folder: String) async {
+        var path: [String] = [""]
+        var current = ""
+        for part in folder.split(separator: "/") {
+            current = current.isEmpty ? String(part) : current + "/" + part
+            path.append(current)
+        }
+        expanded.formUnion(path)
+        persist()
+        for level in path {
+            await loadLevel(level)
+        }
+        revealRevision += 1
+        for level in expanded where !path.contains(level) && levels[level] == nil {
+            await loadLevel(level)
+        }
     }
 
     func toggle(_ folder: String) {
@@ -300,12 +334,17 @@ final class NoteSidebarStore {
                 Task { await loadLevel(folder) }
             }
         }
+        persist()
     }
 
     func reload() async {
         for folder in expanded {
             await loadLevel(folder)
         }
+    }
+
+    private func persist() {
+        UserDefaults.standard.set(Array(expanded.subtracting([""])).sorted(), forKey: expandedKey)
     }
 
     private func loadLevel(_ folder: String) async {

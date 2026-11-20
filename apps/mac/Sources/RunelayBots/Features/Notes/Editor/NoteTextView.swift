@@ -1,9 +1,70 @@
 import AppKit
 import SwiftUI
 
+final class NoteFooterHostingView: NSHostingView<NoteBacklinksFooter> {
+    var onResize: (() -> Void)?
+
+    override func invalidateIntrinsicContentSize() {
+        super.invalidateIntrinsicContentSize()
+        DispatchQueue.main.async { [weak self] in
+            self?.onResize?()
+        }
+    }
+}
+
 final class NoteTextNSView: NSTextView {
+    static let readingWidth: CGFloat = 720
+    static let minimumInset: CGFloat = 28
+    static let verticalInset: CGFloat = 24
+
     var onToggleTask: ((NSRange, Bool) -> Void)?
     var onOpenLink: ((String) -> Void)?
+    private var arranging = false
+
+    var footer: NSView? {
+        didSet {
+            oldValue?.removeFromSuperview()
+            if let footer {
+                addSubview(footer)
+            }
+            arrangeFooter()
+        }
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let inset = max(Self.minimumInset, floor((newSize.width - Self.readingWidth) / 2))
+        if textContainerInset.width != inset {
+            textContainerInset = NSSize(width: inset, height: Self.verticalInset)
+        }
+        super.setFrameSize(newSize)
+        if !arranging {
+            arrangeFooter()
+        }
+    }
+
+    func arrangeFooter() {
+        guard let footer, let layoutManager, let textContainer else { return }
+        arranging = true
+        defer { arranging = false }
+        layoutManager.ensureLayout(for: textContainer)
+        let used = layoutManager.usedRect(for: textContainer)
+        let origin = textContainerOrigin
+        let top = origin.y + used.maxY + Spacing.xxl + Spacing.s
+        let height = ceil(footer.fittingSize.height)
+        footer.frame = NSRect(x: origin.x - Spacing.s, y: top, width: textContainer.size.width + Spacing.s * 2, height: height)
+        var needed = top + height + Spacing.xxl
+        if let clip = enclosingScrollView?.contentView {
+            needed = max(needed, clip.bounds.height)
+        }
+        if abs(frame.height - needed) > 0.5 {
+            super.setFrameSize(NSSize(width: frame.width, height: needed))
+        }
+    }
+
+    override func didChangeText() {
+        super.didChangeText()
+        arrangeFooter()
+    }
 
     private var quoteBar: NSColor { NSColor(Theme.textTertiary).withAlphaComponent(0.5) }
     private var codeFill: NSColor { NSColor(Theme.surface) }
@@ -15,7 +76,7 @@ final class NoteTextNSView: NSTextView {
         let glyphs = layoutManager.glyphRange(forBoundingRect: rect, in: textContainer)
         let characters = layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
         let origin = textContainerOrigin
-        let width = bounds.width
+        let width = textContainer.size.width + Spacing.m * 2
         func fill(_ key: NSAttributedString.Key, color: NSColor, bar: Bool) {
             storage.enumerateAttribute(key, in: characters) { value, range, _ in
                 guard value != nil else { return }
@@ -25,7 +86,7 @@ final class NoteTextNSView: NSTextView {
                     if bar {
                         NSRect(x: origin.x + 1, y: lineRect.minY + origin.y, width: 2, height: lineRect.height).fill()
                     } else {
-                        NSRect(x: 0, y: lineRect.minY + origin.y, width: width, height: lineRect.height).fill()
+                        NSRect(x: origin.x - Spacing.m, y: lineRect.minY + origin.y, width: width, height: lineRect.height).fill()
                     }
                 }
             }
@@ -140,7 +201,7 @@ struct NoteTextView: NSViewRepresentable {
         textView.isAutomaticSpellingCorrectionEnabled = false
         textView.smartInsertDeleteEnabled = false
         textView.drawsBackground = false
-        textView.textContainerInset = NSSize(width: 28, height: 20)
+        textView.textContainerInset = NSSize(width: NoteTextNSView.minimumInset, height: NoteTextNSView.verticalInset)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
@@ -167,6 +228,13 @@ struct NoteTextView: NSViewRepresentable {
         scrollView.documentView = textView
         scrollView.contentView.postsBoundsChangedNotifications = true
         NotificationCenter.default.addObserver(context.coordinator, selector: #selector(Coordinator.scrolled), name: NSView.boundsDidChangeNotification, object: scrollView.contentView)
+
+        let footer = NoteFooterHostingView(rootView: NoteBacklinksFooter(store: store))
+        footer.sizingOptions = [.intrinsicContentSize]
+        footer.onResize = { [weak textView] in
+            textView?.arrangeFooter()
+        }
+        textView.footer = footer
 
         context.coordinator.textView = textView
         context.coordinator.load(store.text)
@@ -243,6 +311,7 @@ struct NoteTextView: NSViewRepresentable {
             textView.typingAttributes = styler.baseAttributes
             textView.window?.invalidateCursorRects(for: textView)
             textView.needsDisplay = true
+            textView.arrangeFooter()
         }
 
         func flashHighlight(_ lines: [ClosedRange<Int>]) {
