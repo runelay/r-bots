@@ -1,6 +1,6 @@
-# runelay bots (Mac)
+# r/bots (Mac)
 
-App nativo de macOS para conversar com o time de bots do runelay (Boss, Davi, Lia), ver o que cada um está fazendo e aprovar ações.
+App nativo de macOS do r/bots para conversar com o time de bots (Boss, Davi, Lia), ver o que cada um está fazendo e aprovar ações.
 
 ## Requisitos
 
@@ -28,7 +28,7 @@ No Xcode, escolha o esquema `RunelayBots` e o destino `My Mac`, depois `⌘R`.
 
 O endereço padrão é `http://127.0.0.1:2000`.
 
-- Pelo app: `runelay bots` › `Ajustes…` (`⌘,`), troque o endereço e clique em **Conectar**.
+- Pelo app: `r/bots` › `Ajustes…` (`⌘,`), troque o endereço e clique em **Conectar**.
 - Pelo terminal (antes de abrir o app):
 
 ```bash
@@ -83,4 +83,4 @@ cd apps/mac
 ./scripts/make-app.sh
 ```
 
-Compila em release, monta `RunelayBots.app` com o ícone (`Packaging/AppIcon.svg` vira `AppIcon.icns`), assina ad-hoc, instala em `~/Applications` e abre.
+Compila em release, monta `rbots.app` (nome exibido: r/bots) com o ícone (`Packaging/AppIcon.svg` vira `AppIcon.icns`), assina ad-hoc, instala em `~/Applications` e abre.

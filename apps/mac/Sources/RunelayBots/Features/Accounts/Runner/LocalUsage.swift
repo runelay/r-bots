@@ -457,7 +457,7 @@ final class CodexRateLimitReader: @unchecked Sendable {
         DispatchQueue.global().asyncAfter(deadline: .now() + 20) { [weak self] in
             self?.finish(.failure(CodexReadError(message: "o Codex não respondeu a tempo")))
         }
-        write(["jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"), "params": .object(["clientInfo": .object(["name": .string("runelay_bots"), "title": .string("runelay bots"), "version": .string(AppInfo.version)])])], to: input.fileHandleForWriting)
+        write(["jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"), "params": .object(["clientInfo": .object(["name": .string("runelay_bots"), "title": .string("r/bots"), "version": .string(AppInfo.version)])])], to: input.fileHandleForWriting)
     }
 
     private func write(_ object: [String: JSONValue], to handle: FileHandle) {

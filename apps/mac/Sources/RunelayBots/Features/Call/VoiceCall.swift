@@ -871,7 +871,7 @@ final class VoiceCall {
 enum CallNotice {
     static let reconnecting = "Reconectando…"
     static let deaf = "Não estou te ouvindo, confira o microfone."
-    static let blocked = "O microfone está bloqueado para o runelay bots."
+    static let blocked = "O microfone está bloqueado para o r/bots."
 }
 
 enum CallDebug {

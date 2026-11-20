@@ -216,7 +216,7 @@ private struct SetupRail: View {
         VStack(alignment: .leading, spacing: Spacing.xl) {
             HStack(spacing: Spacing.s) {
                 RunelayAppMark(size: 22)
-                Text("runelay bots")
+                Text("r/bots")
                     .font(BrandFonts.sans(14, weight: .semibold))
                     .tracking(-0.2)
                     .foregroundStyle(Theme.textPrimary)

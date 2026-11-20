@@ -21,8 +21,8 @@ enum VoicePermission: Equatable {
 
     var message: String {
         switch self {
-        case .microphone: "O microfone está bloqueado para o runelay bots."
-        case .speech: "O reconhecimento de fala está bloqueado para o runelay bots."
+        case .microphone: "O microfone está bloqueado para o r/bots."
+        case .speech: "O reconhecimento de fala está bloqueado para o r/bots."
         }
     }
 

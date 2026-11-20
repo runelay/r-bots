@@ -25,7 +25,7 @@ struct RunelayBotsApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("runelay bots") {
+        WindowGroup("r/bots") {
             RootView()
                 .environment(model)
                 .id(ObjectIdentifier(model))

@@ -19,7 +19,7 @@ struct ToolFailure: Error, Sendable {
     static let tookOver = ToolFailure(409, code: "user_took_over", "A pessoa assumiu o computador.")
 
     static func missing(_ permission: ComputerPermission) -> ToolFailure {
-        ToolFailure(403, code: "permission_denied", "Falta liberar \(permission.title) para o runelay bots em Ajustes do Sistema → Privacidade e Segurança → \(permission.title).")
+        ToolFailure(403, code: "permission_denied", "Falta liberar \(permission.title) para o r/bots em Ajustes do Sistema → Privacidade e Segurança → \(permission.title).")
     }
 
     var json: JSONValue {

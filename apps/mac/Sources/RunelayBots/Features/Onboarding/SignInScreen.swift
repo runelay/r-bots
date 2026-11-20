@@ -316,7 +316,7 @@ private struct SignInFormPane: View {
 
     private var footer: some View {
         HStack(spacing: Spacing.m) {
-            Text("© 2026 runelay bots")
+            Text("© 2026 r/bots")
                 .font(TypeScale.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .lineLimit(1)

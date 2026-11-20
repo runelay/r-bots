@@ -18,7 +18,7 @@ if [ ! -f "$ICNS" ] || [ "$SVG" -nt "$ICNS" ]; then
 fi
 
 VERSION="$(grep -o 'version = "[^"]*"' "$ROOT/Sources/RunelayBots/Design/Preferences.swift" | head -1 | cut -d'"' -f2)"
-APP="$ROOT/.build/RunelayBots.app"
+APP="$ROOT/.build/rbots.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/RunelayBots" "$APP/Contents/MacOS/RunelayBots"
@@ -31,9 +31,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>runelay bots</string>
+    <string>r/bots</string>
     <key>CFBundleDisplayName</key>
-    <string>runelay bots</string>
+    <string>r/bots</string>
     <key>CFBundleIdentifier</key>
     <string>com.runelay.bots</string>
     <key>CFBundleExecutable</key>
@@ -53,9 +53,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>O runelay bots usa o microfone para você falar com os bots em vez de digitar.</string>
+    <string>O r/bots usa o microfone para você falar com os bots em vez de digitar.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>O runelay bots transcreve sua fala no próprio Mac para escrever a mensagem para os bots.</string>
+    <string>O r/bots transcreve sua fala no próprio Mac para escrever a mensagem para os bots.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Os bots com acesso ao seu Mac usam AppleScript para agir no Finder, Safari, Mail e outros apps, sempre com a sua aprovação.</string>
     <key>NSDesktopFolderUsageDescription</key>
@@ -94,8 +94,9 @@ else
 fi
 
 pkill -x RunelayBots || true
-DEST="$HOME/Applications/RunelayBots.app"
+DEST="$HOME/Applications/rbots.app"
 mkdir -p "$HOME/Applications"
+rm -rf "$HOME/Applications/RunelayBots.app" "$ROOT/.build/RunelayBots.app"
 rm -rf "$DEST"
 cp -R "$APP" "$DEST"
 open "$DEST"

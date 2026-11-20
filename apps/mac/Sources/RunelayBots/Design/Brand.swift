@@ -164,19 +164,20 @@ struct RunelayAppMark: View {
             .frame(width: size * 0.56, height: size * 0.56)
             .frame(width: size, height: size)
             .background(Theme.appIcon, in: RoundedRectangle(cornerRadius: size * 0.31, style: .continuous))
-            .accessibilityLabel("runelay")
+            .accessibilityLabel("r/bots")
     }
 }
 
 struct RunelayWordmark: View {
+    var text = "runelay"
     var height: CGFloat = 18
 
     var body: some View {
-        Text("runelay")
+        Text(text)
             .font(BrandFonts.wordmark(height))
             .tracking(-0.035 * height)
             .foregroundStyle(Theme.textPrimary)
-            .accessibilityLabel("runelay")
+            .accessibilityLabel(text)
     }
 }
 

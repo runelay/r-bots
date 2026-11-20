@@ -64,7 +64,7 @@ private struct WelcomeStep: View {
     var body: some View {
         VStack(spacing: Spacing.xxl) {
             OnboardingHeader(
-                title: "Boas-vindas ao runelay bots",
+                title: "Boas-vindas ao r/bots",
                 description: "Um time de bots que trabalha por você, no seu servidor, com as contas de IA que você já usa."
             )
             VStack(alignment: .leading, spacing: Spacing.m) {
@@ -155,7 +155,7 @@ private struct ServerStep: View {
             OnboardingHeader(
                 title: problem?.title ?? "Conecte ao seu servidor",
                 description: problem?.description
-                    ?? "O runelay bots roda num servidor seu. Instalou com o padrão neste Mac? Deixe como está."
+                    ?? "O r/bots roda num servidor seu. Instalou com o padrão neste Mac? Deixe como está."
             )
             VStack(alignment: .leading, spacing: Spacing.m) {
                 OnboardingField(label: "Endereço do servidor") {

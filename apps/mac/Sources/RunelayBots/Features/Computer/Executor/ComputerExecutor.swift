@@ -326,7 +326,7 @@ final class ComputerExecutor {
             let number = error[NSAppleScript.errorNumber] as? Int ?? 0
             let message = error[NSAppleScript.errorMessage] as? String ?? "Erro desconhecido."
             if number == -1743 || number == -1744 {
-                throw ToolFailure(403, code: "automation_denied", "O macOS bloqueou a automação. Libere o runelay bots em Ajustes do Sistema → Privacidade e Segurança → Automação.")
+                throw ToolFailure(403, code: "automation_denied", "O macOS bloqueou a automação. Libere o r/bots em Ajustes do Sistema → Privacidade e Segurança → Automação.")
             }
             throw ToolFailure(422, code: "applescript_error", "AppleScript falhou (\(number)): \(message)")
         }

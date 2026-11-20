@@ -39,8 +39,8 @@ enum VaultKeychain {
         var common: [String: Any] = [
             kSecValueData as String: value,
             kSecAttrGeneric as String: generic,
-            kSecAttrLabel as String: "runelay bots · \(name)",
-            kSecAttrDescription as String: "Segredo do runelay bots",
+            kSecAttrLabel as String: "r/bots · \(name)",
+            kSecAttrDescription as String: "Segredo do r/bots",
         ]
         var modern = base(name, dataProtection: true)
         modern.merge(common) { _, new in new }

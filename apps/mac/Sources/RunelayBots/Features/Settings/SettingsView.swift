@@ -876,12 +876,7 @@ struct AboutSettings: View {
             HStack(alignment: .center, spacing: Spacing.s + 2) {
                 RunelayAppMark(size: 36)
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        RunelayWordmark(height: 20)
-                        Text("bots")
-                            .font(BrandFonts.sans(15, weight: .medium))
-                            .foregroundStyle(Theme.textSecondary)
-                    }
+                    RunelayWordmark(text: "r/bots", height: 20)
                     Text("Versão \(AppInfo.version)")
                         .font(TypeScale.caption)
                         .foregroundStyle(Theme.textTertiary)
@@ -939,7 +934,7 @@ struct NotificationSettings: View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             if !Notifier.shared.isAvailable {
                 SettingsGroup {
-                    SettingsRow(title: "Só no app instalado", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: "As notificações funcionam no RunelayBots.app.") {
+                    SettingsRow(title: "Só no app instalado", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: "As notificações funcionam no r/bots instalado em Aplicativos.") {
                         EmptyView()
                     }
                 }

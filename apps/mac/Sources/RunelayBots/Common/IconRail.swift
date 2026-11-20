@@ -65,7 +65,7 @@ struct RailLogo: View {
                 isHovering = hovering
             }
             .springAnimation(value: isHovering)
-            .help("runelay")
+            .help("r/bots")
     }
 }
 
