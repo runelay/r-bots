@@ -73,6 +73,7 @@ struct PreviewAddressBar: View {
     let navigator: WebNavigator
     let server: DevServerInfo
     let root: URL
+    var focusRequest = 0
     let reload: () -> Void
 
     @State private var draft = ""
@@ -154,6 +155,9 @@ struct PreviewAddressBar: View {
             }
         }
         .springAnimation(value: editing)
+        .onChange(of: focusRequest) { _, _ in
+            editing = true
+        }
     }
 
     private func navButton(_ systemImage: String, help: String, enabled: Bool, action: @escaping () -> Void) -> some View {

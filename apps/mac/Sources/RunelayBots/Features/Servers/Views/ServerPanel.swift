@@ -6,6 +6,7 @@ struct ServerPanel: View {
     @State private var logs: ServerLogStore
     @State private var reloadToken = 0
     @State private var navigator = WebNavigator()
+    @State private var addressFocus = 0
 
     private var store: ServerStore { .shared }
     private var presentation: BlockPresentation { .shared }
@@ -27,15 +28,6 @@ struct ServerPanel: View {
         VStack(spacing: 0) {
             header
                 .zIndex(1)
-            if let server, !server.isMobile {
-                HStack {
-                    PillTabs(tabs: ServerStore.PanelTab.allCases, selection: tab) { $0.title }
-                        .fixedSize()
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, Spacing.m)
-                .padding(.bottom, Spacing.s)
-            }
             ZStack {
                 if let server {
                     let showsPreview = tab.wrappedValue == .preview && !server.isMobile
@@ -81,6 +73,11 @@ struct ServerPanel: View {
                 .layoutPriority(1)
             }
             Spacer(minLength: Spacing.s)
+            if let server, !server.isMobile {
+                PillTabs(tabs: ServerStore.PanelTab.allCases, selection: tab) { $0.title }
+                    .fixedSize()
+                    .layoutPriority(2)
+            }
             if let server, server.status == .running, !server.isMobile {
                 BlockHeaderButton(systemImage: "safari", help: "Abrir no navegador") {
                     store.openInBrowser(server, location: navigator.url.map { PreviewAddress.location(of: $0) })
@@ -125,11 +122,32 @@ struct ServerPanel: View {
     private func preview(_ server: DevServerInfo) -> some View {
         if server.status == .running, let url = store.previewURL(for: server) {
             VStack(spacing: 0) {
-                PreviewAddressBar(navigator: navigator, server: server, root: url) {
+                PreviewAddressBar(navigator: navigator, server: server, root: url, focusRequest: addressFocus) {
                     reloadToken += 1
                 }
                 ArtifactWebView(url: url, focusToken: reloadToken, sameOrigin: true, navigator: navigator)
                     .id("\(url.absoluteString)#\(reloadToken)")
+            }
+            .background {
+                if tab.wrappedValue == .preview {
+                    ZStack {
+                        Button("Recarregar") {
+                            if navigator.isAttached { navigator.reload() } else { reloadToken += 1 }
+                        }
+                        .keyboardShortcut("r", modifiers: .command)
+                        Button("Recarregar do início") {
+                            reloadToken += 1
+                        }
+                        .keyboardShortcut("r", modifiers: [.command, .shift])
+                        Button("Endereço") {
+                            addressFocus += 1
+                        }
+                        .keyboardShortcut("l", modifiers: .command)
+                    }
+                    .opacity(0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
             }
         } else if server.status == .starting {
             VStack(spacing: Spacing.m) {
