@@ -53,6 +53,7 @@ export interface DevServer {
   endedAt: string | null;
   status: ServerStatus;
   exitCode: number | null;
+  reason: string | null;
   logFile: string;
   previewToken: string;
   child: Subprocess<"ignore", "pipe", "pipe"> | null;
@@ -70,6 +71,13 @@ type LogListener = (lines: string[]) => void;
 export const devLimits = {
   perWorkspace: Number(process.env.CODE_DEV_SERVER_MAX ?? 3),
   maxMinutes: Number(process.env.CODE_DEV_SERVER_MAX_MIN ?? 240),
+  settleMs: Number(process.env.CODE_DEV_SERVER_SETTLE_MS ?? 4000),
+  repeatWindowMs: 10 * 60_000,
+};
+
+export const stopReasons = {
+  manual: "parado a pedido",
+  exposed: "estava aberto para a rede; reinicie ouvindo só em 127.0.0.1",
 };
 
 const servers = new Map<string, DevServer>();
@@ -80,6 +88,7 @@ const portLimit = portBase + 400;
 const reserved = new Set<number>();
 const rawLimit = 2000;
 const stoppedTtlMs = 10 * 60_000;
+const failures = new Map<string, Array<{ reason: string; at: number }>>();
 
 function portFree(port: number) {
   return new Promise<boolean>((done) => {
@@ -117,6 +126,31 @@ async function freePort(preferred?: number) {
     if (await usable(port)) return port;
   }
   throw new Error("Não achei porta livre para o servidor.");
+}
+
+const shellWrapper =
+  /^(\s*(?:\S*\/)?(?:bash|sh|zsh|dash)\s+(?:-\w+\s+)*-\w*c\s+)(?:'([^']*)'|"((?:[^"\\]|\\.)*)")([\s\S]*)$/;
+
+function inShell(command: string, rewrite: (inner: string) => string) {
+  const match = command.match(shellWrapper);
+  if (!match) return rewrite(command);
+  const [, head, single, double, tail] = match;
+  const quote = single !== undefined ? "'" : '"';
+  return `${head}${quote}${rewrite(single ?? double ?? "")}${quote}${tail}`;
+}
+
+const toolCommands: Record<string, RegExp> = {
+  wrangler: /\bwrangler\s+(?:pages\s+)?dev\b/,
+  next: /\bnext\s+(?:dev|start)\b/,
+  astro: /\bastro\s+(?:dev|preview)\b/,
+  vite: /\bvite(?!\s+(?:build|optimize)\b)(?:\s+(?:dev|serve|preview))?(?=\s|$)/,
+};
+
+function afterTool(command: string, tool: string, flags: string) {
+  const match = toolCommands[tool]?.exec(command);
+  if (!match) return `${command}${flags}`;
+  const end = match.index + match[0].length;
+  return `${command.slice(0, end)}${flags}${command.slice(end)}`;
 }
 
 function localFlags(command: string, tool: string) {
@@ -175,9 +209,10 @@ export function withHost(command: string) {
   if (publicBind.test(command))
     throw new Error("O servidor de desenvolvimento só pode ouvir em 127.0.0.1. Tire o --host 0.0.0.0 do comando.");
   if (/(--host(name)?|--ip|--bind|\s-H)(=|\s)/.test(command)) return command;
-  if (/\b(vite|astro)\b/.test(command)) return `${command} --host 127.0.0.1`;
-  if (/\bnext\b/.test(command)) return `${command} -H 127.0.0.1`;
-  if (/\bwrangler\b/.test(command)) return `${command} --ip 127.0.0.1`;
+  if (/\bvite\b/.test(command)) return afterTool(command, "vite", " --host 127.0.0.1");
+  if (/\bastro\b/.test(command)) return afterTool(command, "astro", " --host 127.0.0.1");
+  if (/\bnext\b/.test(command)) return afterTool(command, "next", " -H 127.0.0.1");
+  if (/\bwrangler\b/.test(command)) return afterTool(command, "wrangler", " --ip 127.0.0.1");
   return command;
 }
 
@@ -203,6 +238,7 @@ function publicServer(server: DevServer) {
     previewPath: `/preview/${server.workspaceId}/${server.port}/?t=${server.previewToken}`,
     status: server.status,
     exitCode: server.exitCode,
+    reason: server.reason,
     startedAt: server.startedAt,
     endedAt: server.endedAt,
   };
@@ -320,7 +356,10 @@ function expires(server: DevServer) {
 function armExpiry(server: DevServer) {
   disarmExpiry(server);
   if (!expires(server)) return;
-  server.expiry = setTimeout(() => void stopDevServer(server), devLimits.maxMinutes * 60_000);
+  server.expiry = setTimeout(
+    () => void stopDevServer(server, `passou do limite de ${devLimits.maxMinutes} min`),
+    devLimits.maxMinutes * 60_000,
+  );
   server.expiry.unref();
 }
 
@@ -384,11 +423,43 @@ function spawnInto(server: DevServer, out: WriteStream) {
     disarmExpiry(server);
     if (server.status !== "stopped") server.status = "exited";
     server.exitCode = child.exitCode;
+    server.reason ??= exitReason(child.exitCode);
+    if (server.reason !== stopReasons.manual) recordFailure(server);
     server.endedAt = new Date().toISOString();
     server.child = null;
     notify(server);
     server.onExit(publicServer(server));
   });
+}
+
+function exitReason(code: number | null) {
+  if (code === null) return "o processo foi encerrado por um sinal";
+  if (code === 0) return "o processo terminou sozinho (código 0)";
+  return `o processo terminou com erro (código ${code})`;
+}
+
+function failureKey(server: DevServer) {
+  return `${server.target.path}|${server.cwd}|${server.port}`;
+}
+
+function recordFailure(server: DevServer) {
+  if (!server.reason) return;
+  const now = Date.now();
+  const recent = (failures.get(failureKey(server)) ?? []).filter((item) => now - item.at <= devLimits.repeatWindowMs);
+  failures.set(failureKey(server), [...recent, { reason: server.reason, at: now }].slice(-5));
+}
+
+export function exitNote(server: PublicDevServer | DevServer) {
+  if (server.status === "running" || server.status === "starting" || !server.reason) return "";
+  const stored = getServer(server.id);
+  const recent = stored ? (failures.get(failureKey(stored)) ?? []) : [];
+  const now = Date.now();
+  const same = recent.filter(
+    (item) => item.reason === server.reason && now - item.at <= devLimits.repeatWindowMs,
+  ).length;
+  const head = `Parou: ${server.reason}.`;
+  if (same < 2) return head;
+  return `${head} Já caiu ${same} vezes seguidas pelo mesmo motivo na porta ${server.port}. Não suba de novo do mesmo jeito: leia o log abaixo, corrija a causa e só então tente outra vez.`;
 }
 
 export function wildcardListeners(text: string) {
@@ -416,7 +487,8 @@ async function guardExposure(server: DevServer) {
     server,
     `r/bots: parei o servidor porque ele abriu a porta ${server.port} para todas as redes. Rode com --host 127.0.0.1 (ou o equivalente da ferramenta).`,
   );
-  await stopDevServer(server);
+  await stopDevServer(server, stopReasons.exposed);
+  await server.done;
   server.status = "exited";
   notify(server);
 }
@@ -436,6 +508,8 @@ async function waitReady(server: DevServer, timeoutMs = 120_000) {
     server.status = "running";
     notify(server);
   }
+  if (server.status === "running" && devLimits.settleMs > 0)
+    await Promise.race([server.done, Bun.sleep(devLimits.settleMs)]);
   if (server.status === "running") await guardExposure(server);
   return { ...publicServer(server), logs: server.tail.slice(-25).join("\n") };
 }
@@ -472,7 +546,7 @@ export async function launchServer(
         `Já há ${devLimits.perWorkspace} servidores rodando nesta tarefa. Pare um com dev_server_stop antes de subir outro.`,
       );
   }
-  const hosted = withHost(command);
+  const hosted = inShell(command, withHost);
   if (input.before) await input.before();
   const port = await freePort(input.port);
   reserved.add(port);
@@ -483,7 +557,7 @@ export async function launchServer(
     target,
     input: { ...input, cmd: command },
     baseCommand: hosted,
-    command: withPort(hosted, port, input.tool ?? toolOf(command)),
+    command: inShell(hosted, (inner) => withPort(inner, port, input.tool ?? toolOf(command))),
     cwd,
     port,
     url: `http://localhost:${port}`,
@@ -492,6 +566,7 @@ export async function launchServer(
     endedAt: null,
     status: "starting",
     exitCode: null,
+    reason: null,
     logFile: "",
     previewToken: randomBytes(18).toString("base64url"),
     child: null,
@@ -535,9 +610,10 @@ function killGroup(child: Subprocess, signal: NodeJS.Signals) {
   }
 }
 
-export async function stopDevServer(server: DevServer) {
+export async function stopDevServer(server: DevServer, reason = stopReasons.manual) {
   if (!server.child) return publicServer(server);
   server.status = "stopped";
+  server.reason = reason;
   disarmExpiry(server);
   const child = server.child;
   if (server.marker) await killSandboxed(server.marker);
@@ -555,10 +631,11 @@ export async function restartServer(server: DevServer) {
   const port = await freePort(server.port);
   reserved.add(port);
   server.port = port;
-  server.command = withPort(server.baseCommand, port, server.tool);
+  server.command = inShell(server.baseCommand, (inner) => withPort(inner, port, server.tool));
   server.url = `http://localhost:${port}`;
   server.status = "starting";
   server.exitCode = null;
+  server.reason = null;
   server.endedAt = null;
   server.startedAt = new Date().toISOString();
   server.previewToken = randomBytes(18).toString("base64url");

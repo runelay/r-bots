@@ -9,7 +9,14 @@ import {
   deliverWorkspace,
   openTaskWorkspace,
 } from "./actions.service";
-import { devServerLogs, devServersOf, startDevServer, stopDevServers } from "./dev-server.service";
+import {
+  devServerLogs,
+  devServersOf,
+  exitNote,
+  startDevServer,
+  stopDevServers,
+  stopReasons,
+} from "./dev-server.service";
 import { beginCall, endCall } from "./hooks.service";
 import { type Gate, gateCommand, protectedPath } from "./policy.service";
 import { kickPr } from "./pull-request.service";
@@ -200,19 +207,24 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
           (server) => {
             session()?.log.emit({
               type: "code.devserver",
-              data: { action: server.status === "stopped" ? "stopped" : "exited", ...server },
+              data: {
+                action: server.status === "stopped" && server.reason === stopReasons.manual ? "stopped" : "exited",
+                ...server,
+              },
             });
           },
         );
         const { logs, ...server } = result;
-        session()?.log.emit({ type: "code.devserver", data: { action: "started", ...server } });
+        if (result.status === "running")
+          session()?.log.emit({ type: "code.devserver", data: { action: "started", ...server } });
+        const note = exitNote(result);
         endCall(context, start.callId, "dev_server_start", args, {
           ok: result.status === "running",
           output: { ...server, logs: logs.slice(-3000) },
-          error: `O servidor saiu (código ${result.exitCode}).\n${logs.slice(-3000)}`,
+          error: `${note}\n${logs.slice(-3000)}`,
         });
         if (result.status !== "running")
-          return text(`O servidor saiu antes de responder (código ${result.exitCode}). Últimas linhas:\n${logs}`, true);
+          return text(`O servidor saiu antes de responder. ${note} Últimas linhas:\n${logs}`, true);
         return text(
           `Servidor no ar em ${result.url} (porta ${result.port}). Teste com browser_open("${result.url}"). Últimas linhas:\n${logs}`,
         );
@@ -273,7 +285,8 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
           ok: true,
           output: { port: result.port, status: result.status, lines: result.logs.split("\n").length },
         });
-        return text(`Servidor ${result.status} na porta ${result.port}:\n${result.logs}`);
+        const note = exitNote(result);
+        return text(`Servidor ${result.status} na porta ${result.port}${note ? `. ${note}` : ""}:\n${result.logs}`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         endCall(context, start.callId, "dev_server_logs", args, { ok: false, error: message });

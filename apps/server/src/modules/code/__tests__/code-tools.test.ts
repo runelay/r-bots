@@ -145,6 +145,7 @@ function devServer(overrides: Partial<PublicDevServer> = {}): PublicDevServer & 
     previewPath: "/preview/ws_tools/4100/?t=x",
     status: "running",
     exitCode: null,
+    reason: null,
     startedAt: "2026-01-01T00:00:00.000Z",
     endedAt: null,
     logs: "ready",
@@ -334,7 +335,7 @@ describe("with an open workspace", () => {
       _input: unknown,
       onExit: (server: PublicDevServer) => void,
     ) => {
-      onExit(devServer({ status: "stopped" }));
+      onExit(devServer({ status: "stopped", reason: "parado a pedido" }));
       onExit(devServer({ status: "exited", exitCode: 1 }));
       return devServer();
     }) as never);
@@ -353,13 +354,23 @@ describe("with an open workspace", () => {
 
   test("dev_server_start reports a server that exited early and errors", async () => {
     const start = stub(devServers, "startDevServer").mockResolvedValueOnce(
-      devServer({ status: "exited", exitCode: 2, logs: "crash" } as Partial<PublicDevServer>) as never,
+      devServer({
+        status: "exited",
+        exitCode: 2,
+        reason: "o processo terminou com erro (código 2)",
+        logs: "crash",
+      } as Partial<PublicDevServer>) as never,
     );
     const { call, settled } = open();
     const exited = await call("dev_server_start", { cmd: "npm run dev" });
     expect(start).toHaveBeenLastCalledWith(expect.anything(), { cmd: "npm run dev" }, expect.any(Function));
     expect(exited).toEqual({
-      content: [{ type: "text", text: "O servidor saiu antes de responder (código 2). Últimas linhas:\ncrash" }],
+      content: [
+        {
+          type: "text",
+          text: "O servidor saiu antes de responder. Parou: o processo terminou com erro (código 2). Últimas linhas:\ncrash",
+        },
+      ],
       isError: true,
     });
     expect(settled().at(-1)).toMatchObject({ outcome: "failed" });

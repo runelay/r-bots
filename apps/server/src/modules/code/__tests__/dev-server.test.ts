@@ -14,6 +14,7 @@ import {
   devLimits,
   devServerLogs,
   devServersOf,
+  exitNote,
   findPreviewByToken,
   getServer,
   launchServer,
@@ -182,6 +183,60 @@ describe("starting dev servers", () => {
     expect(started.command).toBe("python -m http.server");
     expect(started.status).toBe("exited");
     expect(exited).toMatchObject({ status: "exited", exitCode: 0 });
+  });
+
+  test("injects the loopback flags inside a shell wrapper instead of after it", async () => {
+    bash(serving);
+    const cases: Array<[string, (port: number) => string]> = [
+      [
+        "bash -c 'set -a; . ./.env.local; set +a; npx wrangler dev --env dev --port 8799'",
+        () => "bash -c 'set -a; . ./.env.local; set +a; npx wrangler dev --ip 127.0.0.1 --env dev --port 8799'",
+      ],
+      [
+        'sh -c "npx vite build && npx vite" extra',
+        (port) => `sh -c "npx vite build && npx vite --host 127.0.0.1 --port ${port}" extra`,
+      ],
+      ["npx next dev --turbo", (port) => `npx next dev -H 127.0.0.1 --turbo --port ${port}`],
+    ];
+    for (const [cmd, expected] of cases) {
+      const started = await startDevServer(workspace(), { cmd }, () => undefined);
+      expect(started.command).toBe(expected(started.port));
+    }
+  });
+
+  test("catches a crash right after the port opens and warns about repeated crashes", async () => {
+    bash((call) => {
+      serving(call);
+      setTimeout(() => call.child.finish({ code: 1, stderr: "Docker CLI missing\n" }), 10);
+      return { hang: true };
+    });
+    const settle = devLimits.settleMs;
+    devLimits.settleMs = 200;
+    try {
+      const ws = workspace();
+      const first = await startDevServer(ws, { cmd: "node a.js", port: portBase + 70 }, () => undefined);
+      expect(first).toMatchObject({ status: "exited", exitCode: 1, reason: "o processo terminou com erro (código 1)" });
+      expect(first.logs).toContain("Docker CLI missing");
+      expect(exitNote(first)).toBe("Parou: o processo terminou com erro (código 1).");
+      await closeAll();
+      const second = await startDevServer(ws, { cmd: "node a.js", port: portBase + 70 }, () => undefined);
+      expect(second.port).toBe(portBase + 70);
+      expect(exitNote(second)).toContain("Já caiu 2 vezes seguidas pelo mesmo motivo na porta");
+      expect(exitNote({ ...second, status: "running" })).toBe("");
+    } finally {
+      devLimits.settleMs = settle;
+    }
+  });
+
+  test("names the reason when a stop was not asked for", async () => {
+    bash(serving);
+    const killed = await startDevServer(workspace(), { cmd: "node a.js" }, () => undefined);
+    const server = getServer(killed.id);
+    if (!server?.child) throw new Error("no child");
+    server.child.kill("SIGKILL");
+    await server.done;
+    expect(viewServer(server).reason).toBe("o processo foi encerrado por um sinal");
+    expect(exitNote(server)).toBe("Parou: o processo foi encerrado por um sinal.");
   });
 
   test("validates the command and the folder", async () => {

@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { listServers, type PublicDevServer, serverLogs } from "../../code/services/dev-server.service";
+import { exitNote, listServers, type PublicDevServer, serverLogs } from "../../code/services/dev-server.service";
 import { beginCall, endCall } from "../../code/services/hooks.service";
 import type { Gate } from "../../code/services/policy.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
@@ -18,7 +18,8 @@ function text(value: unknown, isError = false) {
 
 function summary(server: PublicDevServer) {
   const where = server.branch ? `${server.name} · ${server.branch}` : server.name;
-  return `${server.id} · ${where} · ${server.tool} · porta ${server.port} · ${server.status}`;
+  const reason = server.reason && server.status !== "running" ? ` (${server.reason})` : "";
+  return `${server.id} · ${where} · ${server.tool} · porta ${server.port} · ${server.status}${reason}`;
 }
 
 export function emitServerCard(context: ToolContext, server: PublicDevServer) {
@@ -116,10 +117,10 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
         endCall(context, start.callId, "server_start", args, {
           ok: view.status === "running",
           output: { ...view, logs: logs.slice(-3000) },
-          error: `O servidor saiu (código ${view.exitCode}).\n${logs.slice(-3000)}`,
+          error: `${exitNote(view)}\n${logs.slice(-3000)}`,
         });
         if (view.status !== "running")
-          return text(`O servidor saiu antes de responder (código ${view.exitCode}). Últimas linhas:\n${logs}`, true);
+          return text(`O servidor saiu antes de responder. ${exitNote(view)} Últimas linhas:\n${logs}`, true);
         return text(`No ar: ${summary(view)}. Últimas linhas:\n${logs}`);
       } catch (error) {
         endCall(context, start.callId, "server_start", args, { ok: false, error: messageOf(error) });
@@ -168,7 +169,8 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
       const { ready } = await restart(id);
       const { logs, ...view } = await ready;
       emitServerCard(context, view);
-      return `${view.status === "running" ? "No ar de novo" : "Saiu"}: ${summary(view)}. Últimas linhas:\n${logs}`;
+      if (view.status !== "running") return `Saiu: ${summary(view)}. ${exitNote(view)} Últimas linhas:\n${logs}`;
+      return `No ar de novo: ${summary(view)}. Últimas linhas:\n${logs}`;
     },
   );
   server.registerTool(
@@ -201,7 +203,8 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
           ok: true,
           output: { id: view.id, status: view.status, lines: logs ? logs.split("\n").length : 0 },
         });
-        return text(`${summary(view)}:\n${logs || "(sem linhas)"}`);
+        const note = exitNote(view);
+        return text(`${summary(view)}${note ? `. ${note}` : ""}:\n${logs || "(sem linhas)"}`);
       } catch (error) {
         endCall(context, start.callId, "server_logs", args, { ok: false, error: messageOf(error) });
         return text(messageOf(error), true);

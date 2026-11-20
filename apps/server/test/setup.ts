@@ -38,6 +38,7 @@ const testEnv: Record<string, string> = {
   HOST_HOME: root,
   CODE_TEST_LOCK: join(root, "tests.lock"),
   CODE_GH_BIN: join(root, "bin", "gh"),
+  CODE_DEV_SERVER_SETTLE_MS: "0",
 };
 
 for (const key of [
