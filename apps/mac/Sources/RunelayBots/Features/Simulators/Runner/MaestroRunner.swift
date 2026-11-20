@@ -79,9 +79,14 @@ enum MaestroRunner {
         return ""
     }
 
+    static func files(in directory: URL) -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
+        return enumerator.compactMap { $0 as? URL }.sorted { $0.path < $1.path }
+    }
+
     static func steps(in directory: URL) -> [MaestroStep] {
-        let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
-        guard let file = files.first(where: { $0.lastPathComponent.hasPrefix("commands") && $0.pathExtension == "json" }),
+        let found = files(in: directory)
+        guard let file = found.first(where: { $0.lastPathComponent.hasPrefix("commands") && $0.pathExtension == "json" }),
               let data = try? Data(contentsOf: file),
               let json = try? JSONDecoder().decode(JSONValue.self, from: data) else { return [] }
         return (json.arrayValue ?? []).compactMap { item in
@@ -122,8 +127,9 @@ enum MaestroRunner {
         let log = LocalCLI.clean(result.stdout + "\n" + result.stderr)
         let passed = result.code == 0 && failedStep == nil
         var screenshot: String?
-        let files = (try? FileManager.default.contentsOfDirectory(at: debug, includingPropertiesForKeys: nil)) ?? []
-        if let shot = files.first(where: { $0.lastPathComponent.hasPrefix("screenshot") && $0.pathExtension == "png" }),
+        let pngs = (files(in: debug) + files(in: root).filter { $0.deletingLastPathComponent() == root }).filter { $0.pathExtension == "png" }
+        let failure = pngs.first { $0.lastPathComponent.contains("❌") }
+        if let shot = passed ? pngs.last : (failure ?? pngs.last),
            let image = NSImage(contentsOf: shot), let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
            let shrunk = try? SimulatorRunner.jpeg(cg, maxHeight: 900) {
             screenshot = shrunk.0.base64EncodedString()
