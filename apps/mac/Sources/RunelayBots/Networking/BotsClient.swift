@@ -473,6 +473,27 @@ struct BotsClient: Sendable {
         _ = try await post("\(basePath)/session/\(Self.escape(sessionId))", body: body)
     }
 
+    func answerQuestions(basePath: String, sessionId: String, interactionId: String, answers: [QuestionAnswerDraft]) async throws {
+        let questions: [JSONValue] = answers.map { draft in
+            var fields: [String: JSONValue] = ["questionId": .string(draft.questionID)]
+            if draft.skipped || draft.isEmpty {
+                fields["skipped"] = .bool(true)
+            } else {
+                fields["optionIds"] = .array(draft.optionIDs.map { .string($0) })
+                let text = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !text.isEmpty {
+                    fields["text"] = .string(text)
+                }
+            }
+            return .object(fields)
+        }
+        let answer = JSONValue.object([
+            "interactionId": .string(interactionId),
+            "questions": .array(questions)
+        ])
+        _ = try await post("\(basePath)/session/\(Self.escape(sessionId))", body: .object(["answers": .array([answer])]))
+    }
+
     func cancel(basePath: String, sessionId: String) async throws {
         _ = try await post("\(basePath)/session/\(Self.escape(sessionId))/cancel", body: nil)
     }

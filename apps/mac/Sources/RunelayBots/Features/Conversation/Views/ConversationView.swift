@@ -469,12 +469,21 @@ struct ConversationView: View {
                 .padding(.horizontal, Spacing.m)
                 .transition(Motion.insertion(reduceMotion: reduceMotion))
             }
-            ComposerView(
-                store: store,
-                bot: bot,
-                focusToken: focusToken,
-                mentionables: bot.isGroup ? model.members(of: bot) : []
-            )
+            if let question = store.openQuestion {
+                QuestionCard(approval: question, via: question.viaAgent.flatMap { model.bot(id: $0) }) { answers in
+                    store.answerQuestion(id: question.id, answers: answers)
+                }
+                .id(question.id)
+                .transition(Motion.insertion(reduceMotion: reduceMotion))
+            } else {
+                ComposerView(
+                    store: store,
+                    bot: bot,
+                    focusToken: focusToken,
+                    mentionables: bot.isGroup ? model.members(of: bot) : []
+                )
+                .transition(Motion.insertion(reduceMotion: reduceMotion))
+            }
         }
         .frame(maxWidth: Metrics.transcriptWidth + Spacing.l * 2)
         .padding(.horizontal, Spacing.xl)
@@ -484,6 +493,7 @@ struct ConversationView: View {
         .springAnimation(value: store.lastError)
         .springAnimation(value: store.connection)
         .springAnimation(value: store.openApprovalIDs.count)
+        .springAnimation(value: store.openQuestion?.id)
     }
 }
 
@@ -725,7 +735,9 @@ struct TranscriptRow: View, Equatable {
                 ToolCallRow(call: call, via: call.viaAgent.flatMap { model.bot(id: $0) })
             }
         case .approval:
-            if let approval = store.approvals[entry.id], let form = approval.secretForm {
+            if let approval = store.approvals[entry.id], approval.isQuestion {
+                QuestionLine(approval: approval)
+            } else if let approval = store.approvals[entry.id], let form = approval.secretForm {
                 SecretFormCard(approval: approval, form: form, bot: store.bot) { optionID in
                     store.respond(approvalID: approval.id, optionID: optionID)
                 }

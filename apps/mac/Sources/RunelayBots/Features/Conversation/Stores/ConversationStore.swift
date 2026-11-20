@@ -1139,15 +1139,43 @@ final class ConversationStore {
             previewImage: Self.previewImageData(request["previewImage"]?.stringValue),
             reason: request["reason"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 },
             grant: request["grant"]?.stringValue,
-            secretForm: SecretFormRequest(request["secret"])
+            secretForm: SecretFormRequest(request["secret"]),
+            questions: kind == "question" ? Self.questionPrompts(request["questions"]) : []
         )
         append(TranscriptEntry(id: id, kind: .approval), date: currentLineDate)
         phase = .awaitingInput
         if historySettled {
-            onNeedsAttention?()
-            if isLiveLine {
-                onNotify?(.approval(id: id, prompt: prompt))
+            if kind != "question" {
+                onNeedsAttention?()
             }
+            if isLiveLine {
+                onNotify?(kind == "question"
+                    ? .question(id: id, title: prompt, sessionID: sessionId)
+                    : .approval(id: id, prompt: prompt))
+            }
+        }
+    }
+
+    private static func questionPrompts(_ value: JSONValue?) -> [QuestionPrompt] {
+        (value?.arrayValue ?? []).compactMap { item in
+            guard let id = item["id"]?.stringValue, let title = item["title"]?.stringValue else { return nil }
+            let choices: [QuestionChoice] = (item["options"]?.arrayValue ?? []).compactMap { option in
+                guard let optionID = option["id"]?.stringValue, let label = option["label"]?.stringValue else { return nil }
+                return QuestionChoice(
+                    id: optionID,
+                    label: label,
+                    detail: option["description"]?.stringValue,
+                    recommended: option["recommended"]?.boolValue ?? false
+                )
+            }
+            guard !choices.isEmpty else { return nil }
+            return QuestionPrompt(
+                id: id,
+                title: title,
+                header: item["header"]?.stringValue,
+                multiSelect: item["multiSelect"]?.boolValue ?? false,
+                choices: choices
+            )
         }
     }
 
@@ -1183,6 +1211,12 @@ final class ConversationStore {
         }
         if data["outcome"]?.stringValue == "withdrawn" || data["outcome"]?.stringValue == "interrupted" {
             approvals[id]?.resolution = .settled("Cancelado", .neutral)
+            return
+        }
+        if approval.isQuestion {
+            approvals[id]?.resolution = data["outcome"]?.stringValue == "declined"
+                ? .settled("Pulou · o bot decide", .neutral)
+                : .settled(data["summary"]?.stringValue ?? "Respondido", .approved)
             return
         }
         if let optionID {
@@ -1414,6 +1448,41 @@ final class ConversationStore {
 }
 
 extension ConversationStore {
+    var openQuestion: Approval? {
+        guard let entry = entries.last(where: { $0.kind == .approval && approvals[$0.id]?.isQuestion == true && approvals[$0.id]?.isOpen == true })
+        else { return nil }
+        return approvals[entry.id]
+    }
+
+    func answerQuestion(id: String, answers: [QuestionAnswerDraft]) {
+        guard let approval = approvals[id], approval.isOpen, let sessionId else { return }
+        let given = answers.filter { !$0.skipped && !$0.isEmpty }
+        let pending = given.isEmpty ? "Pulou · o bot decide" : "Respondeu: " + given.map { draft in
+            let question = approval.questions.first { $0.id == draft.questionID }
+            let labels = draft.optionIDs.compactMap { optionID in question?.choices.first { $0.id == optionID }?.label }
+            let text = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (labels + (text.isEmpty ? [] : [text])).joined(separator: ", ")
+        }.joined(separator: " · ")
+        let previousPhase = phase
+        approvals[id]?.resolution = .answering(pending)
+        if phase == .awaitingInput, !approvals.values.contains(where: \.isOpen) {
+            phase = .working
+        }
+        lastError = nil
+        let client = clientValue
+        let basePath = bot.sessionBasePath
+        Task {
+            do {
+                try await client.answerQuestions(basePath: basePath, sessionId: sessionId, interactionId: id, answers: answers)
+            } catch {
+                guard approvals[id]?.resolution == .answering(pending) else { return }
+                approvals[id]?.resolution = .open
+                phase = previousPhase
+                lastError = ErrorMessage.describe(error)
+            }
+        }
+    }
+
     var openApprovalIDs: [String] {
         entries.filter { $0.kind == .approval && approvals[$0.id]?.isOpen == true && approvals[$0.id]?.kind == "approval" }.map(\.id)
     }

@@ -324,6 +324,30 @@ enum ApprovalResolution: Equatable {
     case settled(String, ApprovalTone)
 }
 
+struct QuestionChoice: Identifiable, Equatable {
+    let id: String
+    let label: String
+    var detail: String? = nil
+    var recommended = false
+}
+
+struct QuestionPrompt: Identifiable, Equatable {
+    let id: String
+    let title: String
+    var header: String? = nil
+    var multiSelect = false
+    let choices: [QuestionChoice]
+}
+
+struct QuestionAnswerDraft: Equatable {
+    let questionID: String
+    var optionIDs: [String] = []
+    var text: String = ""
+    var skipped = false
+
+    var isEmpty: Bool { optionIDs.isEmpty && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+}
+
 struct Approval: Identifiable, Equatable {
     let id: String
     let kind: String
@@ -339,8 +363,10 @@ struct Approval: Identifiable, Equatable {
     var reason: String? = nil
     var grant: String? = nil
     var secretForm: SecretFormRequest? = nil
+    var questions: [QuestionPrompt] = []
 
     var isOpen: Bool { resolution == .open }
+    var isQuestion: Bool { kind == "question" }
 
     func summary(for optionID: String) -> (String, ApprovalTone) {
         if secretForm != nil {

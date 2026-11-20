@@ -6,6 +6,7 @@ import UserNotifications
 enum StoreNotification {
     case reply(text: String, speakerID: String?, schedule: Bool)
     case approval(id: String, prompt: String)
+    case question(id: String, title: String, sessionID: String?)
     case failed(String)
     case ciFailed(number: Int, check: String)
 }
@@ -86,6 +87,13 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             content.body = prompt.isEmpty ? "Uma ação está esperando sua aprovação." : prompt
             content.categoryIdentifier = "approval"
             info["interactionID"] = id
+        case .question(_, let title, let sessionID):
+            guard NotificationPreference.approvals.isEnabled else { return }
+            content.title = "\(bot.name) quer saber"
+            content.body = title.isEmpty ? "Uma pergunta está esperando sua resposta." : title
+            if let sessionID {
+                info["sessionID"] = sessionID
+            }
         case .failed(let message):
             guard NotificationPreference.failures.isEnabled else { return }
             content.title = "\(bot.name) parou com erro"
@@ -121,6 +129,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             "reply-\(botID)-\(speakerID ?? "")-\(fingerprint(text))"
         case .approval(let id, _):
             "approval-\(botID)-\(id)"
+        case .question(let id, _, _):
+            "question-\(botID)-\(id)"
         case .failed(let message):
             "failed-\(botID)-\(fingerprint(message))"
         case .ciFailed(let number, let check):
@@ -185,6 +195,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let info = response.notification.request.content.userInfo
         let botID = info["botID"] as? String
         let interactionID = info["interactionID"] as? String
+        let sessionID = info["sessionID"] as? String
         let action = response.actionIdentifier
         let usage = info["usage"] != nil
         Task { @MainActor in
@@ -192,7 +203,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                 Notifier.shared.openUsage()
                 return
             }
-            Notifier.shared.handle(botID: botID, interactionID: interactionID, action: action)
+            Notifier.shared.handle(botID: botID, interactionID: interactionID, sessionID: sessionID, action: action)
         }
         completionHandler()
     }
@@ -204,13 +215,13 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         NSApp.activate()
     }
 
-    private func handle(botID: String?, interactionID: String?, action: String) {
+    private func handle(botID: String?, interactionID: String?, sessionID: String?, action: String) {
         guard let model, let botID else { return }
         if let interactionID, action == "approve" || action == "deny" {
             model.answerFromNotification(botID: botID, interactionID: interactionID, optionID: action)
             return
         }
-        model.openConversation(botID)
+        model.openConversation(botID, sessionID: sessionID)
         NSApp.activate()
     }
 }
