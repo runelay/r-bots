@@ -1697,6 +1697,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           delivery.scheduleId ?? "rotina",
           schedule?.prompt ?? delivery.text,
           replyText,
+          meta.scheduleSummaries?.[delivery.scheduleId ?? "rotina"] ?? null,
         );
         emitDecision(log, turn, triage);
         quiet = triage.outcome === "quiet";

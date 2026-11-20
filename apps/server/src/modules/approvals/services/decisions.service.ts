@@ -198,25 +198,70 @@ export async function decideProgress(request: string, calls: string[]): Promise<
 
 const triageQuestion = "O resultado desta rotina traz algo que a pessoa deveria olhar agora?";
 
+const unchangedOpening =
+  /^(tudo (normal|igual|certo|ok|tranquilo|em ordem)|nada (de )?novo|nada mudou|sem (novidade|mudanca|alteracao)|nenhuma (novidade|mudanca|alteracao)|igual a (ronda|rodada) anterior)/;
+const unchangedPhrase =
+  /(igual (a|ao) (da )?(ronda|rodada|checagem|execucao) anterior|sem nada novo|nada novo desde|sem novidade|sem mudanca)/;
+const caveat = /\b(exceto|mas|porem|so que|novo problema|piorou)\b/;
+
+function plain(text: string) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[*`]/g, "")
+    .replace(/[#>|]/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
+export function unchangedRoutine(reply: string, previous: string | null = null) {
+  const text = plain(reply);
+  if (!text) return true;
+  if (previous && plain(previous) === text) return true;
+  const first = (text.split(/(?<=[.!?])\s|\n/)[0] ?? text).trim();
+  if (caveat.test(first)) return false;
+  return unchangedOpening.test(first) || unchangedPhrase.test(first);
+}
+
 export async function decideTriage(
   botRole: string,
   scheduleName: string,
   schedulePrompt: string,
   reply: string,
+  previous: string | null = null,
 ): Promise<DecisionRecord> {
   const started = Date.now();
+  if (unchangedRoutine(reply, previous))
+    return {
+      kind: "triage",
+      question: triageQuestion,
+      answer: null,
+      confidence: 1,
+      threshold: 0.5,
+      outcome: "quiet",
+      latencyMs: Date.now() - started,
+      model: null,
+      reason: "A rotina disse que nada mudou.",
+    };
   if (!jevEnabled()) return fallback("triage", triageQuestion, 0.5, started, "Jev desligado.");
   try {
     const result = await askJev(
-      { bot_role: botRole, routine: { name: scheduleName, instructions: schedulePrompt }, result: reply },
+      {
+        bot_role: botRole,
+        routine: { name: scheduleName, instructions: schedulePrompt },
+        previous_result: previous,
+        result: reply,
+      },
       {
         attention: {
           type: "noul",
           instructions:
-            "O resultado traz algo que a pessoa deveria olhar agora: um problema, uma anomalia, um número fora do normal ou uma decisão pendente?",
+            "O resultado traz algo NOVO que a pessoa deveria olhar agora: um problema, uma anomalia, um número fora do normal ou uma decisão pendente que não estava no resultado anterior?",
           criteria: {
-            true: "Aponta um problema, anomalia, risco ou algo que pede ação hoje",
-            false: "Diz que está tudo normal ou só repete informação sem novidade",
+            true: "Aponta um problema, anomalia ou risco novo, ou que piorou desde o resultado anterior",
+            false:
+              "Diz que está tudo normal, que nada mudou, ou repete o mesmo problema do resultado anterior sem piora",
           },
         },
       },
