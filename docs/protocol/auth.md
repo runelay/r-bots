@@ -321,3 +321,39 @@ log: mac runner connected (RUNNER_TOKEN)
 instância de teste, BETTER_AUTH_URL ausente: POST /api/auth/sign-in/email com Origin do tailnet -> 403 {"code":"INVALID_ORIGIN"}
 com BETTER_AUTH_URL: -> 200
 ```
+
+## v39 (20/11): tela de login e provedores sociais
+
+### `GET /auth/providers` (pública)
+
+```text
+GET /auth/providers -> 200
+{"ok":true,"providers":[],"methods":{"password":true,"passkey":true,"device":true,"invites":true,"passwordReset":false}}
+```
+
+- `providers` lista, na ordem `apple`, `google`, `github`, só os que têm as duas variáveis: `APPLE_CLIENT_ID`/`APPLE_CLIENT_SECRET`, `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`, `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`. Sem nenhuma, `[]`. Com Apple, `https://appleid.apple.com` entra nas origens confiáveis.
+- O callback de cada provedor é o do better-auth: `<BETTER_AUTH_URL>/api/auth/callback/<provedor>`.
+- Cadastro continua só por convite: os provedores sobem com `disableImplicitSignUp`, então só entra quem já tem conta com o mesmo e-mail.
+
+### Login social pelo app
+
+1. O app pede o código de dispositivo como no Touch ID e abre `verification_uri_complete` com `&provider=<id>`.
+2. A página `/device`, sem sessão, chama `POST /api/auth/sign-in/social` com `{ provider, callbackURL: "/device?user_code=…", errorCallbackURL: "/device?user_code=…", disableRedirect: true }` e segue para o `url` devolvido.
+3. Na volta, com a sessão do provedor, a página mostra "Liberar o app" como no fluxo da v32. Se o provedor recusar, volta com `error`: `signup_disabled` vira "Essa conta ainda não tem acesso. Peça um convite."; o resto, "Não deu para entrar com essa conta."
+
+### Manter conectado
+
+`POST /api/auth/sign-in/email` recebe `rememberMe`. `true` (padrão no app): sessão de 30 dias. `false`: sessão de 1 dia (padrão do better-auth para `dontRememberMe`).
+
+### App
+
+- Tela dividida: formulário à esquerda (logo, "Não tem conta?" + "Usar convite", selo com o ícone, título, botões sociais e "OU" só quando `providers` não está vazio, e-mail e senha com rótulo, asterisco, ícone e olho, "Manter conectado", "Esqueci a senha?" só com `methods.passwordReset`, botão escuro "Entrar", rodapé com "© 2026 runelay bots", o servidor (volta para a escolha do endereço) e "PT"). À direita, numa superfície de contraste com grade sutil: três personagens de pontos animados e três frases que trocam a cada 6 s com fade, param com o mouse em cima e têm indicador clicável.
+- Primeiro acesso ("Configurar este runelay bots") e convite ("Criar conta com convite") usam o mesmo layout, trocando título e campos.
+- Abaixo de 900 pt de largura o painel da direita some.
+- Touch ID continua como "Entrar com Touch ID" abaixo do botão principal.
+
+### Verificado
+
+Testes do módulo de auth com o better-auth real: `socialFromEnv` só aceita par completo; módulo com GitHub e Apple lista `["apple","github"]`, `/auth/providers` é pública, e `POST /api/auth/sign-in/social` com `provider: "github"` devolve 200 com `url` começando em `https://github.com/login/oauth/authorize`.
+
+Produção (`release-955354f`): `/auth/providers` 200 sem credencial com `providers: []`; `/bots`, `/status`, `/accounts`, `/integrations` 401 sem credencial e 200 com `RUNNER_TOKEN`; 4 bots com uma conversa cada, banco 25/31/0, integrações conectadas e contas do Mac `ready` depois de o app reconectar.
