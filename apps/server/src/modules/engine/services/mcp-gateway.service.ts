@@ -47,6 +47,7 @@ import {
   prepareSecretInput,
   registerVaultTools,
 } from "../../vault/services/vault-tools.service";
+import { registerServerTools } from "../../servers/services/server-tools.service";
 import type { ApprovalDetails, BotTool } from "./bot-tools.service";
 
 export interface ApprovalResult {
@@ -1559,6 +1560,7 @@ export function buildServer(context: ToolContext) {
   registerComputerTools(server, context);
   registerCodeTools(server, context, () => context.runner ?? "vps");
   registerVaultTools(server, context);
+  registerServerTools(server, context);
   registerThreadTools(server, context);
   if (context.groupMembers.length > 0) {
     const ids = context.groupMembers.map((member) => member.id) as [string, ...string[]];

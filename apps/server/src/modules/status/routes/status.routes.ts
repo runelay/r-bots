@@ -1,6 +1,7 @@
 import { model } from "../../../config/env";
 import { type Req, type Res, sendJson } from "../../../shared/http";
 import { accents, capabilityCatalog, efforts } from "../../bots/services/bots.service";
+import { listServers, onServerChange } from "../../code/services/dev-server.service";
 import { onConversation } from "../../conversations/services/conversations.service";
 import { botStatuses, onStatus, sessionStatuses } from "../../engine/services/engine.service";
 import { turnStats } from "../../engine/services/turn-queue.service";
@@ -48,7 +49,12 @@ export async function handleStatus(res: Res) {
 
 export function handleStatusStream(req: Req, res: Res) {
   res.writeHead(200, { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" });
-  res.write(`${JSON.stringify({ type: "snapshot", bots: botStatuses(), sessions: sessionStatuses() })}\n`);
+  res.write(
+    `${JSON.stringify({ type: "snapshot", bots: botStatuses(), sessions: sessionStatuses(), servers: listServers() })}\n`,
+  );
+  const unsubscribeServers = onServerChange((server, removed) =>
+    res.write(`${JSON.stringify({ type: "server", server, removed })}\n`),
+  );
   const unsubscribe = onStatus((event) =>
     res.write(`${JSON.stringify({ type: event.sessionId ? "session" : "status", ...event })}\n`),
   );
@@ -61,6 +67,7 @@ export function handleStatusStream(req: Req, res: Res) {
     unwatch();
     unsubscribe();
     unsubscribeConversations();
+    unsubscribeServers();
     clearInterval(heartbeat);
   };
   res.on("close", close);

@@ -14,13 +14,23 @@ import {
   devServerLogs,
   devServersOf,
   findPreviewByToken,
+  getServer,
+  launchServer,
+  listServers,
+  onServerChange,
+  onServerLog,
   type PublicDevServer,
+  portOwner,
   previewTarget,
+  rawLines,
+  serverLogs,
   serversOf,
   startDevServer,
   stopAllDevServers,
   stopDevServer,
   stopDevServers,
+  toolOf,
+  viewServer,
 } from "../services/dev-server.service";
 import { codeDataDir, type WorkspaceState } from "../services/workspace.service";
 
@@ -142,9 +152,16 @@ describe("starting dev servers", () => {
       ["PORT=1 node app.js", () => "PORT=1 node app.js"],
       ["node app.js --port 9", () => "node app.js --port 9"],
       ["npm start", (port) => `npm start -- --port ${port}`],
+      ["npm run dev -- --enable-containers=false", (port) => `npm run dev -- --enable-containers=false --port ${port}`],
       ["pnpm dev", (port) => `pnpm dev --port ${port}`],
       ["bun run dev", (port) => `bun run dev --port ${port}`],
       ["npx vite", (port) => `npx vite --port ${port}`],
+      ["wrangler dev", (port) => `wrangler dev --port ${port} --ip 127.0.0.1`],
+      ["wrangler dev --ip 0 --port 9", () => "wrangler dev --ip 0 --port 9"],
+      ["next dev", (port) => `next dev --port ${port} --hostname 127.0.0.1`],
+      ["npx expo start", (port) => `npx expo start --port ${port} --localhost`],
+      ["expo start {port}", (port) => `expo start ${port} --localhost`],
+      ["npx expo start --lan", (port) => `npx expo start --lan --port ${port}`],
     ];
     for (const [cmd, expected] of cases) {
       const started = await startDevServer(workspace(), { cmd }, () => undefined);
@@ -289,5 +306,39 @@ describe("stopping and logs", () => {
     for (let attempt = 0; attempt < 100 && serversOf(vanished)[0].status !== "exited"; attempt++) await Bun.sleep(2);
     await resetData();
     expect((await devServerLogs(vanished, gone.port, 5)).logs).toBe("");
+  });
+});
+
+describe("registry", () => {
+  test("notifies changes and logs, finds port owners and prunes old stopped servers", async () => {
+    bash(serving);
+    const changes: Array<[string, boolean]> = [];
+    const offChange = onServerChange((server, removed) => changes.push([server.status, removed]));
+    const target = { key: "prj_reg", kind: "project" as const, path: "/work/reg", name: "reg", branch: null };
+    await expect(launchServer(target, { cmd: "vite", cwd: "../x" })).rejects.toThrow("dentro do projeto");
+    const { server, ready } = await launchServer(target, { cmd: "npx expo start", secrets: ["ready"] });
+    const lines: string[][] = [];
+    const offLog = onServerLog(server.id, (batch) => lines.push(batch));
+    const second = onServerLog(server.id, () => undefined);
+    second();
+    await ready;
+    expect(viewServer(server)).toMatchObject({ tool: "expo", kind: "project", cwd: "" });
+    expect(portOwner(server.port)?.id).toBe(server.id);
+    expect(portOwner(1)).toBeNull();
+    expect(rawLines(server, 10, "on")).toEqual(["\u001b[32m••••\u001b[0m on port"]);
+    expect((await serverLogs(server, 10, "warn")).logs).toBe("warning");
+    expect((await serverLogs(server, 10, "zzz")).logs).toBe("");
+    offLog();
+    expect(lines.flat()).toContain("warning");
+    await stopDevServer(server);
+    await server.done;
+    server.endedAt = new Date(Date.now() - 11 * 60_000).toISOString();
+    expect(listServers().some((item) => item.id === server.id)).toBe(false);
+    expect(getServer(server.id)).toBeNull();
+    offChange();
+    expect(changes.map(([status]) => status)).toEqual(["starting", "running", "stopped", "stopped"]);
+    expect(changes.at(-1)?.[1]).toBe(true);
+    expect(toolOf(null, "cargo run")).toBe("rust");
+    expect(toolOf("echo")).toBe("process");
   });
 });

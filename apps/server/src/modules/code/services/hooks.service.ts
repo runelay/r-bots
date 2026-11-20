@@ -184,14 +184,14 @@ export async function beginCall(
     const command =
       spec.name === "Bash"
         ? String(spec.input.command ?? "")
-        : spec.name === "dev_server_start"
+        : spec.name === "dev_server_start" || spec.name === "server_start"
           ? String(spec.input.cmd ?? "")
           : "";
     const action: ActionClass = editTools.has(spec.name)
       ? "edit"
       : spec.name === "workspace_deliver"
         ? "deliver"
-        : spec.name === "dev_server_start"
+        : spec.name === "dev_server_start" || spec.name === "server_start" || spec.name === "server_restart"
           ? "command"
           : spec.name === "Bash"
             ? spec.workspace && commandIsReadOnly(command, spec.workspace)

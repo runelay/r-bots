@@ -332,6 +332,15 @@ const apiPrefixes = new Set([
   "api",
   "auth",
   "device",
+  "servers",
+  "status",
+  "jobs",
+  "devices",
+  "integrations",
+  "usage",
+  "vault",
+  "sections",
+  "groups",
 ]);
 const cookieName = "rb_preview";
 

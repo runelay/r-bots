@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "b
 import { waitFor } from "../../../../test/engine-helpers";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
 import { startTestJobs } from "../../../../test/jobs-helpers";
+import * as devServers from "../../code/services/dev-server.service";
 import * as conversations from "../../conversations/services/conversations.service";
 import * as engine from "../../engine/services/engine.service";
 import { defineJob, enqueue, laneCounts } from "../../jobs/services/jobs.service";
@@ -114,6 +115,14 @@ describe("GET /status/stream", () => {
         return true;
       };
     });
+    let serverListener: ((server: devServers.PublicDevServer, removed: boolean) => void) | null = null;
+    const onServerChange = spyOn(devServers, "onServerChange").mockImplementation((listener) => {
+      serverListener = listener;
+      return () => {
+        unsubscribed++;
+      };
+    });
+    restores.push(() => onServerChange.mockRestore());
     const realInterval = globalThis.setInterval;
     const intervals = spyOn(globalThis, "setInterval").mockImplementation(((callback: () => void, ms?: number) =>
       realInterval(callback, ms === 15_000 ? 1 : ms)) as typeof setInterval);
@@ -132,24 +141,27 @@ describe("GET /status/stream", () => {
     expect(snapshot.type).toBe("snapshot");
     expect(snapshot).toHaveProperty("bots");
     expect(snapshot).toHaveProperty("sessions");
+    expect(snapshot.servers).toEqual([]);
     expect(appWatching(0)).toBe(true);
 
     emitStatus({ botId: "b1", status: "working" } as engine.StatusEvent);
     emitStatus({ botId: "b1", sessionId: "s1", status: "awaiting" } as engine.StatusEvent);
     emitConversation({ botId: "b1", sessionId: "s1", conversation: null });
+    (serverListener as unknown as (server: unknown, removed: boolean) => void)({ id: "dev_1" }, true);
     const seen: Array<Record<string, unknown>> = [];
-    while (!seen.some((line) => line.type === "heartbeat") || seen.filter((l) => l.type !== "heartbeat").length < 3)
+    while (!seen.some((line) => line.type === "heartbeat") || seen.filter((l) => l.type !== "heartbeat").length < 4)
       seen.push(await next());
     expect(seen.filter((line) => line.type !== "heartbeat")).toEqual([
       { type: "status", botId: "b1", status: "working" },
       { type: "session", botId: "b1", sessionId: "s1", status: "awaiting" },
       { type: "conversation", botId: "b1", sessionId: "s1", conversation: null },
+      { type: "server", server: { id: "dev_1" }, removed: true },
     ]);
 
     controller.abort();
-    for (let attempt = 0; attempt < 10_000 && unsubscribed < 2; attempt++)
+    for (let attempt = 0; attempt < 10_000 && unsubscribed < 3; attempt++)
       await new Promise((resolve) => setImmediate(resolve));
-    expect(unsubscribed).toBeGreaterThanOrEqual(2);
+    expect(unsubscribed).toBeGreaterThanOrEqual(3);
     expect(appWatching(0)).toBe(false);
   });
 });

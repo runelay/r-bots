@@ -2,33 +2,76 @@ import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import net from "node:net";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { childEnv } from "@runelay-bots/providers/proc";
 import type { Subprocess } from "bun";
 import { env } from "../../../config/env";
-import { codeDataDir, insideWorkspace, type WorkspaceState, waitForInstall } from "./workspace.service";
+import { redactText } from "../../../shared/redact";
+import { hostHome } from "./repos.service";
+import { codeDataDir, type WorkspaceState, waitForInstall } from "./workspace.service";
+
+export type ServerStatus = "starting" | "running" | "exited" | "stopped";
+
+export interface ServerTarget {
+  key: string;
+  kind: "workspace" | "project";
+  path: string;
+  name: string;
+  branch: string | null;
+}
+
+export interface LaunchInput {
+  cmd: string;
+  port?: number;
+  cwd?: string;
+  env?: Record<string, string>;
+  envKeys?: string[];
+  secrets?: string[];
+  tool?: string | null;
+  script?: string | null;
+  profileId?: string | null;
+  startedBy?: "bot" | "user";
+  botId?: string | null;
+  sessionId?: string | null;
+  before?: () => Promise<unknown>;
+}
 
 export interface DevServer {
   id: string;
   workspaceId: string;
   workspacePath: string;
+  target: ServerTarget;
+  input: LaunchInput;
+  baseCommand: string;
   command: string;
   cwd: string;
   port: number;
   url: string;
+  tool: string;
   startedAt: string;
-  status: "starting" | "running" | "exited" | "stopped";
+  endedAt: string | null;
+  status: ServerStatus;
   exitCode: number | null;
   logFile: string;
   previewToken: string;
   child: Subprocess<"ignore", "pipe", "pipe"> | null;
+  done: Promise<void>;
   tail: string[];
+  raw: string[];
+  onExit: (server: PublicDevServer) => void;
 }
 
+type ChangeListener = (server: PublicDevServer, removed: boolean) => void;
+type LogListener = (lines: string[]) => void;
+
 const servers = new Map<string, DevServer>();
+const changeListeners = new Set<ChangeListener>();
+const logListeners = new Map<string, Set<LogListener>>();
 const portBase = env.DEV_PORT_BASE;
 const portLimit = portBase + 400;
 const reserved = new Set<number>();
+const rawLimit = 2000;
+const stoppedTtlMs = 10 * 60_000;
 
 function portFree(port: number) {
   return new Promise<boolean>((done) => {
@@ -64,31 +107,108 @@ async function freePort(preferred?: number) {
   throw new Error("Não achei porta livre para o servidor.");
 }
 
-function withPort(command: string, port: number) {
-  if (/\{port\}/.test(command)) return command.replace(/\{port\}/g, String(port));
-  if (/\$PORT\b|--port\b|\s-p\s+\d|PORT=/.test(command)) return command;
-  if (/^(npm)\s+run\s+[\w:.-]+/.test(command.trim())) return `${command} -- --port ${port}`;
-  if (/^(npm\s+start)\b/.test(command.trim())) return `${command} -- --port ${port}`;
-  if (/^(pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+/.test(command.trim()) || /\b(vite|next|astro|wrangler)\b/.test(command))
-    return `${command} --port ${port}`;
-  return command;
+function localFlags(command: string, tool: string) {
+  if (tool === "wrangler" && !/--ip\b/.test(command)) return " --ip 127.0.0.1";
+  if (tool === "next" && !/--hostname\b|\s-H\s/.test(command)) return " --hostname 127.0.0.1";
+  if (tool === "expo" && !/--localhost\b|--lan\b|--tunnel\b|--host\b/.test(command)) return " --localhost";
+  return "";
+}
+
+function withPort(command: string, port: number, tool = toolOf(command)) {
+  const local = localFlags(command, tool);
+  if (/\{port\}/.test(command)) return command.replace(/\{port\}/g, String(port)) + local;
+  if (/\$PORT\b|--port\b|\s-p\s+\d|PORT=/.test(command)) return command + local;
+  const trimmed = command.trim();
+  if (/^npm\s+(run\s+[\w:.-]+|start)\s+(.*\s)?--(\s|$)/.test(trimmed)) return `${command} --port ${port}${local}`;
+  if (/^npm\s+(run\s+[\w:.-]+|start)\b/.test(trimmed)) return `${command} -- --port ${port}${local}`;
+  if (/^(pnpm|yarn|bun)\s+(run\s+)?[\w:.-]+/.test(trimmed) || /\b(vite|next|astro|wrangler|expo)\b/.test(command))
+    return `${command} --port ${port}${local}`;
+  return command + local;
+}
+
+const tools: Array<[RegExp, string]> = [
+  [/\bexpo\b|\breact-native\b/, "expo"],
+  [/\bwrangler\b/, "wrangler"],
+  [/\bvite\b/, "vite"],
+  [/\bnext\b/, "next"],
+  [/\bastro\b/, "astro"],
+  [/\bremix\b/, "remix"],
+  [/\bnuxt\b/, "nuxt"],
+  [/\bstorybook\b/, "storybook"],
+  [/\bbun\b/, "bun"],
+  [/\bdeno\b/, "deno"],
+  [/\bpython3?\b|\buvicorn\b|\bflask\b|\bdjango\b/, "python"],
+  [/\bcargo\b/, "rust"],
+  [/\bgo\s+run\b/, "go"],
+  [/\b(node|npm|pnpm|yarn|npx|tsx)\b/, "node"],
+];
+
+export function toolOf(...texts: Array<string | null | undefined>) {
+  for (const text of texts) {
+    if (!text) continue;
+    for (const [pattern, name] of tools) if (pattern.test(text)) return name;
+  }
+  return "process";
+}
+
+function within(root: string, path: string) {
+  const rel = relative(root, path);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 function publicServer(server: DevServer) {
   return {
     id: server.id,
     workspaceId: server.workspaceId,
+    kind: server.target.kind,
+    name: server.target.name,
+    branch: server.target.branch,
+    path: server.target.path,
+    cwd: relative(server.target.path, server.cwd),
     command: server.command,
+    tool: server.tool,
+    script: server.input.script ?? null,
+    profileId: server.input.profileId ?? null,
+    startedBy: server.input.startedBy ?? "bot",
+    botId: server.input.botId ?? null,
+    sessionId: server.input.sessionId ?? null,
+    envKeys: server.input.envKeys ?? [],
     port: server.port,
     url: server.url,
     previewPath: `/preview/${server.workspaceId}/${server.port}/?t=${server.previewToken}`,
     status: server.status,
     exitCode: server.exitCode,
     startedAt: server.startedAt,
+    endedAt: server.endedAt,
   };
 }
 
 export type PublicDevServer = ReturnType<typeof publicServer>;
+
+function notify(server: DevServer, removed = false) {
+  const view = publicServer(server);
+  for (const listener of changeListeners) listener(view, removed);
+}
+
+export function onServerChange(listener: ChangeListener) {
+  changeListeners.add(listener);
+  return () => {
+    changeListeners.delete(listener);
+  };
+}
+
+export function onServerLog(id: string, listener: LogListener) {
+  let set = logListeners.get(id);
+  if (!set) {
+    set = new Set();
+    logListeners.set(id, set);
+  }
+  set.add(listener);
+  return () => {
+    set.delete(listener);
+    if (set.size === 0) logListeners.delete(id);
+  };
+}
 
 export function devServersOf(workspace: WorkspaceState) {
   return [...servers.values()]
@@ -97,6 +217,30 @@ export function devServersOf(workspace: WorkspaceState) {
         server.workspacePath === workspace.path && (server.status === "running" || server.status === "starting"),
     )
     .map(publicServer);
+}
+
+function prune() {
+  const now = Date.now();
+  for (const server of servers.values()) {
+    if (server.status !== "stopped" || !server.endedAt) continue;
+    if (now - Date.parse(server.endedAt) > stoppedTtlMs) {
+      servers.delete(server.id);
+      notify(server, true);
+    }
+  }
+}
+
+export function listServers() {
+  prune();
+  return [...servers.values()].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).map(publicServer);
+}
+
+export function getServer(id: string) {
+  return servers.get(id) ?? null;
+}
+
+export function viewServer(server: DevServer) {
+  return publicServer(server);
 }
 
 export function previewTarget(workspaceId: string, port: number) {
@@ -111,12 +255,150 @@ export function findPreviewByToken(token: string) {
   return server ? { port: server.port, workspaceId: server.workspaceId, token: server.previewToken } : null;
 }
 
-function pushTail(server: DevServer, chunk: string) {
-  for (const line of chunk.split("\n")) {
-    if (!line) continue;
+export function portOwner(port: number) {
+  return (
+    [...servers.values()].find(
+      (item) => item.port === port && (item.status === "running" || item.status === "starting"),
+    ) ?? null
+  );
+}
+
+function hideSecrets(server: DevServer, text: string) {
+  let out = redactText(text);
+  for (const secret of server.input.secrets ?? []) if (out.includes(secret)) out = out.split(secret).join("••••");
+  return out;
+}
+
+function pushLines(server: DevServer, chunk: string) {
+  const lines = hideSecrets(server, chunk)
+    .split("\n")
+    .map((line) => line.replace(/\r$/, ""))
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) return;
+  for (const line of lines) {
+    server.raw.push(line);
     server.tail.push(line.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, ""));
   }
   if (server.tail.length > 400) server.tail.splice(0, server.tail.length - 400);
+  if (server.raw.length > rawLimit) server.raw.splice(0, server.raw.length - rawLimit);
+  for (const listener of logListeners.get(server.id) ?? []) listener(lines);
+}
+
+function spawnInto(server: DevServer, out: WriteStream) {
+  out.write(`\n$ ${server.command}\n`);
+  const env = childEnv({
+    ...(server.input.env ?? {}),
+    ...(server.target.kind === "project" ? { XDG_CONFIG_HOME: join(hostHome, ".config") } : {}),
+    PORT: String(server.port),
+    HOST: "127.0.0.1",
+    BROWSER: "none",
+    FORCE_COLOR: server.target.kind === "project" ? "1" : "0",
+    CI: "",
+    NODE_ENV: "development",
+  });
+  delete env.NAPI_RS_NATIVE_LIBRARY_PATH;
+  const child = Bun.spawn(["bash", "-lc", server.command], {
+    cwd: server.cwd,
+    env,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    detached: true,
+  });
+  server.child = child;
+  const onData = (data: Buffer) => {
+    const text = data.toString("utf8");
+    out.write(hideSecrets(server, text));
+    pushLines(server, text);
+  };
+  const pump = async (stream: ReadableStream<Uint8Array>) => {
+    try {
+      for await (const chunk of stream) onData(Buffer.from(chunk));
+    } catch {}
+  };
+  server.done = Promise.all([pump(child.stdout), pump(child.stderr), child.exited]).then(() => {
+    out.end();
+    reserved.delete(server.port);
+    if (server.status !== "stopped") server.status = "exited";
+    server.exitCode = child.exitCode;
+    server.endedAt = new Date().toISOString();
+    server.child = null;
+    notify(server);
+    server.onExit(publicServer(server));
+  });
+}
+
+async function waitReady(server: DevServer, timeoutMs = 120_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (server.status !== "starting") break;
+    if (await portOpen(server.port)) {
+      server.status = "running";
+      notify(server);
+      break;
+    }
+    await new Promise((done) => setTimeout(done, 700));
+  }
+  if (server.status === "starting") {
+    server.status = "running";
+    notify(server);
+  }
+  return { ...publicServer(server), logs: server.tail.slice(-25).join("\n") };
+}
+
+async function openLog(server: DevServer) {
+  const logDir = join(codeDataDir, server.workspaceId, "dev");
+  await mkdir(logDir, { recursive: true });
+  server.logFile = join(logDir, `${server.port}.log`);
+  return createWriteStream(server.logFile, { flags: "a" });
+}
+
+export async function launchServer(
+  target: ServerTarget,
+  input: LaunchInput,
+  onExit: (server: PublicDevServer) => void = () => undefined,
+) {
+  const command = input.cmd.trim();
+  if (!command) throw new Error("Diga o comando, por exemplo npm run dev.");
+  const cwd = resolve(target.path, input.cwd ?? ".");
+  if (!within(target.path, cwd))
+    throw new Error(
+      target.kind === "workspace"
+        ? "A pasta do servidor precisa ficar dentro da tarefa."
+        : "A pasta do servidor precisa ficar dentro do projeto.",
+    );
+  if (input.before) await input.before();
+  const port = await freePort(input.port);
+  reserved.add(port);
+  const server: DevServer = {
+    id: `dev_${randomBytes(5).toString("hex")}`,
+    workspaceId: target.key,
+    workspacePath: target.path,
+    target,
+    input: { ...input, cmd: command },
+    baseCommand: command,
+    command: withPort(command, port, input.tool ?? toolOf(command)),
+    cwd,
+    port,
+    url: `http://localhost:${port}`,
+    tool: input.tool ?? toolOf(command),
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    status: "starting",
+    exitCode: null,
+    logFile: "",
+    previewToken: randomBytes(18).toString("base64url"),
+    child: null,
+    done: Promise.resolve(),
+    tail: [],
+    raw: [],
+    onExit,
+  };
+  const out = await openLog(server);
+  servers.set(server.id, server);
+  spawnInto(server, out);
+  notify(server);
+  return { server, ready: waitReady(server) };
 }
 
 export async function startDevServer(
@@ -124,81 +406,15 @@ export async function startDevServer(
   input: { cmd: string; port?: number; cwd?: string },
   onExit: (server: PublicDevServer) => void,
 ) {
-  const command = input.cmd.trim();
-  if (!command) throw new Error("Diga o comando, por exemplo npm run dev.");
-  const cwd = resolve(workspace.path, input.cwd ?? ".");
-  if (!insideWorkspace(workspace, cwd)) throw new Error("A pasta do servidor precisa ficar dentro da tarefa.");
-  await waitForInstall(workspace);
-  const port = await freePort(input.port);
-  reserved.add(port);
-  const finalCommand = withPort(command, port);
-  const id = `dev_${randomBytes(5).toString("hex")}`;
-  const logDir = join(codeDataDir, workspace.id, "dev");
-  await mkdir(logDir, { recursive: true });
-  const logFile = join(logDir, `${port}.log`);
-  const out: WriteStream = createWriteStream(logFile, { flags: "a" });
-  out.write(`\n$ ${finalCommand}\n`);
-  const child = Bun.spawn(["bash", "-lc", finalCommand], {
-    cwd,
-    env: childEnv({
-      PORT: String(port),
-      HOST: "127.0.0.1",
-      BROWSER: "none",
-      FORCE_COLOR: "0",
-      CI: "",
-      NODE_ENV: "development",
-    }),
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "pipe",
-    detached: true,
-  });
-  const server: DevServer = {
-    id,
-    workspaceId: workspace.id,
-    workspacePath: workspace.path,
-    command: finalCommand,
-    cwd,
-    port,
-    url: `http://localhost:${port}`,
-    startedAt: new Date().toISOString(),
-    status: "starting",
-    exitCode: null,
-    logFile,
-    previewToken: randomBytes(18).toString("base64url"),
-    child,
-    tail: [],
+  const target: ServerTarget = {
+    key: workspace.id,
+    kind: "workspace",
+    path: workspace.path,
+    name: workspace.repoName,
+    branch: workspace.branch,
   };
-  servers.set(id, server);
-  const onData = (data: Buffer) => {
-    const text = data.toString("utf8");
-    out.write(text);
-    pushTail(server, text);
-  };
-  const pump = async (stream: ReadableStream<Uint8Array>) => {
-    try {
-      for await (const chunk of stream) onData(Buffer.from(chunk));
-    } catch {}
-  };
-  void Promise.all([pump(child.stdout), pump(child.stderr), child.exited]).then(() => {
-    out.end();
-    reserved.delete(port);
-    if (server.status !== "stopped") server.status = "exited";
-    server.exitCode = child.exitCode;
-    server.child = null;
-    onExit(publicServer(server));
-  });
-  const deadline = Date.now() + 120_000;
-  while (Date.now() < deadline) {
-    if (server.status === "exited") break;
-    if (await portOpen(port)) {
-      server.status = "running";
-      break;
-    }
-    await new Promise((done) => setTimeout(done, 700));
-  }
-  if (server.status === "starting") server.status = "running";
-  return { ...publicServer(server), logs: server.tail.slice(-25).join("\n") };
+  const { ready } = await launchServer(target, { ...input, before: () => waitForInstall(workspace) }, onExit);
+  return ready;
 }
 
 function killGroup(child: Subprocess, signal: NodeJS.Signals) {
@@ -221,6 +437,34 @@ export async function stopDevServer(server: DevServer) {
   return publicServer(server);
 }
 
+export async function restartServer(server: DevServer) {
+  if (server.child) {
+    await stopDevServer(server);
+    await server.done;
+  }
+  const port = await freePort(server.port);
+  reserved.add(port);
+  server.port = port;
+  server.command = withPort(server.baseCommand, port, server.tool);
+  server.url = `http://localhost:${port}`;
+  server.status = "starting";
+  server.exitCode = null;
+  server.endedAt = null;
+  server.startedAt = new Date().toISOString();
+  server.previewToken = randomBytes(18).toString("base64url");
+  const out = await openLog(server);
+  spawnInto(server, out);
+  notify(server);
+  return { server, ready: waitReady(server) };
+}
+
+export function forgetServer(server: DevServer) {
+  if (server.child) return false;
+  servers.delete(server.id);
+  notify(server, true);
+  return true;
+}
+
 export function serversOf(workspace: WorkspaceState, port?: number) {
   return [...servers.values()].filter(
     (server) => server.workspacePath === workspace.path && (port === undefined || server.port === port),
@@ -232,12 +476,34 @@ export async function stopDevServers(workspace: WorkspaceState, port?: number) {
   return Promise.all(targets.map(stopDevServer));
 }
 
+export function rawLines(server: DevServer, lines: number, query?: string) {
+  const needle = query?.trim().toLowerCase();
+  const source = needle
+    ? server.raw.filter((line) =>
+        line
+          .replace(/\u001b\[[0-9;?]*[A-Za-z]/g, "")
+          .toLowerCase()
+          .includes(needle),
+      )
+    : server.raw;
+  return source.slice(-lines);
+}
+
 export async function devServerLogs(workspace: WorkspaceState, port: number | undefined, lines: number) {
   const list = serversOf(workspace, port).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
   const server = list[0];
   if (!server) throw new Error("Nenhum servidor desta tarefa ainda.");
-  let text = server.tail.slice(-lines).join("\n");
-  if (!text) text = (await readFile(server.logFile, "utf8").catch(() => "")).split("\n").slice(-lines).join("\n");
+  return serverLogs(server, lines);
+}
+
+export async function serverLogs(server: DevServer, lines: number, query?: string) {
+  let text = query
+    ? rawLines(server, lines, query)
+        .map((line) => line.replace(/\u001b\[[0-9;?]*[A-Za-z]/g, ""))
+        .join("\n")
+    : server.tail.slice(-lines).join("\n");
+  if (!text && !query)
+    text = (await readFile(server.logFile, "utf8").catch(() => "")).split("\n").slice(-lines).join("\n");
   return { ...publicServer(server), logs: text.slice(-20_000) };
 }
 
