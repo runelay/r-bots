@@ -21,6 +21,7 @@ final class AuthSession: NSObject {
     var pendingUserCode: String?
     var browserBusy = false
     var status: SetupStatus?
+    var providers: [String] = []
 
     @ObservationIgnored private var bootedServer: String?
     @ObservationIgnored private var browserTask: Task<Void, Never>?
@@ -61,9 +62,11 @@ final class AuthSession: NSObject {
         }
         status = fetched
         guard let fetched else {
+            providers = []
             state = .outdated
             return
         }
+        providers = await client.providers()
         if fetched.needsOwner {
             state = .signedOut(needsOwner: true)
             return
@@ -92,8 +95,12 @@ final class AuthSession: NSObject {
         return .signedOut(needsOwner: false)
     }
 
-    func signIn(email: String, password: String) async throws {
-        let token = try await client.signIn(email: email.trimmingCharacters(in: .whitespaces).lowercased(), password: password)
+    func signIn(email: String, password: String, remember: Bool) async throws {
+        let token = try await client.signIn(
+            email: email.trimmingCharacters(in: .whitespaces).lowercased(),
+            password: password,
+            remember: remember
+        )
         try await finish(token: token)
     }
 
@@ -114,6 +121,10 @@ final class AuthSession: NSObject {
             password: password
         )
         try await finish(token: token)
+    }
+
+    func requestPasswordReset(email: String) async throws {
+        try await client.requestPasswordReset(email: email.trimmingCharacters(in: .whitespaces).lowercased())
     }
 
     func changePassword(current: String, new: String) async throws {
@@ -151,7 +162,7 @@ final class AuthSession: NSObject {
         state = .signedIn(user)
     }
 
-    func signInWithBrowser() {
+    func signInWithBrowser(provider: String? = nil) {
         guard browserTask == nil else { return }
         browserBusy = true
         let client = client
@@ -166,7 +177,7 @@ final class AuthSession: NSObject {
             do {
                 let grant = try await client.startDevice()
                 self?.pendingUserCode = grant.userCode
-                self?.openBrowser(grant.verificationURL)
+                self?.openBrowser(Self.browserURL(grant.verificationURL, provider: provider))
                 var interval = grant.interval
                 let deadline = Date().addingTimeInterval(TimeInterval(grant.expiresIn))
                 while !Task.isCancelled, Date() < deadline {
@@ -187,6 +198,12 @@ final class AuthSession: NSObject {
                 return
             }
         }
+    }
+
+    private static func browserURL(_ url: URL, provider: String?) -> URL {
+        guard let provider, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "provider", value: provider)]
+        return components.url ?? url
     }
 
     func cancelBrowser() {

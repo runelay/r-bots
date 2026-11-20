@@ -88,6 +88,15 @@ struct AuthClient: Sendable {
         body: [String: String]? = nil,
         token: String? = nil
     ) async throws -> (Data, HTTPURLResponse) {
+        try await send(method, path, json: body?.mapValues { JSONValue.string($0) }, token: token)
+    }
+
+    private func send(
+        _ method: String,
+        _ path: String,
+        json body: [String: JSONValue]?,
+        token: String? = nil
+    ) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: try url(path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -138,6 +147,16 @@ struct AuthClient: Sendable {
             passwordReset: methods["passwordReset"] as? Bool ?? false,
             passkey: methods["passkey"] as? Bool ?? true
         )
+    }
+
+    func providers() async -> [String] {
+        guard let (data, response) = try? await send("GET", "/auth/providers"), response.statusCode == 200 else { return [] }
+        return Self.object(data)["providers"] as? [String] ?? []
+    }
+
+    func requestPasswordReset(email: String) async throws {
+        let (data, response) = try await send("POST", "/api/auth/request-password-reset", body: ["email": email])
+        try Self.ensure(data, response)
     }
 
     func health() async throws {
@@ -196,8 +215,12 @@ struct AuthClient: Sendable {
         return Self.object(data)["token"] as? String
     }
 
-    func signIn(email: String, password: String) async throws -> String {
-        let (data, response) = try await send("POST", "/api/auth/sign-in/email", body: ["email": email, "password": password])
+    func signIn(email: String, password: String, remember: Bool) async throws -> String {
+        let (data, response) = try await send(
+            "POST",
+            "/api/auth/sign-in/email",
+            json: ["email": .string(email), "password": .string(password), "rememberMe": .bool(remember)]
+        )
         try Self.ensure(data, response)
         if let token = response.value(forHTTPHeaderField: "set-auth-token"), !token.isEmpty { return token }
         if let token = Self.object(data)["token"] as? String { return token }
