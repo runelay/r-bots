@@ -17,6 +17,8 @@ struct IslandPromptCard: View {
     static let otherID = "other"
 
     let prompt: IslandPrompt
+    let width: CGFloat
+    let avatar: Namespace.ID?
     let open: @MainActor () -> Void
 
     @Environment(\.appReduceMotion) private var reduceMotion
@@ -38,10 +40,7 @@ struct IslandPromptCard: View {
                 }
                 .transition(.opacity)
             }
-            .padding(Spacing.l)
-            .frame(width: ComputerControlTab.cardWidth, alignment: .leading)
-            .glassPane(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-            .softElevation(lifted: true)
+            .frame(width: width, alignment: .leading)
             .animation(Motion.animation(reduceMotion: reduceMotion), value: approval.resolution)
             .accessibilityElement(children: .contain)
             .accessibilityLabel(approval.isQuestion ? "\(prompt.bot.name) quer saber" : "\(prompt.bot.name) precisa de você")
@@ -49,13 +48,13 @@ struct IslandPromptCard: View {
     }
 
     private func header(_ approval: Approval) -> some View {
-        HStack(spacing: Spacing.s) {
-            BotCharacter(bot: prompt.bot, mood: .waiting, size: 18)
-                .frame(width: 18, height: 18)
+        HStack(alignment: .center, spacing: Spacing.s) {
+            IslandAvatar(bot: prompt.bot, namespace: avatar)
             Text(approval.isQuestion ? "\(prompt.bot.name) quer saber" : "\(prompt.bot.name) precisa de você")
                 .font(TypeScale.captionStrong)
                 .foregroundStyle(Theme.textSecondary)
-                .lineLimit(1)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Spacing.s)
             Button(action: open) {
                 Image(systemName: "arrow.up.forward.app")
@@ -102,22 +101,35 @@ struct IslandPromptCard: View {
 
     private func approvalBody(_ approval: Approval) -> some View {
         let phrase = ActionPhrase(approval: approval, call: prompt.call)
+        let headline = ApprovalHeadline(approval: approval, call: prompt.call)
         return VStack(alignment: .leading, spacing: Spacing.m) {
-            HStack(spacing: Spacing.m) {
+            HStack(alignment: .top, spacing: Spacing.m) {
                 if let image = approval.previewImage.flatMap(NSImage.init(data:)) {
-                    ActionThumbnail(image: image, width: 56, height: 38)
+                    ActionThumbnail(image: image, width: 56, height: 40)
                 } else {
-                    ActionIcon(phrase: phrase, connector: prompt.call?.connectorName, size: 18)
+                    ActionIcon(phrase: phrase, connector: prompt.call?.connectorName, size: 16)
                         .frame(width: 32, height: 32)
                         .background(Theme.selection, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(phrase.text)
-                        .font(TypeScale.rowTitle)
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let reason = approval.reason {
+                VStack(alignment: .leading, spacing: Spacing.xxs) {
+                    Group {
+                        if let title = headline.title {
+                            Text(title)
+                        } else {
+                            Text(phrase.text)
+                        }
+                    }
+                    .font(TypeScale.rowTitle)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    if let detail = headline.detail {
+                        Text(detail)
+                            .font(TypeScale.caption)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                    }
+                    if let reason = headline.reason {
                         Text(reason)
                             .font(TypeScale.caption)
                             .foregroundStyle(Theme.textSecondary)
@@ -249,6 +261,118 @@ struct IslandPromptCard: View {
             id: prompt.approvalID,
             answers: approval.questions.map { QuestionAnswerDraft(questionID: $0.id, skipped: true) }
         )
+    }
+}
+
+struct ApprovalHeadline {
+    private enum Category {
+        case outbound
+        case deploy
+        case database
+        case production
+        case command
+
+        var title: String {
+            switch self {
+            case .outbound: "Quer mandar algo para fora"
+            case .deploy: "Quer fazer deploy"
+            case .database: "Quer mexer no banco de produção"
+            case .production: "Quer mexer em produção"
+            case .command: "Quer rodar um comando"
+            }
+        }
+
+        var reason: String? {
+            switch self {
+            case .outbound: "Isso fala com gente de fora ou mexe com dinheiro, então preciso do seu ok."
+            case .deploy: "Isso coloca algo no ar, então preciso do seu ok."
+            case .database, .production: "Isso mexe em produção, então preciso do seu ok."
+            case .command: nil
+            }
+        }
+    }
+
+    static let detailLimit = 48
+
+    let title: String?
+    let detail: String?
+    let reason: String?
+
+    init(approval: Approval, call: ToolCall?) {
+        let category = Self.category(approval: approval, call: call)
+        title = category?.title
+        let label = call?.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        detail = category != nil && !label.isEmpty && label.count <= Self.detailLimit ? label : nil
+        if let reason = approval.reason, reason.localizedCaseInsensitiveContains("lista dura") {
+            self.reason = category?.reason ?? "Precisa do seu ok antes de seguir."
+        } else {
+            reason = approval.reason
+        }
+    }
+
+    private static func category(approval: Approval, call: ToolCall?) -> Category? {
+        let text = "\(approval.prompt) \(approval.reason ?? "")".lowercased()
+        let isCommand = call.map { $0.name == "Bash" || $0.name == "shell_run" } ?? false
+        let guarded = text.contains("lista dura") || text.contains("produção") || text.contains("deploy") || text.contains("seu ok")
+        guard isCommand || guarded else { return nil }
+        if text.contains("mandar para") || text.contains("mensagem para fora") || text.contains("dinheiro") || text.contains("gente de fora") {
+            return .outbound
+        }
+        if ["deploy", "merge", "workflow", "release", "publica", "infraestrutura", "no ar"].contains(where: text.contains) {
+            return .deploy
+        }
+        if ["banco", "sql", "d1 ", "supabase"].contains(where: text.contains) {
+            return .database
+        }
+        if text.contains("produção") {
+            return .production
+        }
+        return isCommand ? .command : nil
+    }
+}
+
+private struct IslandAvatar: View {
+    let bot: Bot
+    let namespace: Namespace.ID?
+
+    @Environment(\.appReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            if let namespace {
+                character.matchedGeometryEffect(id: "avatar", in: namespace)
+            } else {
+                character
+            }
+            dot
+                .offset(x: 2, y: -2)
+        }
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
+    }
+
+    private var character: some View {
+        BotCharacter(bot: bot, mood: .waiting, size: 20)
+            .frame(width: 20, height: 20)
+            .frame(width: 24, height: 24)
+    }
+
+    @ViewBuilder
+    private var dot: some View {
+        let base = Circle()
+            .fill(Theme.attention)
+            .frame(width: 8, height: 8)
+        if reduceMotion {
+            base
+        } else {
+            base.phaseAnimator([false, true]) { content, lit in
+                content
+                    .scaleEffect(lit ? 1 : 0.7)
+                    .opacity(lit ? 1 : 0.55)
+            } animation: { _ in
+                .easeInOut(duration: 0.9)
+            }
+        }
     }
 }
 

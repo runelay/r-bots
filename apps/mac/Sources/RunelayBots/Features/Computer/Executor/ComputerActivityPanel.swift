@@ -14,11 +14,12 @@ private final class FirstMouseHostingView<Content: View>: NSHostingView<Content>
 @MainActor
 final class ComputerControlTab {
     static let earWidth: CGFloat = 84
-    static let glowPad: CGFloat = 14
+    static let shadowPad: CGFloat = 24
     static let plainWidth: CGFloat = 220
     static let plainHeight: CGFloat = 30
-    static let cardWidth: CGFloat = 380
-    static let cardGap: CGFloat = Spacing.s
+    static let cardWidth: CGFloat = 392
+    static let cardPadding: CGFloat = Spacing.l
+    static let shrinkDelay: Duration = .milliseconds(520)
     private let panel: ControlTabPanel
     private let host: FirstMouseHostingView<ControlTabView>
     private let state: ComputerOverlayState
@@ -50,11 +51,19 @@ final class ComputerControlTab {
         panel.hasShadow = false
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        host = FirstMouseHostingView(rootView: ControlTabView(state: state, stop: stop, open: open, notchWidth: 0, tabWidth: Self.plainWidth, height: Self.plainHeight))
+        panel.appearance = NSAppearance(named: .darkAqua)
+        host = FirstMouseHostingView(rootView: ControlTabView(state: state, stop: stop, open: open, notchWidth: 0, tabWidth: Self.plainWidth, expandedWidth: Self.cardWidth, height: Self.plainHeight))
+        host.appearance = NSAppearance(named: .darkAqua)
         panel.contentView = host
     }
 
     var isVisible: Bool { visible }
+
+    private var expandedWidth: CGFloat { max(tabWidth, Self.cardWidth) }
+
+    static func contentWidth(expandedWidth: CGFloat) -> CGFloat {
+        expandedWidth - TabShape.flare * 2 - cardPadding * 2
+    }
 
     func update() {
         let wanted = state.computerActive || state.promptVisible
@@ -85,7 +94,7 @@ final class ComputerControlTab {
     private func scheduleShrink() {
         collapse?.cancel()
         collapse = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(380))
+            try? await Task.sleep(for: Self.shrinkDelay)
             guard let self, !Task.isCancelled, !self.state.promptVisible else { return }
             self.panel.acceptsKey = false
             if self.panel.isKeyWindow {
@@ -127,13 +136,15 @@ final class ComputerControlTab {
         if state.promptVisible, let prompt = state.prompt {
             cardHeight = measure(prompt)
         }
-        host.rootView = ControlTabView(state: state, stop: stop, open: open, notchWidth: notchWidth, tabWidth: tabWidth, height: height)
+        host.rootView = ControlTabView(state: state, stop: stop, open: open, notchWidth: notchWidth, tabWidth: tabWidth, expandedWidth: expandedWidth, height: height)
         applyFrame()
     }
 
     private func measure(_ prompt: IslandPrompt) -> CGFloat {
-        let probe = NSHostingView(rootView: IslandPromptCard(prompt: prompt, open: {}).environment(\.appReduceMotion, true))
-        return ceil(probe.fittingSize.height)
+        let width = Self.contentWidth(expandedWidth: expandedWidth)
+        let probe = NSHostingView(rootView: IslandPromptCard(prompt: prompt, width: width, avatar: nil, open: {}).environment(\.appReduceMotion, true))
+        probe.appearance = NSAppearance(named: .darkAqua)
+        return ceil(probe.fittingSize.height) + Self.cardPadding * 2
     }
 
     private func applyFrame() {
@@ -143,10 +154,10 @@ final class ComputerControlTab {
         if let left = screen.auxiliaryTopLeftArea, notchWidth > 0 {
             centerX = left.maxX + notchWidth / 2
         }
-        let pad = Self.glowPad
+        let pad = Self.shadowPad
         let expanded = cardHeight > 0
-        let width = (expanded ? max(tabWidth, Self.cardWidth) : tabWidth) + pad * 2
-        let total = height + pad + (expanded ? Self.cardGap + cardHeight : 0)
+        let width = (expanded ? expandedWidth : tabWidth) + pad * 2
+        let total = height + (expanded ? cardHeight : 0) + pad
         host.frame = NSRect(x: 0, y: 0, width: width, height: total)
         panel.setFrame(NSRect(x: centerX - width / 2, y: frame.maxY - total, width: width, height: total), display: true)
     }
@@ -158,48 +169,70 @@ struct ControlTabView: View {
     let open: @MainActor (IslandPrompt) -> Void
     let notchWidth: CGFloat
     let tabWidth: CGFloat
+    let expandedWidth: CGFloat
     let height: CGFloat
+    @Namespace private var island
     @State private var isHoveringStop = false
 
-    private var waiting: Bool { state.promptVisible && state.prompt != nil }
+    private var expanded: Bool { state.promptVisible && state.prompt != nil }
+
+    private var morph: Animation {
+        state.reduceMotion ? Motion.reduced : .spring(response: 0.42, dampingFraction: 0.8)
+    }
 
     private var mood: CharacterMood {
-        if waiting { return .waiting }
+        if expanded { return .waiting }
         return state.computerActive ? .thinking : .idle
     }
 
-    var body: some View {
-        VStack(spacing: ComputerControlTab.cardGap) {
-            tab
-            if waiting, let prompt = state.prompt {
-                IslandPromptCard(prompt: prompt) { open(prompt) }
-                    .id(prompt.id)
-                    .transition(state.reduceMotion ? .opacity : .asymmetric(
-                        insertion: .opacity.combined(with: .scale(scale: 0.85, anchor: .top)).combined(with: .offset(y: -12)),
-                        removal: .opacity.combined(with: .scale(scale: 0.92, anchor: .top))
-                    ))
-            }
-        }
-        .environment(\.appReduceMotion, state.reduceMotion)
-        .animation(Motion.animation(reduceMotion: state.reduceMotion), value: state.promptVisible)
-        .animation(Motion.animation(reduceMotion: state.reduceMotion), value: state.prompt?.id)
-        .padding(.horizontal, ComputerControlTab.glowPad)
-        .padding(.bottom, ComputerControlTab.glowPad)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    private var radius: CGFloat {
+        expanded ? IslandShape.expandedRadius : min(IslandShape.collapsedRadius, height / 2)
     }
 
-    private var tab: some View {
-        HStack(spacing: 0) {
-            HStack(spacing: Spacing.s - 2) {
-                BotCharacter(botID: state.botID, glyph: state.glyph, accent: state.accent, mood: mood, size: 16)
-                    .frame(width: 16, height: 16)
-                Text(state.botName)
-                    .font(TypeScale.captionStrong)
-                    .foregroundStyle(Color.white)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+    var body: some View {
+        VStack(spacing: 0) {
+            topRow
+            if expanded, let prompt = state.prompt {
+                IslandPromptCard(
+                    prompt: prompt,
+                    width: ComputerControlTab.contentWidth(expandedWidth: expandedWidth),
+                    avatar: island
+                ) { open(prompt) }
+                .id(prompt.id)
+                .padding(.horizontal, TabShape.flare + ComputerControlTab.cardPadding)
+                .padding(.vertical, ComputerControlTab.cardPadding)
+                .transition(state.reduceMotion ? .opacity : .asymmetric(
+                    insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .top)).animation(morph.delay(0.06)),
+                    removal: .opacity.animation(.easeOut(duration: 0.12))
+                ))
             }
-            .frame(maxWidth: notchWidth > 0 ? ComputerControlTab.earWidth : .infinity, alignment: .leading)
+        }
+        .frame(width: expanded ? expandedWidth : tabWidth, alignment: .top)
+        .background(IslandShape(bottomRadius: radius).fill(Color.black))
+        .clipShape(IslandShape(bottomRadius: radius))
+        .shadow(color: Color.black.opacity(expanded ? 0.32 : 0), radius: 18, y: 8)
+        .keyframeAnimator(initialValue: 1.0, trigger: state.attention) { content, scale in
+            content.scaleEffect(scale, anchor: .top)
+        } keyframes: { _ in
+            KeyframeTrack {
+                SpringKeyframe(state.reduceMotion ? 1 : 1.04, duration: 0.18, spring: .snappy)
+                SpringKeyframe(1, duration: 0.45, spring: .bouncy)
+            }
+        }
+        .animation(morph, value: expanded)
+        .animation(morph, value: state.prompt?.id)
+        .environment(\.appReduceMotion, state.reduceMotion)
+        .environment(\.colorScheme, .dark)
+        .padding(.horizontal, ComputerControlTab.shadowPad)
+        .padding(.bottom, ComputerControlTab.shadowPad)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .help(expanded ? "" : state.computerActive ? "\(state.botName) está usando o computador. Mexer no mouse ou no teclado também para o bot." : "\(state.botName) está esperando sua resposta.")
+    }
+
+    private var topRow: some View {
+        HStack(spacing: 0) {
+            leadingEar
+                .frame(maxWidth: notchWidth > 0 ? ComputerControlTab.earWidth : .infinity, alignment: .leading)
             if notchWidth > 0 {
                 Color.clear.frame(width: notchWidth)
             }
@@ -212,43 +245,32 @@ struct ControlTabView: View {
         }
         .padding(.horizontal, TabShape.flare + Spacing.s)
         .frame(width: tabWidth, height: height)
-        .background(tabFill)
-        .keyframeAnimator(initialValue: 1.0, trigger: state.attention) { content, scale in
-            content.scaleEffect(scale, anchor: .top)
-        } keyframes: { _ in
-            KeyframeTrack {
-                SpringKeyframe(state.reduceMotion ? 1 : 1.07, duration: 0.18, spring: .snappy)
-                SpringKeyframe(1, duration: 0.45, spring: .bouncy)
-            }
-        }
-        .help(state.computerActive ? "\(state.botName) está usando o computador. Mexer no mouse ou no teclado também para o bot." : "\(state.botName) está esperando sua resposta.")
     }
-
-    private var glowColor: Color { waiting ? Theme.attention : state.color }
 
     @ViewBuilder
-    private var tabFill: some View {
-        if waiting, !state.reduceMotion {
-            fill
-                .phaseAnimator([0.45, 1.0]) { content, phase in
-                    content.shadow(color: glowColor.opacity(0.6 * phase), radius: 6 + 6 * phase, y: 2)
-                } animation: { _ in
-                    .easeInOut(duration: 1.4)
-                }
+    private var leadingEar: some View {
+        if expanded {
+            Color.clear.frame(width: 16, height: 16)
         } else {
-            fill
-                .shadow(color: glowColor.opacity(0.75), radius: 7, y: 2)
+            HStack(spacing: Spacing.s - 2) {
+                avatar
+                ViewThatFits(in: .horizontal) {
+                    Text(state.botName)
+                        .font(TypeScale.captionStrong)
+                        .foregroundStyle(Color.white)
+                        .lineLimit(1)
+                        .fixedSize()
+                    Color.clear.frame(width: 0, height: 0)
+                }
+            }
+            .transition(.opacity)
         }
     }
 
-    private var fill: some View {
-        TabShape()
-            .fill(Color.black)
-            .overlay(
-                TabShape().fill(
-                    LinearGradient(colors: [.clear, .clear, glowColor.opacity(0.28)], startPoint: .top, endPoint: .bottom)
-                )
-            )
+    private var avatar: some View {
+        BotCharacter(botID: state.botID, glyph: state.glyph, accent: state.accent, mood: mood, size: 16)
+            .frame(width: 16, height: 16)
+            .matchedGeometryEffect(id: "avatar", in: island)
     }
 
     private var stopButton: some View {
@@ -279,27 +301,48 @@ struct ControlTabView: View {
     }
 }
 
-struct TabShape: Shape {
-    static let flare: CGFloat = 8
-    static let bottomRadius: CGFloat = 12
+struct IslandShape: Shape {
+    static let collapsedRadius: CGFloat = 12
+    static let expandedRadius: CGFloat = 32
+
+    var bottomRadius: CGFloat
+
+    var animatableData: CGFloat {
+        get { bottomRadius }
+        set { bottomRadius = newValue }
+    }
 
     func path(in rect: CGRect) -> Path {
-        let flare = Self.flare
-        let radius = min(Self.bottomRadius, rect.height / 2)
+        let flare = TabShape.flare
         let width = rect.width
         let height = rect.height
+        let reach = max(0, min(bottomRadius * 1.28, (width - flare * 2) / 2, height - flare))
+        let radius = reach / 1.28
+        let pull = radius * 0.36
         var path = Path()
         path.move(to: CGPoint(x: 0, y: 0))
         path.addQuadCurve(to: CGPoint(x: flare, y: flare), control: CGPoint(x: flare, y: 0))
-        path.addLine(to: CGPoint(x: flare, y: height - radius))
-        path.addQuadCurve(to: CGPoint(x: flare + radius, y: height), control: CGPoint(x: flare, y: height))
-        path.addLine(to: CGPoint(x: width - flare - radius, y: height))
-        path.addQuadCurve(to: CGPoint(x: width - flare, y: height - radius), control: CGPoint(x: width - flare, y: height))
+        path.addLine(to: CGPoint(x: flare, y: height - reach))
+        path.addCurve(
+            to: CGPoint(x: flare + reach, y: height),
+            control1: CGPoint(x: flare, y: height - pull),
+            control2: CGPoint(x: flare + pull, y: height)
+        )
+        path.addLine(to: CGPoint(x: width - flare - reach, y: height))
+        path.addCurve(
+            to: CGPoint(x: width - flare, y: height - reach),
+            control1: CGPoint(x: width - flare - pull, y: height),
+            control2: CGPoint(x: width - flare, y: height - pull)
+        )
         path.addLine(to: CGPoint(x: width - flare, y: flare))
         path.addQuadCurve(to: CGPoint(x: width, y: 0), control: CGPoint(x: width - flare, y: 0))
         path.closeSubpath()
         return path
     }
+}
+
+enum TabShape {
+    static let flare: CGFloat = 8
 }
 
 struct AlwaysHover: NSViewRepresentable {
