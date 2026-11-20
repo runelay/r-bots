@@ -198,6 +198,27 @@ struct ImageGrid: View {
     }
 }
 
+private struct PlayerSurface: NSViewRepresentable {
+    let player: AVPlayer
+
+    func makeNSView(context: Context) -> AVPlayerView {
+        let view = AVPlayerView()
+        view.controlsStyle = .floating
+        view.videoGravity = .resizeAspect
+        view.player = player
+        return view
+    }
+
+    func updateNSView(_ view: AVPlayerView, context: Context) {
+        if view.player !== player { view.player = player }
+    }
+
+    static func dismantleNSView(_ view: AVPlayerView, coordinator: ()) {
+        view.player?.pause()
+        view.player = nil
+    }
+}
+
 struct InlineVideo: View {
     @Environment(AppModel.self) private var model
     let ref: AttachmentRef
@@ -208,7 +229,7 @@ struct InlineVideo: View {
         let height = width / min(2.2, max(0.5, ref.aspectRatio))
         ZStack {
             if let player {
-                VideoPlayer(player: player)
+                PlayerSurface(player: player)
                     .transition(.opacity)
             } else {
                 Button {
