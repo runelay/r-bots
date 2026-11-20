@@ -498,6 +498,7 @@ struct GlassMenuList: View {
                             .foregroundStyle(Theme.textTertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                            .frame(maxWidth: 300, alignment: .leading)
                     }
                 }
                 Spacer(minLength: Spacing.l)
