@@ -6,9 +6,18 @@ import CoreGraphics
 final class InputTools {
     static let marker: Int64 = 0x52_4C_42_4F_54
     private(set) var lastSyntheticAt = Date.distantPast
-    private let source = CGEventSource(stateID: .hidSystemState)
+    private let source: CGEventSource? = {
+        let source = CGEventSource(stateID: .hidSystemState)
+        source?.localEventsSuppressionInterval = 0.25
+        source?.setLocalEventsFilterDuringSuppressionState([.permitLocalKeyboardEvents, .permitSystemDefinedEvents], state: .eventSuppressionStateSuppressionInterval)
+        return source
+    }()
 
-    func click(at point: CGPoint, button: String, double: Bool) async {
+    static func cursorLocation() -> CGPoint? {
+        CGEvent(source: nil)?.location
+    }
+
+    func click(at point: CGPoint, button: String, double: Bool, restoreTo: CGPoint? = nil) async {
         let isRight = button == "right"
         let mouseButton: CGMouseButton = isRight ? .right : .left
         let downType: CGEventType = isRight ? .rightMouseDown : .leftMouseDown
@@ -23,6 +32,10 @@ final class InputTools {
             up?.setIntegerValueField(.mouseEventClickState, value: Int64(clickState))
             post(up)
             try? await Task.sleep(for: .milliseconds(60))
+        }
+        if let restoreTo {
+            CGWarpMouseCursorPosition(restoreTo)
+            CGAssociateMouseAndMouseCursorPosition(1)
         }
     }
 
@@ -48,8 +61,10 @@ final class InputTools {
         post(CGEvent(mouseEventSource: source, mouseType: .leftMouseUp, mouseCursorPosition: end, mouseButton: .left))
     }
 
-    func type(_ text: String, shouldContinue: () -> Bool) async -> Bool {
+    func type(_ text: String, shouldContinue: () -> Bool) async -> Int {
         var buffer: [UniChar] = []
+        var pending = 0
+        var typed = 0
         func flush() {
             guard !buffer.isEmpty else { return }
             for isDown in [true, false] {
@@ -61,17 +76,22 @@ final class InputTools {
                 post(event)
             }
             buffer.removeAll()
+            typed += pending
+            pending = 0
         }
         for character in text {
-            guard shouldContinue() else { return false }
+            guard shouldContinue() else { return typed }
             if character == "\n" || character == "\r\n" {
                 flush()
                 pressKey(code: CGKeyCode(kVK_Return), flags: [])
+                typed += 1
             } else if character == "\t" {
                 flush()
                 pressKey(code: CGKeyCode(kVK_Tab), flags: [])
+                typed += 1
             } else {
                 buffer.append(contentsOf: Array(String(character).utf16))
+                pending += 1
                 if buffer.count >= 16 {
                     flush()
                 } else {
@@ -81,7 +101,7 @@ final class InputTools {
             try? await Task.sleep(for: .milliseconds(12))
         }
         flush()
-        return true
+        return typed
     }
 
     func key(_ combo: String) throws {
@@ -118,6 +138,9 @@ final class InputTools {
 
     private func post(_ event: CGEvent?) {
         guard let event else { return }
+        if event.type != .keyDown, event.type != .keyUp {
+            event.flags = []
+        }
         event.setIntegerValueField(.eventSourceUserData, value: Self.marker)
         lastSyntheticAt = Date()
         event.post(tap: .cghidEventTap)

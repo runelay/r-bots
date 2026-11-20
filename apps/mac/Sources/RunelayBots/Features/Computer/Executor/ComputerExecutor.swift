@@ -38,14 +38,15 @@ final class ComputerExecutor {
     private var barriers: [String: (failure: ToolFailure, until: Date)] = [:]
     private var idleTask: Task<Void, Never>?
     private var monitor: Any?
-    private var lastInputToolAt = Date.distantPast
+    private var lastUserActionAt = Date.distantPast
+    private var lastUserMoveAt = Date.distantPast
     private var overlay: ComputerOverlay?
     private var turnWatch: Task<Void, Never>?
     private var sawTurnRunning = false
     var botLookup: (@MainActor (String) -> Bot?)?
     var statusLookup: (@MainActor (String) -> BotStatus)?
 
-    private static let inputTools: Set<String> = ["click", "type", "key", "scroll", "drag", "open", "applescript"]
+    private static let pointerTools: Set<String> = ["click", "type", "key", "scroll", "drag"]
 
     func start() {
         guard !started else { return }
@@ -98,8 +99,18 @@ final class ComputerExecutor {
             let call = try ExecutorCall(tool: name, body: data)
             try checkBarrier(call.botId)
             noteActivity(call)
-            let result = try await run(call)
+            let usesPointer = Self.pointerTools.contains(call.tool)
+            if usesPointer {
+                try await waitForUserPause(botId: call.botId)
+            }
+            let startedAt = Date()
+            var result = try await run(call)
             try checkBarrier(call.botId)
+            if usesPointer, lastUserActionAt > startedAt, case .object(var object) = result {
+                object["userInterrupted"] = .bool(true)
+                object["note"] = .string("A pessoa mexeu no Mac durante esta ação. Tire um print para conferir se deu certo antes de seguir.")
+                result = .object(object)
+            }
             return (200, .object(["ok": .bool(true), "result": result]))
         } catch let failure as ToolFailure {
             return (failure.status, failure.json)
@@ -202,7 +213,7 @@ final class ComputerExecutor {
                 throw ToolFailure(422, code: "element_without_frame", "O elemento \(elementId) não tem posição na tela.")
             }
             let point = CGPoint(x: frame.midX, y: frame.midY)
-            await input.click(at: point, button: button, double: double)
+            await input.click(at: point, button: button, double: double, restoreTo: userCursorToRestore())
             showClick()
             return .object(["elementId": .string(elementId), "method": .string("mouse"), "x": .point(point.x), "y": .point(point.y)])
         }
@@ -210,7 +221,7 @@ final class ComputerExecutor {
             throw ToolFailure.badArgs("Informe elementId ou x e y.")
         }
         await overlay?.moveCursor(to: point)
-        await input.click(at: point, button: button, double: double)
+        await input.click(at: point, button: button, double: double, restoreTo: userCursorToRestore())
         showClick()
         return .object(["method": .string("mouse"), "x": .point(point.x), "y": .point(point.y)])
     }
@@ -235,14 +246,41 @@ final class ComputerExecutor {
         }
         defer { overlay?.scheduleCursorHide() }
         let botId = call.botId
-        let completed = await input.type(text) { [weak self] in
-            self?.barriers[botId] == nil
+        let startedAt = Date()
+        var interruption: ToolFailure?
+        let typed = await input.type(text) { [weak self] in
+            guard let self else { return false }
+            if let barrier = self.barriers[botId] {
+                interruption = barrier.failure
+                return false
+            }
+            if self.lastUserActionAt > startedAt {
+                interruption = .userInterrupted(typed: 0, total: text.count)
+                return false
+            }
+            return true
         }
-        guard completed else { throw ToolFailure.stopped }
+        if let interruption {
+            throw interruption.code == "user_interrupted" ? ToolFailure.userInterrupted(typed: typed, total: text.count) : interruption
+        }
         if !secretRefs.isEmpty {
             return .object(["typed": .string(secretRefs.map { "segredo:\($0)" }.joined(separator: ", "))])
         }
         return .object(["typed": .int(text.count)])
+    }
+
+    private func waitForUserPause(botId: String) async throws {
+        let deadline = Date().addingTimeInterval(15)
+        while Date().timeIntervalSince(lastUserActionAt) < 1.2 {
+            try checkBarrier(botId)
+            guard Date() < deadline else { throw ToolFailure.userBusy }
+            try? await Task.sleep(for: .milliseconds(150))
+        }
+    }
+
+    private func userCursorToRestore() -> CGPoint? {
+        guard Date().timeIntervalSince(lastUserMoveAt) < 2 else { return nil }
+        return InputTools.cursorLocation()
     }
 
     private func showClick() {
@@ -346,9 +384,6 @@ final class ComputerExecutor {
         activity.botId = call.botId
         activity.botName = call.botName
         activity.lastAction = call.tool
-        if Self.inputTools.contains(call.tool) {
-            lastInputToolAt = Date()
-        }
         if !activity.isActive {
             activity.isActive = true
             sawTurnRunning = false
@@ -367,7 +402,6 @@ final class ComputerExecutor {
         idleTask?.cancel()
         idleTask = nil
         activity.isActive = false
-        lastInputToolAt = .distantPast
         turnWatch?.cancel()
         turnWatch = nil
         overlay?.end()
@@ -391,18 +425,23 @@ final class ComputerExecutor {
     }
 
     private func installTakeoverMonitor() {
-        monitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { event in
+        let matching: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown, .scrollWheel, .mouseMoved, .leftMouseDragged]
+        monitor = NSEvent.addGlobalMonitorForEvents(matching: matching) { event in
             let userData = event.cgEvent?.getIntegerValueField(.eventSourceUserData) ?? 0
+            let isMove = event.type == .mouseMoved || event.type == .leftMouseDragged
             MainActor.assumeIsolated {
-                ComputerExecutor.shared.userInput(userData: userData)
+                ComputerExecutor.shared.userInput(userData: userData, isMove: isMove)
             }
         }
     }
 
-    private func userInput(userData: Int64) {
-        guard activity.isActive, let botId = activity.botId, userData != InputTools.marker else { return }
-        guard Date().timeIntervalSince(lastInputToolAt) < 60, Date().timeIntervalSince(input.lastSyntheticAt) > 0.4 else { return }
-        interrupt(botId: botId, failure: .tookOver, event: "user_took_over")
+    private func userInput(userData: Int64, isMove: Bool) {
+        guard activity.isActive, userData != InputTools.marker, Date().timeIntervalSince(input.lastSyntheticAt) > 0.4 else { return }
+        if isMove {
+            lastUserMoveAt = Date()
+        } else {
+            lastUserActionAt = Date()
+        }
     }
 
     private func broadcast(_ object: [String: JSONValue]) {
