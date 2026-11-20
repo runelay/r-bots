@@ -56,7 +56,7 @@ beforeEach(async () => {
   bot = await makeBot();
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
@@ -175,18 +175,18 @@ describe("artifacts service", () => {
     expect(artifactExtension("canvas")).toBe("json");
     expect(artifactExtension("page")).toBe("html");
     expect(artifactContentKey("b", "art_x", 2, "page")).toBe("bots/b/artifacts/art_x/v2.html");
-    expect(listArtifactRows("no-artifacts-bot")).toEqual([]);
+    expect(await listArtifactRows("no-artifacts-bot")).toEqual([]);
     const meta = await createArtifact(bot.id, "Autor", "page", page("x"));
     await saveArtifactMeta({
       ...meta,
       versions: [{ ...meta.versions[0], author: "user" }],
       canvas: { seen: 1, notified: 0 },
     });
-    expect(readArtifactRow(bot.id, meta.id)).toMatchObject({
+    expect(await readArtifactRow(bot.id, meta.id)).toMatchObject({
       versions: [{ n: 1, author: "user" }],
       canvas: { seen: 1, notified: 0 },
     });
-    expect(readArtifactRow(bot.id, "art_nothing00")).toBeNull();
+    expect(await readArtifactRow(bot.id, "art_nothing00")).toBeNull();
   });
 });
 
@@ -255,7 +255,7 @@ describe("artifacts routes", () => {
     expect(saved.body.version).toBe(2);
     expect(saved.body.versions[1].author).toBe("user");
     const thread = await ensureThread(bot.id);
-    const events = factsOfType(getStoredSession(thread.sessionId)!, "artifact.updated");
+    const events = await factsOfType(getStoredSession(thread.sessionId)!, "artifact.updated");
     expect(events.at(-1)?.data).toMatchObject({ artifactId: meta.id, version: 2, author: "user", botId: bot.id });
 
     const { meta: other } = await canvas.createCanvas(bot.id, "Velho", { nodes: [{ id: "a", text: "a" }], edges: [] });

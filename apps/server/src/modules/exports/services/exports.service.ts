@@ -122,7 +122,7 @@ function blockParagraphs(tokens: Token[], depth = 0): Paragraph[] {
             ? "☑ "
             : "☐ "
           : list.ordered
-            ? `${Number(list.start || 1) + index}. `
+            ? `${Number(list.start ?? 1) + index}. `
             : "";
         out.push(
           new Paragraph({
@@ -253,7 +253,7 @@ function plainValue(cell: SheetCell) {
 }
 
 export async function sheetXlsx(botId: string, sheetId: string) {
-  const { sheet, tabs, rows } = bookFor(botId, sheetId);
+  const { sheet, tabs, rows } = await bookFor(botId, sheetId);
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "runelay bots";
   workbook.title = sheet.title;
@@ -292,16 +292,16 @@ function displayValue(cell: SheetCell) {
   if (cell.t === "b") return cell.v ? "VERDADEIRO" : "FALSO";
   if (cell.t === "n" && typeof cell.v === "number") {
     const format = cell.format;
+    const fixed =
+      format?.decimals === undefined
+        ? null
+        : { minimumFractionDigits: format.decimals, maximumFractionDigits: format.decimals };
     if (format?.type === "percent")
-      return `${(cell.v * 100).toLocaleString("pt-BR", { maximumFractionDigits: format.decimals ?? 2 })}%`;
+      return `${(cell.v * 100).toLocaleString("pt-BR", fixed ?? { maximumFractionDigits: 2 })}%`;
     if (format?.type === "brl")
-      return cell.v.toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-        minimumFractionDigits: format.decimals ?? 2,
-      });
+      return cell.v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", ...(fixed ?? {}) });
     return cell.v.toLocaleString("pt-BR", {
-      maximumFractionDigits: format?.decimals ?? 10,
+      ...(fixed ?? { maximumFractionDigits: 10 }),
       useGrouping: format?.type === "number",
     });
   }
@@ -312,8 +312,8 @@ function displayValue(cell: SheetCell) {
   return String(cell.v);
 }
 
-function tabGrid(botId: string, sheetId: string, tabId?: string | null) {
-  const { sheet, tabs, rows } = bookFor(botId, sheetId);
+async function tabGrid(botId: string, sheetId: string, tabId?: string | null) {
+  const { sheet, tabs, rows } = await bookFor(botId, sheetId);
   const tab = tabs.find((item) => item.id === tabId) ?? tabs[0];
   if (tabId && tab.id !== tabId) throw new BlockError("Aba não encontrada.", 404);
   const cells = rows.filter((item) => item.tabId === tab.id).map(cellOf);
@@ -326,14 +326,14 @@ function tabGrid(botId: string, sheetId: string, tabId?: string | null) {
   return { sheet, tab, grid, styles };
 }
 
-export function sheetCsv(botId: string, sheetId: string, tabId?: string | null) {
-  const { grid } = tabGrid(botId, sheetId, tabId);
+export async function sheetCsv(botId: string, sheetId: string, tabId?: string | null) {
+  const { grid } = await tabGrid(botId, sheetId, tabId);
   const quote = (value: string) => (/[",\n\r]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
   return `﻿${grid.map((row) => row.map(quote).join(",")).join("\r\n")}\r\n`;
 }
 
 export async function sheetPdf(botId: string, sheetId: string, tabId?: string | null) {
-  const { sheet, tab, grid, styles } = tabGrid(botId, sheetId, tabId);
+  const { sheet, tab, grid, styles } = await tabGrid(botId, sheetId, tabId);
   const head = `<tr><th></th>${grid[0]?.map((_, c) => `<th>${colLetters(c)}</th>`).join("") ?? ""}</tr>`;
   const body = grid
     .map(
@@ -360,16 +360,16 @@ async function render(
   tabId?: string | null,
 ) {
   if (kind === "note") {
-    const note = requireNote(botId, sourceId);
+    const note = await requireNote(botId, sourceId);
     const base = note.title;
     if (format === "md") return { name: `${base}.md`, data: new TextEncoder().encode(note.markdown) };
     if (format === "docx") return { name: `${base}.docx`, data: await noteDocx(note.title, note.markdown) };
     return { name: `${base}.pdf`, data: await notePdf(note.title, note.markdown) };
   }
-  const { sheet } = bookFor(botId, sourceId);
+  const { sheet } = await bookFor(botId, sourceId);
   if (format === "xlsx") return { name: `${sheet.title}.xlsx`, data: await sheetXlsx(botId, sourceId) };
   if (format === "csv")
-    return { name: `${sheet.title}.csv`, data: new TextEncoder().encode(sheetCsv(botId, sourceId, tabId)) };
+    return { name: `${sheet.title}.csv`, data: new TextEncoder().encode(await sheetCsv(botId, sourceId, tabId)) };
   return { name: `${sheet.title}.pdf`, data: await sheetPdf(botId, sourceId, tabId) };
 }
 
@@ -430,8 +430,8 @@ export async function createExport(botId: string, body: Record<string, unknown>)
     );
   const sourceId = String(body.id ?? "");
   const tabId = typeof body.tabId === "string" && body.tabId ? body.tabId : null;
-  if (kind === "note") requireNote(botId, sourceId);
-  else bookFor(botId, sourceId);
+  if (kind === "note") await requireNote(botId, sourceId);
+  else await bookFor(botId, sourceId);
   const id = newId("exp");
   const createdAt = nowIso();
   await getDb()
@@ -447,22 +447,22 @@ export async function createExport(botId: string, body: Record<string, unknown>)
   return readExport(botId, id);
 }
 
-export function readExport(botId: string, exportId: string) {
-  const row = getDb()
+export async function readExport(botId: string, exportId: string) {
+  const [row] = await getDb()
     .select()
     .from(exports)
     .where(and(eq(exports.id, exportId), eq(exports.botId, botId)))
-    .get();
+    .limit(1);
   if (!row) throw new BlockError("Exportação não encontrada.", 404);
   return jobOf(botId, row);
 }
 
 export async function exportFile(botId: string, exportId: string) {
-  const row = getDb()
+  const [row] = await getDb()
     .select()
     .from(exports)
     .where(and(eq(exports.id, exportId), eq(exports.botId, botId)))
-    .get();
+    .limit(1);
   if (row?.status !== "ready" || !row.blobKey) throw new BlockError("Exportação não encontrada.", 404);
   const stream = await getBlobStore().get(row.blobKey);
   if (!stream) throw new BlockError("Arquivo da exportação não encontrado.", 404);

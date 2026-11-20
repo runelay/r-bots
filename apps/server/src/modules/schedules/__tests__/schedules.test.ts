@@ -63,7 +63,7 @@ describe("fire", () => {
     expect(started?.sessionId).toBe(thread.sessionId);
     await settled(thread.sessionId);
     const session = sessionsService.getStoredSession(thread.sessionId)!;
-    const consumed = factsOfType(session, "delivery.consumed");
+    const consumed = await factsOfType(session, "delivery.consumed");
     expect(consumed.at(-1)?.data).toMatchObject({
       deliveryId: started?.deliveryId,
       source: "schedule",

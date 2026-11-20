@@ -85,8 +85,8 @@ describe("sections service", () => {
 });
 
 describe("sections repository", () => {
-  test("round-trips updatedAt and unknown fields through extra", () => {
-    saveSectionRow({
+  test("round-trips updatedAt and unknown fields through extra", async () => {
+    await saveSectionRow({
       id: "sec_repo",
       name: "Repo",
       order: 7,
@@ -95,7 +95,7 @@ describe("sections repository", () => {
       archivedAt: null,
       color: "violet",
     });
-    expect(loadSectionRows().find((row) => row.id === "sec_repo")).toEqual({
+    expect((await loadSectionRows()).find((row) => row.id === "sec_repo")).toEqual({
       id: "sec_repo",
       name: "Repo",
       order: 7,
@@ -106,9 +106,9 @@ describe("sections repository", () => {
     } as never);
   });
 
-  test("fills defaults for a sparse row", () => {
-    saveSectionRow({ id: "sec_sparse", createdAt: "2026-01-03T00:00:00.000Z" });
-    expect(loadSectionRows().find((row) => row.id === "sec_sparse")).toEqual({
+  test("fills defaults for a sparse row", async () => {
+    await saveSectionRow({ id: "sec_sparse", createdAt: "2026-01-03T00:00:00.000Z" });
+    expect((await loadSectionRows()).find((row) => row.id === "sec_sparse")).toEqual({
       id: "sec_sparse",
       name: "",
       order: 0,

@@ -22,16 +22,16 @@ import * as threads from "../../conversations/services/threads.service";
 import { createGroup, setGroupArchived } from "../../groups/services/groups.service";
 import { answer, cancel, conversationStatus } from "../services/engine.service";
 
-beforeEach(() => {
+beforeEach(async () => {
   quietEngine();
 });
 
-afterEach(() => {
+afterEach(async () => {
   restoreTracked();
 });
 
-function updates(session: StoredSession) {
-  return factsOfType(session, "delegation.updated").map((fact) => fact.data) as Array<Record<string, unknown>>;
+async function updates(session: StoredSession) {
+  return (await factsOfType(session, "delegation.updated")).map((fact) => fact.data) as Array<Record<string, unknown>>;
 }
 
 function delegating(targetId: string, message: string, outcome: { reply?: string; error?: string }) {
@@ -48,8 +48,8 @@ function delegating(targetId: string, message: string, outcome: { reply?: string
   };
 }
 
-function childSession(parent: StoredSession) {
-  const id = updates(parent)[0]?.sessionId as string | undefined;
+async function childSession(parent: StoredSession) {
+  const id = (await updates(parent))[0]?.sessionId as string | undefined;
   return id ? getStoredSession(id) : undefined;
 }
 
@@ -71,20 +71,20 @@ describe("delegation", () => {
       }),
     );
     send(session, { text: "pede pro time e abre o PR" });
-    const child = await waitFor(() => childSession(session));
-    await waitFor(() => factsOfType(child, "interaction.opened")[0]);
-    const card = factsOfType(child, "interaction.opened")[0].data.interactionId as string;
+    const child = await waitFor(async () => await childSession(session));
+    await waitFor(async () => (await factsOfType(child, "interaction.opened"))[0]);
+    const card = (await factsOfType(child, "interaction.opened"))[0].data.interactionId as string;
     answer(child, "dlv_w", card, "approve");
     await idle(session);
     expect(outcome).toEqual({ reply: "Números ok (approve)." });
-    expect(updates(session).map((item) => item.status)).toEqual([
+    expect((await updates(session)).map((item) => item.status)).toEqual([
       "starting",
       "working",
       "awaiting",
       "working",
       "completed",
     ]);
-    expect(updates(session).at(-1)).toMatchObject({
+    expect((await updates(session)).at(-1)).toMatchObject({
       botId: worker.id,
       callId: "call_del",
       summary: "Números ok (approve).",
@@ -94,15 +94,18 @@ describe("delegation", () => {
     const workerRequest = fakeProviders.turns.find((turn) => turn.request.workKey.startsWith(`${worker.id}/`));
     expect(workerRequest?.request.prompt).toContain(`Chefe Del (Coordena), outro bot do time, te passou esta tarefa:`);
     expect(workerRequest?.request.prompt).toContain("A pessoa pediu commit, push e PR");
-    expect(factsOfType(child, "delivery.admitted")[0].data.source).toMatchObject({
+    expect((await factsOfType(child, "delivery.admitted"))[0].data.source).toMatchObject({
       channel: "channel:delegate",
       botId: boss.id,
       callId: "call_del",
     });
-    expect(factsOfType(child, "turn.started")[0].data.delegatedBy).toBe(boss.id);
-    expect(factsOfType(child, "delivery.consumed")[0].data.from).toMatchObject({ botId: boss.id, name: "Chefe Del" });
+    expect((await factsOfType(child, "turn.started"))[0].data.delegatedBy).toBe(boss.id);
+    expect((await factsOfType(child, "delivery.consumed"))[0].data.from).toMatchObject({
+      botId: boss.id,
+      name: "Chefe Del",
+    });
     expect(child.meta.conversation?.lastMessage?.text).toBeTruthy();
-    expect(repliesOf(session)).toEqual(["Resposta: Números ok (approve)."]);
+    expect(await repliesOf(session)).toEqual(["Resposta: Números ok (approve)."]);
   });
 
   test("uses a default role in the prompt and reports an empty reply", async () => {
@@ -136,7 +139,7 @@ describe("delegation", () => {
     );
     await run(session);
     expect(outcome.error).toBe(`${worker.name} falhou: quebrou`);
-    expect(updates(session).at(-1)).toMatchObject({ status: "failed", error: "quebrou" });
+    expect((await updates(session)).at(-1)).toMatchObject({ status: "failed", error: "quebrou" });
   });
 
   test("rejects an unknown, archived or unavailable target and a delegation back", async () => {
@@ -199,13 +202,13 @@ describe("delegation", () => {
     );
     send(session);
     await workerHeld.started;
-    const child = childSession(session)!;
+    const child = (await childSession(session)) as StoredSession;
     cancel(session);
     await idle(session);
     await idle(child);
     expect(outcome.error).toBe("Pedido cancelado.");
-    expect(settledOf(child)).toMatchObject({ outcome: "cancelled", reason: `${boss.name} cancelou o pedido.` });
-    expect(updates(session).at(-1)?.status).toBe("cancelled");
+    expect(await settledOf(child)).toMatchObject({ outcome: "cancelled", reason: `${boss.name} cancelou o pedido.` });
+    expect((await updates(session)).at(-1)?.status).toBe("cancelled");
   });
 
   test("returns cancelled at once when the caller was already cancelled", async () => {
@@ -239,15 +242,15 @@ describe("delegation", () => {
     const bossSession = await newSession(boss.id);
     fakeProviders.next(byBot({ [boss.id]: delegating(worker.id, "faz", outcome) }));
     send(bossSession);
-    await waitFor(() => updates(bossSession)[0]);
-    expect(updates(bossSession)[0].status).toBe("queued");
+    await waitFor(async () => (await updates(bossSession))[0]);
+    expect((await updates(bossSession))[0].status).toBe("queued");
     cancel(bossSession);
     await idle(bossSession);
     expect(outcome.error).toBe("Pedido cancelado.");
-    expect(updates(bossSession).at(-1)?.status).toBe("cancelled");
+    expect((await updates(bossSession)).at(-1)?.status).toBe("cancelled");
     busyHeld.release();
     await idle(busy);
-    expect(factsOfType(busy, "turn.started")).toHaveLength(1);
+    expect(await factsOfType(busy, "turn.started")).toHaveLength(1);
   });
 
   test("reports a target that stopped before finishing", async () => {
@@ -263,7 +266,7 @@ describe("delegation", () => {
     const bossSession = await newSession(boss.id);
     fakeProviders.next(byBot({ [boss.id]: delegating(worker.id, "faz", outcome) }));
     send(bossSession);
-    await waitFor(() => updates(bossSession)[0]);
+    await waitFor(async () => (await updates(bossSession))[0]);
     cancel(busy);
     await idle(bossSession);
     expect(outcome.error).toBe(`${worker.name} parou antes de terminar.`);
@@ -292,7 +295,7 @@ describe("groups", () => {
 
   test("routes to the chosen member and passes the turn on a handoff", async () => {
     const { ana, bia, group, session } = await team();
-    session.log.lines.push("{broken");
+    (await session.log.lines()).push("{broken");
     const record = track(spyOn(threads, "recordThreadMessage"));
     const route = track(
       spyOn(decisions, "decideRoute").mockResolvedValue({
@@ -304,13 +307,13 @@ describe("groups", () => {
     fakeProviders.next(
       byBot({
         [bia.id]: speaking(bia.id, "Eu vejo isso.", { botId: ana.id, note: "Ana fecha os números" }),
-        [ana.id]: (turn) => {
+        [ana.id]: async (turn) => {
           const context = contextOf(turn);
           expect(context.groupMembers.map((member) => member.id)).toEqual([bia.id]);
-          expect(context.log.lines).toBe(session.log.lines);
+          expect(await context.log.lines()).toBe(await session.log.lines());
           expect(context.log.size).toBe(session.log.size);
-          expect(context.log.slice(0)).toEqual(session.log.slice(0));
-          expect(context.log.rows(0, 1)).toEqual(session.log.rows(0, 1));
+          expect(await context.log.slice(0)).toEqual(await session.log.slice(0));
+          expect(await context.log.rows(0, 1)).toEqual(await session.log.rows(0, 1));
           const unsubscribe = context.log.subscribe(() => undefined);
           (unsubscribe as () => void)();
           void context.log.load();
@@ -321,8 +324,8 @@ describe("groups", () => {
     );
     await run(session, { text: "Como estão as vendas?" });
     expect(route.mock.calls[0][0]).toBe("Time");
-    expect(factsOfType(session, "decision.made")[0].data).toMatchObject({ groupId: group.id });
-    const replies = factsOfType(session, "content.completed").filter((fact) => fact.data.phase === "reply");
+    expect((await factsOfType(session, "decision.made"))[0].data).toMatchObject({ groupId: group.id });
+    const replies = (await factsOfType(session, "content.completed")).filter((fact) => fact.data.phase === "reply");
     expect(replies.map((fact) => [fact.data.botId, fact.data.value])).toEqual([
       [bia.id, "Eu vejo isso."],
       [ana.id, "Números fechados."],
@@ -333,7 +336,7 @@ describe("groups", () => {
     expect(anaRequest.prompt).toContain("Pessoa: Como estão as vendas?");
     expect(anaRequest.prompt).toContain(`- ${bia.name} (\`${bia.id}\`): sem papel`);
     expect(anaRequest.resume).toBeNull();
-    expect(factsOfType(session, "delivery.consumed")).toHaveLength(1);
+    expect(await factsOfType(session, "delivery.consumed")).toHaveLength(1);
     const recorded = record.mock.calls.map((call) => call[2]);
     expect(recorded).toContainEqual(
       expect.objectContaining({ role: "bot", text: `${ana.name}: Números fechados.`, botId: ana.id }),
@@ -380,19 +383,39 @@ describe("groups", () => {
     expect(fakeProviders.turns[1].request.workKey.startsWith(`${ana.id}/`)).toBe(true);
   });
 
+  test("logs a crashed route, fails the delegation and keeps serving the group", async () => {
+    const { ana, session } = await team();
+    const errors = track(spyOn(console, "error").mockImplementation(() => undefined));
+    const route = track(spyOn(decisions, "decideRoute"));
+    const hooks = { onStart: () => undefined, onAwaiting: () => undefined, finish: (_: unknown) => undefined };
+    const finished = track(spyOn(hooks, "finish"));
+    route.mockRejectedValueOnce(new Error("roteador caiu"));
+    await run(session, { text: "alguém?", delegation: hooks });
+    expect(errors.mock.calls[0][0]).toBe("turn crashed");
+    expect(finished.mock.calls[0][0]).toEqual({ outcome: "failed", reply: "", error: "roteador caiu" });
+    route.mockRejectedValueOnce("cru");
+    await run(session, { text: "alguém?", delegation: hooks });
+    expect(finished.mock.calls[1][0]).toEqual({ outcome: "failed", reply: "", error: "cru" });
+    expect(conversationStatus(session.meta.sessionId)).toBe("idle");
+    route.mockResolvedValueOnce({ kind: "route", outcome: ana.id, answer: { choice: ana.id } } as never);
+    fakeProviders.next(byBot({ [ana.id]: speaking(ana.id, "Aqui.") }));
+    await run(session, { text: "alguém?" });
+    expect(await repliesOf(session)).toEqual(["Aqui."]);
+  });
+
   test("does nothing for a missing, archived or empty group", async () => {
     const lost = await newSession("grp_sumiu", "group");
     await run(lost, { text: "oi" });
-    expect(factsOfType(lost, "turn.started")).toHaveLength(0);
+    expect(await factsOfType(lost, "turn.started")).toHaveLength(0);
     const { ana, bia, group, session } = await team();
     await setGroupArchived(group.id, true);
     await run(session, { text: "oi" });
-    expect(factsOfType(session, "turn.started")).toHaveLength(0);
+    expect(await factsOfType(session, "turn.started")).toHaveLength(0);
     await setGroupArchived(group.id, false);
     await setArchived(ana.id, true);
     await setArchived(bia.id, true);
     await run(session, { text: "oi" });
-    expect(factsOfType(session, "turn.started")).toHaveLength(0);
+    expect(await factsOfType(session, "turn.started")).toHaveLength(0);
     expect(getBot(ana.id)?.archivedAt).toBeTruthy();
   });
 
@@ -409,9 +432,9 @@ describe("groups", () => {
       }),
     );
     send(session, { text: `${ana.name}, pode?` });
-    const card = await waitFor(() => factsOfType(session, "interaction.opened")[0]);
+    const card = await waitFor(async () => (await factsOfType(session, "interaction.opened"))[0]);
     send(session, { text: `${bia.name}, e você?` });
-    expect(factsOfType(session, "delivery.consumed").some((fact) => fact.data.steer)).toBe(false);
+    expect((await factsOfType(session, "delivery.consumed")).some((fact) => fact.data.steer)).toBe(false);
     answer(session, "dlv_g", card.data.interactionId as string, "approve");
     await idle(session);
     expect(fakeProviders.turns).toHaveLength(2);

@@ -422,7 +422,7 @@ async function priceTable() {
   if (prices && Date.now() - prices.at < 24 * 3_600_000) return prices.table;
   if (pricesPending) return pricesPending;
   pricesPending = (async () => {
-    const stored = readSetting<{ at: number; table: Record<string, PriceEntry> } | null>(pricesKey, null);
+    const stored = await readSetting<{ at: number; table: Record<string, PriceEntry> } | null>(pricesKey, null);
     if (stored && Date.now() - stored.at < 24 * 3_600_000) {
       prices = stored;
       return stored.table;
@@ -438,7 +438,7 @@ async function priceTable() {
       }
       prices = { at: Date.now(), table };
       try {
-        writeSetting(pricesKey, prices);
+        await writeSetting(pricesKey, prices);
       } catch {}
       return table;
     } catch {

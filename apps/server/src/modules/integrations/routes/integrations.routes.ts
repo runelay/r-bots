@@ -20,7 +20,7 @@ export async function handleIntegrations(req: Req, res: Res, method: string, par
       const record = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
       return sendJson(res, 200, await saveIntegration(id, record), noStore);
     }
-    if (method === "DELETE") return sendJson(res, 200, removeIntegration(id), noStore);
+    if (method === "DELETE") return sendJson(res, 200, await removeIntegration(id), noStore);
   } catch (error) {
     if (error instanceof IntegrationError)
       return sendJson(res, error.status, { ok: false, code: error.code, status: "invalid", error: error.message });

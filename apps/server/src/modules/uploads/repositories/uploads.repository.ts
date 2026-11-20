@@ -53,7 +53,7 @@ function metaColumns(meta: UploadMeta) {
   };
 }
 
-export function saveUploadRow(botId: string, meta: UploadMeta, refs: UploadRefs, db: Db = getDb()) {
+export async function saveUploadRow(botId: string, meta: UploadMeta, refs: UploadRefs, db: Db = getDb()) {
   const row = {
     id: meta.uploadId,
     botId,
@@ -64,26 +64,25 @@ export function saveUploadRow(botId: string, meta: UploadMeta, refs: UploadRefs,
     derived: refs.derived ?? null,
     ...metaColumns(meta),
   };
-  db.insert(uploads).values(row).onConflictDoUpdate({ target: uploads.id, set: row }).run();
+  await db.insert(uploads).values(row).onConflictDoUpdate({ target: uploads.id, set: row });
 }
 
-export function updateUploadMeta(botId: string, meta: UploadMeta, db: Db = getDb()) {
-  db.update(uploads)
+export async function updateUploadMeta(botId: string, meta: UploadMeta, db: Db = getDb()) {
+  await db
+    .update(uploads)
     .set(metaColumns(meta))
-    .where(and(eq(uploads.id, meta.uploadId), eq(uploads.botId, botId)))
-    .run();
+    .where(and(eq(uploads.id, meta.uploadId), eq(uploads.botId, botId)));
 }
 
-export function readUploadRow(botId: string, uploadId: string, db: Db = getDb()) {
-  return (
-    db
-      .select()
-      .from(uploads)
-      .where(and(eq(uploads.id, uploadId), eq(uploads.botId, botId)))
-      .get() ?? null
-  );
+export async function readUploadRow(botId: string, uploadId: string, db: Db = getDb()) {
+  const [row] = await db
+    .select()
+    .from(uploads)
+    .where(and(eq(uploads.id, uploadId), eq(uploads.botId, botId)))
+    .limit(1);
+  return row ?? null;
 }
 
-export function listUploadRows(botId: string, db: Db = getDb()) {
-  return db.select().from(uploads).where(eq(uploads.botId, botId)).orderBy(desc(uploads.createdAt)).all();
+export async function listUploadRows(botId: string, db: Db = getDb()) {
+  return db.select().from(uploads).where(eq(uploads.botId, botId)).orderBy(desc(uploads.createdAt), desc(uploads.id));
 }

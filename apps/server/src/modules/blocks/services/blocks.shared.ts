@@ -148,13 +148,13 @@ export async function emitUserBlockEvent(botId: string, event: BlockEvent | null
   log?.emit({ type: event.type, data: { ...event.data, botId } });
 }
 
-export function agendaVersion(botId: string) {
+export async function agendaVersion(botId: string) {
   return readSetting<number>(`blocks.agenda.${botId}.version`, 0);
 }
 
-export function bumpAgendaVersion(botId: string) {
-  const next = agendaVersion(botId) + 1;
-  writeSetting(`blocks.agenda.${botId}.version`, next);
+export async function bumpAgendaVersion(botId: string) {
+  const next = (await agendaVersion(botId)) + 1;
+  await writeSetting(`blocks.agenda.${botId}.version`, next);
   return next;
 }
 

@@ -71,7 +71,7 @@ describe("thread_read", () => {
     expect(second.json).toMatchObject({ offset: 4000, nextOffset: null, text: "b".repeat(1000) });
     expect(harness.calls()).toBe(2);
     expect(harness.settled).toEqual(["thread_read(u_turn_0) → ok", "thread_read(u_turn_0) → ok"]);
-    const [requested] = factsOfType(session, "call.requested");
+    const [requested] = await factsOfType(session, "call.requested");
     expect(requested.data).toMatchObject({
       capability: { kind: "tool", name: "thread_read", label: "Relendo a conversa" },
       input: { itemId: "u_turn_0", offset: 0 },
@@ -80,9 +80,9 @@ describe("thread_read", () => {
     expect(requested.data).not.toHaveProperty("origin");
     expect(requested.scope).toEqual({ runId: "run_0", turnId: "turn_0" });
     const callId = String(requested.data.callId);
-    expect(factsOfType(session, "call.started")[0].data).toEqual({ callId });
-    expect(factsOfType(session, "call.settled")[1].data).toEqual({
-      callId: String(factsOfType(session, "call.requested")[1].data.callId),
+    expect((await factsOfType(session, "call.started"))[0].data).toEqual({ callId });
+    expect((await factsOfType(session, "call.settled"))[1].data).toEqual({
+      callId: String((await factsOfType(session, "call.requested"))[1].data.callId),
       outcome: "completed",
       output: { itemId: "u_turn_0", offset: 4000, chars: 1000, totalChars: 5000, nextOffset: null },
     });
@@ -94,9 +94,9 @@ describe("thread_read", () => {
     const result = await harness.read({ itemId: "nada" });
     expect(result.isError).toBe(true);
     expect(result.json).toEqual({ error: "Não achei o item nada nesta conversa.", recentIds: ["u_turn_0"] });
-    const [requested] = factsOfType(session, "call.requested");
+    const [requested] = await factsOfType(session, "call.requested");
     expect(requested.data).toMatchObject({ owner: { callId: "call_owner" }, origin: { agent: "Bia" } });
-    expect(factsOfType(session, "call.settled")[0].data).toMatchObject({
+    expect((await factsOfType(session, "call.settled"))[0].data).toMatchObject({
       outcome: "failed",
       error: { code: "ITEM_NOT_FOUND", message: "Não achei o item nada nesta conversa." },
     });
@@ -109,7 +109,7 @@ describe("thread_read", () => {
     expect(result.isError).toBe(true);
     expect(result.json).toEqual({ error: "Conversa não encontrada." });
     expect(harness.settled).toEqual(["thread_read(u_turn_0) → não achou"]);
-    expect(factsOfType(session, "call.settled")[0].data).toMatchObject({
+    expect((await factsOfType(session, "call.settled"))[0].data).toMatchObject({
       outcome: "failed",
       error: { code: "ITEM_NOT_FOUND", message: "Conversa não encontrada." },
     });

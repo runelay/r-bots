@@ -89,7 +89,7 @@ async function handleSessionPost(req: Req, res: Res, bot: BotDefinition, session
   accepted(res, session, deliveryId);
 }
 
-function handleStream(req: Req, res: Res, url: URL, session: StoredSession) {
+async function handleStream(req: Req, res: Res, url: URL, session: StoredSession) {
   const startIndex = Math.max(0, Number(url.searchParams.get("startIndex") ?? 0) || 0);
   const follow = url.searchParams.get("follow") !== "false" && url.searchParams.get("includeTailIndex") !== "1";
   res.writeHead(200, {
@@ -99,13 +99,22 @@ function handleStream(req: Req, res: Res, url: URL, session: StoredSession) {
     "x-eve-session-id": session.meta.sessionId,
   });
   const chunk = 500;
-  for (let index = startIndex; index < session.log.size; index += chunk)
-    for (const line of session.log.slice(index, index + chunk)) res.write(`${line}\n`);
+  const end = session.log.size;
+  const replay = async () => {
+    for (let index = startIndex; index < end; index += chunk)
+      for (const line of await session.log.slice(index, Math.min(end, index + chunk))) res.write(`${line}\n`);
+  };
   if (!follow) {
+    await replay();
     res.end();
     return;
   }
-  const unsubscribe = session.log.subscribe((line) => res.write(`${line}\n`));
+  const pending: string[] = [];
+  let live = false;
+  const unsubscribe = session.log.subscribe((line) => (live ? res.write(`${line}\n`) : pending.push(line)));
+  await replay();
+  for (const line of pending) res.write(`${line}\n`);
+  live = true;
   const heartbeat = setInterval(() => res.write(`${JSON.stringify({ $eve: "heartbeat" })}\n`), 15_000);
   const lease = setTimeout(() => {
     res.write(`${JSON.stringify({ $eve: "stream.lease-ended" })}\n`);
@@ -120,7 +129,7 @@ function handleStream(req: Req, res: Res, url: URL, session: StoredSession) {
   req.on("close", close);
 }
 
-function handleEvents(res: Res, url: URL, session: StoredSession) {
+async function handleEvents(res: Res, url: URL, session: StoredSession) {
   const total = session.log.size;
   const limitRaw = Number(url.searchParams.get("limit") ?? 60);
   const limit = Math.min(200, Math.max(1, Number.isFinite(limitRaw) ? Math.floor(limitRaw) : 60));
@@ -131,7 +140,7 @@ function handleEvents(res: Res, url: URL, session: StoredSession) {
   const end = Math.min(total, Math.floor(beforeRaw));
   const start = Math.max(0, end - limit);
   const events = [];
-  for (const row of session.log.rows(start, end)) {
+  for (const row of await session.log.rows(start, end)) {
     try {
       events.push({ index: row.seq - 1, ...(JSON.parse(lineOf(row)) as Record<string, unknown>) });
     } catch {}

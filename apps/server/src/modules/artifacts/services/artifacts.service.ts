@@ -77,26 +77,26 @@ export async function writeArtifactContent(
 }
 
 export async function readArtifactContent(meta: Pick<ArtifactMeta, "botId" | "id" | "kind">, version: number) {
-  if (!Number.isInteger(version) || version < 1 || !hasArtifactVersion(meta.id, version)) return null;
+  if (!Number.isInteger(version) || version < 1 || !(await hasArtifactVersion(meta.id, version))) return null;
   return blobText(artifactContentKey(meta.botId, meta.id, version, meta.kind));
 }
 
 export async function saveArtifactMeta(meta: ArtifactMeta) {
-  saveArtifactRow(meta);
+  await saveArtifactRow(meta);
 }
 
 export async function readArtifact(botId: string, artifactId: string): Promise<ArtifactMeta | null> {
   if (!isArtifactId(artifactId)) return null;
-  return readArtifactRow(botId, artifactId);
+  return await readArtifactRow(botId, artifactId);
 }
 
 export async function listArtifacts(botId: string): Promise<ArtifactMeta[]> {
-  return listArtifactRows(botId);
+  return await listArtifactRows(botId);
 }
 
 export async function readArtifactHtml(botId: string, artifactId: string, version: number) {
   if (!isArtifactId(artifactId)) return null;
-  const meta = readArtifactRow(botId, artifactId);
+  const meta = await readArtifactRow(botId, artifactId);
   if (!meta) return null;
   return readArtifactContent(meta, version);
 }

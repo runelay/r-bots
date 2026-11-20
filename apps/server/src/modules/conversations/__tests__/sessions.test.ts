@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { sql } from "drizzle-orm";
 import { factsOf, factsOfType, makeBot } from "../../../../test/engine-helpers";
 import { resetData } from "../../../../test/helpers";
 import { getDb } from "../../../db";
@@ -47,8 +48,8 @@ async function storedSessionId(botId = "log-bot") {
   return (await createStoredSession({ botId, kind: "session", source: "chat", title: "" })).meta.sessionId;
 }
 
-function storedMeta(sessionId: string) {
-  return loadConversationRows().find((row) => row.meta.sessionId === sessionId);
+async function storedMeta(sessionId: string) {
+  return (await loadConversationRows()).find((row) => row.meta.sessionId === sessionId);
 }
 
 describe("EventLog", () => {
@@ -70,56 +71,63 @@ describe("EventLog", () => {
     expect(seen).toHaveLength(3);
     expect(JSON.parse(seen[2])).toEqual({ progress: { type: "content.delta", data: { delta: "x" } } });
     expect(log.size).toBe(3);
-    const [first, second] = log.lines.map((line) => JSON.parse(line));
+    const [first, second] = (await log.lines()).map((line) => JSON.parse(line));
     expect(first.facts[0].data.token).toBe("••••");
     expect(Date.parse(second.at)).toBeGreaterThan(Date.parse(first.at));
-    const rows = eventRows(sessionId, 0, 10);
+    const rows = await eventRows(sessionId, 0, 10);
     expect(rows.map((row) => row.seq)).toEqual([1, 2, 3]);
     expect(rows[2].facts).toContain('"type":"d"');
-    expect(storedMeta(sessionId)?.lastSeq).toBe(3);
+    expect((await storedMeta(sessionId))?.lastSeq).toBe(3);
   });
 
   test("reads stored lines, keeps timestamps increasing after them and slices by sequence", async () => {
     const sessionId = await storedSessionId();
     const future = new Date(Date.now() + 60_000).toISOString();
-    appendEventRow(sessionId, 1, future, [{ type: "old", data: {} }]);
+    await appendEventRow(sessionId, 1, future, [{ type: "old", data: {} }]);
     const broken = parseLine("{broken");
-    appendEventRow(sessionId, 2, broken.at, broken.facts);
+    await appendEventRow(sessionId, 2, broken.at, broken.facts);
     const empty = parseLine(JSON.stringify({ facts: "nope" }));
-    appendEventRow(sessionId, 3, empty.at, empty.facts);
+    await appendEventRow(sessionId, 3, empty.at, empty.facts);
     const log = new EventLog(sessionId, 3);
     await log.load();
-    expect(log.slice(1)).toEqual(["{broken", '{"at":"","facts":[]}']);
-    expect(log.slice(2, 1)).toEqual([]);
-    expect(log.rows(-5, 99).map((row) => row.seq)).toEqual([1, 2, 3]);
-    expect(log.lines).toHaveLength(3);
-    expect(log.lines[1]).toBe("{broken");
+    expect(await log.slice(1)).toEqual(["{broken", '{"at":"","facts":[]}']);
+    expect(await log.slice(2, 1)).toEqual([]);
+    expect((await log.rows(-5, 99)).map((row) => row.seq)).toEqual([1, 2, 3]);
+    expect(await log.lines()).toHaveLength(3);
+    expect((await log.lines())[1]).toBe("{broken");
     log.emit({ type: "x", data: {} });
-    expect(Date.parse(JSON.parse(log.lines[3]).at)).toBeGreaterThan(Date.parse(future));
-    expect(log.slice(3)).toEqual([log.lines[3]]);
+    expect(Date.parse(JSON.parse((await log.lines())[3]).at)).toBeGreaterThan(Date.parse(future));
+    expect(await log.slice(3)).toEqual([(await log.lines())[3]]);
     const missing = new EventLog("wrun_missing");
     await missing.load();
-    expect(missing.lines).toEqual([]);
+    expect(await missing.lines()).toEqual([]);
   });
 
   test("restarts from the epoch when no stored event has a time", async () => {
     const sessionId = await storedSessionId();
     const log = new EventLog(sessionId);
     log.emit({ type: "x", data: {} });
-    expect(Date.parse(JSON.parse(log.lines[0]).at)).toBeGreaterThan(0);
+    expect(Date.parse(JSON.parse((await log.lines())[0]).at)).toBeGreaterThan(0);
   });
 
-  test("refuses events for a session that was never stored", () => {
+  test("logs and drops events for a session that was never stored", async () => {
     const log = new EventLog("wrun_unknown");
-    expect(() => log.emit({ type: "x", data: {} })).toThrow("FOREIGN KEY");
-    expect(log.size).toBe(0);
+    const errors = spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      log.emit({ type: "x", data: {} });
+      await log.flush();
+      expect(String(errors.mock.calls[0]?.[0])).toBe("event wrun_unknown#1 not saved");
+    } finally {
+      errors.mockRestore();
+    }
+    expect(await eventRows("wrun_unknown", 0, 10)).toEqual([]);
   });
 
   test("evicts idle caches only without listeners", async () => {
     const sessionId = await storedSessionId();
     const log = new EventLog(sessionId);
     log.emit({ type: "x", data: {} });
-    expect(log.lines).toHaveLength(1);
+    expect(await log.lines()).toHaveLength(1);
     const later = Date.now() + 31 * 60_000;
     expect(log.evictIfIdle(Date.now())).toBe(false);
     const stop = log.subscribe(() => undefined);
@@ -127,8 +135,8 @@ describe("EventLog", () => {
     stop();
     expect(evictIdleLogs(later)).toBeGreaterThanOrEqual(1);
     expect(log.evictIfIdle(later)).toBe(false);
-    expect(log.slice(0)).toHaveLength(1);
-    expect(log.lines).toHaveLength(1);
+    expect(await log.slice(0)).toHaveLength(1);
+    expect(await log.lines()).toHaveLength(1);
   });
 });
 
@@ -146,10 +154,10 @@ describe("stored sessions", () => {
     expect(getStoredSession(session.meta.sessionId)).toBe(session);
     expect(allStoredSessions()).toContain(session);
     expect(sessionsOf("s-bot")).toEqual([session]);
-    expect(storedMeta(session.meta.sessionId)?.meta).toMatchObject({ title: "Rotina", scheduleId: "diaria" });
+    expect((await storedMeta(session.meta.sessionId))?.meta).toMatchObject({ title: "Rotina", scheduleId: "diaria" });
     session.meta.title = "Rotina nova";
     await session.save();
-    expect(storedMeta(session.meta.sessionId)?.meta.title).toBe("Rotina nova");
+    expect((await storedMeta(session.meta.sessionId))?.meta.title).toBe("Rotina nova");
     const plain = await createStoredSession({ botId: "s-bot", kind: "thread", source: "chat", title: "" });
     expect(plain.meta.scheduleId).toBeUndefined();
     expect(newSessionId()).not.toBe(newSessionId());
@@ -158,7 +166,7 @@ describe("stored sessions", () => {
   test("loadSessions reads stored rows, migrates the old sdk session and skips rows without an id", async () => {
     const id = newSessionId();
     const startedAt = new Date().toISOString();
-    saveConversationRow({
+    await saveConversationRow({
       sessionId: id,
       botId: "loaded-bot",
       kind: "session",
@@ -170,17 +178,17 @@ describe("stored sessions", () => {
       runCount: 1,
       usageTotals: null,
     });
-    appendEventRow(id, 1, startedAt, []);
+    await appendEventRow(id, 1, startedAt, []);
     const kept = newSessionId();
-    saveConversationRow({
+    await saveConversationRow({
       sessionId: kept,
       botId: "loaded-bot",
       startedAt,
       sdkSessionId: "sdk-2",
       providerSessions: { "vps:codex": "c-1" },
     });
-    getDb().$client.run(
-      "INSERT INTO conversations (session_id, bot_id, kind, title, source, started_at, updated_at, meta) VALUES ('junk', 'loaded-bot', 'session', '', 'chat', 't', 't', '{}')",
+    await getDb().execute(
+      sql`insert into conversations (session_id, bot_id, kind, title, source, started_at, updated_at, meta) values ('junk', 'loaded-bot', 'session', '', 'chat', now(), now(), '{}')`,
     );
     const every = spyOn(globalThis, "setInterval");
     await loadSessions();
@@ -192,12 +200,12 @@ describe("stored sessions", () => {
     const loaded = getStoredSession(id);
     expect(loaded?.meta.providerSessions).toEqual({ "vps:claude": "sdk-1" });
     expect(loaded?.log.size).toBe(1);
-    expect(loaded?.log.lines).toHaveLength(1);
+    expect(await loaded?.log.lines()).toHaveLength(1);
     expect(getStoredSession(kept)?.meta.providerSessions).toEqual({ "vps:codex": "c-1" });
     expect(getStoredSession("junk")).toBeUndefined();
   });
 
-  test("titleFrom collapses whitespace and clips at 80 characters", () => {
+  test("titleFrom collapses whitespace and clips at 80 characters", async () => {
     expect(titleFrom("  oi \n  tudo bem ")).toBe("oi tudo bem");
     const long = titleFrom("a".repeat(100));
     expect(long).toHaveLength(80);
@@ -212,13 +220,13 @@ describe("settleOrphanTurns", () => {
     session.log.emit({ type: "turn.settled", data: { turnId: "turn_0", outcome: "completed" } });
     session.log.emit({ type: "turn.started", data: { turnId: "turn_1" } }, { type: "turn.started", data: {} });
     session.log.emit({ type: "call.started", data: { callId: "c" } });
-    session.log.lines.push('{"turn.broken"');
+    (await session.log.lines()).push('{"turn.broken"');
     const clean = await createStoredSession({ botId: "orphan-bot", kind: "session", source: "chat", title: "" });
     clean.log.emit({ type: "delivery.admitted", data: {} });
     expect(await settleOrphanTurns()).toBeGreaterThanOrEqual(1);
-    const settled = factsOfType(session, "turn.settled");
+    const settled = await factsOfType(session, "turn.settled");
     expect(settled.at(-1)?.data).toEqual({ outcome: "cancelled", turnId: "turn_1", reason: "server_restart" });
-    expect(factsOfType(clean, "turn.settled")).toHaveLength(0);
+    expect(await factsOfType(clean, "turn.settled")).toHaveLength(0);
     expect(await settleOrphanTurns()).toBe(0);
   });
 
@@ -227,7 +235,7 @@ describe("settleOrphanTurns", () => {
     session.log.emit({ type: "turn.started", data: { turnId: "turn_0" } });
     session.save = () => Promise.reject(new Error("disk full"));
     expect(await settleOrphanTurns()).toBe(1);
-    expect(factsOfType(session, "turn.settled")).toHaveLength(1);
+    expect(await factsOfType(session, "turn.settled")).toHaveLength(1);
   });
 });
 
@@ -240,8 +248,8 @@ describe("threads", () => {
     expect(await peekThread(bot.id)).toBe(first);
     const session = getStoredSession(first.sessionId);
     expect(session?.meta).toMatchObject({ kind: "thread", title: "Conversa principal" });
-    expect(factsOf(session!)[0]).toMatchObject({ type: "session.started", data: { thread: true } });
-    expect(readLiveThread(bot.id)).toEqual(first);
+    expect((await factsOf(session!))[0]).toMatchObject({ type: "session.started", data: { thread: true } });
+    expect(await readLiveThread(bot.id)).toEqual(first);
     expect(publicThread(first)).toEqual({ sessionId: first.sessionId, lastMessage: null, unread: 0, total: 1 });
     expect(publicThread(null)).toEqual({ sessionId: null, lastMessage: null, unread: 0, total: 0 });
   });
@@ -249,9 +257,9 @@ describe("threads", () => {
   test("peekThread reads a stored thread whose session exists and ignores stale ones", async () => {
     const session = await createStoredSession({ botId: "disk-bot", kind: "thread", source: "chat", title: "" });
     const state = { sessionId: session.meta.sessionId, lastMessage: null, unread: 2, readAt: null };
-    saveLiveThread("disk-bot", state);
+    await saveLiveThread("disk-bot", state);
     expect(await peekThread("disk-bot")).toEqual(state);
-    saveLiveThread("stale-bot", { ...state, sessionId: "wrun_gone" });
+    await saveLiveThread("stale-bot", { ...state, sessionId: "wrun_gone" });
     expect(await peekThread("stale-bot")).toBeNull();
     expect(publicThread({ ...state, sessionId: "wrun_gone" }).total).toBe(0);
   });
@@ -270,14 +278,19 @@ describe("threads", () => {
     await recordThreadMessage(bot.id, state.sessionId, {
       role: "user",
       text: "oi, pode montar o relatório?",
-      at: "t1",
+      at: "2026-01-01T00:00:01.000Z",
     });
     expect(session.meta.title).toBe("Montar o relatório");
     expect(state.lastMessage?.text).toBe("oi, pode montar o relatório?");
-    await recordThreadMessage(bot.id, state.sessionId, { role: "bot", text: "feito", at: "t2" });
-    await recordThreadMessage(bot.id, state.sessionId, { role: "bot", text: "quieto", at: "t3" }, true);
+    await recordThreadMessage(bot.id, state.sessionId, { role: "bot", text: "feito", at: "2026-01-01T00:00:02.000Z" });
+    await recordThreadMessage(
+      bot.id,
+      state.sessionId,
+      { role: "bot", text: "quieto", at: "2026-01-01T00:00:03.000Z" },
+      true,
+    );
     expect(state.unread).toBe(1);
-    await recordThreadMessage(bot.id, "wrun_other", { role: "bot", text: "x", at: "t4" });
+    await recordThreadMessage(bot.id, "wrun_other", { role: "bot", text: "x", at: "2026-01-01T00:00:04.000Z" });
     expect(state.lastMessage?.text).toBe("quieto");
     expect((await markThreadUnread(bot.id)).unread).toBe(1);
     expect((await markThreadRead(bot.id)).unread).toBe(0);
@@ -286,7 +299,11 @@ describe("threads", () => {
 
   test("recordThreadMessage on a conversation updates the conversation instead", async () => {
     const session = await createStoredSession({ botId: "conv-bot", kind: "conversation", source: "chat", title: "" });
-    await recordThreadMessage("conv-bot", session.meta.sessionId, { role: "bot", text: "oi", at: "t" });
+    await recordThreadMessage("conv-bot", session.meta.sessionId, {
+      role: "bot",
+      text: "oi",
+      at: "2026-01-01T00:00:09.000Z",
+    });
     expect(session.meta.conversation).toMatchObject({ unread: 1, lastMessage: { text: "oi" } });
   });
 
@@ -323,16 +340,16 @@ describe("threads", () => {
   test("restore without a current thread and with an archive whose session is gone", async () => {
     const session = await createStoredSession({ botId: "arch-bot", kind: "thread", source: "chat", title: "" });
     const state = { sessionId: session.meta.sessionId, lastMessage: null, unread: 0, readAt: null };
-    saveArchivedThread("arch-bot", "tha_01JAAAAAAAAAAAAAAAAAAAAAAA", "x", state);
+    await saveArchivedThread("arch-bot", "tha_01JAAAAAAAAAAAAAAAAAAAAAAA", "2026-01-01T00:00:00.000Z", state);
     const restored = await restoreThread("arch-bot", "tha_01JAAAAAAAAAAAAAAAAAAAAAAA");
     expect(restored).toEqual({ state, replacedArchiveId: null });
-    expect(readArchivedThread("arch-bot", "tha_01JAAAAAAAAAAAAAAAAAAAAAAA")).toBeNull();
-    expect(readLiveThread("arch-bot")).toEqual(state);
-    saveArchivedThread("arch-bot", "tha_gone", "x", { ...state, sessionId: "wrun_gone" });
+    expect(await readArchivedThread("arch-bot", "tha_01JAAAAAAAAAAAAAAAAAAAAAAA")).toBeNull();
+    expect(await readLiveThread("arch-bot")).toEqual(state);
+    await saveArchivedThread("arch-bot", "tha_gone", "2026-01-01T00:00:00.000Z", { ...state, sessionId: "wrun_gone" });
     expect(await restoreThread("arch-bot", "tha_gone")).toBeNull();
-    expect(readArchivedThread("arch-bot", "tha_gone")?.state.sessionId).toBe("wrun_gone");
-    expect(readArchivedThread("other-bot", "tha_gone")).toBeNull();
-    saveLiveThread("arch-bot", { sessionId: state.sessionId });
-    expect(readLiveThread("arch-bot")).toEqual({ ...state, lastMessage: null });
+    expect((await readArchivedThread("arch-bot", "tha_gone"))?.state.sessionId).toBe("wrun_gone");
+    expect(await readArchivedThread("other-bot", "tha_gone")).toBeNull();
+    await saveLiveThread("arch-bot", { sessionId: state.sessionId });
+    expect(await readLiveThread("arch-bot")).toEqual({ ...state, lastMessage: null });
   });
 });

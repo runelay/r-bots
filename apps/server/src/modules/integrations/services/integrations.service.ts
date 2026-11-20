@@ -174,11 +174,11 @@ export async function saveIntegration(id: IntegrationId, body: Record<string, un
     problem = `Não consegui falar com o ${definition.name} agora. Tente de novo em instantes.`;
   }
   if (problem) throw new IntegrationError(422, "invalid_key", problem);
-  writeStored(id, key, url);
+  await writeStored(id, key, url);
   return describe(id);
 }
 
-export function removeIntegration(id: IntegrationId) {
-  clearStored(id);
+export async function removeIntegration(id: IntegrationId) {
+  await clearStored(id);
   return describe(id);
 }

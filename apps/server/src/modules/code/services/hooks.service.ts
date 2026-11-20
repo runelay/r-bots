@@ -357,7 +357,7 @@ export function nativeHooks(context: ToolContext, workspace: WorkspaceState, liv
   >();
   return {
     before: async (tool, input, toolUseId) => {
-      const gate = gateNative(tool, input, workspace, context.asked);
+      const gate = gateNative(tool, input, workspace);
       const command = tool === "Bash" ? String(input.command ?? "") : "";
       const file = String(input.file_path ?? input.notebook_path ?? "");
       const target = command

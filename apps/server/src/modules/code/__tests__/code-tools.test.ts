@@ -138,17 +138,17 @@ function devServer(overrides: Partial<PublicDevServer> = {}): PublicDevServer & 
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   spies.length = 0;
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
-function rmAllowed(path: string) {
-  getDb().delete(codeRepos).where(eq(codeRepos.path, path)).run();
-  seedAllowedRepos();
+async function rmAllowed(path: string) {
+  await getDb().delete(codeRepos).where(eq(codeRepos.path, path));
+  await seedAllowedRepos();
 }
 
 function textOf(result: ToolResult) {
@@ -156,7 +156,7 @@ function textOf(result: ToolResult) {
 }
 
 describe("codeModeSupported", () => {
-  test("only claude and codex on the vps edit code", () => {
+  test("only claude and codex on the vps edit code", async () => {
     expect(codeModeSupported("claude", "vps")).toBe(true);
     expect(codeModeSupported("codex", "vps")).toBe(true);
     expect(codeModeSupported("grok", "vps")).toBe(false);
@@ -165,14 +165,14 @@ describe("codeModeSupported", () => {
 });
 
 describe("without an open workspace", () => {
-  test("only workspace_add, workspace_open and workspace_close are registered", () => {
+  test("only workspace_add, workspace_open and workspace_close are registered", async () => {
     const { tools } = harness({ current: session(null).stored });
     expect([...tools.keys()]).toEqual(["workspace_add", "workspace_open", "workspace_close"]);
   });
 
   test("workspace_add always asks a person, even with full access, and records the repo", async () => {
-    const { path } = makeRepo("tools-add-full");
-    rmAllowed(path);
+    const { path } = await makeRepo("tools-add-full");
+    await rmAllowed(path);
     const asked = mock(async () => ({ choice: "approve" as const, interactionId: "i1" }));
     const { call, context } = harness({ permission: "full" });
     context.requestApproval = asked as unknown as ToolContext["requestApproval"];
@@ -183,8 +183,8 @@ describe("without an open workspace", () => {
   });
 
   test("workspace_add does not record a repo the person denied, nor a folder without git", async () => {
-    const { path } = makeRepo("tools-add-deny");
-    rmAllowed(path);
+    const { path } = await makeRepo("tools-add-deny");
+    await rmAllowed(path);
     const { call } = harness({ approval: { choice: "deny", interactionId: "i2" } });
     const denied = await call("workspace_add", { path, reason: "x" });
     expect(denied.isError).toBe(true);
@@ -280,7 +280,7 @@ describe("with an open workspace", () => {
     return { ...tools, current, owner };
   }
 
-  test("registers every code tool", () => {
+  test("registers every code tool", async () => {
     const { tools } = open();
     expect([...tools.keys()]).toEqual([
       "workspace_add",

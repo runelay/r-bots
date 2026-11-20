@@ -1,20 +1,21 @@
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { bigint, doublePrecision, index, integer, pgTable, text } from "drizzle-orm/pg-core";
+import { jsonb, timestamptz } from "./types";
 
-export const blobs = sqliteTable(
+export const blobs = pgTable(
   "blobs",
   {
     key: text("key").primaryKey(),
     mime: text("mime").notNull(),
-    size: integer("size").notNull(),
+    size: bigint("size", { mode: "number" }).notNull(),
     sha256: text("sha256").notNull(),
     botId: text("bot_id"),
     sessionId: text("session_id"),
-    createdAt: text("created_at").notNull(),
+    createdAt: timestamptz("created_at").notNull(),
   },
   (table) => [index("blobs_bot_idx").on(table.botId), index("blobs_session_idx").on(table.sessionId)],
 );
 
-export const uploads = sqliteTable(
+export const uploads = pgTable(
   "uploads",
   {
     id: text("id").primaryKey(),
@@ -22,7 +23,7 @@ export const uploads = sqliteTable(
     sessionId: text("session_id"),
     name: text("name").notNull(),
     mime: text("mime").notNull(),
-    size: integer("size").notNull(),
+    size: bigint("size", { mode: "number" }).notNull(),
     kind: text("kind").notNull(),
     source: text("source").notNull(),
     blobKey: text("blob_key")
@@ -31,13 +32,13 @@ export const uploads = sqliteTable(
     sha256: text("sha256").notNull(),
     width: integer("width"),
     height: integer("height"),
-    duration: real("duration"),
-    waveform: text("waveform", { mode: "json" }).$type<number[]>(),
+    duration: doublePrecision("duration"),
+    waveform: jsonb<number[]>("waveform"),
     thumbKey: text("thumb_key"),
-    derived: text("derived", { mode: "json" }).$type<Record<string, string>>(),
+    derived: jsonb<Record<string, string>>("derived"),
     transcript: text("transcript"),
     transcriptSource: text("transcript_source"),
-    createdAt: text("created_at").notNull(),
+    createdAt: timestamptz("created_at").notNull(),
   },
   (table) => [
     index("uploads_bot_idx").on(table.botId, table.createdAt),
@@ -45,7 +46,7 @@ export const uploads = sqliteTable(
   ],
 );
 
-export const exports = sqliteTable(
+export const exports = pgTable(
   "exports",
   {
     id: text("id").primaryKey(),
@@ -58,9 +59,9 @@ export const exports = sqliteTable(
     botId: text("bot_id"),
     tabId: text("tab_id"),
     fileName: text("file_name"),
-    size: integer("size"),
-    createdAt: text("created_at").notNull(),
-    finishedAt: text("finished_at"),
+    size: bigint("size", { mode: "number" }),
+    createdAt: timestamptz("created_at").notNull(),
+    finishedAt: timestamptz("finished_at"),
   },
   (table) => [index("exports_source_idx").on(table.sourceType, table.sourceId)],
 );

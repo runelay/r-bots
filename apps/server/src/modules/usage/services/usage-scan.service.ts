@@ -129,7 +129,7 @@ export class UsageScanner {
 
   private async load() {
     if (this.index) return this.index;
-    const stored = loadUsageIndex() as unknown as ScanIndex;
+    const stored = (await loadUsageIndex()) as unknown as ScanIndex;
     this.index =
       stored.version === indexVersion
         ? stored
@@ -312,7 +312,7 @@ export class UsageScanner {
   private async save(index: ScanIndex) {
     const changes = this.changes;
     this.changes = emptyChanges();
-    saveUsageChanges(index as unknown as Parameters<typeof saveUsageChanges>[0], changes);
+    await saveUsageChanges(index as unknown as Parameters<typeof saveUsageChanges>[0], changes);
   }
 
   private toSnapshot(index: ScanIndex, files: number): UsageSnapshot {

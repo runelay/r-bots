@@ -154,7 +154,7 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
       type: "call.requested",
       data: {
         callId,
-        capability: { kind: "tool", name: tool.name, label: tool.label(input) },
+        capability: { kind: "tool", name: tool.name, label: await tool.label(input) },
         input,
         owner: owner(context),
         ...(context.origin ? { origin: { agent: context.origin } } : {}),
@@ -172,7 +172,7 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
       }
       context.emitDecision(decision);
     }
-    const approvalPrompt = tool.approval ? tool.approval(input) : null;
+    const approvalPrompt = tool.approval ? await tool.approval(input) : null;
     if (approvalPrompt && vaultOnly) {
       log.emit({ type: "call.started", data: { callId, clearedBy: { vault: true } }, scope: scopeOf(context) });
     } else if (approvalPrompt && fullAccess) {

@@ -89,7 +89,7 @@ async function codeState(session: StoredSession) {
       workspace: null,
       files: [],
       servers: [],
-      checkpoints: checkpointsOf(session, null),
+      checkpoints: await checkpointsOf(session, null),
       running: isRunning(session.meta.sessionId),
     };
   const files = await changedFiles(workspace).catch(() => []);
@@ -102,7 +102,7 @@ async function codeState(session: StoredSession) {
     },
     files,
     servers: devServersOf(workspace),
-    checkpoints: checkpointsOf(session, workspace),
+    checkpoints: await checkpointsOf(session, workspace),
     running: isRunning(session.meta.sessionId),
   };
 }
@@ -144,9 +144,9 @@ function requestLabel(data: Record<string, unknown>) {
   return body ? clipLabel(body) : null;
 }
 
-function turnRequests(session: StoredSession) {
+async function turnRequests(session: StoredSession) {
   const requests = new Map<string, string>();
-  for (const line of session.log.lines) {
+  for (const line of await session.log.lines()) {
     try {
       for (const fact of JSON.parse(line).facts as Fact[]) {
         if (fact.type !== "delivery.consumed" || !fact.scope?.turnId || requests.has(fact.scope.turnId)) continue;
@@ -158,9 +158,9 @@ function turnRequests(session: StoredSession) {
   return requests;
 }
 
-function checkpointsOf(session: StoredSession, workspace: WorkspaceState | null) {
+async function checkpointsOf(session: StoredSession, workspace: WorkspaceState | null) {
   const reverted = new Set(session.meta.revertedTurns ?? []);
-  const requests = turnRequests(session);
+  const requests = await turnRequests(session);
   return (session.meta.checkpoints ?? [])
     .filter((item) => (!workspace || item.workspaceId === workspace.id) && !reverted.has(item.turnId))
     .map((item) => ({
@@ -176,9 +176,9 @@ function turnNumber(turnId: string) {
   return match ? Number(match[1]) : -1;
 }
 
-function turnsFrom(session: StoredSession, first: number) {
+async function turnsFrom(session: StoredSession, first: number) {
   const ids = new Set<string>();
-  for (const line of session.log.lines) {
+  for (const line of await session.log.lines()) {
     try {
       for (const fact of JSON.parse(line).facts as Fact[]) {
         const turnId = fact.scope?.turnId ?? (typeof fact.data.turnId === "string" ? fact.data.turnId : null);
@@ -209,7 +209,7 @@ async function rewind(session: StoredSession, turnId: string) {
     await stopDevServers(workspace);
     files = await restoreCheckpoint(workspace, checkpoint);
   }
-  const turnIds = turnsFrom(session, number).filter((id) => !reverted.has(id));
+  const turnIds = (await turnsFrom(session, number)).filter((id) => !reverted.has(id));
   session.meta.revertedTurns = [...reverted, ...turnIds];
   session.meta.providerSessions = {};
   session.meta.carryOver = null;

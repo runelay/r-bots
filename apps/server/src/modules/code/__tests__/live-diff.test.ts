@@ -74,7 +74,7 @@ describe("CodeLive", () => {
   });
 
   test("emits one cumulative edit per changed file and a status only when it changes", async () => {
-    const workspace = makeRepo({ "a.txt": "one\ntwo\n", "b.txt": "keep\n" });
+    const workspace = await makeRepo({ "a.txt": "one\ntwo\n", "b.txt": "keep\n" });
     const { log, events } = fakeLog();
     const live = new CodeLive(log, "turn1", workspace, new Map());
     expect(live.workspace).toBe(workspace);
@@ -119,7 +119,7 @@ describe("CodeLive", () => {
   });
 
   test("uses the snapshot taken before the turn as the baseline and reports deletions", async () => {
-    const workspace = makeRepo({ "a.txt": "base\n" });
+    const workspace = await makeRepo({ "a.txt": "base\n" });
     writeFileSync(join(workspace.path, "a.txt"), "before turn\n");
     const { log, events } = fakeLog();
     const live = new CodeLive(log, "turn2", workspace, new Map([["a.txt", "before turn\n"]]));
@@ -130,7 +130,7 @@ describe("CodeLive", () => {
   });
 
   test("collapses many changed files into a single bulk event", async () => {
-    const workspace = makeRepo({ "seed.txt": "x\n" });
+    const workspace = await makeRepo({ "seed.txt": "x\n" });
     const { log, events } = fakeLog();
     const live = new CodeLive(log, "turn3", workspace, new Map());
     for (let index = 0; index < 30; index++) writeFileSync(join(workspace.path, `f${index}.txt`), "a\nb\n");
@@ -150,7 +150,7 @@ describe("CodeLive", () => {
   });
 
   test("a failed scan is logged and does not break the next one", async () => {
-    const workspace = makeRepo({ "a.txt": "a\n" });
+    const workspace = await makeRepo({ "a.txt": "a\n" });
     const { log, events } = fakeLog();
     const live = new CodeLive(log, "turn4", workspace, new Map());
     const diff = spyOn(workspaceService, "diffTexts").mockRejectedValueOnce(new Error("boom"));
@@ -164,7 +164,7 @@ describe("CodeLive", () => {
   });
 
   test("a workspace whose git status fails scans nothing", async () => {
-    const workspace = makeRepo({ "a.txt": "a\n" });
+    const workspace = await makeRepo({ "a.txt": "a\n" });
     const { log, events } = fakeLog();
     const changed = spyOn(workspaceService, "changedFiles").mockRejectedValueOnce(new Error("no git"));
     const live = new CodeLive(log, "turn5", workspace, new Map());

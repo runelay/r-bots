@@ -26,7 +26,7 @@ import {
 
 const spies: Array<{ mockRestore(): void }> = [];
 
-afterEach(() => {
+afterEach(async () => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
@@ -35,14 +35,14 @@ function cursorOf(offset: number) {
 }
 
 describe("ids, time and errors", () => {
-  test("newId prefixes a lowercase ulid and nowIso is ISO", () => {
+  test("newId prefixes a lowercase ulid and nowIso is ISO", async () => {
     const first = newId("note");
     expect(first).toMatch(/^note_[0-9a-z]{26}$/);
     expect(newId("note")).not.toBe(first);
     expect(nowIso()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
   });
 
-  test("BlockError defaults to 400 without code or extra", () => {
+  test("BlockError defaults to 400 without code or extra", async () => {
     const plain = new BlockError("ruim");
     expect([plain.message, plain.status, plain.code, plain.extra]).toEqual(["ruim", 400, undefined, {}]);
     const full = new BlockError("conflito", 409, "stale", { version: 3 });
@@ -52,7 +52,7 @@ describe("ids, time and errors", () => {
 });
 
 describe("paging", () => {
-  test("pageArgs clamps limits and decodes cursors", () => {
+  test("pageArgs clamps limits and decodes cursors", async () => {
     expect(pageArgs(undefined, undefined)).toEqual({ limit: 50, offset: 0 });
     expect(pageArgs("", "abc", 8)).toEqual({ limit: 8, offset: 0 });
     expect(pageArgs(null, "-3")).toEqual({ limit: 50, offset: 0 });
@@ -62,7 +62,7 @@ describe("paging", () => {
     expect(() => pageArgs("bm9wZQ", 10)).toThrow(BlockError);
   });
 
-  test("pageOf only returns a cursor when a full page leaves more behind", () => {
+  test("pageOf only returns a cursor when a full page leaves more behind", async () => {
     expect(pageOf([1, 2], 5, 0, 2)).toEqual({ items: [1, 2], total: 5, nextCursor: cursorOf(2) });
     expect(pageOf([3, 4], 5, 2, 3)).toEqual({ items: [3, 4], total: 5, nextCursor: null });
     expect(pageOf([5], 5, 4, 1)).toEqual({ items: [5], total: 5, nextCursor: null });
@@ -70,7 +70,7 @@ describe("paging", () => {
 });
 
 describe("line changes", () => {
-  test("changedLines finds the edited window", () => {
+  test("changedLines finds the edited window", async () => {
     expect(changedLines("a\nb", "a\nb")).toEqual([]);
     expect(changedLines("a\nb\nc", "a\nX\nc")).toEqual([[1, 1]]);
     expect(changedLines("a\nb\nc", "a\nX\nY\nc")).toEqual([[1, 2]]);
@@ -79,7 +79,7 @@ describe("line changes", () => {
     expect(changedLines("a", "a\nb")).toEqual([[1, 1]]);
   });
 
-  test("mergeRanges sorts, joins touching ranges and keeps 20", () => {
+  test("mergeRanges sorts, joins touching ranges and keeps 20", async () => {
     expect(
       mergeRanges([
         [5, 6],
@@ -99,7 +99,7 @@ describe("line changes", () => {
 });
 
 describe("versions", () => {
-  test("staleCheck only blocks someone else's newer version", () => {
+  test("staleCheck only blocks someone else's newer version", async () => {
     const current = { version: 3, updatedBy: "bot" };
     expect(() => staleCheck(current, undefined, "user")).not.toThrow();
     expect(() => staleCheck(current, 3, "user")).not.toThrow();
@@ -114,7 +114,7 @@ describe("versions", () => {
     }
   });
 
-  test("shouldMerge joins quick unseen edits by the person", () => {
+  test("shouldMerge joins quick unseen edits by the person", async () => {
     const fresh = { version: 4, updatedBy: "user", seenVersion: 2, updatedAt: new Date().toISOString() };
     expect(shouldMerge(fresh, "user")).toBe(true);
     expect(shouldMerge(fresh, "bot")).toBe(false);
@@ -124,20 +124,20 @@ describe("versions", () => {
     expect(shouldMerge({ ...fresh, updatedAt: old }, "user")).toBe(false);
   });
 
-  test("agenda version starts at zero and bumps per bot", () => {
+  test("agenda version starts at zero and bumps per bot", async () => {
     const bot = `agenda-${Math.random().toString(36).slice(2, 8)}`;
-    expect(agendaVersion(bot)).toBe(0);
-    expect(bumpAgendaVersion(bot)).toBe(1);
-    expect(bumpAgendaVersion(bot)).toBe(2);
-    expect(agendaVersion(bot)).toBe(2);
-    expect(agendaVersion(`${bot}-other`)).toBe(0);
+    expect(await agendaVersion(bot)).toBe(0);
+    expect(await bumpAgendaVersion(bot)).toBe(1);
+    expect(await bumpAgendaVersion(bot)).toBe(2);
+    expect(await agendaVersion(bot)).toBe(2);
+    expect(await agendaVersion(`${bot}-other`)).toBe(0);
   });
 });
 
 describe("block events", () => {
   const preview = { kind: "note", folder: "", excerpt: "oi", lines: [] } as never;
 
-  test("blockEvent maps actions to event types and drops preview on delete", () => {
+  test("blockEvent maps actions to event types and drops preview on delete", async () => {
     expect(blockEvent("note", "n1", "Nota", 1, "bot", "created", preview)).toEqual({
       type: "block.created",
       data: { kind: "note", id: "n1", title: "Nota", version: 1, author: "bot", action: "created", preview },
@@ -161,7 +161,7 @@ describe("block events", () => {
     });
   });
 
-  test("blockEventOf reads the event a tool returned", () => {
+  test("blockEventOf reads the event a tool returned", async () => {
     const event = blockEvent("sheet", "s1", "Planilha", 1, "bot", "created", null);
     expect(blockEventOf({ ok: true, blockEvent: event })).toBe(event);
     expect(blockEventOf({ blockEvent: undefined })).toBeNull();
@@ -178,9 +178,9 @@ describe("block events", () => {
     const session = getStoredSession(thread.sessionId);
     if (!session) throw new Error("thread session missing");
     await emitUserBlockEvent(bot.id, null);
-    expect(factsOfType(session, "block.created")).toEqual([]);
+    expect(await factsOfType(session, "block.created")).toEqual([]);
     await emitUserBlockEvent(bot.id, blockEvent("note", "n9", "Diário", 1, "user", "created", preview));
-    const facts = factsOfType(session, "block.created");
+    const facts = await factsOfType(session, "block.created");
     expect(facts).toHaveLength(1);
     expect(facts[0]).toMatchObject({ data: { botId: bot.id, id: "n9", title: "Diário", author: "user" } });
   });
@@ -196,7 +196,7 @@ describe("block events", () => {
 });
 
 describe("text helpers", () => {
-  test("plainText strips markdown down to words", () => {
+  test("plainText strips markdown down to words", async () => {
     const markdown = [
       "# Título",
       "> citação com **negrito** e _itálico_",
@@ -214,7 +214,7 @@ describe("text helpers", () => {
     );
   });
 
-  test("clip cuts with an ellipsis and normalizeTitle folds case", () => {
+  test("clip cuts with an ellipsis and normalizeTitle folds case", async () => {
     expect(clip("abcdef", 10)).toBe("abcdef");
     expect(clip("abcdef", 4)).toBe("abc…");
     expect(normalizeTitle("  ÁRVORE  ")).toBe("árvore");

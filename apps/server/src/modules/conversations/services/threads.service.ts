@@ -30,7 +30,7 @@ const creating = new Map<string, Promise<ThreadState>>();
 async function load(botId: string) {
   const cached = states.get(botId);
   if (cached) return cached;
-  const stored = readLiveThread(botId);
+  const stored = await readLiveThread(botId);
   if (stored && getStoredSession(stored.sessionId)) {
     states.set(botId, stored);
     return stored;
@@ -51,16 +51,16 @@ async function startThread(botId: string, kind: "thread" | "group") {
   });
   const state: ThreadState = { sessionId: session.meta.sessionId, lastMessage: null, unread: 0, readAt: null };
   states.set(botId, state);
-  saveLiveThread(botId, state);
+  await saveLiveThread(botId, state);
   return state;
 }
 
 export async function ensureThread(botId: string, kind: "thread" | "group" = "thread") {
-  const existing = await load(botId);
-  if (existing) return existing;
+  const cached = states.get(botId);
+  if (cached) return cached;
   const pending = creating.get(botId);
   if (pending) return pending;
-  const promise = startThread(botId, kind);
+  const promise = load(botId).then((existing) => existing ?? startThread(botId, kind));
   creating.set(botId, promise);
   try {
     return await promise;
@@ -83,7 +83,7 @@ async function mutate(botId: string, sessionId: string, update: (state: ThreadSt
   const state = await load(botId);
   if (!state || state.sessionId !== sessionId) return;
   update(state);
-  saveLiveThread(botId, state);
+  await saveLiveThread(botId, state);
 }
 
 export async function recordThreadMessage(botId: string, sessionId: string, message: ThreadMessage, quiet = false) {
@@ -104,7 +104,7 @@ export async function markThreadRead(botId: string) {
   const state = await ensureThread(botId, botId.startsWith("grp_") ? "group" : "thread");
   state.unread = 0;
   state.readAt = new Date().toISOString();
-  saveLiveThread(botId, state);
+  await saveLiveThread(botId, state);
   void notifyConversation(state.sessionId);
   return state;
 }
@@ -112,14 +112,14 @@ export async function markThreadRead(botId: string) {
 export async function markThreadUnread(botId: string) {
   const state = await ensureThread(botId, botId.startsWith("grp_") ? "group" : "thread");
   state.unread = Math.max(1, state.unread);
-  saveLiveThread(botId, state);
+  await saveLiveThread(botId, state);
   void notifyConversation(state.sessionId);
   return state;
 }
 
 async function archiveState(botId: string, state: ThreadState) {
   const archiveId = `tha_${ulid()}`;
-  saveArchivedThread(botId, archiveId, new Date().toISOString(), { ...state });
+  await saveArchivedThread(botId, archiveId, new Date().toISOString(), { ...state });
   return archiveId;
 }
 
@@ -141,7 +141,7 @@ export async function resetThread(botId: string) {
 }
 
 export async function restoreThread(botId: string, archiveId: string) {
-  const archived = readArchivedThread(botId, archiveId);
+  const archived = await readArchivedThread(botId, archiveId);
   if (!archived || !getStoredSession(archived.state.sessionId)) return null;
   const current = await load(botId);
   const replacedArchiveId = current && hasMessages(current) ? await archiveState(botId, current) : null;
@@ -152,7 +152,7 @@ export async function restoreThread(botId: string, archiveId: string) {
     await restored.save();
   }
   states.set(botId, archived.state);
-  saveLiveThread(botId, archived.state);
-  deleteThreadRow(archiveId);
+  await saveLiveThread(botId, archived.state);
+  await deleteThreadRow(archiveId);
   return { state: archived.state, replacedArchiveId };
 }

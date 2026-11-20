@@ -5,7 +5,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { resetData, testDataDir } from "../../../test/helpers";
 import * as env from "../../config/env";
-import { blobDriver, blobsDir, dbFile, s3Settings } from "../../config/storage";
+import { blobDriver, blobsDir, s3Settings } from "../../config/storage";
 import { ValidationError } from "../errors";
 import { notFound, Req, Res, readBody, runelayFailure, sendFile, sendJson, validationResponse } from "../http";
 import { readJson, updateJson, writeJson } from "../json-file";
@@ -98,7 +98,6 @@ describe("config", () => {
   });
 
   test("storage paths follow the test env and drivers parse their settings", () => {
-    expect(dbFile).toBe(process.env.BOTS_DB_FILE as string);
     expect(blobsDir).toBe(process.env.BLOB_FS_DIR as string);
     expect(blobDriver()).toBe("fs");
     expect(blobDriver({})).toBe("s3");

@@ -72,12 +72,13 @@ const logs = new Set<EventLog>();
 export class EventLog {
   private cache: string[] | null = null;
   private listeners = new Set<Listener>();
-  private lastAt: number | null = null;
   private touchedAt = Date.now();
+  private writes: Promise<void> = Promise.resolve();
 
   constructor(
     readonly sessionId: string,
     private seq = 0,
+    private lastAt: number | null = seq === 0 ? 0 : null,
   ) {
     logs.add(this);
   }
@@ -86,38 +87,53 @@ export class EventLog {
     return this.seq;
   }
 
-  get lines(): string[] {
+  async flush() {
+    await this.writes;
+  }
+
+  async lines(): Promise<string[]> {
     this.touchedAt = Date.now();
-    if (!this.cache) this.cache = eventRows(this.sessionId, 0, this.seq).map(lineOf);
+    while (!this.cache) {
+      const upto = this.seq;
+      await this.flush();
+      const rows = await eventRows(this.sessionId, 0, upto);
+      if (!this.cache && this.seq === upto) this.cache = rows.map(lineOf);
+    }
     return this.cache;
   }
 
-  slice(start: number, end = this.seq) {
+  async slice(start: number, end = this.seq) {
     const from = Math.max(0, start);
     const to = Math.min(this.seq, end);
     if (to <= from) return [];
     if (this.cache) return this.cache.slice(from, to);
-    return eventRows(this.sessionId, from, to).map(lineOf);
+    await this.flush();
+    return (await eventRows(this.sessionId, from, to)).map(lineOf);
   }
 
-  rows(start: number, end: number) {
+  async rows(start: number, end: number) {
+    await this.flush();
     return eventRows(this.sessionId, Math.max(0, start), Math.min(this.seq, end));
   }
 
-  async load() {}
+  async load() {
+    if (this.lastAt !== null) return;
+    const stored = await lastEventAt(this.sessionId);
+    this.lastAt = Math.max(this.lastAt ?? 0, stored ? Date.parse(stored) || 0 : 0);
+  }
 
   emit(...facts: Fact[]) {
-    if (this.lastAt === null) {
-      const stored = lastEventAt(this.sessionId);
-      this.lastAt = stored ? Date.parse(stored) || 0 : 0;
-    }
-    const now = Math.max(Date.now(), this.lastAt + 1);
+    const now = Math.max(Date.now(), (this.lastAt ?? 0) + 1);
     this.lastAt = now;
     const at = new Date(now).toISOString();
     const redacted = redactDeep(facts);
     const line = JSON.stringify({ at, facts: redacted });
-    appendEventRow(this.sessionId, this.seq + 1, at, redacted);
-    this.seq++;
+    const seq = ++this.seq;
+    this.writes = this.writes.then(() =>
+      appendEventRow(this.sessionId, seq, at, redacted).catch((error: unknown) => {
+        console.error(`event ${this.sessionId}#${seq} not saved`, error);
+      }),
+    );
     this.cache?.push(line);
     for (const listener of this.listeners) listener(line);
   }
@@ -152,9 +168,8 @@ export class StoredSession {
     readonly log: EventLog,
   ) {}
 
-  save() {
-    saveConversationRow(this.meta);
-    return Promise.resolve();
+  async save() {
+    await saveConversationRow(this.meta);
   }
 }
 
@@ -165,10 +180,11 @@ export function newSessionId() {
 }
 
 export async function loadSessions() {
-  for (const { meta, lastSeq } of loadConversationRows()) {
+  for (const { meta, lastSeq, lastAt } of await loadConversationRows()) {
     if (!meta?.sessionId) continue;
     if (meta.sdkSessionId && !meta.providerSessions) meta.providerSessions = { "vps:claude": meta.sdkSessionId };
-    sessions.set(meta.sessionId, new StoredSession(meta, new EventLog(meta.sessionId, lastSeq)));
+    const log = new EventLog(meta.sessionId, lastSeq, lastAt ? Date.parse(lastAt) || 0 : 0);
+    sessions.set(meta.sessionId, new StoredSession(meta, log));
   }
   setInterval(() => evictIdleLogs(), 5 * 60_000).unref();
 }

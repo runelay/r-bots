@@ -186,7 +186,7 @@ export function listBots(includeArchived = false, options: { deleted?: boolean; 
 }
 
 export async function loadBots() {
-  for (const bot of loadBotRows()) if (bot.id) bots.set(bot.id, withFullAccess(bot));
+  for (const bot of await loadBotRows()) if (bot.id) bots.set(bot.id, withFullAccess(bot));
 }
 
 function slugify(name: string) {
@@ -538,7 +538,7 @@ export async function createBot(body: unknown) {
   };
   if (!bot.role) bot.role = deriveRole(bot.instructions) || "Novo no time";
   bots.set(id, bot);
-  saveBotRow(bot);
+  await saveBotRow(bot);
   changed();
   return bot;
 }
@@ -573,7 +573,7 @@ export async function updateBot(id: string, body: unknown) {
   if (raw.permission !== undefined) next.permission = validatePermission(raw.permission);
   next.updatedAt = new Date().toISOString();
   bots.set(id, next);
-  saveBotRow(next);
+  await saveBotRow(next);
   changed();
   return next;
 }
@@ -601,7 +601,7 @@ export async function updateSidebar(id: string, body: unknown, sectionExists: (s
   }
   const updated = { ...bot, sidebar: next };
   bots.set(id, updated);
-  saveBotRow(updated);
+  await saveBotRow(updated);
   return updated;
 }
 
@@ -610,7 +610,7 @@ export async function clearSection(sectionId: string) {
     if (sidebarOf(bot).sectionId !== sectionId) continue;
     const updated = { ...bot, sidebar: { ...sidebarOf(bot), sectionId: null } };
     bots.set(bot.id, updated);
-    saveBotRow(updated);
+    await saveBotRow(updated);
   }
 }
 
@@ -623,7 +623,7 @@ export async function setDeleted(id: string, deleted: boolean) {
     updatedAt: new Date().toISOString(),
   };
   bots.set(id, next);
-  saveBotRow(next);
+  await saveBotRow(next);
   changed();
   return next;
 }
@@ -637,7 +637,7 @@ export async function setArchived(id: string, archived: boolean) {
     updatedAt: new Date().toISOString(),
   };
   bots.set(id, next);
-  saveBotRow(next);
+  await saveBotRow(next);
   changed();
   return next;
 }

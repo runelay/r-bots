@@ -121,12 +121,12 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await resetData();
-  getDb().delete(vaultAudit).run();
-  getDb().delete(vaultSecrets).run();
+  await getDb().delete(vaultAudit);
+  await getDb().delete(vaultSecrets);
   await loadVault();
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const name of remembered) forgetSecretValue(name);
 });
 
@@ -135,12 +135,12 @@ async function storedSecret(name: string, value: string, body: Record<string, un
   await setServerCopy(name, value);
 }
 
-test("vaultGuide tells the bot how to use secrets", () => {
+test("vaultGuide tells the bot how to use secrets", async () => {
   expect(vaultGuide).toContain("request_secret");
   expect(vaultGuide).toContain("segredo:nome");
 });
 
-test("computerTypeSecretsOnly accepts only pure references", () => {
+test("computerTypeSecretsOnly accepts only pure references", async () => {
   expect(computerTypeSecretsOnly("computer_type", { text: "segredo:a segredo:b" })).toBe(true);
   expect(computerTypeSecretsOnly("computer_type", { text: "hi segredo:a" })).toBe(false);
   expect(computerTypeSecretsOnly("computer_type", { text: "plain" })).toBe(false);

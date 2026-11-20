@@ -113,7 +113,7 @@ interface CallStart {
   input: unknown;
 }
 
-export function threadItems(session: StoredSession): ThreadItem[] {
+export async function threadItems(session: StoredSession): Promise<ThreadItem[]> {
   const reverted = new Set(session.meta.revertedTurns ?? []);
   const items: ThreadItem[] = [];
   const byId = new Map<string, ThreadItem>();
@@ -128,7 +128,7 @@ export function threadItems(session: StoredSession): ThreadItem[] {
     byId.set(item.id, item);
     items.push(item);
   };
-  for (const line of session.log.lines) {
+  for (const line of await session.log.lines()) {
     let parsed: { at?: string; facts?: Fact[] };
     try {
       parsed = JSON.parse(line);
@@ -487,7 +487,7 @@ async function stateBlock(session: StoredSession, items: ThreadItem[], skills: s
 export async function handoffBlock(session: StoredSession, options: HandoffOptions) {
   const mode = options.full ? { mode: "full" as const, since: -1 } : handoffMode(session, options.key);
   if (!mode) return "";
-  const all = threadItems(session);
+  const all = await threadItems(session);
   const visible = all.filter(
     (item) => item.id !== `u_${options.currentTurnId}` && turnNumber(item.turnId) > mode.since,
   );
@@ -538,8 +538,8 @@ export async function handoffBlock(session: StoredSession, options: HandoffOptio
   return parts.filter(Boolean).join("\n\n");
 }
 
-export function readItem(session: StoredSession, itemId: string, offset = 0) {
-  const items = threadItems(session);
+export async function readItem(session: StoredSession, itemId: string, offset = 0) {
+  const items = await threadItems(session);
   const item = items.find((entry) => entry.id === itemId);
   if (!item) {
     return {
@@ -574,7 +574,7 @@ export async function refreshSummary(
 ) {
   const sessionId = session.meta.sessionId;
   if (summarizing.has(sessionId)) return;
-  const items = threadItems(session);
+  const items = await threadItems(session);
   const end = items.length - (force ? 4 : keepRecent);
   const previous = session.meta.handoff;
   const found = previous ? items.findIndex((item) => item.id === previous.lastItemId) : -1;

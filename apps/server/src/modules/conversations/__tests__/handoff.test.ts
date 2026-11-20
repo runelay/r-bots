@@ -39,12 +39,12 @@ beforeEach(async () => {
 
 let changed: ReturnType<typeof spyOn<typeof workspace, "changedFiles">> | null = null;
 
-afterEach(() => {
+afterEach(async () => {
   changed?.mockRestore();
   changed = null;
 });
 
-function richHistory() {
+async function richHistory() {
   add(
     "turn_0",
     {
@@ -136,17 +136,17 @@ function richHistory() {
     },
     { type: "delivery.consumed", data: { source: "chat" } },
   );
-  session.log.lines.push("not json");
-  session.log.lines.push(
+  (await session.log.lines()).push("not json");
+  (await session.log.lines()).push(
     JSON.stringify({
       facts: [{ type: "content.completed", data: { kind: "text", partId: "p", phase: "reply", value: "sem hora" } }],
     }),
   );
-  session.log.lines.push(JSON.stringify({ at: "x" }));
+  (await session.log.lines()).push(JSON.stringify({ at: "x" }));
 }
 
 describe("turnNumber", () => {
-  test("parses turn ids", () => {
+  test("parses turn ids", async () => {
     expect(turnNumber("turn_7")).toBe(7);
     expect(turnNumber("")).toBe(-1);
     expect(turnNumber("turn_x")).toBe(-1);
@@ -154,9 +154,9 @@ describe("turnNumber", () => {
 });
 
 describe("threadItems", () => {
-  test("turns every kind of fact into a readable item", () => {
-    richHistory();
-    const items = threadItems(session);
+  test("turns every kind of fact into a readable item", async () => {
+    await richHistory();
+    const items = await threadItems(session);
     const byId = new Map(items.map((item) => [item.id, item]));
     expect(byId.get("u_turn_0")?.text).toBe(
       "monta o relatório\nSkills anexadas: Relatório.\nAnexos: a.pdf (file, U1).",
@@ -202,8 +202,8 @@ describe("threadItems", () => {
     expect(items.find((item) => item.id === "a_p")).toMatchObject({ at: "", turnId: "turn_6" });
   });
 
-  test("skips reverted turns and settles calls without output", () => {
-    session.log.lines.push(
+  test("skips reverted turns and settles calls without output", async () => {
+    (await session.log.lines()).push(
       JSON.stringify({
         at: "t",
         facts: [
@@ -218,19 +218,19 @@ describe("threadItems", () => {
     add("turn_0", { type: "delivery.consumed", data: { parts: [{ text: "oi" }] } });
     add("turn_1", { type: "delivery.consumed", data: { parts: [{ text: "revertido" }] } });
     session.meta.revertedTurns = ["turn_1"];
-    const items = threadItems(session);
+    const items = await threadItems(session);
     expect(items.map((item) => item.id)).toEqual(["u_turn_0"]);
-    const lines = session.log.lines;
+    const lines = await session.log.lines();
     lines.push(
       `{"at":"t","facts":[{"type":"call.settled","data":{"callId":"k","outcome":"completed"},"scope":{"turnId":"turn_0"}}]}`,
     );
-    const settled = threadItems(session).find((item) => item.id === "t_k");
+    const settled = (await threadItems(session)).find((item) => item.id === "t_k");
     expect(settled?.text).toContain("(vazio)");
   });
 });
 
 describe("handoffMode", () => {
-  test("is full without a provider session, delta once synced and unknown otherwise", () => {
+  test("is full without a provider session, delta once synced and unknown otherwise", async () => {
     expect(handoffMode(session, "vps:claude")).toEqual({ mode: "full", since: -1 });
     session.meta.providerSessions = { "vps:claude": "s1" };
     expect(handoffMode(session, "vps:claude")).toBeNull();
@@ -257,7 +257,7 @@ describe("handoffBlock", () => {
   });
 
   test("renders the full conversation with the state, ids and reason", async () => {
-    richHistory();
+    await richHistory();
     add("turn_7", { type: "interaction.opened", data: { interactionId: "now", request: { prompt: "Agora?" } } });
     session.meta.workspace = {
       repoName: "app",
@@ -366,18 +366,18 @@ describe("handoffBlock", () => {
 });
 
 describe("readItem", () => {
-  test("reads items in chunks and reports missing ones", () => {
+  test("reads items in chunks and reports missing ones", async () => {
     add("turn_0", { type: "delivery.consumed", data: { parts: [{ text: `${"a".repeat(3999)}😀${"b".repeat(10)}` }] } });
-    const missing = readItem(session, "nope");
+    const missing = await readItem(session, "nope");
     expect(missing).toEqual({ error: "Não achei o item nope nesta conversa.", recentIds: ["u_turn_0"] });
-    const first = readItem(session, "u_turn_0") as { text: string; nextOffset: number; totalChars: number };
+    const first = (await readItem(session, "u_turn_0")) as { text: string; nextOffset: number; totalChars: number };
     expect(first.text).toHaveLength(3999);
     expect(first.nextOffset).toBe(3999);
-    const rest = readItem(session, "u_turn_0", first.nextOffset) as { text: string; nextOffset: number | null };
+    const rest = (await readItem(session, "u_turn_0", first.nextOffset)) as { text: string; nextOffset: number | null };
     expect(rest.text).toBe(`😀${"b".repeat(10)}`);
     expect(rest.nextOffset).toBeNull();
-    expect(readItem(session, "u_turn_0", 99_999)).toMatchObject({ offset: first.totalChars, text: "" });
-    expect(readItem(session, "u_turn_0", -5)).toMatchObject({ offset: 0 });
+    expect(await readItem(session, "u_turn_0", 99_999)).toMatchObject({ offset: first.totalChars, text: "" });
+    expect(await readItem(session, "u_turn_0", -5)).toMatchObject({ offset: 0 });
   });
 });
 

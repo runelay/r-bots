@@ -1,8 +1,9 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, index, integer, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { json, jsonb, timestamptz } from "./types";
 
 type Json = Record<string, unknown>;
 
-export const conversations = sqliteTable(
+export const conversations = pgTable(
   "conversations",
   {
     sessionId: text("session_id").primaryKey(),
@@ -11,16 +12,16 @@ export const conversations = sqliteTable(
     title: text("title").notNull().default(""),
     source: text("source").notNull(),
     scheduleId: text("schedule_id"),
-    startedAt: text("started_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-    archivedAt: text("archived_at"),
+    startedAt: timestamptz("started_at").notNull(),
+    updatedAt: timestamptz("updated_at").notNull(),
+    archivedAt: timestamptz("archived_at"),
     unread: integer("unread").notNull().default(0),
-    readAt: text("read_at"),
-    lastMessage: text("last_message", { mode: "json" }).$type<Json>(),
+    readAt: timestamptz("read_at"),
+    lastMessage: jsonb<Json>("last_message"),
     turnCount: integer("turn_count").notNull().default(0),
     runCount: integer("run_count").notNull().default(0),
     lastSeq: integer("last_seq").notNull().default(0),
-    meta: text("meta", { mode: "json" }).$type<Json>().notNull(),
+    meta: jsonb<Json>("meta").notNull(),
   },
   (table) => [
     index("conversations_bot_idx").on(table.botId, table.updatedAt),
@@ -28,19 +29,19 @@ export const conversations = sqliteTable(
   ],
 );
 
-export const conversationEvents = sqliteTable(
+export const conversationEvents = pgTable(
   "conversation_events",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
+    id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
     sessionId: text("session_id")
       .notNull()
       .references(() => conversations.sessionId, { onDelete: "cascade" }),
     seq: integer("seq").notNull(),
-    at: text("at").notNull(),
+    at: timestamptz("at"),
     types: text("types").notNull().default(""),
     role: text("role"),
     text: text("text"),
-    facts: text("facts", { mode: "json" }).$type<unknown[]>().notNull(),
+    facts: json<unknown[]>("facts").notNull(),
   },
   (table) => [uniqueIndex("conversation_events_session_seq_idx").on(table.sessionId, table.seq)],
 );

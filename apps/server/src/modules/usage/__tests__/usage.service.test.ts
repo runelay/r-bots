@@ -84,7 +84,7 @@ beforeEach(async () => {
   await rm(join(home, ".codex"), { recursive: true, force: true });
 });
 
-afterEach(() => {
+afterEach(async () => {
   jest.useRealTimers();
   jest.setSystemTime();
   for (const restore of restores.splice(0).reverse()) restore();
@@ -440,7 +440,7 @@ describe("usageSummary", () => {
   test("adds VPS logs priced from the stored table, grouped by day, model, speed and environment", async () => {
     jest.useFakeTimers();
     const now = Date.now();
-    settings.writeSetting("usage.prices", { at: now, table: priceTableFixture });
+    await settings.writeSetting("usage.prices", { at: now, table: priceTableFixture });
     await writeFixture(
       join(home, ".claude", "projects", "p", "a.jsonl"),
       `${[
@@ -503,7 +503,7 @@ describe("usageSummary", () => {
   test("downloads prices when the stored table is stale and keeps the old table when the download fails", async () => {
     jest.useFakeTimers();
     mac({ connected: false });
-    settings.writeSetting("usage.prices", { at: 0, table: { old: { input_cost_per_token: 9 } } });
+    await settings.writeSetting("usage.prices", { at: 0, table: { old: { input_cost_per_token: 9 } } });
     const calls = fetchReplies(() =>
       Response.json({
         "claude-a": { input_cost_per_token: 1 },
@@ -521,15 +521,15 @@ describe("usageSummary", () => {
     expect(calls.map((call) => call.url)).toEqual([
       "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
     ]);
-    const stored = settings.readSetting<{ at: number; table: Record<string, unknown> }>("usage.prices", {
+    const stored = await settings.readSetting<{ at: number; table: Record<string, unknown> }>("usage.prices", {
       at: 0,
       table: {},
     });
-    expect(Object.keys(stored.table)).toEqual(["claude-a", "gpt-y"]);
+    expect(Object.keys(stored.table).sort()).toEqual(["claude-a", "gpt-y"]);
     expect(first.pricing.updatedAt).toBe(new Date(stored.at).toISOString());
 
     for (const restore of restores.splice(2).reverse()) restore();
-    settings.writeSetting("usage.prices", { at: 0, table: { old: { input_cost_per_token: 9 } } });
+    await settings.writeSetting("usage.prices", { at: 0, table: { old: { input_cost_per_token: 9 } } });
     fetchReplies(() => new Response("down", { status: 503 }));
     const failed = await (await fresh()).usageSummary("90d", null, "mac");
     expect(Date.parse(failed.pricing.updatedAt ?? "")).toBeLessThan(Date.now() - 22 * 3_600_000);
@@ -542,7 +542,7 @@ describe("usageSummary", () => {
   test("sums Mac buckets and reports the Mac state", async () => {
     jest.useFakeTimers();
     const now = Date.now();
-    settings.writeSetting("usage.prices", { at: now, table: priceTableFixture });
+    await settings.writeSetting("usage.prices", { at: now, table: priceTableFixture });
     const recentHour = hourOf(now - 3_600_000);
     const macRows = {
       rows: [
@@ -601,7 +601,7 @@ describe("usageSummary", () => {
 
   test("defaults missing Mac fields and reports a first scan still running", async () => {
     jest.useFakeTimers();
-    settings.writeSetting("usage.prices", { at: Date.now(), table: {} });
+    await settings.writeSetting("usage.prices", { at: Date.now(), table: {} });
     let finish: (value: Record<string, unknown>) => void = () => undefined;
     const { buckets } = mac({
       connected: true,

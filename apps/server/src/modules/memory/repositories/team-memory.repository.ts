@@ -9,27 +9,30 @@ export interface TeamEntry {
   summary: string;
 }
 
-export function addTeamEntry(entry: TeamEntry, db: Db = getDb()) {
-  db.insert(teamMemory).values(entry).run();
+export async function addTeamEntry(entry: TeamEntry, db: Db = getDb()) {
+  await db.insert(teamMemory).values(entry);
 }
 
-export function recentTeamEntries(excludeBotId: string, since: string, limit: number, db: Db = getDb()): TeamEntry[] {
-  return db
+export async function recentTeamEntries(
+  excludeBotId: string,
+  since: string,
+  limit: number,
+  db: Db = getDb(),
+): Promise<TeamEntry[]> {
+  const rows = await db
     .select({ at: teamMemory.at, botId: teamMemory.botId, botName: teamMemory.botName, summary: teamMemory.summary })
     .from(teamMemory)
     .where(and(gte(teamMemory.at, since), ne(teamMemory.botId, excludeBotId)))
     .orderBy(desc(teamMemory.id))
-    .limit(limit)
-    .all()
-    .reverse();
+    .limit(limit);
+  return rows.reverse();
 }
 
-export function teamEntryExists(entry: TeamEntry, db: Db = getDb()) {
-  return Boolean(
-    db
-      .select({ id: teamMemory.id })
-      .from(teamMemory)
-      .where(and(eq(teamMemory.at, entry.at), eq(teamMemory.botId, entry.botId), eq(teamMemory.summary, entry.summary)))
-      .get(),
-  );
+export async function teamEntryExists(entry: TeamEntry, db: Db = getDb()) {
+  const [row] = await db
+    .select({ id: teamMemory.id })
+    .from(teamMemory)
+    .where(and(eq(teamMemory.at, entry.at), eq(teamMemory.botId, entry.botId), eq(teamMemory.summary, entry.summary)))
+    .limit(1);
+  return Boolean(row);
 }

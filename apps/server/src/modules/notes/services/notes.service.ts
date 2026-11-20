@@ -13,6 +13,7 @@ import type {
 } from "@runelay-bots/protocol";
 import { and, asc, desc, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import { type Db, getDb, writeTransaction } from "../../../db";
+import { markers, withEllipsis } from "../../../db/search";
 import { noteLinks, notes } from "../../../db/tables";
 import {
   BlockError,
@@ -29,6 +30,7 @@ import {
   shouldMerge,
   staleCheck,
 } from "../../blocks/services/blocks.shared";
+import { noteMatches, noteSearchQuery, searchNoteRows } from "../repositories/notes-search.repository";
 
 type NoteRow = typeof notes.$inferSelect;
 
@@ -109,13 +111,12 @@ function liveNotes(botId: string) {
   return and(eq(notes.botId, botId), isNull(notes.deletedAt)) as SQL;
 }
 
-function findByTitle(botId: string, title: string, folder?: string) {
-  const rows = db()
+async function findByTitle(botId: string, title: string, folder?: string) {
+  const rows = await db()
     .select()
     .from(notes)
     .where(and(liveNotes(botId), sql`lower(${notes.title}) = ${normalizeTitle(title)}`))
-    .orderBy(desc(notes.updatedAt))
-    .all();
+    .orderBy(desc(notes.updatedAt));
   if (folder !== undefined) {
     const same = rows.find((row) => row.folder === folder);
     if (same) return same;
@@ -123,19 +124,19 @@ function findByTitle(botId: string, title: string, folder?: string) {
   return rows[0] ?? null;
 }
 
-export function requireNote(botId: string, noteId: string) {
-  const row = db()
+export async function requireNote(botId: string, noteId: string) {
+  const [row] = await db()
     .select()
     .from(notes)
     .where(and(liveNotes(botId), eq(notes.id, noteId)))
-    .get();
+    .limit(1);
   if (!row) throw new BlockError("Nota não encontrada.", 404);
   return row;
 }
 
-function backlinkCount(botId: string, row: NoteRow) {
-  const result = db()
-    .select({ count: sql<number>`count(*)` })
+async function backlinkCount(botId: string, row: NoteRow) {
+  const [result] = await db()
+    .select({ count: sql<number>`count(*)::int` })
     .from(noteLinks)
     .innerJoin(notes, eq(notes.id, noteLinks.sourceId))
     .where(
@@ -144,58 +145,43 @@ function backlinkCount(botId: string, row: NoteRow) {
         sql`(${noteLinks.targetId} = ${row.id} OR (${noteLinks.targetId} IS NULL AND lower(${noteLinks.targetTitle}) = ${normalizeTitle(row.title)}))`,
       ),
     )
-    .get();
+    .limit(1);
   return Number(result?.count ?? 0);
 }
 
-export function noteOf(botId: string, row: NoteRow): Note {
-  const links: NoteLink[] = parseLinks(row.markdown).map((target) => {
-    const found = findByTitle(botId, target, row.folder);
-    return { target, id: found?.id ?? null, title: found?.title ?? target };
-  });
-  return { ...summaryOf(row), content: row.markdown, links, backlinkCount: backlinkCount(botId, row) };
+export async function noteOf(botId: string, row: NoteRow): Promise<Note> {
+  const links: NoteLink[] = [];
+  for (const target of parseLinks(row.markdown)) {
+    const found = await findByTitle(botId, target, row.folder);
+    links.push({ target, id: found?.id ?? null, title: found?.title ?? target });
+  }
+  return { ...summaryOf(row), content: row.markdown, links, backlinkCount: await backlinkCount(botId, row) };
 }
 
-function syncLinks(botId: string, row: Pick<NoteRow, "id" | "markdown" | "folder">) {
-  db().delete(noteLinks).where(eq(noteLinks.sourceId, row.id)).run();
+async function syncLinks(botId: string, row: Pick<NoteRow, "id" | "markdown" | "folder">) {
+  await db().delete(noteLinks).where(eq(noteLinks.sourceId, row.id));
   const targets = parseLinks(row.markdown);
   if (!targets.length) return;
-  db()
-    .insert(noteLinks)
-    .values(
-      targets.map((target) => ({
-        sourceId: row.id,
-        targetTitle: target,
-        targetId: findByTitle(botId, target, row.folder)?.id ?? null,
-      })),
-    )
-    .run();
+  const values = [];
+  for (const target of targets)
+    values.push({
+      sourceId: row.id,
+      targetTitle: target,
+      targetId: (await findByTitle(botId, target, row.folder))?.id ?? null,
+    });
+  await db().insert(noteLinks).values(values);
 }
 
-function relinkTitle(botId: string, title: string, id: string | null) {
-  const sources = db()
-    .select({ id: notes.id })
-    .from(notes)
-    .where(liveNotes(botId))
-    .all()
-    .map((item) => item.id);
-  if (!sources.length) return;
-  db()
+async function relinkTitle(botId: string, title: string, id: string | null) {
+  await db()
     .update(noteLinks)
     .set({ targetId: id })
-    .where(and(inArray(noteLinks.sourceId, sources), sql`lower(${noteLinks.targetTitle}) = ${normalizeTitle(title)}`))
-    .run();
-}
-
-function ftsQuery(q: string, column?: "title") {
-  const terms = q
-    .normalize("NFC")
-    .split(/[^\p{L}\p{N}_]+/u)
-    .filter(Boolean)
-    .slice(0, 12)
-    .map((term) => `"${term.replace(/"/g, "")}"*`);
-  if (!terms.length) return null;
-  return column ? `${column} : (${terms.join(" ")})` : terms.join(" ");
+    .where(
+      and(
+        inArray(noteLinks.sourceId, db().select({ id: notes.id }).from(notes).where(liveNotes(botId))),
+        sql`lower(${noteLinks.targetTitle}) = ${normalizeTitle(title)}`,
+      ),
+    );
 }
 
 function tagCondition(tag: string) {
@@ -204,35 +190,34 @@ function tagCondition(tag: string) {
   return sql`(lower(${notes.markdown}) LIKE ${`%${needle}`} OR lower(${notes.markdown}) LIKE ${`%${needle} %`} OR lower(${notes.markdown}) LIKE ${`%${needle}\n%`} OR lower(${notes.markdown}) LIKE ${`%${needle},%`} OR lower(${notes.markdown}) LIKE ${`%${needle}.%`})`;
 }
 
-export function listNotes(botId: string, query: Record<string, unknown>): Page<NoteSummary> {
+export async function listNotes(botId: string, query: Record<string, unknown>): Promise<Page<NoteSummary>> {
   const { limit, offset } = pageArgs(query.cursor, query.limit);
   const conditions: SQL[] = [liveNotes(botId)];
   if (query.folder !== undefined && query.folder !== null) conditions.push(eq(notes.folder, cleanFolder(query.folder)));
-  const q = typeof query.q === "string" ? ftsQuery(query.q) : null;
-  if (q) conditions.push(sql`${notes.id} IN (SELECT note_id FROM notes_fts WHERE notes_fts MATCH ${q})`);
+  const q = typeof query.q === "string" ? noteSearchQuery(query.q) : null;
+  if (q) conditions.push(noteMatches(q));
   if (typeof query.tag === "string" && query.tag.trim()) conditions.push(tagCondition(query.tag.trim()));
   const where = and(...conditions);
   const order = query.sort === "title" ? [asc(sql`lower(${notes.title})`)] : [desc(notes.updatedAt)];
-  const total = Number(db().select({ count: sql<number>`count(*)` }).from(notes).where(where).get()?.count ?? 0);
-  const rows = db()
+  const [count] = await db().select({ count: sql<number>`count(*)::int` }).from(notes).where(where);
+  const total = Number(count?.count ?? 0);
+  const rows = await db()
     .select()
     .from(notes)
     .where(where)
-    .orderBy(...order)
+    .orderBy(...order, asc(notes.id))
     .limit(limit)
-    .offset(offset)
-    .all();
+    .offset(offset);
   return pageOf(rows.map(summaryOf), total, offset, limit);
 }
 
-export function noteTree(botId: string, query: Record<string, unknown>): NoteTreeLevel {
+export async function noteTree(botId: string, query: Record<string, unknown>): Promise<NoteTreeLevel> {
   const folder = cleanFolder(query.folder);
-  const all = db()
-    .select({ folder: notes.folder, count: sql<number>`count(*)` })
+  const all = await db()
+    .select({ folder: notes.folder, count: sql<number>`count(*)::int` })
     .from(notes)
     .where(liveNotes(botId))
-    .groupBy(notes.folder)
-    .all();
+    .groupBy(notes.folder);
   const prefix = folder ? `${folder}/` : "";
   const children = new Map<string, NoteFolder>();
   for (const item of all) {
@@ -255,7 +240,7 @@ export function noteTree(botId: string, query: Record<string, unknown>): NoteTre
   return {
     folder,
     folders,
-    notes: listNotes(botId, { folder, sort: "title", cursor: query.cursor, limit: query.limit }),
+    notes: await listNotes(botId, { folder, sort: "title", cursor: query.cursor, limit: query.limit }),
   };
 }
 
@@ -273,70 +258,56 @@ function rangesOf(marked: string) {
   return { text, ranges };
 }
 
-export function searchNotes(botId: string, query: Record<string, unknown>): Page<NoteSearchHit> {
+export async function searchNotes(botId: string, query: Record<string, unknown>): Promise<Page<NoteSearchHit>> {
   const titleOnly = query.mode === "title";
   const { limit, offset } = pageArgs(query.cursor, query.limit, titleOnly ? 8 : 50);
-  const q = typeof query.q === "string" ? ftsQuery(query.q, titleOnly ? "title" : undefined) : null;
+  const q = typeof query.q === "string" ? noteSearchQuery(query.q, titleOnly) : null;
   if (!q) return pageOf([], 0, offset, limit);
-  const sqlite = db().$client;
-  const params = { $q: q, $bot: botId };
-  const total = Number(
-    sqlite
-      .query<{ count: number }, Record<string, string>>(
-        "SELECT count(*) AS count FROM notes_fts f JOIN notes n ON n.id = f.note_id WHERE notes_fts MATCH $q AND n.bot_id = $bot AND n.deleted_at IS NULL",
-      )
-      .get(params)?.count ?? 0,
-  );
-  const rows = sqlite
-    .query<
-      { id: string; title: string; folder: string; snippet: string; titleMarked: string },
-      Record<string, string | number>
-    >(
-      `SELECT n.id, n.title, n.folder, snippet(notes_fts, 2, char(1), char(2), '…', 16) AS snippet, highlight(notes_fts, 1, char(1), char(2)) AS titleMarked FROM notes_fts f JOIN notes n ON n.id = f.note_id WHERE notes_fts MATCH $q AND n.bot_id = $bot AND n.deleted_at IS NULL ORDER BY ${titleOnly ? "length(n.title), n.title" : "bm25(notes_fts, 0, 4.0, 1.0)"} LIMIT $limit OFFSET $offset`,
-    )
-    .all({ ...params, $limit: limit, $offset: offset });
+  const { total, rows } = await searchNoteRows(botId, q, titleOnly, limit, offset);
   const items = rows.map((row) => {
     if (titleOnly) {
       const { ranges } = rangesOf(row.titleMarked);
       return { id: row.id, title: row.title, folder: row.folder, snippet: "", ranges };
     }
-    const hasBodyHit = row.snippet.includes("\u0001");
-    const { text, ranges } = rangesOf((hasBodyHit ? row.snippet : row.titleMarked).replace(/\s+/g, " "));
+    const hasBodyHit = row.snippet.includes(markers.open);
+    const marked = hasBodyHit ? withEllipsis(row.snippet, row.markdown) : row.titleMarked;
+    const { text, ranges } = rangesOf(marked.replace(/\s+/g, " "));
     return { id: row.id, title: row.title, folder: row.folder, snippet: text, ranges };
   });
   return pageOf(items, total, offset, limit);
 }
 
-export function resolveNote(botId: string, title: string, folder?: string) {
-  const row = findByTitle(botId, cleanTitle(title), folder === undefined ? undefined : cleanFolder(folder));
+export async function resolveNote(botId: string, title: string, folder?: string) {
+  const row = await findByTitle(botId, cleanTitle(title), folder === undefined ? undefined : cleanFolder(folder));
   if (!row) throw new BlockError("Nota não encontrada.", 404);
   return noteOf(botId, row);
 }
 
-export function noteBacklinks(botId: string, noteId: string, query: Record<string, unknown>): Page<NoteBacklink> {
-  const row = requireNote(botId, noteId);
+export async function noteBacklinks(
+  botId: string,
+  noteId: string,
+  query: Record<string, unknown>,
+): Promise<Page<NoteBacklink>> {
+  const row = await requireNote(botId, noteId);
   const { limit, offset } = pageArgs(query.cursor, query.limit);
   const where = and(
     liveNotes(botId),
     sql`(${noteLinks.targetId} = ${row.id} OR (${noteLinks.targetId} IS NULL AND lower(${noteLinks.targetTitle}) = ${normalizeTitle(row.title)}))`,
   );
-  const total = Number(
-    db()
-      .select({ count: sql<number>`count(*)` })
-      .from(noteLinks)
-      .innerJoin(notes, eq(notes.id, noteLinks.sourceId))
-      .where(where)
-      .get()?.count ?? 0,
-  );
-  const sources = db()
+  const [count] = await db()
+    .select({ count: sql<number>`count(*)::int` })
+    .from(noteLinks)
+    .innerJoin(notes, eq(notes.id, noteLinks.sourceId))
+    .where(where);
+  const total = Number(count?.count ?? 0);
+  const sources = await db()
     .select()
     .from(noteLinks)
     .innerJoin(notes, eq(notes.id, noteLinks.sourceId))
     .where(where)
-    .orderBy(desc(notes.updatedAt))
+    .orderBy(desc(notes.updatedAt), asc(notes.id))
     .limit(limit)
-    .offset(offset)
-    .all();
+    .offset(offset);
   const items = sources.map(({ notes: source, note_links: link }) => {
     const needle = `[[${link.targetTitle.toLowerCase()}`;
     const line = source.markdown.split("\n").find((item) => item.toLowerCase().includes(needle)) ?? "";
@@ -345,8 +316,8 @@ export function noteBacklinks(botId: string, noteId: string, query: Record<strin
   return pageOf(items, total, offset, limit);
 }
 
-function assertUnique(botId: string, title: string, folder: string, except?: string) {
-  const clash = db()
+async function assertUnique(botId: string, title: string, folder: string, except?: string) {
+  const [clash] = await db()
     .select({ id: notes.id })
     .from(notes)
     .where(
@@ -357,7 +328,7 @@ function assertUnique(botId: string, title: string, folder: string, except?: str
         except ? sql`${notes.id} <> ${except}` : undefined,
       ),
     )
-    .get();
+    .limit(1);
   if (clash) throw new BlockError("Já existe uma nota com esse título nessa pasta.", 409, "exists", { id: clash.id });
 }
 
@@ -366,12 +337,16 @@ export interface NoteWrite {
   event: ReturnType<typeof blockEvent>;
 }
 
-export function createNote(botId: string, body: Record<string, unknown>, author: BlockAuthor): NoteWrite {
+export async function createNote(
+  botId: string,
+  body: Record<string, unknown>,
+  author: BlockAuthor,
+): Promise<NoteWrite> {
   const title = cleanTitle(body.title);
   const folder = cleanFolder(body.folder);
   const markdown = String(body.content ?? "");
-  return writeTransaction(() => {
-    assertUnique(botId, title, folder);
+  return writeTransaction(async () => {
+    await assertUnique(botId, title, folder);
     const at = nowIso();
     const row: NoteRow = {
       id: newId("note"),
@@ -388,27 +363,27 @@ export function createNote(botId: string, body: Record<string, unknown>, author:
       updatedAt: at,
       deletedAt: null,
     };
-    db().insert(notes).values(row).run();
-    syncLinks(botId, row);
-    relinkTitle(botId, title, row.id);
+    await db().insert(notes).values(row);
+    await syncLinks(botId, row);
+    await relinkTitle(botId, title, row.id);
     const changed = markdown ? { lines: [[0, markdown.split("\n").length - 1]] as Array<[number, number]> } : undefined;
     return {
-      note: noteOf(botId, row),
+      note: await noteOf(botId, row),
       event: blockEvent("note", row.id, title, 1, author, "created", previewOf(row), changed),
     };
   });
 }
 
-function saveContent(
+async function saveContent(
   botId: string,
   current: NoteRow,
   next: { markdown: string; title?: string },
   author: BlockAuthor,
   baseVersion: unknown,
-): NoteWrite {
+): Promise<NoteWrite> {
   staleCheck(current, baseVersion, author);
   const title = next.title === undefined ? current.title : cleanTitle(next.title);
-  if (title !== current.title) assertUnique(botId, title, current.folder, current.id);
+  if (title !== current.title) await assertUnique(botId, title, current.folder, current.id);
   const lines = changedLines(current.markdown, next.markdown);
   const merge = shouldMerge(current, author);
   const version = merge ? current.version : current.version + 1;
@@ -424,7 +399,7 @@ function saveContent(
     seenVersion: author === "bot" ? version : current.seenVersion,
     userChanges: author === "bot" ? null : pending,
   };
-  db()
+  await db()
     .update(notes)
     .set({
       title: updated.title,
@@ -435,15 +410,14 @@ function saveContent(
       seenVersion: updated.seenVersion,
       userChanges: updated.userChanges,
     })
-    .where(eq(notes.id, current.id))
-    .run();
-  syncLinks(botId, updated);
+    .where(eq(notes.id, current.id));
+  await syncLinks(botId, updated);
   if (title !== current.title) {
-    relinkTitle(botId, current.title, findByTitle(botId, current.title)?.id ?? null);
-    relinkTitle(botId, title, updated.id);
+    await relinkTitle(botId, current.title, (await findByTitle(botId, current.title))?.id ?? null);
+    await relinkTitle(botId, title, updated.id);
   }
   return {
-    note: noteOf(botId, updated),
+    note: await noteOf(botId, updated),
     event: blockEvent(
       "note",
       updated.id,
@@ -457,17 +431,17 @@ function saveContent(
   };
 }
 
-export function writeNote(
+export async function writeNote(
   botId: string,
   noteId: string,
   body: Record<string, unknown>,
   author: BlockAuthor,
-): NoteWrite {
+): Promise<NoteWrite> {
   if (typeof body.content !== "string") throw new BlockError("content é obrigatório.");
-  return writeTransaction(() =>
+  return writeTransaction(async () =>
     saveContent(
       botId,
-      requireNote(botId, noteId),
+      await requireNote(botId, noteId),
       { markdown: body.content as string, ...(body.title !== undefined ? { title: String(body.title) } : {}) },
       author,
       body.baseVersion,
@@ -522,11 +496,11 @@ export function applyOps(markdown: string, ops: NotePatchOp[]) {
   return text;
 }
 
-export function patchNote(botId: string, noteId: string, body: Record<string, unknown>, author: BlockAuthor) {
+export async function patchNote(botId: string, noteId: string, body: Record<string, unknown>, author: BlockAuthor) {
   const ops = body.ops;
   if (!Array.isArray(ops) || !ops.length) throw new BlockError("ops é obrigatório.");
-  return writeTransaction(() => {
-    const current = requireNote(botId, noteId);
+  return writeTransaction(async () => {
+    const current = await requireNote(botId, noteId);
     const markdown = applyOps(current.markdown, ops as NotePatchOp[]);
     return saveContent(botId, current, { markdown }, author, body.baseVersion);
   });
@@ -542,17 +516,17 @@ function rewriteLinks(markdown: string, from: string, to: string) {
   return { next, count };
 }
 
-export function moveNote(botId: string, noteId: string, body: Record<string, unknown>, author: BlockAuthor) {
-  return writeTransaction(() => {
-    const current = requireNote(botId, noteId);
+export async function moveNote(botId: string, noteId: string, body: Record<string, unknown>, author: BlockAuthor) {
+  return writeTransaction(async () => {
+    const current = await requireNote(botId, noteId);
     const folder = body.folder === undefined ? current.folder : cleanFolder(body.folder);
     const title = body.title === undefined ? current.title : cleanTitle(body.title);
     if (folder === current.folder && title === current.title)
-      return { note: noteOf(botId, current), relinked: 0, event: null };
-    assertUnique(botId, title, folder, current.id);
+      return { note: await noteOf(botId, current), relinked: 0, event: null };
+    await assertUnique(botId, title, folder, current.id);
     const version = current.version + 1;
     const at = nowIso();
-    db()
+    await db()
       .update(notes)
       .set({
         folder,
@@ -562,64 +536,60 @@ export function moveNote(botId: string, noteId: string, body: Record<string, unk
         updatedAt: at,
         ...(author === "bot" ? { seenVersion: version } : {}),
       })
-      .where(eq(notes.id, current.id))
-      .run();
+      .where(eq(notes.id, current.id));
     let relinked = 0;
     if (title !== current.title) {
-      const sources = db()
+      const sources = await db()
         .select()
         .from(noteLinks)
         .innerJoin(notes, eq(notes.id, noteLinks.sourceId))
-        .where(and(liveNotes(botId), sql`lower(${noteLinks.targetTitle}) = ${normalizeTitle(current.title)}`))
-        .all();
+        .where(and(liveNotes(botId), sql`lower(${noteLinks.targetTitle}) = ${normalizeTitle(current.title)}`));
       for (const { notes: source } of sources) {
-        const fresh = source.id === current.id ? requireNote(botId, current.id) : source;
+        const fresh = source.id === current.id ? await requireNote(botId, current.id) : source;
         const { next, count } = rewriteLinks(fresh.markdown, current.title, title);
         if (!count) continue;
         const sourceVersion = fresh.version + 1;
-        db()
+        await db()
           .update(notes)
           .set({ markdown: next, version: sourceVersion, updatedAt: at, updatedBy: author })
-          .where(eq(notes.id, fresh.id))
-          .run();
-        syncLinks(botId, { ...fresh, markdown: next });
+          .where(eq(notes.id, fresh.id));
+        await syncLinks(botId, { ...fresh, markdown: next });
         relinked++;
       }
-      relinkTitle(botId, title, current.id);
-      relinkTitle(botId, current.title, findByTitle(botId, current.title)?.id ?? null);
+      await relinkTitle(botId, title, current.id);
+      await relinkTitle(botId, current.title, (await findByTitle(botId, current.title))?.id ?? null);
     }
-    const row = requireNote(botId, current.id);
+    const row = await requireNote(botId, current.id);
     return {
-      note: noteOf(botId, row),
+      note: await noteOf(botId, row),
       relinked,
       event: blockEvent("note", row.id, row.title, row.version, author, "edited", previewOf(row)),
     };
   });
 }
 
-export function deleteNote(botId: string, noteId: string, author: BlockAuthor) {
-  return writeTransaction(() => {
-    const current = requireNote(botId, noteId);
+export async function deleteNote(botId: string, noteId: string, author: BlockAuthor) {
+  return writeTransaction(async () => {
+    const current = await requireNote(botId, noteId);
     const version = current.version + 1;
-    db()
+    await db()
       .update(notes)
       .set({ deletedAt: nowIso(), version, updatedBy: author, updatedAt: nowIso() })
-      .where(eq(notes.id, current.id))
-      .run();
-    db().update(noteLinks).set({ targetId: null }).where(eq(noteLinks.targetId, current.id)).run();
+      .where(eq(notes.id, current.id));
+    await db().update(noteLinks).set({ targetId: null }).where(eq(noteLinks.targetId, current.id));
     return blockEvent("note", current.id, current.title, version, author, "deleted", null);
   });
 }
 
-export function readNoteForBot(botId: string, noteId: string) {
-  const row = requireNote(botId, noteId);
+export async function readNoteForBot(botId: string, noteId: string) {
+  const row = await requireNote(botId, noteId);
   if (row.seenVersion < row.version)
-    db().update(notes).set({ seenVersion: row.version, userChanges: null }).where(eq(notes.id, row.id)).run();
+    await db().update(notes).set({ seenVersion: row.version, userChanges: null }).where(eq(notes.id, row.id));
   return noteOf(botId, row);
 }
 
-export function noteEditNote(botId: string) {
-  const rows = db()
+export async function noteEditNote(botId: string) {
+  const rows = await db()
     .select()
     .from(notes)
     .where(
@@ -631,10 +601,18 @@ export function noteEditNote(botId: string) {
       ),
     )
     .orderBy(desc(notes.updatedAt))
-    .limit(20)
-    .all();
+    .limit(20);
+  if (rows.length)
+    await db()
+      .update(notes)
+      .set({ notifiedVersion: sql`${notes.version}` })
+      .where(
+        inArray(
+          notes.id,
+          rows.map((row) => row.id),
+        ),
+      );
   const lines = rows.map((row) => {
-    db().update(notes).set({ notifiedVersion: row.version }).where(eq(notes.id, row.id)).run();
     const ranges = (row.userChanges as Array<[number, number]> | null) ?? [];
     const where = ranges.length
       ? `linhas ${ranges.map(([start, end]) => (start === end ? `${start + 1}` : `${start + 1}–${end + 1}`)).join(", ")} mudaram`

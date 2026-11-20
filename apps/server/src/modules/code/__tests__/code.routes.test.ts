@@ -57,7 +57,10 @@ async function threadSession(target = bot) {
 async function openRepo(options: { files?: Record<string, string>; origin?: boolean } = {}) {
   repoCount++;
   const name = `routes-${repoCount}-${Math.random().toString(36).slice(2, 6)}`;
-  makeRepo(name, { files: options.files ?? { "README.md": "hello\n", "src/a.txt": "a\n" }, origin: options.origin });
+  await makeRepo(name, {
+    files: options.files ?? { "README.md": "hello\n", "src/a.txt": "a\n" },
+    origin: options.origin,
+  });
   await listRepos(true);
   const opened = await request<{ created: boolean; workspace: { repoName: string } }>(
     `/bots/${bot.id}/code/workspace`,
@@ -227,7 +230,7 @@ describe("workspace lifecycle", () => {
     expect(reverted.status).toBe(200);
     expect(reverted.body).toEqual({ ok: true, path: "new.txt" });
     expect(existsSync(join(workspace.path, "new.txt"))).toBe(false);
-    expect(factsOfType(session, "code.reverted").at(-1)?.data).toMatchObject({ path: "new.txt", by: "user" });
+    expect((await factsOfType(session, "code.reverted")).at(-1)?.data).toMatchObject({ path: "new.txt", by: "user" });
 
     const badAction = await request<{ error: string }>(`/bots/${bot.id}/code/deliver`, {
       method: "POST",
@@ -241,7 +244,7 @@ describe("workspace lifecycle", () => {
     });
     expect(committed.status).toBe(200);
     expect(committed.body.commit).toEqual(expect.any(String));
-    expect(factsOfType(session, "code.delivered")).toHaveLength(1);
+    expect(await factsOfType(session, "code.delivered")).toHaveLength(1);
     for (const action of ["push", "pr"]) {
       const response = await request<{ error: string }>(`/bots/${bot.id}/code/deliver`, {
         method: "POST",
@@ -297,7 +300,7 @@ describe("workspace lifecycle", () => {
   test("defaults the task name from the repo", async () => {
     repoCount++;
     const name = `routes-default-${repoCount}`;
-    makeRepo(name);
+    await makeRepo(name);
     await listRepos(true);
     const opened = await request<{ workspace: { task: string } }>(`/bots/${bot.id}/code/workspace`, {
       method: "POST",
@@ -434,7 +437,7 @@ describe("checkpoints and rewind", () => {
     expect(existsSync(join(workspace.path, "extra.txt"))).toBe(false);
     expect(session.meta.revertedTurns).toEqual(["turn_1", "turn_2"]);
     expect(session.meta.providerSessions).toEqual({});
-    expect(factsOfType(session, "turn.reverted").at(-1)?.data).toMatchObject({
+    expect((await factsOfType(session, "turn.reverted")).at(-1)?.data).toMatchObject({
       turnId: "turn_1",
       files: true,
       checkpoint: `refs/runelay/checkpoints/${session.meta.sessionId}/turn_1`,
@@ -445,7 +448,7 @@ describe("checkpoints and rewind", () => {
       body: { turnId: "turn_1" },
     });
     expect(nothing.body).toEqual({ turnId: "turn_1", turnIds: [], filesRestored: false, restored: 0, removed: 0 });
-    expect(factsOfType(session, "turn.reverted").at(-1)?.data.checkpoint).toBeUndefined();
+    expect((await factsOfType(session, "turn.reverted")).at(-1)?.data.checkpoint).toBeUndefined();
 
     const conversation = await createConversation(bot.id, {});
     const plain = await request<{ filesRestored: boolean }>(

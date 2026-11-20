@@ -75,9 +75,9 @@ describe("a chat turn", () => {
     stop();
     expect(conversationStatus(session.meta.sessionId)).toBe("idle");
     expect(botStatus(bot.id)).toBe("idle");
-    expect(settledOf(session)).toMatchObject({ outcome: "completed", turnId: "turn_0" });
-    expect(repliesOf(session)).toEqual(["Olá, tudo certo."]);
-    const usage = factsOfType(session, "usage.recorded")[0].data;
+    expect(await settledOf(session)).toMatchObject({ outcome: "completed", turnId: "turn_0" });
+    expect(await repliesOf(session)).toEqual(["Olá, tudo certo."]);
+    const usage = (await factsOfType(session, "usage.recorded"))[0].data;
     expect(usage).toMatchObject({ account: "vps:claude", usage: { inputTokens: 11, outputTokens: 5 } });
     expect(session.meta.providerSessions).toEqual({ "vps:claude": "prov-1" });
     expect(session.meta.contextTokens).toBe(900);
@@ -111,18 +111,18 @@ describe("a chat turn", () => {
       emit({ type: "done", ok: true });
     });
     await run(session, { text: "lista os arquivos" });
-    expect(repliesOf(session, "narration")).toEqual(["Vou listar."]);
-    expect(repliesOf(session)).toEqual(["Pronto."]);
-    const requested = factsOfType(session, "call.requested").map(
+    expect(await repliesOf(session, "narration")).toEqual(["Vou listar."]);
+    expect(await repliesOf(session)).toEqual(["Pronto."]);
+    const requested = (await factsOfType(session, "call.requested")).map(
       (fact) => (fact.data.capability as { label: string }).label,
     );
     expect(requested).toEqual(["Rodar ls -la /tmp", "Editar a.ts, b.ts", "Editar "]);
-    const settled = factsOfType(session, "call.settled").map((fact) => fact.data);
+    const settled = (await factsOfType(session, "call.settled")).map((fact) => fact.data);
     expect(settled[0]).toMatchObject({ callId: "ext_t1", outcome: "completed", output: "ok" });
     expect(settled[1]).toMatchObject({ outcome: "failed", output: null, error: { code: "TOOL_EXECUTION_FAILED" } });
-    expect(factsOfType(session, "model.started").length).toBeGreaterThanOrEqual(3);
+    expect((await factsOfType(session, "model.started")).length).toBeGreaterThanOrEqual(3);
     expect(warn).toHaveBeenCalledWith("provider warning vps:claude: devagar");
-    expect(factsOfType(session, "usage.recorded")).toHaveLength(0);
+    expect(await factsOfType(session, "usage.recorded")).toHaveLength(0);
   });
 
   test("fails the turn with the provider message and forgets a resumed session without reply", async () => {
@@ -132,14 +132,14 @@ describe("a chat turn", () => {
     await run(session);
     fakeProviders.next(({ emit }) => emit({ type: "done", ok: false, message: "explodiu" }));
     await run(session, { text: "de novo" });
-    expect(settledOf(session)).toMatchObject({
+    expect(await settledOf(session)).toMatchObject({
       outcome: "failed",
       error: { code: "MODEL_CALL_FAILED", message: "explodiu" },
     });
     expect(session.meta.providerSessions).toEqual({});
     fakeProviders.next(({ emit }) => emit({ type: "done", ok: false }));
     await run(session, { text: "e agora" });
-    expect(settledOf(session)?.error?.message).toBe("Falha no provedor.");
+    expect((await settledOf(session))?.error?.message).toBe("Falha no provedor.");
   });
 
   test("reports a provider crash and denies open approvals", async () => {
@@ -149,18 +149,18 @@ describe("a chat turn", () => {
       throw new Error("pane no provedor");
     });
     await run(session);
-    expect(settledOf(session)).toMatchObject({ outcome: "failed", error: { message: "pane no provedor" } });
+    expect(await settledOf(session)).toMatchObject({ outcome: "failed", error: { message: "pane no provedor" } });
     fakeProviders.next(() => {
       throw "falha crua";
     });
     await run(session);
-    expect(settledOf(session)?.error?.message).toBe("falha crua");
+    expect((await settledOf(session))?.error?.message).toBe("falha crua");
   });
 
   test("fails when the bot no longer exists", async () => {
     const session = await newSession("bot-que-sumiu");
     await run(session, { text: "alô" });
-    expect(settledOf(session)).toMatchObject({ outcome: "failed", error: { code: "BOT_NOT_FOUND" } });
+    expect(await settledOf(session)).toMatchObject({ outcome: "failed", error: { code: "BOT_NOT_FOUND" } });
     expect(fakeProviders.turns).toHaveLength(0);
   });
 
@@ -169,13 +169,13 @@ describe("a chat turn", () => {
     const session = await newSession(bot.id);
     bot.engine = { account: "vps:nada", model: "x", effort: null };
     await run(session);
-    expect(settledOf(session)).toMatchObject({
+    expect(await settledOf(session)).toMatchObject({
       outcome: "failed",
       error: { code: "ACCOUNT_UNAVAILABLE", message: "A conta vps:nada não existe." },
     });
     bot.engine = { account: "mac:claude", model: "x", effort: null };
     await run(session);
-    expect(settledOf(session)?.error?.message).toContain("está fora do ar");
+    expect((await settledOf(session))?.error?.message).toContain("está fora do ar");
     expect(fakeProviders.turns).toHaveLength(0);
   });
 
@@ -233,10 +233,10 @@ describe("the system prompt", () => {
     expect(request.systemPrompt).toContain("Ana: fechou o relatório");
     expect(request.systemPrompt).toContain("A pessoa editou o canvas X.");
     expect(request.systemPrompt).toContain("chamada de voz");
-    expect(factsOfType(session, "memory.recalled")[0].data).toEqual({ slugs: ["metas"], titles: ["Metas"] });
-    const reply = factsOfType(session, "content.completed").find((fact) => fact.data.phase === "reply");
+    expect((await factsOfType(session, "memory.recalled"))[0].data).toEqual({ slugs: ["metas"], titles: ["Metas"] });
+    const reply = (await factsOfType(session, "content.completed")).find((fact) => fact.data.phase === "reply");
     expect(reply?.data.voice).toBe(true);
-    expect(factsOfType(session, "delivery.consumed")[0].data.voice).toBe(true);
+    expect((await factsOfType(session, "delivery.consumed"))[0].data.voice).toBe(true);
   });
 
   test("ignores a failing canvas note and skips recall when memory is off", async () => {
@@ -246,7 +246,7 @@ describe("the system prompt", () => {
     await run(session);
     expect(quiet.recall).not.toHaveBeenCalled();
     expect(quiet.capture).not.toHaveBeenCalled();
-    expect(settledOf(session)?.outcome).toBe("completed");
+    expect((await settledOf(session))?.outcome).toBe("completed");
   });
 });
 
@@ -261,7 +261,9 @@ describe("the user prompt", () => {
     expect(prompt).toContain("A pessoa anexou a skill “Revisar”");
     expect(prompt).toContain("Passos de Revisar.");
     expect(prompt.endsWith("agora")).toBe(true);
-    expect(factsOfType(session, "delivery.consumed")[0].data.skills).toEqual([{ slug: "revisar", name: "Revisar" }]);
+    expect((await factsOfType(session, "delivery.consumed"))[0].data.skills).toEqual([
+      { slug: "revisar", name: "Revisar" },
+    ]);
     await run(session, { text: "/revisar", skills: [skill("revisar", "Revisar")] });
     expect(lastRequest().prompt).toContain("Faça o que a skill anexada pede, nesta ordem: Revisar.");
     await run(session, { text: "", skills: [skill("a", "A"), skill("b", "B")] });
@@ -304,14 +306,16 @@ describe("the user prompt", () => {
     };
     await run(session, { text: "", attachments: [attachment] });
     expect(prepare).toHaveBeenCalledWith(bot.id, [attachment], true);
-    expect(factsOfType(session, "attachments.preparing")[0].data).toEqual({ count: 1 });
+    expect((await factsOfType(session, "attachments.preparing"))[0].data).toEqual({ count: 1 });
     expect(lastRequest().prompt.endsWith("\n\nImagem anexada: foto.png")).toBe(true);
     expect(lastRequest().prompt).not.toContain("\n\n\nImagem");
     expect(lastRequest().images).toEqual([{ path: "/tmp/foto.png", mime: "image/png", label: "foto.png" }]);
     expect(session.meta.title).toBe("📎 foto.png");
     await run(session, { text: "olha isso", attachments: [attachment] });
     expect(lastRequest().prompt.endsWith("olha isso\n\nImagem anexada: foto.png")).toBe(true);
-    const consumed = factsOfType(session, "delivery.consumed").at(-1)?.data.attachments as Array<{ url: string }>;
+    const consumed = (await factsOfType(session, "delivery.consumed")).at(-1)?.data.attachments as Array<{
+      url: string;
+    }>;
     expect(consumed[0].url).toBe(`/bots/${encodeURIComponent(bot.id)}/uploads/up_1`);
   });
 
@@ -321,7 +325,10 @@ describe("the user prompt", () => {
     track(spyOn(handoff, "handoffBlock").mockResolvedValue("Contexto anterior: falamos de metas."));
     session.meta.lastEngine = { account: "vps:codex", model: "gpt" };
     await run(session, { text: "continua" });
-    expect(factsOfType(session, "context.handoff")[0].data).toMatchObject({ from: "vps:codex", to: "vps:claude" });
+    expect((await factsOfType(session, "context.handoff"))[0].data).toMatchObject({
+      from: "vps:codex",
+      to: "vps:claude",
+    });
     expect(lastRequest().prompt).toBe("Contexto anterior: falamos de metas.\n\n---\n\ncontinua");
   });
 
@@ -360,9 +367,9 @@ describe("schedules", () => {
     fakeProviders.next(replyWith("Nada de novo hoje."));
     await run(session, { source: "schedule", scheduleId: "diaria", text: "Resumo do dia." });
     expect(triage).toHaveBeenCalledWith(bot.role, "diaria", "Resumo do dia.", "Nada de novo hoje.");
-    expect(settledOf(session)).toMatchObject({ outcome: "completed", quiet: true });
-    expect(factsOfType(session, "decision.made")[0].data.outcome).toBe("quiet");
-    expect(factsOfType(session, "delivery.admitted").at(-1)?.data.source).toEqual({
+    expect(await settledOf(session)).toMatchObject({ outcome: "completed", quiet: true });
+    expect((await factsOfType(session, "decision.made"))[0].data.outcome).toBe("quiet");
+    expect((await factsOfType(session, "delivery.admitted")).at(-1)?.data.source).toEqual({
       channel: "channel:schedule",
       scheduleId: "diaria",
     });
@@ -376,7 +383,7 @@ describe("schedules", () => {
       "Resumo da última rodada desta rotina, para continuidade:\nNada de novo hoje.\n\n---\n\nResumo do dia.",
     );
     expect(lastRequest().resume).toBeNull();
-    expect(settledOf(session).quiet).toBeUndefined();
+    expect((await settledOf(session)).quiet).toBeUndefined();
 
     await run(session, { source: "schedule", text: "Rotina sem nome." });
     expect(triage).toHaveBeenLastCalledWith(bot.role, "rotina", "Rotina sem nome.", "Nada de novo hoje.");
@@ -406,7 +413,7 @@ describe("usage limits", () => {
     await run(session);
     expect(lastRequest().provider).toBe("codex");
     expect(lastRequest().effort).toBeNull();
-    const failover = factsOfType(session, "account.failover")[0].data;
+    const failover = (await factsOfType(session, "account.failover"))[0].data;
     expect(failover).toMatchObject({
       from: "vps:claude",
       to: "vps:codex",
@@ -415,11 +422,11 @@ describe("usage limits", () => {
     expect(typeof failover.until).toBe("string");
     expect(session.meta.failover).toMatchObject({ from: "vps:claude", to: "vps:codex" });
     await run(session);
-    expect(factsOfType(session, "account.failover")).toHaveLength(1);
+    expect(await factsOfType(session, "account.failover")).toHaveLength(1);
     clearLimit("vps:claude");
     await run(session);
     expect(lastRequest().provider).toBe("claude");
-    expect(factsOfType(session, "account.restored")[0].data).toMatchObject({
+    expect((await factsOfType(session, "account.restored"))[0].data).toMatchObject({
       account: "vps:claude",
       from: "vps:codex",
       line: "Voltei para o Claude",
@@ -434,8 +441,8 @@ describe("usage limits", () => {
     markLimited("vps:codex", "usage limit reached");
     await run(session);
     expect(lastRequest().provider).toBe("claude");
-    expect(factsOfType(session, "account.failover")).toHaveLength(0);
-    expect(settledOf(session)?.outcome).toBe("completed");
+    expect(await factsOfType(session, "account.failover")).toHaveLength(0);
+    expect((await settledOf(session))?.outcome).toBe("completed");
   });
 
   test("names the runner when the fallback is the same provider elsewhere", async () => {
@@ -456,11 +463,11 @@ describe("usage limits", () => {
     );
     markLimited("vps:claude", "usage limit reached");
     await run(session);
-    const failover = factsOfType(session, "account.failover")[0].data;
+    const failover = (await factsOfType(session, "account.failover"))[0].data;
     expect(failover.line).toBe("Limite do Claude (VPS) acabou · continuei com Claude (Mac)");
     expect(failover.until).toBeNull();
-    expect(settledOf(session)).toMatchObject({ outcome: "failed", error: { code: "MODEL_CALL_FAILED" } });
-    expect(settledOf(session)?.error?.message).toContain("Mac desconectado");
+    expect(await settledOf(session)).toMatchObject({ outcome: "failed", error: { code: "MODEL_CALL_FAILED" } });
+    expect((await settledOf(session))?.error?.message).toContain("Mac desconectado");
   });
 
   test("retries on the fallback when the limit hits mid-turn", async () => {
@@ -477,8 +484,10 @@ describe("usage limits", () => {
     expect(fakeProviders.turns.map((turn) => turn.request.provider)).toEqual(["claude", "codex"]);
     expect(fakeProviders.turns[1].request.prompt).toContain("faz o relatório");
     expect(carry.mock.calls.at(-1)?.[1].reason).toContain("o limite do Claude acabou");
-    expect(repliesOf(session)).toEqual(["Segui no Codex."]);
-    expect(factsOfType(session, "account.failover")[0].data.until).toBe(new Date(1999999999 * 1000).toISOString());
+    expect(await repliesOf(session)).toEqual(["Segui no Codex."]);
+    expect((await factsOfType(session, "account.failover"))[0].data.until).toBe(
+      new Date(1999999999 * 1000).toISOString(),
+    );
   });
 
   test("offers the suggested account when there is no fallback", async () => {
@@ -490,11 +499,11 @@ describe("usage limits", () => {
       emit({ type: "done", ok: true });
     });
     await run(session);
-    const error = settledOf(session)?.error;
+    const error = (await settledOf(session))?.error;
     expect(error).toMatchObject({ code: "ACCOUNT_LIMIT", suggest: { account: "vps:codex", label: "Codex" } });
     expect(error?.message).toContain("O limite do Claude acabou, volta");
     expect(error?.message).toContain("Quer que eu continue com o Codex?");
-    expect(repliesOf(session)).toEqual([]);
+    expect(await repliesOf(session)).toEqual([]);
   });
 
   test("offers nothing when the only fallback is the limited account", async () => {
@@ -503,7 +512,7 @@ describe("usage limits", () => {
     const session = await newSession(bot.id);
     fakeProviders.next(({ emit }) => emit({ type: "done", ok: false, message: "429 too many requests" }));
     await run(session);
-    const error = settledOf(session)?.error;
+    const error = (await settledOf(session))?.error;
     expect(error?.code).toBe("ACCOUNT_LIMIT");
     expect(error?.suggest).toBeUndefined();
     expect(error?.until).toBeNull();
@@ -517,7 +526,7 @@ describe("usage limits", () => {
     markLimited("vps:codex", "quota");
     fakeProviders.next(({ emit }) => emit({ type: "done", ok: false, message: "quota exceeded" }));
     await run(session);
-    expect(settledOf(session)?.error?.suggest).toBeUndefined();
+    expect((await settledOf(session))?.error?.suggest).toBeUndefined();
   });
 });
 
@@ -545,7 +554,7 @@ describe("the Mac computer", () => {
     handler({ type: "stop", botId: bot.id });
     handler({ type: "stop" });
     await idle(session);
-    expect(settledOf(session)).toMatchObject({ outcome: "cancelled", reason: "A pessoa apertou Parar." });
+    expect(await settledOf(session)).toMatchObject({ outcome: "cancelled", reason: "A pessoa apertou Parar." });
     expect(unwatched).toBe(1);
 
     const again = hold();
@@ -554,6 +563,6 @@ describe("the Mac computer", () => {
     await again.started;
     handler({ type: "user_took_over" });
     await idle(session);
-    expect(settledOf(session)?.reason).toBe("Você assumiu o computador.");
+    expect((await settledOf(session))?.reason).toBe("Você assumiu o computador.");
   });
 });

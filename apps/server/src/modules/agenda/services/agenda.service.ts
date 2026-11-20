@@ -18,6 +18,7 @@ const cacheTtlMs = 60_000;
 const maxRangeDays = 62;
 const palette = ["blue", "green", "violet", "orange", "pink", "teal"];
 const accountPattern = /^google_calendar(_\d+)?$/;
+const identityKey = "identity";
 
 interface GoogleCalendar {
   id: string;
@@ -56,6 +57,20 @@ function calendarAccounts(connections: Connection[]) {
     .sort((a, b) => a.name.localeCompare(b.name, "en", { numeric: true }));
 }
 
+async function rememberEmail(account: string, email: string) {
+  const row = { calendarId: identityKey, eventId: account, startsAt: "", data: { email }, fetchedAt: nowIso() };
+  await getDb()
+    .insert(calendarCache)
+    .values(row)
+    .onConflictDoUpdate({ target: [calendarCache.calendarId, calendarCache.eventId], set: row });
+}
+
+async function storedEmails() {
+  return (await getDb().select().from(calendarCache).where(eq(calendarCache.calendarId, identityKey)))
+    .map((row) => String((row.data as { email?: unknown }).email ?? ""))
+    .filter(Boolean);
+}
+
 async function identity(account: string) {
   const known = identities.get(account);
   if (known && Date.now() - known.at < 10 * 60_000) return known;
@@ -67,6 +82,7 @@ async function identity(account: string) {
   ]);
   const value = { at: Date.now(), email: String(who?.email ?? ""), calendars: list?.calendars ?? [] };
   identities.set(account, value);
+  await rememberEmail(account, value.email);
   return value;
 }
 
@@ -175,17 +191,19 @@ function rangeKey(start: string, end: string, q: string) {
   return `range:${start}|${end}|${q}`;
 }
 
-function cacheRead(calendarKey: string, key: string) {
-  const row = getDb()
-    .select()
-    .from(calendarCache)
-    .where(and(eq(calendarCache.calendarId, calendarKey), eq(calendarCache.eventId, key)))
-    .get();
+async function cacheRead(calendarKey: string, key: string) {
+  const row = (
+    await getDb()
+      .select()
+      .from(calendarCache)
+      .where(and(eq(calendarCache.calendarId, calendarKey), eq(calendarCache.eventId, key)))
+      .limit(1)
+  )[0];
   if (!row || Date.now() - Date.parse(row.fetchedAt) > cacheTtlMs) return null;
   return row.data as { items: GoogleEvent[] };
 }
 
-function cacheWrite(calendarKey: string, key: string, start: string, end: string, items: GoogleEvent[]) {
+async function cacheWrite(calendarKey: string, key: string, start: string, end: string, items: GoogleEvent[]) {
   const row = {
     calendarId: calendarKey,
     eventId: key,
@@ -195,10 +213,10 @@ function cacheWrite(calendarKey: string, key: string, start: string, end: string
     fetchedAt: nowIso(),
   };
   const db = getDb();
-  db.insert(calendarCache)
+  await db
+    .insert(calendarCache)
     .values(row)
-    .onConflictDoUpdate({ target: [calendarCache.calendarId, calendarCache.eventId], set: row })
-    .run();
+    .onConflictDoUpdate({ target: [calendarCache.calendarId, calendarCache.eventId], set: row });
   for (const item of items) {
     const event = {
       calendarId: calendarKey,
@@ -208,26 +226,25 @@ function cacheWrite(calendarKey: string, key: string, start: string, end: string
       data: item as unknown as Record<string, unknown>,
       fetchedAt: row.fetchedAt,
     };
-    db.insert(calendarCache)
+    await db
+      .insert(calendarCache)
       .values(event)
-      .onConflictDoUpdate({ target: [calendarCache.calendarId, calendarCache.eventId], set: event })
-      .run();
+      .onConflictDoUpdate({ target: [calendarCache.calendarId, calendarCache.eventId], set: event });
   }
-  db.delete(calendarCache)
+  await db
+    .delete(calendarCache)
     .where(
       and(
         like(calendarCache.eventId, "range:%"),
         lt(calendarCache.fetchedAt, new Date(Date.now() - 3_600_000).toISOString()),
       ),
-    )
-    .run();
+    );
 }
 
-function invalidate(accountId: string) {
-  getDb()
+async function invalidate(accountId: string) {
+  await getDb()
     .delete(calendarCache)
-    .where(and(like(calendarCache.calendarId, `${accountId}|%`), like(calendarCache.eventId, "range:%")))
-    .run();
+    .where(and(like(calendarCache.calendarId, `${accountId}|%`), like(calendarCache.eventId, "range:%")));
 }
 
 async function fetchEvents(
@@ -241,7 +258,7 @@ async function fetchEvents(
   const calendarKey = `${accountId}|${calendarId}`;
   const key = rangeKey(start, end, q);
   if (!fresh) {
-    const cached = cacheRead(calendarKey, key);
+    const cached = await cacheRead(calendarKey, key);
     if (cached) return cached.items;
   }
   const items: GoogleEvent[] = [];
@@ -262,7 +279,7 @@ async function fetchEvents(
     pageToken = result?.nextPageToken ?? undefined;
     if (!pageToken) break;
   }
-  cacheWrite(calendarKey, key, start, end, items);
+  await cacheWrite(calendarKey, key, start, end, items);
   return items;
 }
 
@@ -303,20 +320,22 @@ export async function listEvents(query: Record<string, unknown>, fresh = false):
   const items = lists
     .flat()
     .filter((item) => item.status !== "cancelled")
-    .sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    .sort((a, b) => sortKey(a) - sortKey(b));
   return { timezone: agendaTimezone, items };
 }
 
 function sortKey(event: AgendaEvent) {
-  return event.allDay ? `${event.start}T00:00:00-03:00` : new Date(event.start).toISOString();
+  return Date.parse(event.allDay ? `${event.start.slice(0, 10)}T00:00:00-03:00` : event.start);
 }
 
-function cachedEvent(accountId: string, calendarId: string, googleId: string) {
-  const row = getDb()
-    .select()
-    .from(calendarCache)
-    .where(and(eq(calendarCache.calendarId, `${accountId}|${calendarId}`), eq(calendarCache.eventId, googleId)))
-    .get();
+async function cachedEvent(accountId: string, calendarId: string, googleId: string) {
+  const row = (
+    await getDb()
+      .select()
+      .from(calendarCache)
+      .where(and(eq(calendarCache.calendarId, `${accountId}|${calendarId}`), eq(calendarCache.eventId, googleId)))
+      .limit(1)
+  )[0];
   return row ? (row.data as unknown as GoogleEvent) : null;
 }
 
@@ -325,12 +344,9 @@ export function externalAttendees(emails: string[], ownEmails: string[]) {
   return emails.filter((email) => !own.has(email.toLowerCase()));
 }
 
-export function externalAttendeesCached(input: Record<string, unknown>) {
+export async function externalAttendeesCached(input: Record<string, unknown>) {
   const attendees = Array.isArray(input.attendees) ? input.attendees.map(String) : [];
-  return externalAttendees(
-    attendees,
-    [...identities.values()].map((item) => item.email),
-  );
+  return externalAttendees(attendees, await storedEmails());
 }
 
 export async function needsApproval(input: Record<string, unknown>) {
@@ -414,7 +430,7 @@ async function createRaw(accountId: string, calendarId: string, body: Record<str
   })) as GoogleEvent & { event?: GoogleEvent };
   const event = (raw?.event ?? raw) as GoogleEvent;
   if (!event?.id) throw new BlockError("O Google Calendar não devolveu o evento criado.", 502);
-  invalidate(accountId);
+  await invalidate(accountId);
   return toEvent(accountId, calendarId, {
     start: allDay ? { date: start } : { dateTime: start },
     end: allDay ? { date: end } : { dateTime: end },
@@ -433,7 +449,7 @@ export async function createEvent(botId: string, body: Record<string, unknown>, 
   if (calendarId !== "primary" && !account.calendars.some((item) => item.id === calendarId))
     throw new BlockError("Calendário não encontrado nessa conta.", 404);
   const event = await createRaw(accountId, calendarId, body);
-  const version = bumpAgendaVersion(botId);
+  const version = await bumpAgendaVersion(botId);
   const preview = await agendaPreview(event.start, event.allDay, [event.id]);
   return {
     event,
@@ -446,13 +462,13 @@ export async function createEvent(botId: string, body: Record<string, unknown>, 
 export async function deleteEvent(botId: string, eventId: string, author: BlockAuthor) {
   const { accountId, calendarId, googleId } = decodeEventId(eventId);
   await requireAccount(accountId);
-  const before = cachedEvent(accountId, calendarId, googleId);
+  const before = await cachedEvent(accountId, calendarId, googleId);
   await runelayCall("call_tool", {
     name: `${accountId}.calendar_delete_event`,
     args: { calendarId, eventId: googleId },
   });
-  invalidate(accountId);
-  const version = bumpAgendaVersion(botId);
+  await invalidate(accountId);
+  const version = await bumpAgendaVersion(botId);
   const start = before?.start?.dateTime ?? before?.start?.date ?? nowIso();
   const preview = await agendaPreview(start, Boolean(before?.start?.date && !before?.start?.dateTime), []);
   return blockEvent("agenda", agendaBlockId, "Agenda", version, author, "edited", preview, { eventIds: [eventId] });
@@ -461,7 +477,7 @@ export async function deleteEvent(botId: string, eventId: string, author: BlockA
 export async function updateEvent(botId: string, eventId: string, body: Record<string, unknown>, author: BlockAuthor) {
   const { accountId, calendarId, googleId } = decodeEventId(eventId);
   const { account } = await requireAccount(accountId);
-  const current = cachedEvent(accountId, calendarId, googleId);
+  const current = await cachedEvent(accountId, calendarId, googleId);
   if (!current) throw new BlockError("Evento não encontrado; liste a agenda do período antes de editar.", 404);
   const others = (current.attendees ?? []).filter(
     (item) => !item.self && item.email.toLowerCase() !== account.email.toLowerCase(),
@@ -485,12 +501,32 @@ export async function updateEvent(botId: string, eventId: string, body: Record<s
     meet: body.meet === true ? true : undefined,
   };
   const event = await createRaw(accountId, calendarId, merged);
-  await runelayCall("call_tool", {
-    name: `${accountId}.calendar_delete_event`,
-    args: { calendarId, eventId: googleId },
-  });
-  invalidate(accountId);
-  const version = bumpAgendaVersion(botId);
+  try {
+    await runelayCall("call_tool", {
+      name: `${accountId}.calendar_delete_event`,
+      args: { calendarId, eventId: googleId },
+    });
+  } catch {
+    const copy = decodeEventId(event.id).googleId;
+    const undone = await runelayCall("call_tool", {
+      name: `${accountId}.calendar_delete_event`,
+      args: { calendarId, eventId: copy },
+    }).then(
+      () => true,
+      () => false,
+    );
+    await invalidate(accountId);
+    throw new BlockError(
+      undone
+        ? "O Google Calendar não apagou o evento antigo, então desfiz a cópia nova. Nada mudou na agenda."
+        : "O Google Calendar não apagou o evento antigo nem a cópia nova. Os dois ficaram na agenda; apague um deles.",
+      502,
+      undone ? "update_failed" : "update_duplicated",
+      { eventIds: undone ? [eventId] : [eventId, event.id] },
+    );
+  }
+  await invalidate(accountId);
+  const version = await bumpAgendaVersion(botId);
   const preview = await agendaPreview(event.start, event.allDay, [event.id]);
   return {
     event,

@@ -23,44 +23,46 @@ const bot = "bot-blocks";
 
 beforeEach(async () => {
   await resetData();
-  getDb().delete(notes).run();
-  getDb().delete(sheets).run();
+  await getDb().delete(notes);
+  await getDb().delete(sheets);
 });
 
 describe("notes", () => {
-  test("links, backlinks, rename relink, search without accents and trash", () => {
-    const plano = createNote(
-      bot,
-      { title: "Plano Q1", folder: "Projetos", content: "# Plano\n\n- [ ] Fechar metas #meta" },
-      "bot",
+  test("links, backlinks, rename relink, search without accents and trash", async () => {
+    const plano = (
+      await createNote(
+        bot,
+        { title: "Plano Q1", folder: "Projetos", content: "# Plano\n\n- [ ] Fechar metas #meta" },
+        "bot",
+      )
     ).note;
-    const diario = createNote(
-      bot,
-      { title: "Diário", content: "Hoje revisei o [[Plano Q1|plano]] e [[Ideias]]." },
-      "bot",
+    const diario = (
+      await createNote(bot, { title: "Diário", content: "Hoje revisei o [[Plano Q1|plano]] e [[Ideias]]." }, "bot")
     ).note;
-    expect(noteOf(bot, requireNote(bot, diario.id)).links).toEqual([
+    expect((await noteOf(bot, await requireNote(bot, diario.id))).links).toEqual([
       { target: "Plano Q1", id: plano.id, title: "Plano Q1" },
       { target: "Ideias", id: null, title: "Ideias" },
     ]);
-    expect(noteBacklinks(bot, plano.id, {}).items.map((item) => item.id)).toEqual([diario.id]);
-    const moved = moveNote(bot, plano.id, { title: "Plano 2027" }, "bot");
+    expect((await noteBacklinks(bot, plano.id, {})).items.map((item) => item.id)).toEqual([diario.id]);
+    const moved = await moveNote(bot, plano.id, { title: "Plano 2027" }, "bot");
     expect(moved.relinked).toBe(1);
-    expect(requireNote(bot, diario.id).markdown).toContain("[[Plano 2027|plano]]");
-    expect(searchNotes(bot, { q: "diario" }).items[0]?.id).toBe(diario.id);
-    expect(searchNotes(bot, { q: "revis" }).items[0]?.snippet).toContain("revisei");
-    expect(searchNotes(bot, { q: "plan", mode: "title" }).items[0]?.id).toBe(plano.id);
-    expect(listNotes(bot, { tag: "meta" }).total).toBe(1);
-    expect(noteTree(bot, {}).folders).toEqual([{ name: "Projetos", path: "Projetos", notes: 1, folders: 0 }]);
-    expect(() => createNote(bot, { title: "plano 2027", folder: "Projetos" }, "user")).toThrow();
-    deleteNote(bot, diario.id, "bot");
-    expect(listNotes(bot, {}).total).toBe(1);
-    expect(getDb().select().from(notes).all()).toHaveLength(2);
+    expect((await requireNote(bot, diario.id)).markdown).toContain("[[Plano 2027|plano]]");
+    expect((await searchNotes(bot, { q: "diario" })).items[0]?.id).toBe(diario.id);
+    expect((await searchNotes(bot, { q: "revis" })).items[0]?.snippet).toContain("revisei");
+    expect((await searchNotes(bot, { q: "plan", mode: "title" })).items[0]?.id).toBe(plano.id);
+    expect((await listNotes(bot, { tag: "meta" })).total).toBe(1);
+    expect((await noteTree(bot, {})).folders).toEqual([{ name: "Projetos", path: "Projetos", notes: 1, folders: 0 }]);
+    await expect(
+      (async () => await createNote(bot, { title: "plano 2027", folder: "Projetos" }, "user"))(),
+    ).rejects.toThrow();
+    await deleteNote(bot, diario.id, "bot");
+    expect((await listNotes(bot, {})).total).toBe(1);
+    expect(await getDb().select().from(notes)).toHaveLength(2);
   });
 
-  test("patch ops, stale writes and person edit notice", () => {
-    const { note } = createNote(bot, { title: "Lista", content: "# Tarefas\n- [ ] a\n\n# Fim" }, "bot");
-    const patched = patchNote(
+  test("patch ops, stale writes and person edit notice", async () => {
+    const { note } = await createNote(bot, { title: "Lista", content: "# Tarefas\n- [ ] a\n\n# Fim" }, "bot");
+    const patched = await patchNote(
       bot,
       note.id,
       {
@@ -73,16 +75,18 @@ describe("notes", () => {
     );
     expect(patched.note.content).toBe("# Tarefas\n- [x] a\n- [ ] b\n\n# Fim");
     expect(patched.event.data.changed).toEqual({ lines: [[1, 2]] });
-    writeNote(bot, note.id, { content: "# Tarefas\n- [x] a\n- [x] b\n\n# Fim" }, "user");
-    expect(() => writeNote(bot, note.id, { content: "x", baseVersion: 1 }, "bot")).toThrow("Mudou");
-    expect(blocksEditNote(bot)).toContain("linhas 3 mudaram");
-    expect(blocksEditNote(bot)).toBe("");
+    await writeNote(bot, note.id, { content: "# Tarefas\n- [x] a\n- [x] b\n\n# Fim" }, "user");
+    await expect(
+      (async () => await writeNote(bot, note.id, { content: "x", baseVersion: 1 }, "bot"))(),
+    ).rejects.toThrow("Mudou");
+    expect(await blocksEditNote(bot)).toContain("linhas 3 mudaram");
+    expect(await blocksEditNote(bot)).toBe("");
   });
 });
 
 describe("sheets", () => {
   test("cross-tab formulas recalc dependents, structure and xlsx export keeps formulas", async () => {
-    const { sheet } = createSheet(
+    const { sheet } = await createSheet(
       bot,
       {
         title: "Orçamento",
@@ -95,17 +99,20 @@ describe("sheets", () => {
       "bot",
     );
     const [dados, resumo] = sheet.tabs;
-    writeCells(bot, sheet.id, resumo.id, { cells: [{ a: "B2", input: "=SOMA(Dados!A1:A2)" }] }, "bot");
-    const result = writeCells(bot, sheet.id, dados.id, { cells: [{ a: "A1", input: "15" }] }, "user").result;
+    await writeCells(bot, sheet.id, resumo.id, { cells: [{ a: "B2", input: "=SOMA(Dados!A1:A2)" }] }, "bot");
+    const result = (await writeCells(bot, sheet.id, dados.id, { cells: [{ a: "A1", input: "15" }] }, "user")).result;
     expect(result.cells.map((cell) => cell.a)).toEqual(["A1"]);
-    expect(readRange(bot, sheet.id, resumo.id, "B2").cells[0]).toMatchObject({
+    expect((await readRange(bot, sheet.id, resumo.id, "B2")).cells[0]).toMatchObject({
       v: 35,
       t: "n",
       input: "=SOMA(Dados!A1:A2)",
     });
-    structure(bot, sheet.id, dados.id, { op: "insert_rows", at: 0, count: 1 }, "bot");
-    expect(readRange(bot, sheet.id, resumo.id, "B2").cells[0]).toMatchObject({ v: 35, input: "=SOMA(Dados!A2:A3)" });
-    expect(addTab(bot, sheet.id, { name: "Extra" }, "bot").sheet.tabs).toHaveLength(3);
+    await structure(bot, sheet.id, dados.id, { op: "insert_rows", at: 0, count: 1 }, "bot");
+    expect((await readRange(bot, sheet.id, resumo.id, "B2")).cells[0]).toMatchObject({
+      v: 35,
+      input: "=SOMA(Dados!A2:A3)",
+    });
+    expect((await addTab(bot, sheet.id, { name: "Extra" }, "bot")).sheet.tabs).toHaveLength(3);
     const job = await createExport(bot, { kind: "sheet", id: sheet.id, format: "xlsx" });
     expect(job.status).toBe("ready");
     const ExcelJS = (await import("exceljs")).default;

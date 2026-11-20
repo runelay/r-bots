@@ -29,7 +29,7 @@ export function writeFiles(dir: string, files: Record<string, string | Uint8Arra
   }
 }
 
-export function makeRepo(name: string, options: RepoOptions = {}) {
+export async function makeRepo(name: string, options: RepoOptions = {}) {
   const path = join(repoRoot, name);
   mkdirSync(path, { recursive: true });
   const branch = options.branch ?? "main";
@@ -47,7 +47,7 @@ export function makeRepo(name: string, options: RepoOptions = {}) {
     gitSync(path, ["remote", "add", "origin", origin]);
     gitSync(path, ["push", "-q", "-u", "origin", branch]);
   }
-  addAllowedRepo(path, "test", null);
+  await addAllowedRepo(path, "test", null);
   return { path, name, branch, origin };
 }
 
@@ -89,8 +89,8 @@ export function newSession(botId = "coder", kind: "thread" | "conversation" | "s
   return createStoredSession({ botId, kind, source: "chat", title: "Code task" });
 }
 
-export function factsOf(session: StoredSession, type?: string) {
-  return session.log.lines
+export async function factsOf(session: StoredSession, type?: string) {
+  return (await session.log.lines())
     .flatMap((line) => (JSON.parse(line) as { facts: Array<{ type: string; data: Record<string, unknown> }> }).facts)
     .filter((fact) => !type || fact.type === type);
 }

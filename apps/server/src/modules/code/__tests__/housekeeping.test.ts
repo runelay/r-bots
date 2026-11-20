@@ -11,7 +11,7 @@ beforeEach(async () => {
 
 describe("code housekeeping", () => {
   test("warms the repo list and keeps active worktrees out of the collector", async () => {
-    makeRepo("hk-repo");
+    await makeRepo("hk-repo");
     await workspaces.listRepos(true);
     const session = await newSession("hk-bot");
     const { workspace } = await workspaces.openWorkspace(session, "hk-bot", "hk-repo", "housekeeping");

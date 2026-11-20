@@ -55,10 +55,10 @@ beforeEach(async () => {
 
 describe("repository discovery", () => {
   test("lists only allowed repos that still have a .git folder", async () => {
-    makeRepo("ws-alpha");
-    makeRepo("ws-beta", { branch: "develop" });
+    await makeRepo("ws-alpha");
+    await makeRepo("ws-beta", { branch: "develop" });
     mkdirSync(join(repoRoot, "ws-unlisted", ".git"), { recursive: true });
-    addAllowedRepo(join(repoRoot, "ws-gone"), "test", null);
+    await addAllowedRepo(join(repoRoot, "ws-gone"), "test", null);
     const repos = await listRepos(true);
     const names = repos.map((repo) => repo.name);
     expect(names).toContain("ws-alpha");
@@ -70,10 +70,10 @@ describe("repository discovery", () => {
   });
 
   test("resolves allowed repos by path, home path, exact, case, loose and partial names", async () => {
-    makeRepo("ws-resolve-one");
-    makeRepo("ws-Resolve-Two");
-    makeRepo("wsmulti-a");
-    makeRepo("wsmulti-b");
+    await makeRepo("ws-resolve-one");
+    await makeRepo("ws-Resolve-Two");
+    await makeRepo("wsmulti-a");
+    await makeRepo("wsmulti-b");
     mkdirSync(join(repoRoot, "ws-unlisted", ".git"), { recursive: true });
     await listRepos(true);
     await expect(resolveRepo("  ")).rejects.toThrow("Diga qual repositório.");
@@ -91,7 +91,7 @@ describe("repository discovery", () => {
     expect(error.status).toBe(400);
   });
 
-  test("slugify keeps short slugs, falls back and cuts on a dash", () => {
+  test("slugify keeps short slugs, falls back and cuts on a dash", async () => {
     expect(slugify("Olá, Mundo!")).toBe("ola-mundo");
     expect(slugify("!!!")).toBe("tarefa");
     expect(slugify("fix the login screen when the token expires early", 40)).toBe(
@@ -103,7 +103,7 @@ describe("repository discovery", () => {
 });
 
 async function opened(name: string, options: Parameters<typeof makeRepo>[1] = {}, task = "Add feature") {
-  makeRepo(name, options);
+  await makeRepo(name, options);
   await listRepos(true);
   const session = await newSession(`bot-${name}`);
   const result = await openWorkspace(session, `bot-${name}`, name, task);
@@ -121,7 +121,7 @@ describe("opening and closing workspaces", () => {
     expect(existsSync(join(workspace.path, "README.md"))).toBe(true);
     expect(workspace.install.status).toBe("skipped");
     expect(activeWorkspace(session)).toBe(workspace);
-    expect(factsOf(session, "code.workspace")[0].data.action).toBe("opened");
+    expect((await factsOf(session, "code.workspace"))[0].data.action).toBe("opened");
 
     const again = await openWorkspace(session, "bot-ws-open", "ws-open", "Add feature");
     expect(again).toEqual({ workspace, created: false });
@@ -129,16 +129,16 @@ describe("opening and closing workspaces", () => {
     expect(await closeWorkspace(session)).toBe(workspace);
     expect(activeWorkspace(session)).toBeNull();
     expect(await closeWorkspace(session)).toBeNull();
-    expect(factsOf(session, "code.workspace").map((fact) => fact.data.action)).toEqual(["opened", "closed"]);
+    expect((await factsOf(session, "code.workspace")).map((fact) => fact.data.action)).toEqual(["opened", "closed"]);
 
     const reopened = await openWorkspace(session, "bot-ws-open", "ws-open", "Add feature");
     expect(reopened.created).toBe(false);
     expect(reopened.workspace.active).toBe(true);
     expect(reopened.workspace.closedAt).toBeNull();
-    expect(factsOf(session, "code.workspace").at(-1)?.data.action).toBe("reopened");
+    expect((await factsOf(session, "code.workspace")).at(-1)?.data.action).toBe("reopened");
 
     await closeWorkspace(session, true);
-    expect(factsOf(session, "code.workspace")).toHaveLength(3);
+    expect(await factsOf(session, "code.workspace")).toHaveLength(3);
     expect(activeWorkspace(undefined)).toBeNull();
     expect(publicWorkspace({ ...workspace, pr: undefined }).pr).toBeNull();
   });
@@ -146,7 +146,7 @@ describe("opening and closing workspaces", () => {
   test("picks a local base, falls back to HEAD and uses the session title", async () => {
     const develop = await opened("ws-develop", { branch: "develop" });
     expect(develop.workspace.base).toBe("develop");
-    makeRepo("ws-headbase", { branch: "trunk" });
+    await makeRepo("ws-headbase", { branch: "trunk" });
     await listRepos(true);
     const session = await newSession("bot-head");
     session.meta.title = "Título da sessão";
@@ -173,7 +173,7 @@ describe("opening and closing workspaces", () => {
   });
 
   test("reports a worktree that git refuses to create", async () => {
-    makeRepo("ws-refuse");
+    await makeRepo("ws-refuse");
     await listRepos(true);
     codeProcesses((call) =>
       gitArgs(call, "worktree", "add") ? { code: 128, stderr: "fatal: refused", stdout: "" } : undefined,
@@ -221,7 +221,7 @@ describe("dependency install", () => {
       return text.includes("installed") && text.includes("warn") ? text : null;
     });
     expect(log).toContain("installed");
-    const facts = factsOf(session, "code.install");
+    const facts = await factsOf(session, "code.install");
     expect(facts.map((fact) => fact.data.status)).toEqual(["running", "done"]);
     expect(typeof facts[1].data.durationMs).toBe("number");
   });
@@ -244,7 +244,7 @@ describe("dependency install", () => {
     find.mockRestore();
     expect(missing.workspace.install.status).toBe("failed");
     expect(missing.workspace.install.error).toBe("yarn não está instalado na VPS.");
-    expect(factsOf(missing.session, "code.install").map((fact) => fact.data.status)).toEqual(["failed"]);
+    expect((await factsOf(missing.session, "code.install")).map((fact) => fact.data.status)).toEqual(["failed"]);
 
     codeProcesses((call) => {
       if (call.command.endsWith("pnpm")) throw new Error("spawn failed");
@@ -278,7 +278,7 @@ describe("dependency install", () => {
   });
 
   test("logs instead of crashing when saving the session fails", async () => {
-    makeRepo("ws-install-crash");
+    await makeRepo("ws-install-crash");
     await listRepos(true);
     const session = await newSession("bot-crash");
     const warn = spyOn(console, "warn").mockImplementation(() => undefined);
@@ -295,7 +295,7 @@ describe("dependency install", () => {
 describe("paths", () => {
   const workspace = { path: "/work/tree" } as WorkspaceState;
 
-  test("checks containment and relative paths", () => {
+  test("checks containment and relative paths", async () => {
     expect(insideWorkspace(workspace, "src/a.ts")).toBe(true);
     expect(insideWorkspace(workspace, "/work/tree")).toBe(true);
     expect(insideWorkspace(workspace, "../other")).toBe(false);
@@ -456,7 +456,7 @@ describe("changes and diffs", () => {
 });
 
 describe("patch parsing", () => {
-  test("parses files, hunks, sections, renames, deletions and binaries", () => {
+  test("parses files, hunks, sections, renames, deletions and binaries", async () => {
     const patch = [
       "noise before any file",
       "diff --git a/src/a.ts b/src/a.ts",
@@ -509,7 +509,7 @@ describe("checkpoints", () => {
     expect(gitSync(workspace.path, ["rev-parse", checkpoint.ref]).stdout.trim()).toBe(checkpoint.commit);
     expect(await createCheckpoint(session, workspace, "turn_1")).toBe(checkpoint);
     expect(session.meta.checkpoints).toHaveLength(1);
-    expect(factsOf(session, "code.checkpoint")).toHaveLength(1);
+    expect(await factsOf(session, "code.checkpoint")).toHaveLength(1);
 
     writeFiles(workspace.path, { "a.txt": "turn two\n", "later.txt": "l\n" });
     const restored = await restoreCheckpoint(workspace, checkpoint);

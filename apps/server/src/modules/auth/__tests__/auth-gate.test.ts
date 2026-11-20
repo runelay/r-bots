@@ -1,11 +1,8 @@
-import { Database } from "bun:sqlite";
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/api";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import * as schema from "../../../db/schema/auth";
+import { freshDb } from "../../../../test/db-helpers";
 import { runnerToken } from "../../../config/runtime-secrets";
 import { readSetting } from "../../../db/settings";
 import { type AuthModule, createAuthModule, isPublicRoute, type Principal } from "..";
@@ -20,15 +17,6 @@ let mod: AuthModule;
 let ownerToken = "";
 let apiKey = "";
 const restores: Array<() => void> = [];
-
-async function freshDb() {
-  const sqlite = new Database(":memory:");
-  const db = drizzle(sqlite);
-  const empty = await generateSQLiteDrizzleJson({});
-  const current = await generateSQLiteDrizzleJson(schema as Record<string, unknown>);
-  for (const statement of await generateSQLiteMigration(empty, current)) sqlite.run(statement);
-  return db;
-}
 
 function req(path: string, init: RequestInit & { token?: string } = {}) {
   const headers = new Headers(init.headers);
@@ -67,15 +55,15 @@ beforeAll(async () => {
   apiKey = ((await key.json()) as { key: string }).key;
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const restore of restores.splice(0).reverse()) restore();
   useAuthModule(null);
 });
 
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+afterAll(async () => rmSync(dir, { recursive: true, force: true }));
 
 describe("readToken and public routes", () => {
-  test("reads bearer and api key headers", () => {
+  test("reads bearer and api key headers", async () => {
     expect(readToken(new Headers({ authorization: "Bearer abc" }))).toBe("abc");
     expect(readToken(new Headers({ authorization: "bearer   xyz  " }))).toBe("xyz");
     expect(readToken(new Headers({ authorization: "Bearer   ", "x-api-key": " k1 " }))).toBe("k1");
@@ -84,7 +72,7 @@ describe("readToken and public routes", () => {
     expect(readToken(new Headers())).toBeNull();
   });
 
-  test("keeps only the documented routes public", () => {
+  test("keeps only the documented routes public", async () => {
     expect(isPublicRoute("GET", "/api/auth")).toBe(true);
     expect(isPublicRoute("POST", "/device")).toBe(false);
     expect(isPublicRoute("GET", "/auth/setup")).toBe(true);

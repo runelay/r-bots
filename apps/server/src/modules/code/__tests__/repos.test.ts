@@ -7,9 +7,9 @@ import { addAllowedRepo, allowedRepos, fileRoots, seedAllowedRepos, worktreesRoo
 
 const spies: Array<{ mockRestore: () => void }> = [];
 
-afterEach(() => {
+afterEach(async () => {
   for (const spy of spies.splice(0)) spy.mockRestore();
-  seedAllowedRepos();
+  await seedAllowedRepos();
 });
 
 function failingSelects() {
@@ -29,8 +29,12 @@ function failingSelects() {
 }
 
 describe("repos", () => {
-  test("fileRoots lists the worktree root, allowed repos and worktrees that were not removed", () => {
-    const repo = addAllowedRepo(join(process.env.HOST_HOME as string, "repos", `roots-${Date.now()}`), "teste", "ana");
+  test("fileRoots lists the worktree root, allowed repos and worktrees that were not removed", async () => {
+    const repo = await addAllowedRepo(
+      join(process.env.HOST_HOME as string, "repos", `roots-${Date.now()}`),
+      "teste",
+      "ana",
+    );
     const now = new Date().toISOString();
     const live = join(worktreesRoot, `live-${Date.now()}`);
     const gone = join(worktreesRoot, `gone-${Date.now()}`);
@@ -42,26 +46,25 @@ describe("repos", () => {
       base: "main",
       createdAt: now,
     };
-    getDb()
+    await getDb()
       .insert(codeWorkspaces)
       .values([
         { ...base, id: `ws_live_${Date.now()}`, path: live, status: "active" },
         { ...base, id: `ws_gone_${Date.now()}`, path: gone, status: "removed", branch: "c" },
-      ])
-      .run();
-    const roots = fileRoots();
+      ]);
+    const roots = await fileRoots();
     expect(roots[0]).toBe(worktreesRoot);
     expect(roots).toContain(repo.path);
     expect(roots).toContain(live);
     expect(roots).not.toContain(gone);
   });
 
-  test("a database that cannot be read leaves an empty allow list and only the worktree root", () => {
+  test("a database that cannot be read leaves an empty allow list and only the worktree root", async () => {
     failingSelects();
     const path = join(process.env.HOST_HOME as string, "repos", `offline-${Date.now()}`);
-    const added = addAllowedRepo(path, "sem banco", null);
+    const added = await addAllowedRepo(path, "sem banco", null);
     expect(added).toMatchObject({ path, name: path.split("/").at(-1), reason: "sem banco", addedBy: null });
     expect(allowedRepos()).toEqual([]);
-    expect(fileRoots()).toEqual([worktreesRoot]);
+    expect(await fileRoots()).toEqual([worktreesRoot]);
   });
 });

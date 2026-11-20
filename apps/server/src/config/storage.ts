@@ -2,7 +2,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { dataDir } from "./env";
 
-export const dbFile = process.env.BOTS_DB_FILE ?? join(dataDir, "runelay-bots.db");
 export const backupDir = process.env.BOTS_BACKUP_DIR ?? join(homedir(), ".local", "share", "runelay-bots-backups");
 export const backupKeepDays = Number(process.env.BOTS_BACKUP_KEEP_DAYS ?? 7);
 export const blobsDir = process.env.BLOB_FS_DIR ?? join(dataDir, "blobs");

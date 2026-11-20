@@ -1,9 +1,9 @@
 import { mkdir, readdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { Cron } from "croner";
+import { type DatabaseSettings, databaseSettings } from "../../../config/database";
 import { dataDir } from "../../../config/env";
 import { backupDir, backupKeepDays } from "../../../config/storage";
-import { type Db, getDb } from "../../../db";
 import type { BlobStore } from "./blob-store";
 import { getBlobStore } from "./storage.service";
 
@@ -11,7 +11,8 @@ const dayMs = 24 * 3600_000;
 const snapshotPattern = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface BackupOptions {
-  db?: Db;
+  database?: DatabaseSettings;
+  pgDump?: string;
   store?: BlobStore;
   dir?: string;
   keepDays?: number;
@@ -20,7 +21,7 @@ export interface BackupOptions {
 }
 
 export interface BackupReport {
-  snapshot: string;
+  snapshot: string | null;
   blobsCopied: number;
   blobsKept: number;
   blobsRetired: number;
@@ -28,14 +29,26 @@ export interface BackupReport {
   voiceFilesRemoved: number;
 }
 
-export async function snapshotDatabase(db: Db, dir: string, now: Date) {
+export async function snapshotDatabase(database: DatabaseSettings, dir: string, now: Date, pgDump = "pg_dump") {
   const day = now.toISOString().slice(0, 10);
   const folder = join(dir, "db", day);
   await mkdir(folder, { recursive: true });
-  const target = join(folder, "runelay-bots.db");
+  const target = join(folder, "runelay-bots.dump");
   const temp = `${target}.tmp`;
   await rm(temp, { force: true });
-  db.$client.run("VACUUM INTO ?", [temp]);
+  const url = new URL(database.url);
+  const password = decodeURIComponent(url.password);
+  url.password = "";
+  const child = Bun.spawn([pgDump, "--format=custom", "--compress=6", "--no-owner", `--file=${temp}`, url.toString()], {
+    env: { ...process.env, PGPASSWORD: password, ...(database.tls ? { PGSSLMODE: "require" } : {}) },
+    stdout: "ignore",
+    stderr: "pipe",
+  });
+  const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+  if (code !== 0) {
+    await rm(temp, { force: true });
+    throw new Error(`pg_dump exited ${code}: ${stderr.trim().slice(0, 300)}`);
+  }
   await rename(temp, target);
   return target;
 }
@@ -107,7 +120,10 @@ export async function runBackup(options: BackupOptions = {}): Promise<BackupRepo
   const dir = options.dir ?? backupDir;
   const keepDays = options.keepDays ?? backupKeepDays;
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  const snapshot = await snapshotDatabase(options.db ?? getDb(), dir, now);
+  const database = options.database ?? databaseSettings(process.env, "direct");
+  const snapshot = database.local
+    ? await snapshotDatabase(database, dir, now, options.pgDump ?? process.env.PG_DUMP_BIN ?? "pg_dump")
+    : null;
   const blobs = await syncBlobs(options.store ?? getBlobStore(), dir, now);
   const snapshotsPruned =
     (await pruneDated(join(dir, "db"), keepDays, now)) + (await pruneDated(join(dir, "blobs-deleted"), keepDays, now));
@@ -140,6 +156,8 @@ export function startBackupSchedule(
   options: BackupOptions = {},
 ) {
   if (process.env.BOTS_BACKUP === "off") return null;
+  if (!databaseSettings(process.env, "direct").local)
+    console.log("database is external: pg_dump backup is off, the provider keeps the database backups");
   job?.stop();
   job = new Cron(
     pattern,

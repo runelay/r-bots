@@ -68,8 +68,11 @@ export function newSession(botId: string, kind: "thread" | "session" | "group" |
   return createStoredSession({ botId, kind, source: "chat", title: "" });
 }
 
-export function factsOf(session: StoredSession | { lines: string[] }): Fact[] {
-  const lines = "log" in session ? session.log.lines : session.lines;
+type FactSource = StoredSession | { lines: string[] | (() => Promise<string[]>) };
+
+export async function factsOf(session: FactSource): Promise<Fact[]> {
+  const source = "log" in session ? session.log.lines : session.lines;
+  const lines = typeof source === "function" ? await source.call("log" in session ? session.log : session) : source;
   const facts: Fact[] = [];
   for (const line of lines) {
     try {
@@ -79,12 +82,12 @@ export function factsOf(session: StoredSession | { lines: string[] }): Fact[] {
   return facts;
 }
 
-export function factTypes(session: StoredSession | { lines: string[] }) {
-  return factsOf(session).map((fact) => fact.type);
+export async function factTypes(session: FactSource) {
+  return (await factsOf(session)).map((fact) => fact.type);
 }
 
-export function factsOfType(session: StoredSession | { lines: string[] }, type: string) {
-  return factsOf(session).filter((fact) => fact.type === type);
+export async function factsOfType(session: FactSource, type: string) {
+  return (await factsOf(session)).filter((fact) => fact.type === type);
 }
 
 export async function waitFor<T>(check: () => T | Promise<T>, timeoutMs = 4000): Promise<NonNullable<T>> {

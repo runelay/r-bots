@@ -1,9 +1,12 @@
 import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import { makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import { startTestJobs, type TestJobs } from "../../../../test/jobs-helpers";
+import { rootDb, tables } from "../../../db";
 import { findAccount } from "../../accounts/services/accounts.service";
 import { engineOf } from "../../bots/services/bots.service";
 import { getJobView, stopJobs } from "../../jobs/services/jobs.service";
+import { startOutboxRelay, stopOutboxRelay } from "../../jobs/services/outbox.service";
 import { queueCapture, runCaptureJob } from "../services/capture-jobs.service";
 import * as memory from "../services/memory.service";
 
@@ -14,6 +17,8 @@ const restores: Array<() => void> = [];
 
 beforeAll(async () => {
   jobs = await startTestJobs();
+  await rootDb().delete(tables.jobOutbox);
+  startOutboxRelay(rootDb(), 20);
 });
 
 afterEach(() => {
@@ -21,6 +26,7 @@ afterEach(() => {
 });
 
 afterAll(async () => {
+  stopOutboxRelay();
   await jobs.stop();
 });
 
@@ -65,6 +71,11 @@ describe("memory capture job", () => {
     expect(received?.bot.id).toBe(bot.id);
     expect(received?.account.id).toBe(account.id);
     expect(received?.log).toBe(session.log);
+    const dispatched = async () =>
+      (await rootDb().select().from(tables.jobOutbox).where(eq(tables.jobOutbox.type, "memory.capture"))).some(
+        (row) => row.dispatchedAt !== null && (row.payload as { turnId?: string }).turnId === "turn_0",
+      );
+    expect(await waitFor(dispatched)).toBe(true);
   });
 
   test("retries when the capture fails and skips what no longer exists", async () => {

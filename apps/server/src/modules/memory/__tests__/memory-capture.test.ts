@@ -28,12 +28,12 @@ let log: EventLog;
 
 beforeEach(async () => {
   await resetData();
-  getDb().delete(teamMemory).run();
+  await getDb().delete(teamMemory);
   bot = await makeBot();
   log = (await newSession(bot.id)).log;
 });
 
-afterEach(() => {
+afterEach(async () => {
   stopJev();
 });
 
@@ -57,23 +57,23 @@ function extraction(text: string) {
   });
 }
 
-function teamOf(botId: string) {
-  return recentTeamEntries("nobody", "2000-01-01", 50).filter((entry) => entry.botId === botId);
+async function teamOf(botId: string) {
+  return (await recentTeamEntries("nobody", "2000-01-01", 50)).filter((entry) => entry.botId === botId);
 }
 
 describe("teamLogBlock", () => {
   test("is empty when no other bot logged anything today", async () => {
-    addTeamEntry({ at: new Date().toISOString(), botId: bot.id, botName: bot.name, summary: "eu mesmo" });
-    addTeamEntry({ at: "2001-01-01T10:00:00.000Z", botId: `${bot.id}-old`, botName: "Velho", summary: "antigo" });
+    await addTeamEntry({ at: new Date().toISOString(), botId: bot.id, botName: bot.name, summary: "eu mesmo" });
+    await addTeamEntry({ at: "2001-01-01T10:00:00.000Z", botId: `${bot.id}-old`, botName: "Velho", summary: "antigo" });
     expect(await teamLogBlock(bot.id)).toBe("");
   });
 
   test("lists today's entries from other bots, oldest first", async () => {
     const other = await makeBot();
     const first = new Date().toISOString();
-    addTeamEntry({ at: first, botId: other.id, botName: "Outro", summary: "fez a planilha" });
-    addTeamEntry({ at: first, botId: bot.id, botName: bot.name, summary: "eu mesmo" });
-    addTeamEntry({ at: first, botId: other.id, botName: "Outro", summary: "mandou o relatório" });
+    await addTeamEntry({ at: first, botId: other.id, botName: "Outro", summary: "fez a planilha" });
+    await addTeamEntry({ at: first, botId: bot.id, botName: bot.name, summary: "eu mesmo" });
+    await addTeamEntry({ at: first, botId: other.id, botName: "Outro", summary: "mandou o relatório" });
     const block = await teamLogBlock(bot.id);
     const lines = block.split("\n");
     expect(lines[0]).toBe("## O que o time fez hoje");
@@ -89,7 +89,7 @@ describe("capture", () => {
   test("records a fallback decision when Jev fails", async () => {
     fakeJev(() => new Response("down", { status: 503 }));
     await capture(input());
-    const [decision] = factsOfType(log, "decision.made");
+    const [decision] = await factsOfType(log, "decision.made");
     expect(decision.data).toMatchObject({ kind: "memory", outcome: "fallback", answer: null, model: null });
     expect(String(decision.data.reason)).toContain("503");
     expect(fakeProviders.turns).toHaveLength(0);
@@ -102,7 +102,7 @@ describe("capture", () => {
     await capture(input([], "anotei a senha: hunter2"));
     fakeJev(() => ({ answers: { durable: { type: "noul", noul: 0.2 }, secret: { type: "noul", noul: 0 } } }));
     await capture(input());
-    expect(factsOfType(log, "decision.made").map((fact) => fact.data)).toMatchObject([
+    expect((await factsOfType(log, "decision.made")).map((fact) => fact.data)).toMatchObject([
       { outcome: "skip_secret", answer: { durable: 0, secret: 1 } },
       { outcome: "skip_secret", answer: { durable: 0.9, secret: 0 } },
       { outcome: "skip", model: "jev-test", threshold: 0.6 },
@@ -126,7 +126,7 @@ describe("capture", () => {
       })}`,
     );
     await capture(input([{ slug: "pref-tabela", name: "Prefere números em tabela", description: "" }]));
-    expect(factsOfType(log, "decision.made")[0].data).toMatchObject({ outcome: "capture", confidence: 0.8 });
+    expect((await factsOfType(log, "decision.made"))[0].data).toMatchObject({ outcome: "capture", confidence: 0.8 });
     const request = fakeProviders.turns[0].request;
     expect(request.model).toBe("claude-haiku-5-5");
     expect(request.workKey).toBe(`${bot.id}/memory`);
@@ -135,7 +135,7 @@ describe("capture", () => {
     expect(writes.map((item) => item.slug)).toEqual(["pref-tabela", `rb-${bot.id}-usa-linear`]);
     expect(writes[0]).toMatchObject({ name: "Prefere números em tabela", type: "user" });
     expect(String(writes[0].body)).toContain(`Tags: runelay-bots, ${bot.id}, formato`);
-    const saved = factsOfType(log, "memory.saved")[0];
+    const saved = (await factsOfType(log, "memory.saved"))[0];
     expect(saved.data).toMatchObject({
       titles: ["Prefere números em tabela", "Usa Linear"],
       items: [
@@ -144,7 +144,7 @@ describe("capture", () => {
       ],
       botId: bot.id,
     });
-    expect(teamOf(bot.id)).toMatchObject([{ botName: bot.name, summary: "combinou formato de tabela" }]);
+    expect(await teamOf(bot.id)).toMatchObject([{ botName: bot.name, summary: "combinou formato de tabela" }]);
   });
 
   test("updates a recalled memory matched by slug", async () => {
@@ -154,8 +154,10 @@ describe("capture", () => {
     await capture(input([{ slug: "usa-acao", name: "Outro nome", description: "" }]));
     const writes = fakeRunelay.toolCalls.filter((call) => call.name === "write_memory").map((call) => call.args);
     expect(writes.map((item) => item.slug)).toEqual(["usa-acao"]);
-    expect(factsOfType(log, "memory.saved")[0].data).toMatchObject({ items: [{ slug: "usa-acao", updated: true }] });
-    expect(teamOf(bot.id)).toEqual([]);
+    expect((await factsOfType(log, "memory.saved"))[0].data).toMatchObject({
+      items: [{ slug: "usa-acao", updated: true }],
+    });
+    expect(await teamOf(bot.id)).toEqual([]);
   });
 
   test("stops when the extraction is not JSON, holds a secret summary or nothing new", async () => {
@@ -172,8 +174,8 @@ describe("capture", () => {
     }
     expect(fakeProviders.turns).toHaveLength(4);
     expect(fakeRunelay.toolCalls.filter((call) => call.name === "write_memory")).toHaveLength(0);
-    expect(factsOfType(log, "memory.saved")).toHaveLength(0);
-    expect(teamOf(bot.id)).toEqual([]);
+    expect(await factsOfType(log, "memory.saved")).toHaveLength(0);
+    expect(await teamOf(bot.id)).toEqual([]);
   });
 
   test("does nothing while runelay is off", async () => {
@@ -184,6 +186,6 @@ describe("capture", () => {
     } finally {
       enabled.mockRestore();
     }
-    expect(log.lines).toHaveLength(0);
+    expect(await log.lines()).toHaveLength(0);
   });
 });

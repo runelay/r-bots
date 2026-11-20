@@ -1,7 +1,9 @@
+import { writeTransaction } from "../../../db";
 import { findAccount } from "../../accounts/services/accounts.service";
 import { getBot } from "../../bots/services/bots.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
-import { defineJob, enqueue, jobsActive } from "../../jobs/services/jobs.service";
+import { defineJob, jobsActive } from "../../jobs/services/jobs.service";
+import { enqueueInTx } from "../../jobs/services/outbox.service";
 import { type CaptureInput, capture, type RecallItem } from "./memory.service";
 
 export const captureJobType = "memory.capture";
@@ -40,7 +42,7 @@ defineJob<CapturePayload>(captureJobType, { attempts: 4, backoffMs: 5000, handle
 
 export async function queueCapture(input: CaptureInput & { sessionId: string }) {
   if (!jobsActive()) return capture(input);
-  await enqueue<CapturePayload>(captureJobType, {
+  const payload: CapturePayload = {
     botId: input.bot.id,
     accountId: input.account.id,
     model: input.model,
@@ -49,5 +51,7 @@ export async function queueCapture(input: CaptureInput & { sessionId: string }) 
     recalled: input.recalled,
     sessionId: input.sessionId,
     turnId: input.turnId,
-  });
+  };
+  await input.log.flush();
+  await writeTransaction((tx) => enqueueInTx(tx, { type: captureJobType, payload }));
 }

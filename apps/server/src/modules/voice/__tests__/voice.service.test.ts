@@ -29,7 +29,7 @@ import {
 
 const eleven = fakeElevenLabs();
 const fast = fakeFastLayer();
-const deliver = spyOn(engine, "deliver").mockImplementation(() => undefined);
+const deliver = spyOn(engine, "deliver").mockResolvedValue(undefined);
 const saves: Promise<unknown>[] = [];
 const realSave = sessions.StoredSession.prototype.save;
 const save = spyOn(sessions.StoredSession.prototype, "save").mockImplementation(function (
@@ -50,8 +50,8 @@ function botOf(voice?: BotDefinition["voice"], role = ""): BotDefinition {
   return { id: `voice-bot-${botCounter}`, name: `Voz ${botCounter}`, role, voice } as BotDefinition;
 }
 
-function factsOf(call: VoiceCall) {
-  return call.session.log.lines.flatMap((line) => (JSON.parse(line) as { facts?: Fact[] }).facts ?? []);
+async function factsOf(call: VoiceCall) {
+  return (await call.session.log.lines()).flatMap((line) => (JSON.parse(line) as { facts?: Fact[] }).facts ?? []);
 }
 
 function listen(call: VoiceCall) {
@@ -76,7 +76,7 @@ beforeAll(async () => {
   process.env.ELEVENLABS_API_URL = eleven.url;
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   process.env.ELEVENLABS_API_KEY = "test-eleven-key";
   eleven.reset();
   fast.reset();
@@ -214,7 +214,7 @@ describe("ElevenLabs tokens and voices", () => {
 });
 
 describe("pure helpers", () => {
-  test("speakableReply keeps short prose and rejects code, tables, headings and long lists", () => {
+  test("speakableReply keeps short prose and rejects code, tables, headings and long lists", async () => {
     expect(speakableReply("Pronto, **feito**. Veja [o link](http://x.y) em https://a.b/c")).toBe(
       "Pronto, feito. Veja o link em",
     );
@@ -228,13 +228,13 @@ describe("pure helpers", () => {
     expect(speakableReply("https://only.link")).toBeNull();
   });
 
-  test("repeatsReply compares content words", () => {
+  test("repeatsReply compares content words", async () => {
     expect(repeatsReply("Vou olhar", "Vou olhar seus emails")).toBe(false);
     expect(repeatsReply("Achei três emails do banco hoje cedo", "Os emails do banco chegaram hoje cedo")).toBe(true);
     expect(repeatsReply("Achei três emails do banco hoje cedo", "Nada novo por aqui")).toBe(false);
   });
 
-  test("classifyAnswer reads yes and no in Portuguese", () => {
+  test("classifyAnswer reads yes and no in Portuguese", async () => {
     expect(classifyAnswer("Sim, pode!")).toBe("approve");
     expect(classifyAnswer("Faça isso")).toBe("approve");
     expect(classifyAnswer("Não, melhor não")).toBe("deny");
@@ -259,7 +259,7 @@ describe("calls", () => {
     expect(query.closed).toBe(true);
     expect(findCall(first.id)).toBeUndefined();
     expect(findCall(second.id)).toBe(second);
-    expect(factsOf(first).find((fact) => fact.type === "voice.call.ended")?.data).toMatchObject({
+    expect((await factsOf(first)).find((fact) => fact.type === "voice.call.ended")?.data).toMatchObject({
       callId: first.id,
       botId: bot.id,
       durationSecs: 1,
@@ -320,7 +320,7 @@ describe("calls", () => {
     expect(events.at(-1)).toMatchObject({ text: "Beleza, entendi." });
     expect(call.lastAck?.text).toBe("Beleza, entendi.");
     expect(call.spoken).toBe(1);
-    const spoken = factsOf(call).find((fact) => fact.type === "content.completed");
+    const spoken = (await factsOf(call)).find((fact) => fact.type === "content.completed");
     expect(spoken?.data).toMatchObject({ value: "Beleza, entendi.", voice: true, spoken: true, botId: call.botId });
   });
 
@@ -472,7 +472,7 @@ describe("calls", () => {
       { type: "turn.settled", data: { outcome: "completed" }, scope: { turnId: "old" } },
     );
     expect(call.lastAck).toBeNull();
-    const retracted = factsOf(call).find((fact) => fact.data.retracted === true);
+    const retracted = (await factsOf(call)).find((fact) => fact.data.retracted === true);
     expect(retracted?.data).toMatchObject({ partId: ackPart, value: "" });
     expect(events.filter((event) => event.type === "speech.done")).toHaveLength(1);
     expect(query.prompts.some((prompt) => prompt.startsWith("RESULTADO"))).toBe(false);
@@ -660,7 +660,7 @@ describe("idle calls and ratings", () => {
     endCall(call);
     expect(await rateCall(bot, call.id, "down")).toBe(true);
     expect(await rateCall(bot, "call_unknown", null)).toBe(true);
-    const rated = factsOf(call).filter((fact) => fact.type === "voice.call.rated");
+    const rated = (await factsOf(call)).filter((fact) => fact.type === "voice.call.rated");
     expect(rated.map((fact) => fact.data)).toEqual([
       { callId: call.id, rating: "up" },
       { callId: call.id, rating: "down" },

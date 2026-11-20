@@ -73,12 +73,12 @@ async function auditRows() {
 beforeEach(async () => {
   await resetData();
   await useKey(testKey);
-  getDb().delete(vaultAudit).run();
-  getDb().delete(vaultSecrets).run();
+  await getDb().delete(vaultAudit);
+  await getDb().delete(vaultSecrets);
   await loadVault();
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const name of remembered) forgetSecretValue(name);
   remembered.clear();
   setSystemTime();
@@ -89,11 +89,11 @@ afterAll(async () => {
 });
 
 describe("names and references", () => {
-  test("envNameOf turns a secret name into its env variable", () => {
+  test("envNameOf turns a secret name into its env variable", async () => {
     expect(envNameOf("github-token")).toBe("SEGREDO_GITHUB_TOKEN");
   });
 
-  test("refsIn, hasRefs and onlyRefs find segredo references", () => {
+  test("refsIn, hasRefs and onlyRefs find segredo references", async () => {
     expect(refsIn("a segredo:one b segredo:two segredo:one")).toEqual(["one", "two"]);
     expect(hasRefs("segredo:x")).toBe(true);
     expect(hasRefs("nothing")).toBe(false);
@@ -113,7 +113,7 @@ describe("names and references", () => {
 });
 
 describe("hosts and domains", () => {
-  test("normalizeHost cleans urls, brackets and trailing dots", () => {
+  test("normalizeHost cleans urls, brackets and trailing dots", async () => {
     expect(normalizeHost(null)).toBeNull();
     expect(normalizeHost(undefined)).toBeNull();
     expect(normalizeHost(" HTTPS://GitHub.com/path ")).toBe("github.com");
@@ -123,7 +123,7 @@ describe("hosts and domains", () => {
     expect(normalizeHost(".")).toBeNull();
   });
 
-  test("hostAllowed applies exact, www and wildcard patterns", () => {
+  test("hostAllowed applies exact, www and wildcard patterns", async () => {
     expect(hostAllowed([], null)).toBe(true);
     expect(hostAllowed(["github.com"], null)).toBe(false);
     expect(hostAllowed(["github.com"], "github.com")).toBe(true);
@@ -134,7 +134,7 @@ describe("hosts and domains", () => {
     expect(hostAllowed(["*.github.com"], "evilgithub.com")).toBe(false);
   });
 
-  test("normalizeDomains cleans the list and rejects invalid entries", () => {
+  test("normalizeDomains cleans the list and rejects invalid entries", async () => {
     expect(normalizeDomains(undefined)).toEqual([]);
     expect(normalizeDomains(null)).toEqual([]);
     expect(
@@ -172,7 +172,7 @@ describe("metadata", () => {
     });
     expect(getSecretMeta("github-token")).toEqual(meta);
     expect(getSecretMeta("nope")).toBeNull();
-    expect(repository.loadSecretMetas()["github-token"].description).toBe("Token");
+    expect((await repository.loadSecretMetas())["github-token"].description).toBe("Token");
     expect((await auditRows())[0]).toMatchObject({ name: "github-token", outcome: "created", by: "person" });
   });
 
@@ -208,11 +208,11 @@ describe("metadata", () => {
   test("rotating a secret drops its server copy", async () => {
     await saveSecretMeta("a", {});
     await setServerCopy("a", "server-value-1");
-    expect(repository.readSealed("a")).not.toBeNull();
+    expect(await repository.readSealed("a")).not.toBeNull();
     const rotated = await saveSecretMeta("a", { rotated: true });
     expect(rotated.storage).toBe("mac");
     expect(rotated.rotatedAt).not.toBeNull();
-    expect(repository.readSealed("a")).toBeNull();
+    expect(await repository.readSealed("a")).toBeNull();
     expect((await auditRows())[0]).toMatchObject({ name: "a", outcome: "rotated" });
   });
 
@@ -227,7 +227,7 @@ describe("metadata", () => {
     await setServerCopy("a", "server-value-1");
     expect(await deleteSecret("a")).toBe(true);
     expect(getSecretMeta("a")).toBeNull();
-    expect(repository.readSealed("a")).toBeNull();
+    expect(await repository.readSealed("a")).toBeNull();
     expect(await deleteSecret("a")).toBe(false);
     const outcomes = (await auditRows()).map((row) => row.outcome);
     expect(outcomes.filter((outcome) => outcome === "deleted")).toHaveLength(1);
@@ -235,7 +235,7 @@ describe("metadata", () => {
 
   test("loadVault reads the stored secrets back", async () => {
     await saveSecretMeta("a", { description: "kept" });
-    getDb().delete(vaultSecrets).run();
+    await getDb().delete(vaultSecrets);
     await ensureVaultLoaded();
     expect(getSecretMeta("a")?.description).toBe("kept");
     await loadVault();
@@ -276,13 +276,13 @@ describe("server copy and key", () => {
     await saveSecretMeta("a", {});
     const on = await setServerCopy("a", "plain-secret-value");
     expect(on.storage).toBe("mac+server");
-    const sealed = repository.readSealed("a");
+    const sealed = await repository.readSealed("a");
     expect(sealed?.iv).toHaveLength(12);
     expect(sealed?.tag).toHaveLength(16);
     expect(sealed?.ct.toString("utf8")).not.toContain("plain-secret-value");
     const off = await setServerCopy("a", null);
     expect(off.storage).toBe("mac");
-    expect(repository.readSealed("a")).toBeNull();
+    expect(await repository.readSealed("a")).toBeNull();
     const outcomes = (await auditRows()).map((row) => row.outcome);
     expect(outcomes).toContain("server_copy_on");
     expect(outcomes).toContain("server_copy_off");
@@ -399,7 +399,7 @@ describe("policy", () => {
     };
   }
 
-  test("policyError checks expiry, bot and domain", () => {
+  test("policyError checks expiry, bot and domain", async () => {
     expect(policyError(meta({}), "bot-a", null)).toBeNull();
     expect(policyError(meta({ expiresAt: "2000-01-01T00:00:00.000Z" }), "bot-a", null)?.code).toBe("expired");
     expect(policyError(meta({ expiresAt: "2999-01-01T00:00:00.000Z" }), "bot-a", null)).toBeNull();
@@ -448,10 +448,10 @@ describe("resolveSecret", () => {
     await useKey(null);
     expect(await vaultCode(resolveOk("a"))).toBe("no_key");
     await useKey(testKey);
-    const sealed = repository.readSealed("a");
-    repository.writeSealed("a", { iv: sealed?.iv as Buffer, tag: Buffer.alloc(16), ct: sealed?.ct as Buffer });
+    const sealed = await repository.readSealed("a");
+    await repository.writeSealed("a", { iv: sealed?.iv as Buffer, tag: Buffer.alloc(16), ct: sealed?.ct as Buffer });
     expect(await vaultCode(resolveOk("a"))).toBe("server_copy_broken");
-    repository.writeSealed("a", null);
+    await repository.writeSealed("a", null);
     expect(await vaultCode(resolveOk("a"))).toBe("server_copy_broken");
   });
 

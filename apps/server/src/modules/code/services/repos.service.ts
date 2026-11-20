@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { asc } from "drizzle-orm";
 import { getDb } from "../../../db";
 import { codeRepos, codeWorkspaces } from "../../../db/tables";
 
@@ -15,7 +16,7 @@ export interface AllowedRepo {
 export const hostHome = resolve(process.env.HOST_HOME?.trim() || homedir());
 export const worktreesRoot = join(hostHome, ".local", "share", "runelay-bots-worktrees");
 
-let cache: AllowedRepo[] | null = null;
+let cache: AllowedRepo[] = [];
 
 function within(root: string, path: string) {
   const rel = relative(root, path);
@@ -27,38 +28,35 @@ export function expandHome(path: string) {
 }
 
 export function allowedRepos(): AllowedRepo[] {
-  if (!cache) {
-    try {
-      cache = getDb().select().from(codeRepos).all();
-    } catch {
-      cache = [];
-    }
+  return cache;
+}
+
+export async function loadAllowedRepos() {
+  try {
+    cache = await getDb().select().from(codeRepos).orderBy(asc(codeRepos.addedAt), asc(codeRepos.path));
+  } catch {
+    cache = [];
   }
   return cache;
 }
 
-export function seedAllowedRepos() {
+export async function seedAllowedRepos() {
   const db = getDb();
-  const rows = db
+  const rows = await db
     .selectDistinct({ path: codeWorkspaces.repo, name: codeWorkspaces.repoName, at: codeWorkspaces.createdAt })
-    .from(codeWorkspaces)
-    .all();
+    .from(codeWorkspaces);
   const now = new Date().toISOString();
-  for (const row of rows) {
-    if (!row.path) continue;
-    db.insert(codeRepos)
-      .values({
-        path: resolve(row.path),
-        name: row.name || basename(row.path),
-        reason: "Já tinha worktree antes da lista de repositórios liberados.",
-        addedBy: null,
-        addedAt: row.at || now,
-      })
-      .onConflictDoNothing()
-      .run();
-  }
-  cache = null;
-  return allowedRepos().length;
+  const values = rows
+    .filter((row) => row.path)
+    .map((row) => ({
+      path: resolve(row.path),
+      name: row.name || basename(row.path),
+      reason: "Já tinha worktree antes da lista de repositórios liberados.",
+      addedBy: null,
+      addedAt: row.at || now,
+    }));
+  if (values.length) await db.insert(codeRepos).values(values).onConflictDoNothing();
+  return (await loadAllowedRepos()).length;
 }
 
 export function allowedRepoFor(path: string) {
@@ -86,23 +84,21 @@ export async function gitRepoAt(path: string) {
   return null;
 }
 
-export function addAllowedRepo(path: string, reason: string, addedBy: string | null) {
+export async function addAllowedRepo(path: string, reason: string, addedBy: string | null) {
   const absolute = resolve(path);
   const row = { path: absolute, name: basename(absolute), reason, addedBy, addedAt: new Date().toISOString() };
-  getDb().insert(codeRepos).values(row).onConflictDoNothing().run();
-  cache = null;
+  await getDb().insert(codeRepos).values(row).onConflictDoNothing();
+  await loadAllowedRepos();
   return allowedRepos().find((repo) => repo.path === absolute) ?? row;
 }
 
-export function fileRoots() {
+export async function fileRoots() {
   let worktrees: string[] = [];
   try {
-    worktrees = getDb()
+    const rows = await getDb()
       .select({ path: codeWorkspaces.path, status: codeWorkspaces.status })
-      .from(codeWorkspaces)
-      .all()
-      .filter((row) => row.status !== "removed")
-      .map((row) => row.path);
+      .from(codeWorkspaces);
+    worktrees = rows.filter((row) => row.status !== "removed").map((row) => row.path);
   } catch {}
   return [worktreesRoot, ...allowedRepos().map((repo) => repo.path), ...worktrees];
 }

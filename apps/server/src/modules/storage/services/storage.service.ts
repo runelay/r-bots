@@ -65,10 +65,10 @@ export async function putBlob(
     sessionId: options.sessionId ?? null,
     createdAt: new Date().toISOString(),
   };
-  db.insert(blobs)
+  await db
+    .insert(blobs)
     .values(row)
-    .onConflictDoUpdate({ target: blobs.key, set: { mime: row.mime, size: row.size, sha256: row.sha256 } })
-    .run();
+    .onConflictDoUpdate({ target: blobs.key, set: { mime: row.mime, size: row.size, sha256: row.sha256 } });
   return info;
 }
 

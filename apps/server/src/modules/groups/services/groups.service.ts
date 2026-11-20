@@ -15,11 +15,11 @@ export interface Group {
 let groups: Group[] = [];
 
 export async function loadGroups() {
-  groups = loadGroupRows();
+  groups = await loadGroupRows();
 }
 
-function save(group: Group) {
-  saveGroupRow(group);
+async function save(group: Group) {
+  await saveGroupRow(group);
 }
 
 export function getGroup(id: string) {
@@ -74,7 +74,7 @@ export async function createGroup(input: unknown) {
     archivedAt: null,
   };
   groups.push(group);
-  save(group);
+  await save(group);
   return group;
 }
 
@@ -88,7 +88,7 @@ export async function updateGroup(id: string, input: unknown) {
   if (raw.name !== undefined) group.name = validName(raw.name);
   if (raw.members !== undefined) group.members = validMembers(raw.members);
   group.updatedAt = new Date().toISOString();
-  save(group);
+  await save(group);
   return group;
 }
 
@@ -97,7 +97,7 @@ export async function setGroupArchived(id: string, archived: boolean) {
   if (!group) return null;
   group.archivedAt = archived ? (group.archivedAt ?? new Date().toISOString()) : null;
   group.updatedAt = new Date().toISOString();
-  save(group);
+  await save(group);
   return group;
 }
 

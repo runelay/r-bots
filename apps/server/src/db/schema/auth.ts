@@ -1,22 +1,22 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { boolean, index, integer, pgTable, timestamp as pgTimestamp, text, uniqueIndex } from "drizzle-orm/pg-core";
 
-const timestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
+const timestamp = (name: string) => pgTimestamp(name, { withTimezone: true, precision: 3, mode: "date" });
 
-export const user = sqliteTable("user", {
+export const user = pgTable("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
-  emailVerified: integer("email_verified", { mode: "boolean" }).notNull().default(false),
+  emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
   role: text("role"),
-  banned: integer("banned", { mode: "boolean" }).default(false),
+  banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires"),
   createdAt: timestamp("created_at").notNull(),
   updatedAt: timestamp("updated_at").notNull(),
 });
 
-export const session = sqliteTable(
+export const session = pgTable(
   "session",
   {
     id: text("id").primaryKey(),
@@ -34,7 +34,7 @@ export const session = sqliteTable(
   (table) => [index("session_user_id_idx").on(table.userId)],
 );
 
-export const account = sqliteTable(
+export const account = pgTable(
   "account",
   {
     id: text("id").primaryKey(),
@@ -56,7 +56,7 @@ export const account = sqliteTable(
   (table) => [index("account_user_id_idx").on(table.userId)],
 );
 
-export const verification = sqliteTable(
+export const verification = pgTable(
   "verification",
   {
     id: text("id").primaryKey(),
@@ -69,7 +69,7 @@ export const verification = sqliteTable(
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
-export const passkey = sqliteTable(
+export const passkey = pgTable(
   "passkey",
   {
     id: text("id").primaryKey(),
@@ -81,7 +81,7 @@ export const passkey = sqliteTable(
     credentialID: text("credential_id").notNull(),
     counter: integer("counter").notNull(),
     deviceType: text("device_type").notNull(),
-    backedUp: integer("backed_up", { mode: "boolean" }).notNull(),
+    backedUp: boolean("backed_up").notNull(),
     transports: text("transports"),
     createdAt: timestamp("created_at"),
     aaguid: text("aaguid"),
@@ -89,7 +89,7 @@ export const passkey = sqliteTable(
   (table) => [index("passkey_user_id_idx").on(table.userId), index("passkey_credential_id_idx").on(table.credentialID)],
 );
 
-export const apikey = sqliteTable(
+export const apikey = pgTable(
   "apikey",
   {
     id: text("id").primaryKey(),
@@ -102,8 +102,8 @@ export const apikey = sqliteTable(
     refillInterval: integer("refill_interval"),
     refillAmount: integer("refill_amount"),
     lastRefillAt: timestamp("last_refill_at"),
-    enabled: integer("enabled", { mode: "boolean" }).default(true),
-    rateLimitEnabled: integer("rate_limit_enabled", { mode: "boolean" }).default(true),
+    enabled: boolean("enabled").default(true),
+    rateLimitEnabled: boolean("rate_limit_enabled").default(true),
     rateLimitTimeWindow: integer("rate_limit_time_window"),
     rateLimitMax: integer("rate_limit_max"),
     requestCount: integer("request_count").default(0),
@@ -122,7 +122,7 @@ export const apikey = sqliteTable(
   ],
 );
 
-export const deviceCode = sqliteTable(
+export const deviceCode = pgTable(
   "device_code",
   {
     id: text("id").primaryKey(),
@@ -142,7 +142,7 @@ export const deviceCode = sqliteTable(
   ],
 );
 
-export const invite = sqliteTable(
+export const invite = pgTable(
   "invite",
   {
     id: text("id").primaryKey(),

@@ -36,7 +36,7 @@ export function registerThreadTools(server: McpServer, context: ToolContext) {
         });
         context.log.emit({ type: "call.started", data: { callId }, scope: scopeOf(context) });
         const session = getStoredSession(context.sessionId);
-        const result = session ? readItem(session, itemId, offset) : { error: "Conversa não encontrada." };
+        const result = session ? await readItem(session, itemId, offset) : { error: "Conversa não encontrada." };
         const failed = "error" in result;
         context.log.emit({
           type: "call.settled",

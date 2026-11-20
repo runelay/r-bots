@@ -1,4 +1,4 @@
-import { type Db, getDb } from "../../../db";
+import { type Db, getDb, writeTransaction } from "../../../db";
 import { extraOf, type Json, present } from "../../../db/rows";
 import { codeWorkspaces } from "../../../db/tables";
 import type { WorktreeRecord } from "./code.repository";
@@ -41,40 +41,34 @@ export function worktreeColumns(source: WorktreeRecord | Json) {
   };
 }
 
-export function loadWorktreeRows(db: Db = getDb()): WorktreeRecord[] {
-  return db
-    .select()
-    .from(codeWorkspaces)
-    .all()
-    .map(
-      (row) =>
-        ({
-          id: row.id,
-          path: row.path,
-          repo: row.repo,
-          repoName: row.repoName,
-          branch: row.branch,
-          base: row.base ?? "",
-          baseCommit: row.baseCommit ?? "",
-          botId: row.botId,
-          sessionId: row.sessionId ?? "",
-          createdAt: row.createdAt,
-          lastAccessedAt: row.lastAccessedAt ?? row.createdAt,
-          status: row.status,
-          pinned: row.pinned,
-          ...present({ prUrl: row.prUrl }),
-          ...(row.extra ?? {}),
-        }) as WorktreeRecord,
-    );
+export async function loadWorktreeRows(db: Db = getDb()): Promise<WorktreeRecord[]> {
+  return (await db.select().from(codeWorkspaces).orderBy(codeWorkspaces.createdAt, codeWorkspaces.id)).map(
+    (row) =>
+      ({
+        id: row.id,
+        path: row.path,
+        repo: row.repo,
+        repoName: row.repoName,
+        branch: row.branch,
+        base: row.base ?? "",
+        baseCommit: row.baseCommit ?? "",
+        botId: row.botId,
+        sessionId: row.sessionId ?? "",
+        createdAt: row.createdAt,
+        lastAccessedAt: row.lastAccessedAt ?? row.createdAt,
+        status: row.status,
+        pinned: row.pinned,
+        ...present({ prUrl: row.prUrl }),
+        ...(row.extra ?? {}),
+      }) as WorktreeRecord,
+  );
 }
 
-export function saveWorktreeRows(list: WorktreeRecord[], db: Db = getDb()) {
-  db.$client
-    .transaction(() => {
-      for (const record of list) {
-        const columns = worktreeColumns(record);
-        db.insert(codeWorkspaces).values(columns).onConflictDoUpdate({ target: codeWorkspaces.id, set: columns }).run();
-      }
-    })
-    .immediate();
+export async function saveWorktreeRows(list: WorktreeRecord[], db: Db = getDb()) {
+  await writeTransaction(async (tx) => {
+    for (const record of list) {
+      const columns = worktreeColumns(record);
+      await tx.insert(codeWorkspaces).values(columns).onConflictDoUpdate({ target: codeWorkspaces.id, set: columns });
+    }
+  }, db);
 }

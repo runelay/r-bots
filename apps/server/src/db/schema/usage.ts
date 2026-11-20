@@ -1,37 +1,38 @@
-import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { bigint, index, pgTable, primaryKey, text } from "drizzle-orm/pg-core";
+import { jsonb } from "./types";
 
-export const usageBuckets = sqliteTable(
+export const usageBuckets = pgTable(
   "usage_buckets",
   {
-    hour: integer("hour").notNull(),
+    hour: bigint("hour", { mode: "number" }).notNull(),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     tier: text("tier").notNull(),
-    counters: text("counters", { mode: "json" }).$type<number[]>().notNull(),
+    counters: jsonb<number[]>("counters").notNull(),
   },
   (table) => [primaryKey({ columns: [table.hour, table.provider, table.model, table.tier] })],
 );
 
-export const usageSessions = sqliteTable(
+export const usageSessions = pgTable(
   "usage_sessions",
   {
     key: text("key").primaryKey(),
-    hour: integer("hour").notNull(),
+    hour: bigint("hour", { mode: "number" }).notNull(),
     model: text("model").notNull(),
   },
   (table) => [index("usage_sessions_hour_idx").on(table.hour)],
 );
 
-export const usageCursors = sqliteTable("usage_cursors", {
+export const usageCursors = pgTable("usage_cursors", {
   path: text("path").primaryKey(),
-  state: text("state", { mode: "json" }).$type<Record<string, unknown>>().notNull(),
+  state: jsonb<Record<string, unknown>>("state").notNull(),
 });
 
-export const usageSeen = sqliteTable(
+export const usageSeen = pgTable(
   "usage_seen",
   {
     key: text("key").primaryKey(),
-    hour: integer("hour").notNull(),
+    hour: bigint("hour", { mode: "number" }).notNull(),
   },
   (table) => [index("usage_seen_hour_idx").on(table.hour)],
 );

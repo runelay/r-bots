@@ -2,9 +2,11 @@ import { afterAll, afterEach, mock } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { closeFreshDbs } from "./db-helpers";
 import { restoreProcessFakes } from "./fake-process";
 import { fakeProviders } from "./fake-providers";
 import { fakeRunelay } from "./fake-runelay";
+import { createDatabase, createTemplate, dropDatabases, settingsFor, urlFor } from "./postgres";
 
 const root = mkdtempSync(join(tmpdir(), "rb-server-test-"));
 const dataDir = join(root, "data");
@@ -16,7 +18,6 @@ fakeRunelay.start();
 
 const testEnv: Record<string, string> = {
   BOTS_DATA_DIR: dataDir,
-  BOTS_DB_FILE: join(root, "db", "runelay-bots.db"),
   BOTS_BACKUP_DIR: join(root, "backups"),
   BLOB_DRIVER: "fs",
   BLOB_FS_DIR: join(root, "blobs"),
@@ -57,6 +58,19 @@ for (const key of [
 ])
   delete process.env[key];
 Object.assign(process.env, testEnv);
+delete process.env.DATABASE_URL_UNPOOLED;
+delete process.env.DATABASE_PREPARE;
+
+const { openDatabase, useDb, closeDb } = await import("../src/db");
+const template = await createTemplate();
+const migrated = await openDatabase({ settings: settingsFor(template) });
+await migrated.$client.close();
+const mainDatabase = await createDatabase(template);
+process.env.DATABASE_URL = urlFor(mainDatabase);
+process.env.TEST_DATABASE_TEMPLATE = template;
+useDb(await openDatabase({ migrate: false, settings: settingsFor(mainDatabase) }));
+const { forgetSecretValue } = await import("../src/shared/redact");
+forgetSecretValue("database");
 
 const realFetch = globalThis.fetch;
 const localHosts = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
@@ -82,12 +96,16 @@ mock.module("@runelay-bots/providers", () => ({
 }));
 
 afterEach(() => {
+  forgetSecretValue("database");
   restoreProcessFakes();
   fakeProviders.reset();
   fakeRunelay.reset();
 });
 
 afterAll(async () => {
+  await closeDb();
+  await closeFreshDbs();
+  await dropDatabases();
   await fakeRunelay.stop();
   globalThis.fetch = realFetch;
   rmSync(root, { recursive: true, force: true });

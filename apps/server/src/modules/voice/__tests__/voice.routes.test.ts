@@ -10,7 +10,7 @@ import { endAllCalls, findCall } from "../services/voice.service";
 
 const eleven = fakeElevenLabs();
 const fast = fakeFastLayer();
-const deliver = spyOn(engine, "deliver").mockImplementation(() => undefined);
+const deliver = spyOn(engine, "deliver").mockResolvedValue(undefined);
 let server: TestServer;
 let bot: BotDefinition;
 
@@ -49,7 +49,7 @@ beforeEach(async () => {
   bot = await createBot({ name: `Voz ${crypto.randomUUID().slice(0, 6)}` });
 });
 
-afterEach(() => {
+afterEach(async () => {
   endAllCalls();
   jest.useRealTimers();
 });

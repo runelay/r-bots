@@ -56,8 +56,8 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await resetData();
-  getDb().delete(vaultAudit).run();
-  getDb().delete(vaultSecrets).run();
+  await getDb().delete(vaultAudit);
+  await getDb().delete(vaultSecrets);
   await loadVault();
 });
 

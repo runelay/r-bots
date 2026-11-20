@@ -33,26 +33,26 @@ const ttlDays = Number(process.env.CODE_WORKTREE_TTL_DAYS ?? 14);
 let grants: Record<string, Grant[]> | null = null;
 let registry: WorktreeRecord[] | null = null;
 async function loadGrants() {
-  if (!grants) grants = readSetting<Record<string, Grant[]>>(grantsKey, {});
+  if (!grants) grants = await readSetting<Record<string, Grant[]>>(grantsKey, {});
   return grants;
 }
 
 async function loadRegistry() {
-  if (!registry) registry = loadWorktreeRows();
+  if (!registry) registry = await loadWorktreeRows();
   return registry;
 }
 
-function persistGrants(value: Record<string, Grant[]> | null) {
+async function persistGrants(value: Record<string, Grant[]> | null) {
   try {
-    writeSetting(grantsKey, value ?? {});
+    await writeSetting(grantsKey, value ?? {});
   } catch (error) {
     console.warn("code store write failed", error);
   }
 }
 
-function persistRegistry(list: WorktreeRecord[]) {
+async function persistRegistry(list: WorktreeRecord[]) {
   try {
-    saveWorktreeRows(list);
+    await saveWorktreeRows(list);
   } catch (error) {
     console.warn("code store write failed", error);
   }
@@ -64,7 +64,7 @@ export async function hasGrant(repo: string, key: string) {
   if (!grant) return false;
   grant.uses++;
   grant.lastUsedAt = new Date().toISOString();
-  persistGrants(grants);
+  await persistGrants(grants);
   return true;
 }
 
@@ -74,7 +74,7 @@ export async function addGrant(repo: string, key: string) {
   if (!list.some((item) => item.key === key))
     list.push({ key, createdAt: new Date().toISOString(), uses: 0, lastUsedAt: null });
   all[repo] = list;
-  persistGrants(all);
+  await persistGrants(all);
 }
 
 export async function listGrants() {
@@ -87,7 +87,7 @@ export async function removeGrant(repo: string, key: string) {
   const before = all[repo]?.length ?? 0;
   all[repo] = (all[repo] ?? []).filter((item) => item.key !== key);
   if (all[repo].length === 0) delete all[repo];
-  persistGrants(all);
+  await persistGrants(all);
   return before !== (all[repo]?.length ?? 0);
 }
 
@@ -120,7 +120,7 @@ export async function recordWorktree(
       pinned: false,
     });
   }
-  persistRegistry(list);
+  await persistRegistry(list);
 }
 
 export async function touchWorktree(id: string, patch: Partial<WorktreeRecord> = {}) {
@@ -128,7 +128,7 @@ export async function touchWorktree(id: string, patch: Partial<WorktreeRecord> =
   const current = list.find((item) => item.id === id);
   if (!current) return null;
   Object.assign(current, patch, { lastAccessedAt: new Date().toISOString() });
-  persistRegistry(list);
+  await persistRegistry(list);
   return current;
 }
 
@@ -169,7 +169,7 @@ export async function collectWorktrees(isActive: (record: WorktreeRecord) => boo
       removed.push(record.id);
     } else record.status = "stale";
   }
-  persistRegistry(list);
+  await persistRegistry(list);
   return removed;
 }
 

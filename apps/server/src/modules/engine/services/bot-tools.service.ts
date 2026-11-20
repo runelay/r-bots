@@ -26,8 +26,8 @@ export interface BotTool {
   name: string;
   description: string;
   shape: z.ZodRawShape;
-  approval: ((input: Record<string, unknown>) => string | null) | null;
-  label: (input: Record<string, unknown>) => string;
+  approval: ((input: Record<string, unknown>) => string | null | Promise<string | null>) | null;
+  label: (input: Record<string, unknown>) => string | Promise<string>;
   run: (input: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
   details?: (input: Record<string, unknown>) => Promise<ApprovalDetails>;
 }

@@ -1,14 +1,15 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { bigint, index, pgTable, text } from "drizzle-orm/pg-core";
+import { jsonb, timestamptz } from "./types";
 
-export const teamMemory = sqliteTable(
+export const teamMemory = pgTable(
   "team_memory",
   {
-    id: integer("id").primaryKey({ autoIncrement: true }),
-    at: text("at").notNull(),
+    id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+    at: timestamptz("at").notNull(),
     botId: text("bot_id").notNull(),
     botName: text("bot_name").notNull().default(""),
     summary: text("summary").notNull(),
-    extra: text("extra", { mode: "json" }).$type<Record<string, unknown>>(),
+    extra: jsonb<Record<string, unknown>>("extra"),
   },
   (table) => [index("team_memory_at_idx").on(table.at), index("team_memory_bot_idx").on(table.botId, table.at)],
 );

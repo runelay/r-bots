@@ -6,6 +6,7 @@ import { fakeRunelay, request, startTestServer, type TestServer, testDataDir } f
 import { readOrCreateSecret, runnerToken, runnerTokenFile } from "../../../config/runtime-secrets";
 import { getDb } from "../../../db";
 import { readSetting, writeSetting } from "../../../db/settings";
+import { settings } from "../../../db/tables";
 import { jevEnabled } from "../../approvals/services/jev.service";
 import { listConnections, runelayEnabled } from "../../connectors/services/runelay.service";
 import { voiceEnabled } from "../../voice/services/voice.service";
@@ -15,7 +16,9 @@ import {
   integrationSource,
   integrationUrl,
   onIntegrationChange,
+  readStored,
   resetIntegrationCache,
+  writeStored,
 } from "../services/integration-store.service";
 import { integrationFlags } from "../services/integrations.service";
 
@@ -52,8 +55,8 @@ beforeAll(async () => {
   server = await startTestServer();
 });
 
-afterEach(() => {
-  for (const id of ["elevenlabs", "jev", "runelay"] as const) clearStored(id);
+afterEach(async () => {
+  for (const id of ["elevenlabs", "jev", "runelay"] as const) await clearStored(id);
   process.env.RUNELAY_MCP_URL = saved.RUNELAY_MCP_URL;
   process.env.RUNELAY_MCP_TOKEN = saved.RUNELAY_MCP_TOKEN;
   delete process.env.ELEVENLABS_API_KEY;
@@ -131,10 +134,10 @@ describe("integrations", () => {
     expect(changes).toEqual(["elevenlabs"]);
     expect(seen.at(-1)).toMatchObject({ path: "/eleven/v1/user", key: goodKey });
 
-    const row = readSetting<Record<string, string>>("integration:elevenlabs", {}, getDb());
+    const row = await readSetting<Record<string, string>>("integration:elevenlabs", {}, getDb());
     expect(JSON.stringify(row)).not.toContain(goodKey);
     expect(row.keyRef).toBe("vault");
-    resetIntegrationCache();
+    await resetIntegrationCache();
     expect(integrationSecret("elevenlabs")).toBe(goodKey);
     expect(voiceEnabled()).toBe(true);
 
@@ -145,6 +148,22 @@ describe("integrations", () => {
     expect(removed.body).toMatchObject({ source: "env", status: "connected" });
     delete process.env.ELEVENLABS_API_KEY;
     expect(voiceEnabled()).toBe(false);
+  });
+
+  test("clearing a saved key deletes its settings row", async () => {
+    await writeStored("jev", goodKey, null);
+    expect(readStored("jev")?.last4).toBe("1234");
+    expect(await clearStored("jev")).toBe(true);
+    const rows = await getDb().select({ key: settings.key }).from(settings);
+    expect(rows.map((row) => row.key)).not.toContain("integration:jev");
+    expect(readStored("jev")).toBeNull();
+    expect(integrationSecret("jev")).toBeNull();
+    expect(await clearStored("jev")).toBe(false);
+    await writeStored("jev", goodKey, null);
+    const removed = await request<Item>("/integrations/jev", { method: "DELETE" });
+    expect(removed.status).toBe(200);
+    expect(removed.body).toMatchObject({ configured: false, source: null });
+    expect(readStored("jev")).toBeNull();
   });
 
   test("validates jev with a tiny question and reports outages", async () => {
@@ -221,9 +240,9 @@ describe("integrations", () => {
 
   test("a stored key that no longer opens shows as invalid", async () => {
     await request("/integrations/jev", { method: "PUT", body: { key: goodKey } });
-    const row = readSetting<Record<string, string>>("integration:jev", {}, getDb());
-    writeSetting("integration:jev", { ...row, tag: Buffer.alloc(16).toString("base64") }, getDb());
-    resetIntegrationCache();
+    const row = await readSetting<Record<string, string>>("integration:jev", {}, getDb());
+    await writeSetting("integration:jev", { ...row, tag: Buffer.alloc(16).toString("base64") }, getDb());
+    await resetIntegrationCache();
     expect(integrationSource("jev")).toBeNull();
     const items = await list();
     expect(items.jev.status).toBe("invalid");
@@ -240,8 +259,8 @@ describe("integrations", () => {
     try {
       const saved = await request<Item>("/integrations/jev", { method: "PUT", body: { key: goodKey } });
       expect(saved.body.status).toBe("connected");
-      expect(readSetting<Record<string, string>>("integration:jev", {}, getDb()).keyRef).toBe("vault");
-      resetIntegrationCache();
+      expect((await readSetting<Record<string, string>>("integration:jev", {}, getDb())).keyRef).toBe("vault");
+      await resetIntegrationCache();
       expect(integrationSecret("jev")).toBe(goodKey);
     } finally {
       off();
@@ -266,9 +285,9 @@ describe("integrations", () => {
     process.env.VAULT_KEY_FILE = join(testDataDir(), "missing.key");
     try {
       await request("/integrations/jev", { method: "PUT", body: { key: goodKey } });
-      const row = readSetting<Record<string, string>>("integration:jev", {}, getDb());
+      const row = await readSetting<Record<string, string>>("integration:jev", {}, getDb());
       expect(row.keyRef).toBe("data");
-      resetIntegrationCache();
+      await resetIntegrationCache();
       expect(integrationSecret("jev")).toBe(goodKey);
       expect(statSync(join(testDataDir(), "integrations.key")).mode & 0o777).toBe(0o600);
     } finally {
@@ -278,7 +297,7 @@ describe("integrations", () => {
 });
 
 describe("runtime secrets", () => {
-  test("runner token is generated in the data dir and ignores the old env variable", () => {
+  test("runner token is generated in the data dir and ignores the old env variable", async () => {
     process.env.RUNNER_TOKEN = "from-env-token-0123456789abcdef";
     const token = runnerToken();
     delete process.env.RUNNER_TOKEN;
@@ -288,7 +307,7 @@ describe("runtime secrets", () => {
     expect(runnerToken()).toBe(token);
   });
 
-  test("reuses a stored secret and replaces one that is too short", () => {
+  test("reuses a stored secret and replaces one that is too short", async () => {
     const dir = join(testDataDir(), "secrets");
     rmSync(dir, { recursive: true, force: true });
     readOrCreateSecret("seed", 32, dir);

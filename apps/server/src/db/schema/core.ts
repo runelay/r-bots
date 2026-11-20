@@ -1,9 +1,10 @@
 import { sql } from "drizzle-orm";
-import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { boolean, index, integer, pgTable, primaryKey, text, uniqueIndex } from "drizzle-orm/pg-core";
+import { jsonb, timestamptz } from "./types";
 
 type Json = Record<string, unknown>;
 
-export const bots = sqliteTable(
+export const bots = pgTable(
   "bots",
   {
     id: text("id").primaryKey(),
@@ -13,35 +14,35 @@ export const bots = sqliteTable(
     glyph: text("glyph").notNull().default(""),
     instructions: text("instructions").notNull().default(""),
     permission: text("permission"),
-    builtIn: integer("built_in", { mode: "boolean" }).notNull().default(false),
-    capabilities: text("capabilities", { mode: "json" }).$type<Json>().notNull().default(sql`'{}'`),
-    schedules: text("schedules", { mode: "json" }).$type<Json[]>().notNull().default(sql`'[]'`),
-    engine: text("engine", { mode: "json" }).$type<Json>(),
-    decisions: text("decisions", { mode: "json" }).$type<Json>(),
-    connectors: text("connectors", { mode: "json" }).$type<Json>(),
-    memory: text("memory", { mode: "json" }).$type<Json>(),
-    computer: text("computer", { mode: "json" }).$type<Json>(),
-    voice: text("voice", { mode: "json" }).$type<Json>(),
-    sidebar: text("sidebar", { mode: "json" }).$type<Json>(),
-    extra: text("extra", { mode: "json" }).$type<Json>(),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-    archivedAt: text("archived_at"),
-    deletedAt: text("deleted_at"),
+    builtIn: boolean("built_in").notNull().default(false),
+    capabilities: jsonb<Json>("capabilities").notNull().default(sql`'{}'`),
+    schedules: jsonb<Json[]>("schedules").notNull().default(sql`'[]'`),
+    engine: jsonb<Json>("engine"),
+    decisions: jsonb<Json>("decisions"),
+    connectors: jsonb<Json>("connectors"),
+    memory: jsonb<Json>("memory"),
+    computer: jsonb<Json>("computer"),
+    voice: jsonb<Json>("voice"),
+    sidebar: jsonb<Json>("sidebar"),
+    extra: jsonb<Json>("extra"),
+    createdAt: timestamptz("created_at").notNull(),
+    updatedAt: timestamptz("updated_at").notNull(),
+    archivedAt: timestamptz("archived_at"),
+    deletedAt: timestamptz("deleted_at"),
   },
   (table) => [index("bots_archived_idx").on(table.archivedAt)],
 );
 
-export const groups = sqliteTable("groups", {
+export const groups = pgTable("groups", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  extra: text("extra", { mode: "json" }).$type<Json>(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-  archivedAt: text("archived_at"),
+  extra: jsonb<Json>("extra"),
+  createdAt: timestamptz("created_at").notNull(),
+  updatedAt: timestamptz("updated_at").notNull(),
+  archivedAt: timestamptz("archived_at"),
 });
 
-export const groupMembers = sqliteTable(
+export const groupMembers = pgTable(
   "group_members",
   {
     groupId: text("group_id")
@@ -53,26 +54,26 @@ export const groupMembers = sqliteTable(
   (table) => [primaryKey({ columns: [table.groupId, table.botId] }), index("group_members_bot_idx").on(table.botId)],
 );
 
-export const sections = sqliteTable("sections", {
+export const sections = pgTable("sections", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   position: integer("position").notNull().default(0),
-  extra: text("extra", { mode: "json" }).$type<Json>(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at"),
-  archivedAt: text("archived_at"),
+  extra: jsonb<Json>("extra"),
+  createdAt: timestamptz("created_at").notNull(),
+  updatedAt: timestamptz("updated_at"),
+  archivedAt: timestamptz("archived_at"),
 });
 
-export const threads = sqliteTable(
+export const threads = pgTable(
   "threads",
   {
     id: text("id").primaryKey(),
     ownerId: text("owner_id").notNull(),
     sessionId: text("session_id").notNull(),
-    lastMessage: text("last_message", { mode: "json" }).$type<Json>(),
+    lastMessage: jsonb<Json>("last_message"),
     unread: integer("unread").notNull().default(0),
-    readAt: text("read_at"),
-    archivedAt: text("archived_at"),
+    readAt: timestamptz("read_at"),
+    archivedAt: timestamptz("archived_at"),
   },
   (table) => [
     uniqueIndex("threads_live_owner_idx").on(table.ownerId).where(sql`archived_at is null`),
@@ -80,8 +81,8 @@ export const threads = sqliteTable(
   ],
 );
 
-export const settings = sqliteTable("settings", {
+export const settings = pgTable("settings", {
   key: text("key").primaryKey(),
-  value: text("value", { mode: "json" }).notNull(),
-  updatedAt: text("updated_at").notNull(),
+  value: jsonb<unknown>("value").notNull(),
+  updatedAt: timestamptz("updated_at").notNull(),
 });

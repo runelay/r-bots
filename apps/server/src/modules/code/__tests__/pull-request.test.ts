@@ -266,7 +266,7 @@ describe("gh lookups", () => {
 });
 
 async function openTask(name: string, options: { origin?: boolean } = { origin: true }) {
-  makeRepo(name, options);
+  await makeRepo(name, options);
   await listRepos(true);
   const session = await newSession(`bot-${name}`);
   const { workspace } = await openWorkspace(session, `bot-${name}`, name, "pr task");
@@ -333,21 +333,25 @@ describe("refreshing a workspace PR", () => {
     const first = await refreshPr(session);
     expect(first?.number).toBe(7);
     expect(workspace.pr?.ci).toBe("failure");
-    expect(factsOf(session, "code.pr")).toHaveLength(1);
-    expect(factsOf(session, "code.ci")[0].data).toMatchObject({ outcome: "failure", log: "FAIL a.test.ts", number: 7 });
-    expect(factsOf(session, "code.review")[0].data).toMatchObject({
+    expect(await factsOf(session, "code.pr")).toHaveLength(1);
+    expect((await factsOf(session, "code.ci"))[0].data).toMatchObject({
+      outcome: "failure",
+      log: "FAIL a.test.ts",
+      number: 7,
+    });
+    expect((await factsOf(session, "code.review"))[0].data).toMatchObject({
       state: "changes_requested",
       author: "rev",
       body: "fix",
     });
 
     await refreshPr(session);
-    expect(factsOf(session, "code.pr")).toHaveLength(1);
+    expect(await factsOf(session, "code.pr")).toHaveLength(1);
 
     current = view(7, { statusCheckRollup: [passing], reviewDecision: "APPROVED" });
     await refreshPr(session);
-    expect(factsOf(session, "code.ci").at(-1)?.data).toMatchObject({ outcome: "success", checks: 1 });
-    expect(factsOf(session, "code.review").at(-1)?.data).toMatchObject({ state: "approved" });
+    expect((await factsOf(session, "code.ci")).at(-1)?.data).toMatchObject({ outcome: "success", checks: 1 });
+    expect((await factsOf(session, "code.review")).at(-1)?.data).toMatchObject({ state: "approved" });
 
     current = view(7, {
       statusCheckRollup: [passing],
@@ -361,7 +365,7 @@ describe("refreshing a workspace PR", () => {
 
     workspace.pr = { ...(workspace.pr as NonNullable<WorkspaceState["pr"]>), number: 99 };
     await refreshPr(session);
-    expect(factsOf(session, "code.pr").at(-1)?.data).toMatchObject({ number: 100, workspaceId: workspace.id });
+    expect((await factsOf(session, "code.pr")).at(-1)?.data).toMatchObject({ number: 100, workspaceId: workspace.id });
 
     gh({ "pr view": { code: 1 } });
     expect(await refreshPr(session)).toBe(workspace.pr ?? null);
@@ -382,8 +386,8 @@ describe("refreshing a workspace PR", () => {
     const pending = refreshPr(session);
     expect(await refreshPr(session)).toBeNull();
     expect((await pending)?.number).toBe(3);
-    expect(factsOf(session, "code.ci")[0].data.log).toBeNull();
-    expect(factsOf(session, "code.review")[0].data).toMatchObject({ author: null, body: null, comments: [] });
+    expect((await factsOf(session, "code.ci"))[0].data.log).toBeNull();
+    expect((await factsOf(session, "code.review"))[0].data).toMatchObject({ author: null, body: null, comments: [] });
   });
 
   test("tolerates log and review lookups that throw", async () => {
@@ -408,8 +412,8 @@ describe("refreshing a workspace PR", () => {
       spy.mockRestore();
     }
     expect(calls).toBe(2);
-    expect(factsOf(session, "code.ci")[0].data.log).toBeNull();
-    expect(factsOf(session, "code.review")[0].data).toMatchObject({ author: null, comments: [] });
+    expect((await factsOf(session, "code.ci"))[0].data.log).toBeNull();
+    expect((await factsOf(session, "code.review"))[0].data).toMatchObject({ author: null, comments: [] });
   });
 
   test("kicks a PR from a URL or schedules the next check", async () => {
@@ -478,7 +482,7 @@ describe("finishing and reopening", () => {
     });
     expect(existsSync(workspace.path)).toBe(false);
     expect(activeWorkspace(session)).toBeNull();
-    expect(factsOf(session, "code.workspace").at(-1)?.data).toMatchObject({ action: "removed", by: "user" });
+    expect((await factsOf(session, "code.workspace")).at(-1)?.data).toMatchObject({ action: "removed", by: "user" });
     expect((await listWorktrees()).find((item) => item.id === workspace.id)?.status).toBe("removed");
 
     const local = await openTask("pr-finish-local", { origin: false });
@@ -527,10 +531,14 @@ describe("watcher", () => {
     await tickOnce(5_000);
     await until(() => !activeWorkspace(merged.session));
     expect(activeWorkspace(merged.session)).toBeNull();
-    expect(factsOf(merged.session, "code.workspace").at(-1)?.data).toMatchObject({ action: "removed", by: "auto" });
+    const removedFact = async () =>
+      (await factsOf(merged.session, "code.workspace")).find((fact) => fact.data.action === "removed");
+    for (let attempt = 0; attempt < 400 && !(await removedFact()); attempt++) await Bun.sleep(5);
+    expect((await removedFact())?.data).toMatchObject({ action: "removed", by: "auto" });
     expect(activeWorkspace(fresh.session)).not.toBeNull();
     await until(() => open.workspace.pr?.ci === "none");
     expect(open.workspace.pr?.ci).toBe("none");
+    await until(() => fake.calls.some((call) => call.args.join(" ").startsWith("pr view 34")));
     expect(fake.calls.some((call) => call.args.join(" ").startsWith("pr view 34"))).toBe(true);
     expect(activeWorkspace(pending.session)).not.toBeNull();
     stopWatching();

@@ -4,7 +4,7 @@ export async function settleOrphanTurns() {
   let repaired = 0;
   for (const session of allStoredSessions()) {
     const open = new Set<string>();
-    for (const line of session.log.lines) {
+    for (const line of await session.log.lines()) {
       if (!line.includes("turn.")) continue;
       try {
         for (const fact of (JSON.parse(line) as { facts?: Fact[] }).facts ?? []) {

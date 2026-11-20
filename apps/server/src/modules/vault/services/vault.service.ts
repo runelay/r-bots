@@ -99,7 +99,7 @@ function ensureKeyFile() {
 }
 
 export async function loadVault() {
-  index = loadSecretMetas();
+  index = await loadSecretMetas();
   loaded = true;
   try {
     ensureKeyFile();
@@ -109,7 +109,7 @@ export async function loadVault() {
 }
 
 async function saveIndex() {
-  saveSecretMetas(index);
+  await saveSecretMetas(index);
 }
 
 export function envNameOf(name: string) {
@@ -156,8 +156,8 @@ async function writeServerCopy(name: string, value: string) {
   const ct = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   key.fill(0);
-  saveSecretMetas(index);
-  writeSealed(name, { iv, tag, ct });
+  await saveSecretMetas(index);
+  await writeSealed(name, { iv, tag, ct });
 }
 
 async function readServerCopy(name: string) {
@@ -165,7 +165,7 @@ async function readServerCopy(name: string) {
   if (!key)
     throw new VaultError("no_key", "O servidor perdeu a chave do cofre e não consegue abrir a cópia guardada aqui.");
   try {
-    const sealed = readSealed(name);
+    const sealed = await readSealed(name);
     if (!sealed) throw new Error("missing");
     const decipher = createDecipheriv("aes-256-gcm", key, sealed.iv);
     decipher.setAAD(aad(name));
@@ -182,11 +182,11 @@ async function readServerCopy(name: string) {
 }
 
 export async function audit(entry: Record<string, unknown>) {
-  addAudit(redactDeep({ at: new Date().toISOString(), ...entry }) as Record<string, unknown>);
+  await addAudit(redactDeep({ at: new Date().toISOString(), ...entry }) as Record<string, unknown>);
 }
 
 export async function readAudit(name: string | null, limit: number): Promise<Record<string, unknown>[]> {
-  return readAuditRows(name, limit);
+  return await readAuditRows(name, limit);
 }
 
 export function normalizeHost(value: string | null | undefined) {
@@ -449,7 +449,7 @@ export async function saveSecretMeta(name: string, body: Record<string, unknown>
   index[name] = meta;
   await saveIndex();
   if (body.rotated === true && meta.storage === "mac+server") {
-    writeSealed(name, null);
+    await writeSealed(name, null);
     meta.storage = "mac";
     await saveIndex();
   }
@@ -462,7 +462,7 @@ export async function deleteSecret(name: string) {
   const existed = Boolean(index[name]);
   delete index[name];
   await saveIndex();
-  writeSealed(name, null);
+  await writeSealed(name, null);
   forgetSecretValue(name);
   if (existed) await audit({ name, outcome: "deleted", by: "person" });
   return existed;
@@ -472,7 +472,7 @@ export async function setServerCopy(name: string, value: string | null) {
   const meta = index[name];
   if (!meta) throw new VaultError("not_found", "Esse segredo não existe no cofre.");
   if (value === null) {
-    writeSealed(name, null);
+    await writeSealed(name, null);
     meta.storage = "mac";
   } else {
     await writeServerCopy(name, value);

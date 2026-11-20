@@ -74,7 +74,7 @@ async function storeRow(owner: string, meta: UploadMeta, content: string) {
     mime: meta.mime,
     botId: owner,
   });
-  saveUploadRow(owner, meta, { blobKey: blob.key, sha256: blob.sha256, thumbKey: null });
+  await saveUploadRow(owner, meta, { blobKey: blob.key, sha256: blob.sha256, thumbKey: null });
 }
 
 function scribeReplies(...replies: Array<Response | Error>) {
@@ -98,14 +98,14 @@ const sendFile = () => uploadTools(botId)[0];
 
 beforeEach(async () => {
   await resetData();
-  getDb().delete(tables.uploads).run();
+  await getDb().delete(tables.uploads);
   media = mediaTools();
   fakeProcesses(media.handler);
   warn = spyOn(console, "warn").mockImplementation(() => undefined);
   process.env.ELEVENLABS_API_KEY = "test-eleven-key";
 });
 
-afterEach(() => {
+afterEach(async () => {
   warn.mockRestore();
   fetchSpy?.mockRestore();
   fetchSpy = null;
@@ -113,7 +113,7 @@ afterEach(() => {
 });
 
 describe("helpers", () => {
-  test("kindOf classifies by mime and keeps svg as a file", () => {
+  test("kindOf classifies by mime and keeps svg as a file", async () => {
     expect(kindOf("image/png", "a.png")).toBe("image");
     expect(kindOf("image/svg+xml", "a.svg")).toBe("file");
     expect(kindOf("image/png", "a.svg")).toBe("file");
@@ -122,7 +122,7 @@ describe("helpers", () => {
     expect(kindOf("application/pdf", "a.pdf")).toBe("file");
   });
 
-  test("attachmentsTitle, fileEventOf and the guide", () => {
+  test("attachmentsTitle, fileEventOf and the guide", async () => {
     expect(attachmentsTitle([])).toBe("");
     expect(attachmentsTitle([{ kind: "file", name: "a.txt" }])).toBe("📎 a.txt");
     expect(
@@ -231,7 +231,7 @@ describe("audio", () => {
     expect(prepared.text).toContain(`áudio "voice.m4a" (1:05): [áudio: olá mundo]`);
     expect(bodies[0].get("model_id")).toBe("scribe_v2");
     expect(fetchSpy?.mock.calls[0][0]).toBe("https://api.elevenlabs.io/v1/speech-to-text");
-    expect(readUploadRow(botId, meta.uploadId)).toMatchObject({
+    expect(await readUploadRow(botId, meta.uploadId)).toMatchObject({
       transcript: "olá mundo",
       transcriptSource: "scribe",
     });
@@ -732,7 +732,9 @@ describe("storage", () => {
   test("a stored thumb is brought back with the file", async () => {
     media.options.probe = { streams: [{ codec_type: "video", width: 2000, height: 1000 }] };
     const meta = await importFixture("wide.png", png);
-    expect(readUploadRow(botId, meta.uploadId)?.thumbKey).toBe(blobKeys(botId).derived(meta.uploadId, "thumb.jpg"));
+    expect((await readUploadRow(botId, meta.uploadId))?.thumbKey).toBe(
+      blobKeys(botId).derived(meta.uploadId, "thumb.jpg"),
+    );
     await prepareAttachments(botId, [meta], false);
     await rm(join(uploadsDir(), ".derived"), { recursive: true, force: true });
     await rm(uploadPath(botId, meta));

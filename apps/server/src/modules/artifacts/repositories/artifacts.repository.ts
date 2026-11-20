@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
-import { type Db, getDb } from "../../../db";
+import { type Db, getDb, writeTransaction } from "../../../db";
 import { artifacts, artifactVersions } from "../../../db/tables";
 import type { ArtifactKind, ArtifactMeta } from "../services/artifacts.service";
 
@@ -11,9 +11,9 @@ export function artifactContentKey(botId: string, artifactId: string, version: n
   return `bots/${botId}/artifacts/${artifactId}/v${version}.${artifactExtension(kind)}`;
 }
 
-function assemble(rows: (typeof artifacts.$inferSelect)[], db: Db): ArtifactMeta[] {
+async function assemble(rows: (typeof artifacts.$inferSelect)[], db: Db): Promise<ArtifactMeta[]> {
   if (!rows.length) return [];
-  const versions = db
+  const versions = await db
     .select()
     .from(artifactVersions)
     .where(
@@ -22,8 +22,7 @@ function assemble(rows: (typeof artifacts.$inferSelect)[], db: Db): ArtifactMeta
         rows.map((row) => row.id),
       ),
     )
-    .orderBy(asc(artifactVersions.n))
-    .all();
+    .orderBy(asc(artifactVersions.n));
   return rows.map((row) => ({
     id: row.id,
     botId: row.botId,
@@ -43,33 +42,36 @@ function assemble(rows: (typeof artifacts.$inferSelect)[], db: Db): ArtifactMeta
   }));
 }
 
-export function readArtifactRow(botId: string, artifactId: string, db: Db = getDb()) {
-  const row = db
+export async function readArtifactRow(botId: string, artifactId: string, db: Db = getDb()) {
+  const [row] = await db
     .select()
     .from(artifacts)
     .where(and(eq(artifacts.id, artifactId), eq(artifacts.botId, botId)))
-    .get();
-  return row ? (assemble([row], db)[0] ?? null) : null;
+    .limit(1);
+  return row ? ((await assemble([row], db))[0] ?? null) : null;
 }
 
-export function listArtifactRows(botId: string, db: Db = getDb()) {
+export async function listArtifactRows(botId: string, db: Db = getDb()) {
   return assemble(
-    db.select().from(artifacts).where(eq(artifacts.botId, botId)).orderBy(desc(artifacts.updatedAt)).all(),
+    await db
+      .select()
+      .from(artifacts)
+      .where(eq(artifacts.botId, botId))
+      .orderBy(desc(artifacts.updatedAt), asc(artifacts.id)),
     db,
   );
 }
 
-export function hasArtifactVersion(artifactId: string, version: number, db: Db = getDb()) {
-  return Boolean(
-    db
-      .select({ n: artifactVersions.n })
-      .from(artifactVersions)
-      .where(and(eq(artifactVersions.artifactId, artifactId), eq(artifactVersions.n, version)))
-      .get(),
-  );
+export async function hasArtifactVersion(artifactId: string, version: number, db: Db = getDb()) {
+  const [row] = await db
+    .select({ n: artifactVersions.n })
+    .from(artifactVersions)
+    .where(and(eq(artifactVersions.artifactId, artifactId), eq(artifactVersions.n, version)))
+    .limit(1);
+  return Boolean(row);
 }
 
-export function saveArtifactRow(meta: ArtifactMeta, db: Db = getDb()) {
+export async function saveArtifactRow(meta: ArtifactMeta, db: Db = getDb()) {
   const row = {
     id: meta.id,
     botId: meta.botId,
@@ -79,23 +81,21 @@ export function saveArtifactRow(meta: ArtifactMeta, db: Db = getDb()) {
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,
   };
-  db.$client
-    .transaction(() => {
-      db.insert(artifacts).values(row).onConflictDoUpdate({ target: artifacts.id, set: row }).run();
-      for (const version of meta.versions) {
-        const values = {
-          artifactId: meta.id,
-          n: version.n,
-          author: version.author ?? null,
-          size: version.size,
-          blobKey: artifactContentKey(meta.botId, meta.id, version.n, meta.kind),
-          createdAt: version.createdAt,
-        };
-        db.insert(artifactVersions)
-          .values(values)
-          .onConflictDoUpdate({ target: [artifactVersions.artifactId, artifactVersions.n], set: values })
-          .run();
-      }
-    })
-    .immediate();
+  await writeTransaction(async (tx) => {
+    await tx.insert(artifacts).values(row).onConflictDoUpdate({ target: artifacts.id, set: row });
+    for (const version of meta.versions) {
+      const values = {
+        artifactId: meta.id,
+        n: version.n,
+        author: version.author ?? null,
+        size: version.size,
+        blobKey: artifactContentKey(meta.botId, meta.id, version.n, meta.kind),
+        createdAt: version.createdAt,
+      };
+      await tx
+        .insert(artifactVersions)
+        .values(values)
+        .onConflictDoUpdate({ target: [artifactVersions.artifactId, artifactVersions.n], set: values });
+    }
+  }, db);
 }

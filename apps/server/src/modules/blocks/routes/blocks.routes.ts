@@ -54,34 +54,35 @@ async function written<T>(res: Res, bot: BotDefinition, status: number, payload:
 async function notesRoute(req: Req, res: Res, url: URL, method: string, bot: BotDefinition, path: string[]) {
   const [first, second] = path;
   if (!first) {
-    if (method === "GET") return sendJson(res, 200, listNotes(bot.id, queryOf(url)));
+    if (method === "GET") return sendJson(res, 200, await listNotes(bot.id, queryOf(url)));
     if (method === "POST") {
-      const { note, event } = createNote(bot.id, await bodyOf(req), "user");
+      const { note, event } = await createNote(bot.id, await bodyOf(req), "user");
       return written(res, bot, 201, note, event);
     }
   }
-  if (first === "tree" && !second && method === "GET") return sendJson(res, 200, noteTree(bot.id, queryOf(url)));
-  if (first === "search" && !second && method === "GET") return sendJson(res, 200, searchNotes(bot.id, queryOf(url)));
+  if (first === "tree" && !second && method === "GET") return sendJson(res, 200, await noteTree(bot.id, queryOf(url)));
+  if (first === "search" && !second && method === "GET")
+    return sendJson(res, 200, await searchNotes(bot.id, queryOf(url)));
   if (first === "resolve" && !second && method === "GET") {
     const query = queryOf(url);
-    return sendJson(res, 200, resolveNote(bot.id, query.title ?? "", query.folder));
+    return sendJson(res, 200, await resolveNote(bot.id, query.title ?? "", query.folder));
   }
   if (first && !second) {
-    if (method === "GET") return sendJson(res, 200, noteOf(bot.id, requireNote(bot.id, first)));
+    if (method === "GET") return sendJson(res, 200, await noteOf(bot.id, await requireNote(bot.id, first)));
     if (method === "PUT") {
-      const { note, event } = writeNote(bot.id, first, await bodyOf(req), "user");
+      const { note, event } = await writeNote(bot.id, first, await bodyOf(req), "user");
       return written(res, bot, 200, note, event);
     }
     if (method === "PATCH") {
-      const { note, event } = patchNote(bot.id, first, await bodyOf(req), "user");
+      const { note, event } = await patchNote(bot.id, first, await bodyOf(req), "user");
       return written(res, bot, 200, note, event);
     }
-    if (method === "DELETE") return written(res, bot, 200, { ok: true }, deleteNote(bot.id, first, "user"));
+    if (method === "DELETE") return written(res, bot, 200, { ok: true }, await deleteNote(bot.id, first, "user"));
   }
   if (first && second === "backlinks" && method === "GET")
-    return sendJson(res, 200, noteBacklinks(bot.id, first, queryOf(url)));
+    return sendJson(res, 200, await noteBacklinks(bot.id, first, queryOf(url)));
   if (first && second === "move" && method === "POST") {
-    const { note, relinked, event } = moveNote(bot.id, first, await bodyOf(req), "user");
+    const { note, relinked, event } = await moveNote(bot.id, first, await bodyOf(req), "user");
     return written(res, bot, 200, { note, relinked }, event);
   }
   return notFound(res);
@@ -90,51 +91,51 @@ async function notesRoute(req: Req, res: Res, url: URL, method: string, bot: Bot
 async function sheetsRoute(req: Req, res: Res, url: URL, method: string, bot: BotDefinition, path: string[]) {
   const [sheetId, section, tabId, action] = path;
   if (!sheetId) {
-    if (method === "GET") return sendJson(res, 200, listSheets(bot.id, queryOf(url)));
+    if (method === "GET") return sendJson(res, 200, await listSheets(bot.id, queryOf(url)));
     if (method === "POST") {
-      const { sheet, event } = createSheet(bot.id, await bodyOf(req), "user");
+      const { sheet, event } = await createSheet(bot.id, await bodyOf(req), "user");
       return written(res, bot, 201, sheet, event);
     }
     return notFound(res);
   }
   if (!section) {
-    if (method === "GET") return sendJson(res, 200, sheetOf(requireSheet(bot.id, sheetId)));
+    if (method === "GET") return sendJson(res, 200, await sheetOf(await requireSheet(bot.id, sheetId)));
     if (method === "PATCH") {
-      const { sheet, event } = renameSheet(bot.id, sheetId, await bodyOf(req), "user");
+      const { sheet, event } = await renameSheet(bot.id, sheetId, await bodyOf(req), "user");
       return written(res, bot, 200, sheet, event);
     }
-    if (method === "DELETE") return written(res, bot, 200, { ok: true }, deleteSheet(bot.id, sheetId, "user"));
+    if (method === "DELETE") return written(res, bot, 200, { ok: true }, await deleteSheet(bot.id, sheetId, "user"));
     return notFound(res);
   }
   if (section !== "tabs") return notFound(res);
   if (!tabId && method === "POST") {
-    const { tab, event } = addTab(bot.id, sheetId, await bodyOf(req), "user");
+    const { tab, event } = await addTab(bot.id, sheetId, await bodyOf(req), "user");
     return written(res, bot, 201, tab, event);
   }
   if (!tabId) return notFound(res);
   if (!action) {
     if (method === "PATCH") {
-      const { tab, event } = patchTab(bot.id, sheetId, tabId, await bodyOf(req), "user");
+      const { tab, event } = await patchTab(bot.id, sheetId, tabId, await bodyOf(req), "user");
       return written(res, bot, 200, tab, event);
     }
     if (method === "DELETE") {
-      const { sheet, event } = deleteTab(bot.id, sheetId, tabId, "user");
+      const { sheet, event } = await deleteTab(bot.id, sheetId, tabId, "user");
       return written(res, bot, 200, sheet, event);
     }
     return notFound(res);
   }
   if (action === "range" && method === "GET")
-    return sendJson(res, 200, readRange(bot.id, sheetId, tabId, url.searchParams.get("range")));
+    return sendJson(res, 200, await readRange(bot.id, sheetId, tabId, url.searchParams.get("range")));
   if (action === "cells" && method === "POST") {
-    const { result, event } = writeCells(bot.id, sheetId, tabId, await bodyOf(req), "user");
+    const { result, event } = await writeCells(bot.id, sheetId, tabId, await bodyOf(req), "user");
     return written(res, bot, 200, result, event);
   }
   if (action === "format" && method === "POST") {
-    const { result, event } = formatCells(bot.id, sheetId, tabId, await bodyOf(req), "user");
+    const { result, event } = await formatCells(bot.id, sheetId, tabId, await bodyOf(req), "user");
     return written(res, bot, 200, result, event);
   }
   if (action === "structure" && method === "POST") {
-    const { version, tab, event } = structure(bot.id, sheetId, tabId, await bodyOf(req), "user");
+    const { version, tab, event } = await structure(bot.id, sheetId, tabId, await bodyOf(req), "user");
     return written(res, bot, 200, { version, tab }, event);
   }
   return notFound(res);
@@ -163,7 +164,7 @@ async function agendaRoute(req: Req, res: Res, url: URL, method: string, bot: Bo
 async function exportsRoute(req: Req, res: Res, method: string, bot: BotDefinition, path: string[]) {
   const [exportId, file] = path;
   if (!exportId && method === "POST") return sendJson(res, 201, await createExport(bot.id, await bodyOf(req)));
-  if (exportId && !file && method === "GET") return sendJson(res, 200, readExport(bot.id, exportId));
+  if (exportId && !file && method === "GET") return sendJson(res, 200, await readExport(bot.id, exportId));
   if (exportId && file === "file" && method === "GET") {
     const found = await exportFile(bot.id, exportId);
     res.respond(

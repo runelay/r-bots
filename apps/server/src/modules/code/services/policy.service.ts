@@ -1,7 +1,6 @@
 import { homedir } from "node:os";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import { dataDir } from "../../../config/env";
-import { type DeliveryAsk, noDeliveryAsk } from "../../approvals/services/delivery-intent.service";
 import { hostHome, insideAllowedArea, insideHome } from "./repos.service";
 import type { WorkspaceState } from "./workspace.service";
 
@@ -118,17 +117,12 @@ function writeGate(workspace: WorkspaceState, raw: unknown): Gate {
   };
 }
 
-export function gateNative(
-  tool: string,
-  input: Record<string, unknown>,
-  workspace: WorkspaceState,
-  asked: DeliveryAsk = noDeliveryAsk,
-): Gate {
+export function gateNative(tool: string, input: Record<string, unknown>, workspace: WorkspaceState): Gate {
   if (tool === "Read") return readGate(workspace, input.file_path);
   if (tool === "Glob" || tool === "Grep") return readGate(workspace, input.path);
   if (tool === "Edit" || tool === "Write" || tool === "MultiEdit") return writeGate(workspace, input.file_path);
   if (tool === "NotebookEdit") return writeGate(workspace, input.notebook_path);
-  if (tool === "Bash") return gateCommand(String(input.command ?? ""), workspace, asked);
+  if (tool === "Bash") return gateCommand(String(input.command ?? ""), workspace);
   return { kind: "allow" };
 }
 
@@ -612,13 +606,7 @@ function pathVerdict(workspace: WorkspaceState, cwd: string, target: string, ver
   return hard(`${verb} ${shownPath(workspace, path)}, fora da tarefa?`, "Fora da worktree.");
 }
 
-function inspect(
-  segment: Segment,
-  tokens: string[],
-  cwd: string,
-  workspace: WorkspaceState,
-  asked: DeliveryAsk = noDeliveryAsk,
-): Verdict {
+function inspect(segment: Segment, tokens: string[], cwd: string, workspace: WorkspaceState): Verdict {
   const branch = workspace.branch;
   const [command, ...args] = tokens;
   const line = short(tokens.join(" "));
@@ -941,7 +929,7 @@ function inspect(
       ),
     );
     if (inner.length === 0 || rest.length === 0) return { level: "read" };
-    return inspect({ ...segment, piped: false }, inner, cwd, workspace, asked);
+    return inspect({ ...segment, piped: false }, inner, cwd, workspace);
   }
   if (command === "find") {
     const execAt = args.findIndex((arg) => arg === "-exec" || arg === "-execdir" || arg === "-ok" || arg === "-okdir");
@@ -961,7 +949,7 @@ function inspect(
       const inner = args
         .slice(execAt + 1, end < 0 ? undefined : end)
         .map((arg) => (arg === "{}" ? (roots[0] ?? ".") : arg));
-      return inspect({ ...segment, piped: false }, stripPrefix(inner), cwd, workspace, asked);
+      return inspect({ ...segment, piped: false }, stripPrefix(inner), cwd, workspace);
     }
     return { level: "read" };
   }
@@ -1047,7 +1035,7 @@ function inspect(
   return { level: "unknown", key: [command, args.find((arg) => !arg.startsWith("-"))].filter(Boolean).join(" ") };
 }
 
-export function gateCommand(command: string, workspace: WorkspaceState, asked: DeliveryAsk = noDeliveryAsk): Gate {
+export function gateCommand(command: string, workspace: WorkspaceState): Gate {
   const trimmed = command.trim();
   if (!trimmed) return { kind: "allow" };
   let segments: Segment[];
@@ -1097,11 +1085,11 @@ export function gateCommand(command: string, workspace: WorkspaceState, asked: D
       tokens[2] !== undefined &&
       !segment.dynamic
     ) {
-      const inner = gateCommand(tokens[2], workspace, asked);
+      const inner = gateCommand(tokens[2], workspace);
       if (inner.kind === "allow") continue;
       return inner;
     }
-    const verdict = inspect(segment, tokens, cwd, workspace, asked);
+    const verdict = inspect(segment, tokens, cwd, workspace);
     if ("kind" in verdict) return verdict;
   }
   return { kind: "allow" };

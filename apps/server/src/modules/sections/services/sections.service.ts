@@ -13,11 +13,11 @@ export interface Section {
 let sections: Section[] = [];
 
 export async function loadSections() {
-  sections = loadSectionRows();
+  sections = await loadSectionRows();
 }
 
-function save(section: Section) {
-  saveSectionRow(section);
+async function save(section: Section) {
+  await saveSectionRow(section);
 }
 
 export function publicSection(section: Section) {
@@ -64,7 +64,7 @@ export async function createSection(input: unknown) {
     archivedAt: null,
   };
   sections.push(section);
-  save(section);
+  await save(section);
   return section;
 }
 
@@ -77,7 +77,7 @@ export async function updateSection(id: string, input: unknown) {
   }
   if (raw.name !== undefined) section.name = validName(raw.name);
   if (raw.order !== undefined) section.order = validOrder(raw.order);
-  save(section);
+  await save(section);
   return section;
 }
 
@@ -85,6 +85,6 @@ export async function archiveSection(id: string) {
   const section = sections.find((item) => item.id === id && !item.archivedAt);
   if (!section) return null;
   section.archivedAt = new Date().toISOString();
-  save(section);
+  await save(section);
   return section;
 }

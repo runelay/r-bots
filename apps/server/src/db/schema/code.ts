@@ -1,6 +1,7 @@
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { boolean, index, pgTable, text } from "drizzle-orm/pg-core";
+import { jsonb, timestamptz } from "./types";
 
-export const codeWorkspaces = sqliteTable(
+export const codeWorkspaces = pgTable(
   "code_workspaces",
   {
     id: text("id").primaryKey(),
@@ -12,12 +13,12 @@ export const codeWorkspaces = sqliteTable(
     base: text("base"),
     baseCommit: text("base_commit"),
     path: text("path").notNull(),
-    pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+    pinned: boolean("pinned").notNull().default(false),
     status: text("status").notNull(),
     prUrl: text("pr_url"),
-    extra: text("extra", { mode: "json" }).$type<Record<string, unknown>>(),
-    createdAt: text("created_at").notNull(),
-    lastAccessedAt: text("last_accessed_at"),
+    extra: jsonb<Record<string, unknown>>("extra"),
+    createdAt: timestamptz("created_at").notNull(),
+    lastAccessedAt: timestamptz("last_accessed_at"),
   },
   (table) => [
     index("code_workspaces_bot_idx").on(table.botId),
@@ -25,10 +26,10 @@ export const codeWorkspaces = sqliteTable(
   ],
 );
 
-export const codeRepos = sqliteTable("code_repos", {
+export const codeRepos = pgTable("code_repos", {
   path: text("path").primaryKey(),
   name: text("name").notNull(),
   reason: text("reason"),
   addedBy: text("added_by"),
-  addedAt: text("added_at").notNull(),
+  addedAt: timestamptz("added_at").notNull(),
 });

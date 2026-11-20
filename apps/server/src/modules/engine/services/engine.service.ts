@@ -531,9 +531,7 @@ const maxGroupTurns = 4;
 function taggedLog(log: EventLog, botId: string): EventLog {
   const tag = (fact: Fact): Fact => ({ ...fact, data: { ...fact.data, botId } });
   return {
-    get lines() {
-      return log.lines;
-    },
+    lines: () => log.lines(),
     get size() {
       return log.size;
     },
@@ -543,12 +541,13 @@ function taggedLog(log: EventLog, botId: string): EventLog {
     progress: (fact: Fact) => log.progress(tag(fact)),
     subscribe: (listener: (line: string) => void) => log.subscribe(listener),
     load: () => log.load(),
+    flush: () => log.flush(),
   } as unknown as EventLog;
 }
 
-function groupTranscript(session: StoredSession, limit: number) {
+async function groupTranscript(session: StoredSession, limit: number) {
   const items: string[] = [];
-  for (const line of session.log.lines) {
+  for (const line of await session.log.lines()) {
     try {
       for (const fact of JSON.parse(line).facts as Fact[]) {
         if (fact.type === "delivery.consumed") {
@@ -569,7 +568,7 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
   if (!group || group.archivedAt) return;
   const members = activeMembers(group);
   if (members.length === 0) return;
-  const before = groupTranscript(session, 12);
+  const before = await groupTranscript(session, 12);
   const mentioned = mentionedMembers(delivery.text, members);
   const queue: { bot: BotDefinition; note: string | null }[] = [];
   if (mentioned.length > 0) {
@@ -599,7 +598,7 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
       roster,
       "",
       "Conversa recente:",
-      groupTranscript(session, 12) || "(início do grupo)",
+      (await groupTranscript(session, 12)) || "(início do grupo)",
       "",
       next.note ? `${next.note}` : "",
       `Mensagem da pessoa: ${requestText(delivery)}`,
@@ -646,8 +645,8 @@ async function drain(session: StoredSession, runtime: Runtime) {
           error: error instanceof Error ? error.message : String(error),
         });
       }
-      settleCompletion(delivery.deliveryId);
       if (runtime.queue.length === 0) setStatus(session.meta.sessionId, session.meta.botId, "idle");
+      settleCompletion(delivery.deliveryId);
     }
   } finally {
     draining.delete(session.meta.sessionId);
@@ -877,9 +876,7 @@ async function executeProvider(run: ProviderRun) {
         prompt: run.prompt,
         ...(run.images?.length ? { images: run.images } : {}),
         resume: run.resume,
-        mcp: needsMcp
-          ? { url: `${mcpBaseFor()}/mcp/${bot.id}/${session.meta.sessionId}`, token }
-          : null,
+        mcp: needsMcp ? { url: `${mcpBaseFor()}/mcp/${bot.id}/${session.meta.sessionId}`, token } : null,
         workKey: `${bot.id}/${run.ownerCallId ? "delegate" : session.meta.sessionId}`,
         code:
           coding && codeWorkspace
@@ -991,20 +988,20 @@ function withdrawDelivery(session: StoredSession, hooks: DelegationHooks, reason
   const runtime = runtimes.get(session.meta.sessionId);
   if (!runtime) return;
   const index = runtime.queue.findIndex((item) => item.delegation === hooks);
-    settleCompletion(dropped.deliveryId);
   if (index >= 0) {
     const [dropped] = runtime.queue.splice(index, 1);
     hooks.finish({ outcome: "cancelled", reply: "" });
+    settleCompletion(dropped.deliveryId);
     return;
   }
   const turn = runtime.turn;
   if (turn && turn.delegation === hooks && !turn.abort.signal.aborted) {
-    return;
     turn.cancelled = true;
-  void turnQueue?.withdraw(hooks);
     turn.cancelReason = reason;
     turn.abort.abort();
+    return;
   }
+  void turnQueue?.withdraw(hooks);
 }
 
 async function delegateTo(parent: ProviderRun, targetId: string, message: string, callId: string) {
@@ -1381,13 +1378,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     if (!isSchedule && !group) {
       const canvasNote = await canvasEditNote(bot.id).catch(() => "");
       if (canvasNote) extraSystem = [extraSystem, canvasNote].filter(Boolean).join("\n\n");
-      const blocksNote = (() => {
-        try {
-          return blocksEditNote(bot.id);
-        } catch {
-          return "";
-        }
-      })();
+      const blocksNote = await blocksEditNote(bot.id).catch(() => "");
       if (blocksNote) extraSystem = [extraSystem, blocksNote].filter(Boolean).join("\n\n");
     }
     if (delivery.voice) extraSystem = [extraSystem, voiceNote].filter(Boolean).join("\n\n");

@@ -1,2 +1,15 @@
-export { closeDb, type Db, getDb, openDatabase, tables, writeTransaction } from "./client";
+export {
+  closeDb,
+  connect,
+  type Db,
+  getDb,
+  initDb,
+  openDatabase,
+  queryRows,
+  type Root,
+  rootDb,
+  tables,
+  useDb,
+  writeTransaction,
+} from "./client";
 export { runMigrations } from "./migrate";

@@ -3,7 +3,7 @@ import { activeMarkers, sweepOrphans } from "@runelay-bots/providers/proc-tree";
 import { startServer } from "./app";
 import { dataDir, host, model, port } from "./config/env";
 import { runnerToken, runnerTokenFile } from "./config/runtime-secrets";
-import { closeDb, getDb } from "./db";
+import { closeDb, initDb, rootDb } from "./db";
 import { refreshAccounts } from "./modules/accounts/services/accounts.service";
 import { initAuth } from "./modules/auth/gate";
 import { loadBots } from "./modules/bots/services/bots.service";
@@ -21,7 +21,9 @@ import { botStatuses } from "./modules/engine/services/engine.service";
 import { startTurnQueue } from "./modules/engine/services/turn-queue.service";
 import { maxTurns } from "./modules/engine/services/turn-slots.service";
 import { loadGroups } from "./modules/groups/services/groups.service";
+import { loadIntegrations } from "./modules/integrations/services/integration-store.service";
 import { releaseActiveJobs, startJobs, stopJobs } from "./modules/jobs/services/jobs.service";
+import { startOutboxRelay, stopOutboxRelay } from "./modules/jobs/services/outbox.service";
 import { startScheduler } from "./modules/schedules/services/scheduler.service";
 import { loadSections } from "./modules/sections/services/sections.service";
 import { startBackupSchedule } from "./modules/storage/services/backup.service";
@@ -36,10 +38,11 @@ for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY"
 async function main() {
   installConsoleRedaction();
   await mkdir(dataDir, { recursive: true });
-  getDb();
+  await initDb();
+  await loadIntegrations();
   runnerToken();
   console.log(`runner token in ${runnerTokenFile()}`);
-  console.log(`allowed repos: ${seedAllowedRepos()}`);
+  console.log(`allowed repos: ${await seedAllowedRepos()}`);
   await loadVault();
   await loadBots();
   void listConnections(true).catch(() => undefined);
@@ -49,6 +52,7 @@ async function main() {
   await loadSections();
   await loadGroups();
   await startJobs({ concurrency: { turns: maxTurns, tasks: 4 } });
+  startOutboxRelay(rootDb());
   await startTurnQueue();
   await startConnectionsRefresh();
   await startScheduler();
@@ -71,10 +75,10 @@ async function main() {
       stopAllDesktops();
       stopAllDevServers();
       endAllCalls();
-      setTimeout(() => {
-        closeDb();
+      stopOutboxRelay();
       void releaseActiveJobs().then(stopJobs, () => undefined);
-        process.exit(0);
+      setTimeout(() => {
+        void closeDb().finally(() => process.exit(0));
       }, 500).unref();
     });
   }

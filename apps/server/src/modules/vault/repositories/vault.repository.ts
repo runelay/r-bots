@@ -1,5 +1,5 @@
 import { and, desc, eq, notInArray } from "drizzle-orm";
-import { type Db, getDb } from "../../../db";
+import { type Db, getDb, writeTransaction } from "../../../db";
 import { extraOf, type Json } from "../../../db/rows";
 import { vaultAudit, vaultSecrets } from "../../../db/tables";
 import type { SecretMeta } from "../services/vault.service";
@@ -51,39 +51,37 @@ function metaOf(row: SecretRow): SecretMeta {
   };
 }
 
-export function loadSecretMetas(db: Db = getDb()) {
+export async function loadSecretMetas(db: Db = getDb()) {
   const index: Record<string, SecretMeta> = {};
-  for (const row of db.select().from(vaultSecrets).all()) index[row.name] = metaOf(row);
+  for (const row of await db.select().from(vaultSecrets).orderBy(vaultSecrets.name)) index[row.name] = metaOf(row);
   return index;
 }
 
-export function saveSecretMetas(index: Record<string, SecretMeta>, db: Db = getDb()) {
+export async function saveSecretMetas(index: Record<string, SecretMeta>, db: Db = getDb()) {
   const names = Object.keys(index);
-  db.$client
-    .transaction(() => {
-      for (const meta of Object.values(index)) {
-        const columns = secretColumns(meta);
-        db.insert(vaultSecrets).values(columns).onConflictDoUpdate({ target: vaultSecrets.name, set: columns }).run();
-      }
-      if (names.length) db.delete(vaultSecrets).where(notInArray(vaultSecrets.name, names)).run();
-      else db.delete(vaultSecrets).run();
-    })
-    .immediate();
+  await writeTransaction(async (tx) => {
+    for (const meta of Object.values(index)) {
+      const columns = secretColumns(meta);
+      await tx.insert(vaultSecrets).values(columns).onConflictDoUpdate({ target: vaultSecrets.name, set: columns });
+    }
+    if (names.length) await tx.delete(vaultSecrets).where(notInArray(vaultSecrets.name, names));
+    else await tx.delete(vaultSecrets);
+  }, db);
 }
 
-export function writeSealed(name: string, sealed: Sealed | null, db: Db = getDb()) {
-  db.update(vaultSecrets)
+export async function writeSealed(name: string, sealed: Sealed | null, db: Db = getDb()) {
+  await db
+    .update(vaultSecrets)
     .set({ iv: sealed?.iv ?? null, tag: sealed?.tag ?? null, ciphertext: sealed?.ct ?? null })
-    .where(eq(vaultSecrets.name, name))
-    .run();
+    .where(eq(vaultSecrets.name, name));
 }
 
-export function readSealed(name: string, db: Db = getDb()): Sealed | null {
-  const row = db
+export async function readSealed(name: string, db: Db = getDb()): Promise<Sealed | null> {
+  const [row] = await db
     .select({ iv: vaultSecrets.iv, tag: vaultSecrets.tag, ct: vaultSecrets.ciphertext })
     .from(vaultSecrets)
     .where(eq(vaultSecrets.name, name))
-    .get();
+    .limit(1);
   if (!row?.iv || !row.tag || !row.ct) return null;
   return { iv: Buffer.from(row.iv), tag: Buffer.from(row.tag), ct: Buffer.from(row.ct) };
 }
@@ -98,23 +96,22 @@ export function auditColumns(entry: Json) {
   };
 }
 
-export function addAudit(entry: Json, db: Db = getDb()) {
-  db.insert(vaultAudit).values(auditColumns(entry)).run();
+export async function addAudit(entry: Json, db: Db = getDb()) {
+  await db.insert(vaultAudit).values(auditColumns(entry));
 }
 
-export function readAuditRows(name: string | null, limit: number, db: Db = getDb()) {
-  return db
+export async function readAuditRows(name: string | null, limit: number, db: Db = getDb()) {
+  const rows = await db
     .select()
     .from(vaultAudit)
     .where(name ? and(eq(vaultAudit.name, name)) : undefined)
     .orderBy(desc(vaultAudit.id))
-    .limit(limit)
-    .all()
-    .map((row) => ({
-      at: row.at,
-      name: row.name,
-      outcome: row.outcome,
-      ...(row.by === null ? {} : { by: row.by }),
-      ...(row.extra ?? {}),
-    }));
+    .limit(limit);
+  return rows.map((row) => ({
+    at: row.at,
+    name: row.name,
+    outcome: row.outcome,
+    ...(row.by === null ? {} : { by: row.by }),
+    ...(row.extra ?? {}),
+  }));
 }

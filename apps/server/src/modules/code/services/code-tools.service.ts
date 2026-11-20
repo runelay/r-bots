@@ -71,7 +71,7 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
         alwaysHuman: true,
       });
       if (!start.allowed || !repoPath) return text(start.message ?? "Negado.", true);
-      const repo = addAllowedRepo(repoPath, reason, context.botId);
+      const repo = await addAllowedRepo(repoPath, reason, context.botId);
       forgetRepoCache();
       const output = { path: repo.path, name: repo.name, alreadyAllowed: known?.path === repoPath };
       endCall(context, start.callId, "workspace_add", { path: repoPath, reason }, { ok: true, output });

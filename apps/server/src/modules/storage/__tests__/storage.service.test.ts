@@ -2,8 +2,9 @@ import { afterAll, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { freshDb } from "../../../../test/db-helpers";
 import { blobDriver, s3Settings } from "../../../config/storage";
-import { openDatabase, tables } from "../../../db";
+import { tables } from "../../../db";
 import { FsBlobStore } from "../services/fs-blob-store";
 import { S3BlobStore } from "../services/s3-blob-store";
 import {
@@ -18,10 +19,10 @@ import {
 } from "../services/storage.service";
 
 const dir = mkdtempSync(join(tmpdir(), "rb-storage-"));
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+afterAll(async () => rmSync(dir, { recursive: true, force: true }));
 
 describe("storage service", () => {
-  test("picks the driver from env", () => {
+  test("picks the driver from env", async () => {
     expect(blobDriver({})).toBe("s3");
     expect(blobDriver({ BLOB_DRIVER: "fs" })).toBe("fs");
     expect(s3Settings({ S3_FORCE_PATH_STYLE: "false" }).forcePathStyle).toBe(false);
@@ -31,7 +32,7 @@ describe("storage service", () => {
     expect(() => createBlobStore({})).toThrow("S3_ACCESS_KEY_ID");
   });
 
-  test("keeps one shared store", () => {
+  test("keeps one shared store", async () => {
     const store = new FsBlobStore("/tmp/z");
     setBlobStore(store);
     expect(getBlobStore()).toBe(store);
@@ -44,7 +45,7 @@ describe("storage service", () => {
     else process.env.BLOB_DRIVER = previous.driver;
   });
 
-  test("builds safe keys", () => {
+  test("builds safe keys", async () => {
     const keys = blobKeys("bot");
     expect(keys.upload("u1", "a/b.png")).toBe("bots/bot/uploads/u1/a_b.png");
     expect(keys.derived("u1", "thumb.jpg")).toBe("bots/bot/uploads/u1/derived/thumb.jpg");
@@ -56,12 +57,12 @@ describe("storage service", () => {
 describe("blob helpers", () => {
   test("putBlob stores the object and records or updates its row", async () => {
     const store = new FsBlobStore(join(dir, "put"));
-    const db = openDatabase(":memory:");
+    const db = await freshDb();
     const first = await putBlob("bots/b/one.txt", "abc", { mime: "text/plain", botId: "b", sessionId: "s" }, store, db);
     expect(first).toMatchObject({ key: "bots/b/one.txt", size: 3, mime: "text/plain" });
     const again = await putBlob("bots/b/one.txt", "abcdef", {}, store, db);
     expect(again.mime).toBe("application/octet-stream");
-    expect(db.select().from(tables.blobs).all()).toEqual([
+    expect(await db.select().from(tables.blobs)).toEqual([
       {
         key: "bots/b/one.txt",
         mime: "application/octet-stream",

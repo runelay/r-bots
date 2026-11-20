@@ -20,7 +20,7 @@ beforeAll(async () => {
   bot = await makeBot();
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
@@ -34,12 +34,12 @@ async function run<T = Record<string, unknown>>(name: string, input: Record<stri
   return (await toolOf(name).run(input, signal)) as T & { blockEvent?: BlockEvent };
 }
 
-function label(name: string, input: Record<string, unknown>) {
+async function label(name: string, input: Record<string, unknown>) {
   return toolOf(name).label(input);
 }
 
 describe("tool list", () => {
-  test("exposes every block tool without approval except agenda_create", () => {
+  test("exposes every block tool without approval except agenda_create", async () => {
     const tools = blockTools(bot.id);
     expect(tools.map((item) => item.name)).toEqual([
       "note_list",
@@ -72,7 +72,7 @@ describe("tool list", () => {
 describe("notes", () => {
   test("write, read, patch, move, list, search and delete", async () => {
     const folder = `Pasta ${Math.random().toString(36).slice(2, 7)}`;
-    expect(label("note_write", { title: "Plano" })).toBe("Criou a nota “Plano”");
+    expect(await label("note_write", { title: "Plano" })).toBe("Criou a nota “Plano”");
     const created = await run<{ id: string; title: string; version: number }>("note_write", {
       title: "Plano",
       folder,
@@ -80,7 +80,7 @@ describe("notes", () => {
     });
     expect(created.blockEvent?.type).toBe("block.created");
     expect(created.title).toBe("Plano");
-    expect(label("note_write", { id: created.id, title: "Plano" })).toBe("Editou a nota “Plano”");
+    expect(await label("note_write", { id: created.id, title: "Plano" })).toBe("Editou a nota “Plano”");
 
     const same = await run<{ content: string }>("note_write", {
       id: created.id,
@@ -96,16 +96,16 @@ describe("notes", () => {
       content: "# Metas\n- [ ] vender mais",
     });
     expect(moved.folder).toBe(`${folder}/Sub`);
-    expect(requireNote(bot.id, created.id).folder).toBe(`${folder}/Sub`);
+    expect((await requireNote(bot.id, created.id)).folder).toBe(`${folder}/Sub`);
 
-    expect(label("note_read", { id: created.id })).toBe("Leu a nota “Plano”");
-    expect(label("note_read", { title: "Outra" })).toBe("Leu a nota “Outra”");
-    expect(label("note_read", { id: "missing" })).toBe("Leu a nota “sem título”");
+    expect(await label("note_read", { id: created.id })).toBe("Leu a nota “Plano”");
+    expect(await label("note_read", { title: "Outra" })).toBe("Leu a nota “Outra”");
+    expect(await label("note_read", { id: "missing" })).toBe("Leu a nota “sem título”");
     expect(((await run("note_read", { id: created.id })) as { id: string }).id).toBe(created.id);
     expect(((await run("note_read", { title: "Plano" })) as { id: string }).id).toBe(created.id);
     await expect(run("note_read", {})).rejects.toThrow("Passe id ou title.");
 
-    expect(label("note_patch", { id: created.id })).toBe("Editou a nota “Plano”");
+    expect(await label("note_patch", { id: created.id })).toBe("Editou a nota “Plano”");
     const patched = await run<{ content: string }>("note_patch", {
       id: created.id,
       ops: [{ op: "toggle_task", line: 1, done: true }],
@@ -113,19 +113,19 @@ describe("notes", () => {
     expect(patched.content).toBe("# Metas\n- [x] vender mais");
     expect(patched.blockEvent?.data.changed).toEqual({ lines: [[1, 1]] });
 
-    expect(label("note_list", {})).toBe("Listou as notas");
+    expect(await label("note_list", {})).toBe("Listou as notas");
     expect(((await run("note_list", { folder: `${folder}/Sub` })) as { total: number }).total).toBe(1);
-    expect(label("note_tree", {})).toBe("Abriu as pastas das notas");
-    expect(label("note_tree", { folder })).toBe(`Abriu a pasta “${folder}”`);
+    expect(await label("note_tree", {})).toBe("Abriu as pastas das notas");
+    expect(await label("note_tree", { folder })).toBe(`Abriu a pasta “${folder}”`);
     expect(
       ((await run("note_tree", { folder })) as { folders: Array<{ name: string }> }).folders.map((item) => item.name),
     ).toEqual(["Sub"]);
-    expect(label("note_search", { q: "vender" })).toBe("Buscou “vender” nas notas");
+    expect(await label("note_search", { q: "vender" })).toBe("Buscou “vender” nas notas");
     const hits = (await run("note_search", { q: "vender" })) as { items: Array<{ id: string }> };
     expect(hits.items.map((item) => item.id)).toContain(created.id);
 
-    expect(label("note_move", { id: created.id, title: "Plano 2027" })).toBe("Renomeou a nota para “Plano 2027”");
-    expect(label("note_move", { id: created.id })).toBe("Moveu a nota “Plano”");
+    expect(await label("note_move", { id: created.id, title: "Plano 2027" })).toBe("Renomeou a nota para “Plano 2027”");
+    expect(await label("note_move", { id: created.id })).toBe("Moveu a nota “Plano”");
     const renamed = (await run("note_move", { id: created.id, title: "Plano 2027" })) as {
       note: { title: string };
       relinked: number;
@@ -135,28 +135,28 @@ describe("notes", () => {
     expect(renamed.relinked).toBe(0);
     expect(renamed.blockEvent?.type).toBe("block.updated");
 
-    expect(label("note_delete", { id: created.id })).toBe("Apagou a nota “Plano 2027”");
+    expect(await label("note_delete", { id: created.id })).toBe("Apagou a nota “Plano 2027”");
     const deleted = await run("note_delete", { id: created.id });
     expect(deleted.ok).toBe(true);
     expect(deleted.blockEvent?.type).toBe("block.deleted");
   });
 
-  test("blocksEditNote reports the person's edits once", () => {
+  test("blocksEditNote reports the person's edits once", async () => {
     const other = `edits-${Math.random().toString(36).slice(2, 8)}`;
-    expect(blocksEditNote(other)).toBe("");
-    const { note } = createNote(other, { title: "Compras", content: "leite" }, "bot");
-    writeNote(other, note.id, { content: "leite\npão" }, "user");
-    const text = blocksEditNote(other);
+    expect(await blocksEditNote(other)).toBe("");
+    const { note } = await createNote(other, { title: "Compras", content: "leite" }, "bot");
+    await writeNote(other, note.id, { content: "leite\npão" }, "user");
+    const text = await blocksEditNote(other);
     expect(text.startsWith("## Notas e planilhas editadas pela pessoa")).toBe(true);
     expect(text).toContain("Compras");
     expect(text.endsWith("Respeite essas edições e não desfaça o que a pessoa mudou.")).toBe(true);
-    expect(blocksEditNote(other)).toBe("");
+    expect(await blocksEditNote(other)).toBe("");
   });
 });
 
 describe("sheets", () => {
   test("create, read, write, format and tab ops", async () => {
-    expect(label("sheet_create", { title: "Caixa" })).toBe("Criou a planilha “Caixa”");
+    expect(await label("sheet_create", { title: "Caixa" })).toBe("Criou a planilha “Caixa”");
     const sheet = await run<{ id: string; tabs: Array<{ id: string; name: string }> }>("sheet_create", {
       title: "Caixa",
       tabs: ["Dados"],
@@ -166,8 +166,8 @@ describe("sheets", () => {
       ],
     });
     expect(sheet.blockEvent?.type).toBe("block.created");
-    expect(label("sheet_read", { id: sheet.id })).toBe("Leu a planilha “Caixa”");
-    expect(label("sheet_read", { id: "missing" })).toBe("Leu a planilha “sem título”");
+    expect(await label("sheet_read", { id: sheet.id })).toBe("Leu a planilha “Caixa”");
+    expect(await label("sheet_read", { id: "missing" })).toBe("Leu a planilha “sem título”");
     const read = await run<{ sheet: { id: string }; cells: Array<{ a: string; v: unknown }> }>("sheet_read", {
       id: sheet.id,
       range: "A1:A2",
@@ -178,7 +178,7 @@ describe("sheets", () => {
       ["A2", 20],
     ]);
 
-    expect(label("sheet_write", { id: sheet.id })).toBe("Editou a planilha “Caixa”");
+    expect(await label("sheet_write", { id: sheet.id })).toBe("Editou a planilha “Caixa”");
     const written = await run<{ cells: Array<{ a: string; v: unknown }> }>("sheet_write", {
       id: sheet.id,
       cells: [{ a: "A1", input: "15" }],
@@ -186,7 +186,7 @@ describe("sheets", () => {
     expect(written.cells.find((cell) => cell.a === "A2")?.v).toBe(30);
     expect(written.blockEvent?.type).toBe("block.updated");
 
-    expect(label("sheet_format", { id: sheet.id })).toBe("Formatou a planilha “Caixa”");
+    expect(await label("sheet_format", { id: sheet.id })).toBe("Formatou a planilha “Caixa”");
     const formatted = await run("sheet_format", {
       id: sheet.id,
       ranges: ["A1:A2"],
@@ -194,7 +194,7 @@ describe("sheets", () => {
     });
     expect(formatted.blockEvent?.type).toBe("block.updated");
 
-    expect(label("sheet_tab", { id: sheet.id })).toBe("Editou a planilha “Caixa”");
+    expect(await label("sheet_tab", { id: sheet.id })).toBe("Editou a planilha “Caixa”");
     const added = await run<{ tabs: Array<{ name: string }> }>("sheet_tab", {
       id: sheet.id,
       op: "add",
@@ -203,10 +203,10 @@ describe("sheets", () => {
     expect(added.tabs.map((tab) => tab.name)).toEqual(["Dados", "Resumo"]);
     expect(added.blockEvent?.type).toBe("block.updated");
 
-    expect(label("sheet_list", {})).toBe("Listou as planilhas");
+    expect(await label("sheet_list", {})).toBe("Listou as planilhas");
     const list = (await run("sheet_list", { q: "Caixa" })) as { items: Array<{ id: string }> };
     expect(list.items.map((item) => item.id)).toContain(sheet.id);
-    expect(requireSheet(bot.id, sheet.id).title).toBe("Caixa");
+    expect((await requireSheet(bot.id, sheet.id)).title).toBe("Caixa");
   });
 });
 
@@ -227,11 +227,11 @@ describe("agenda", () => {
         },
       },
     ]);
-    expect(label("agenda_accounts", {})).toBe("Viu as contas da agenda");
+    expect(await label("agenda_accounts", {})).toBe("Viu as contas da agenda");
     const accounts = (await toolOf("agenda_accounts").run({}, signal)) as Array<{ id: string; email: string }>;
     expect(accounts.map((item) => item.email)).toEqual(["dona@casa.com"]);
 
-    expect(label("agenda_list", {})).toBe("Viu a agenda");
+    expect(await label("agenda_list", {})).toBe("Viu a agenda");
     const list = (await run("agenda_list", { start: "2026-11-20", end: "2026-11-21" })) as {
       items: Array<{ title: string }>;
     };
@@ -244,8 +244,8 @@ describe("agenda", () => {
       start: "2026-11-20T12:00:00-03:00",
       end: "2026-11-20T13:00:00-03:00",
     };
-    expect(create.approval?.(input)).toBeNull();
-    expect(create.approval?.({ ...input, attendees: ["dona@casa.com", "amigo@fora.com"] })).toBe(
+    expect(await create.approval?.(input)).toBeNull();
+    expect(await create.approval?.({ ...input, attendees: ["dona@casa.com", "amigo@fora.com"] })).toBe(
       "Posso marcar “Almoço” e mandar convite por e-mail para amigo@fora.com?",
     );
     expect(await create.details?.({ ...input, attendees: ["amigo@fora.com"] })).toEqual({
@@ -265,8 +265,8 @@ describe("agenda", () => {
       changed: { eventIds: [created.id] },
     });
 
-    expect(label("agenda_update", { title: "Foco total" })).toBe("Mudou “Foco total” na agenda");
-    expect(label("agenda_update", {})).toBe("Mudou um evento da agenda");
+    expect(await label("agenda_update", { title: "Foco total" })).toBe("Mudou “Foco total” na agenda");
+    expect(await label("agenda_update", {})).toBe("Mudou um evento da agenda");
     const soloId = encodeEventId(account.name, "primary", "solo");
     const updated = (await run("agenda_update", { eventId: soloId, title: "Foco total" })) as {
       title: string;
@@ -276,7 +276,7 @@ describe("agenda", () => {
     expect(updated.blockEvent?.data.author).toBe("bot");
     expect(account.deleted).toEqual([{ calendarId: "primary", eventId: "solo" }]);
 
-    expect(label("agenda_delete", {})).toBe("Tirou um evento da agenda");
+    expect(await label("agenda_delete", {})).toBe("Tirou um evento da agenda");
     const deleted = await run("agenda_delete", { eventId: created.id });
     expect(deleted.ok).toBe(true);
     expect(deleted.blockEvent?.type).toBe("block.updated");
@@ -286,8 +286,8 @@ describe("agenda", () => {
 
 describe("export_create", () => {
   test("labels and exports a note without sending", async () => {
-    const { note } = createNote(bot.id, { title: "Relatório", content: "# Oi" }, "bot");
-    expect(label("export_create", { kind: "note", id: note.id, format: "md" })).toBe(
+    const { note } = await createNote(bot.id, { title: "Relatório", content: "# Oi" }, "bot");
+    expect(await label("export_create", { kind: "note", id: note.id, format: "md" })).toBe(
       "Exportou a nota “Relatório” em MD",
     );
     const job = (await run("export_create", { kind: "note", id: note.id, format: "md" })) as {
@@ -300,7 +300,7 @@ describe("export_create", () => {
 
   test("sends the exported sheet as a file", async () => {
     const sheet = await run<{ id: string }>("sheet_create", { title: "Gastos", cells: [{ a: "A1", input: "5" }] });
-    expect(label("export_create", { kind: "sheet", id: sheet.id, format: "csv" })).toBe(
+    expect(await label("export_create", { kind: "sheet", id: sheet.id, format: "csv" })).toBe(
       "Exportou a planilha “Gastos” em CSV",
     );
     const job = (await run("export_create", { kind: "sheet", id: sheet.id, format: "csv", send: true })) as {

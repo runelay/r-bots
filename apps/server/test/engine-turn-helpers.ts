@@ -96,16 +96,16 @@ export async function run(session: StoredSession, delivery: Partial<Delivery> = 
   return sent;
 }
 
-export function settledOf(session: StoredSession) {
-  return factsOfType(session, "turn.settled").at(-1)?.data as Record<string, unknown> & {
+export async function settledOf(session: StoredSession) {
+  return (await factsOfType(session, "turn.settled")).at(-1)?.data as Record<string, unknown> & {
     outcome: string;
     error?: { code: string; message: string; suggest?: Record<string, unknown>; until?: string | null };
     reason?: string;
   };
 }
 
-export function repliesOf(session: StoredSession, phase: "reply" | "narration" = "reply") {
-  return factsOfType(session, "content.completed")
+export async function repliesOf(session: StoredSession, phase: "reply" | "narration" = "reply") {
+  return (await factsOfType(session, "content.completed"))
     .filter((fact) => fact.data.phase === phase)
     .map((fact) => String(fact.data.value));
 }

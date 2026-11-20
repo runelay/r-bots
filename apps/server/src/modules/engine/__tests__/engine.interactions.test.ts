@@ -31,8 +31,8 @@ afterEach(() => {
   restoreTracked();
 });
 
-function opened(session: StoredSession) {
-  return factsOfType(session, "interaction.opened").map((fact) => fact.data) as Array<{
+async function opened(session: StoredSession) {
+  return (await factsOfType(session, "interaction.opened")).map((fact) => fact.data) as Array<{
     interactionId: string;
     request: Record<string, unknown>;
     subject: { callId: string };
@@ -41,7 +41,7 @@ function opened(session: StoredSession) {
 }
 
 async function nextInteraction(session: StoredSession, count = 1) {
-  return waitFor(() => opened(session)[count - 1]);
+  return waitFor(async () => (await opened(session))[count - 1]);
 }
 
 function asking(prompt: string, details?: Parameters<ReturnType<typeof contextOf>["requestApproval"]>[3]) {
@@ -86,17 +86,17 @@ describe("approvals", () => {
     ]);
     expect(card.subject).toEqual({ callId: "call_1" });
     expect(card.origin).toEqual({ agent: "Ana" });
-    expect(factsOfType(session, "turn.paused")).toHaveLength(1);
+    expect(await factsOfType(session, "turn.paused")).toHaveLength(1);
     expect(conversationStatus(session.meta.sessionId)).toBe("awaiting");
     expect(botStatus(bot.id)).toBe("awaiting");
     expect(answer(session, "dlv_x", "nao-existe", "approve")).toBe(false);
     expect(answer(session, "dlv_answer", card.interactionId, "approve_always")).toBe(true);
     await idle(session);
     expect(ask.results[0]).toEqual({ choice: "approve", interactionId: card.interactionId, always: true });
-    expect(repliesOf(session)).toEqual(["escolha approve sempre"]);
-    const settled = factsOfType(session, "interaction.settled")[0].data;
+    expect(await repliesOf(session)).toEqual(["escolha approve sempre"]);
+    const settled = (await factsOfType(session, "interaction.settled"))[0].data;
     expect(settled).toMatchObject({ outcome: "accepted", response: { optionId: "approve_always" } });
-    expect(factsOfType(session, "response.submitted")[0].data.deliveryId).toBe("dlv_answer");
+    expect((await factsOfType(session, "response.submitted"))[0].data.deliveryId).toBe("dlv_answer");
   });
 
   test("asks for a secret and records a denial", async () => {
@@ -115,7 +115,7 @@ describe("approvals", () => {
     answer(session, "dlv_deny", card.interactionId, "deny");
     await idle(session);
     expect(ask.results[0]).toEqual({ choice: "deny", interactionId: card.interactionId });
-    expect(factsOfType(session, "interaction.settled")[0].data.outcome).toBe("declined");
+    expect((await factsOfType(session, "interaction.settled"))[0].data.outcome).toBe("declined");
   });
 
   test("withdraws the card when the turn is cancelled", async () => {
@@ -128,8 +128,8 @@ describe("approvals", () => {
     expect(cancel(session)).toBe(true);
     await idle(session);
     expect(ask.results[0].choice).toBe("deny");
-    expect(factsOfType(session, "interaction.settled")[0].data.outcome).toBe("withdrawn");
-    expect(settledOf(session)?.outcome).toBe("cancelled");
+    expect((await factsOfType(session, "interaction.settled"))[0].data.outcome).toBe("withdrawn");
+    expect((await settledOf(session))?.outcome).toBe("cancelled");
   });
 
   test("denies open cards when the provider crashes", async () => {
@@ -144,7 +144,7 @@ describe("approvals", () => {
     });
     await run(session);
     expect(results.map((result) => result.choice)).toEqual(["deny"]);
-    expect(settledOf(session)).toMatchObject({ outcome: "failed", error: { message: "caiu" } });
+    expect(await settledOf(session)).toMatchObject({ outcome: "failed", error: { message: "caiu" } });
   });
 });
 
@@ -163,9 +163,9 @@ describe("steering a paused turn", () => {
     await nextInteraction(session);
     send(session, { deliveryId: "dlv_steer", text: "  não apaga, só lista  " });
     await idle(session);
-    const steer = factsOfType(session, "delivery.consumed").find((fact) => fact.data.steer);
+    const steer = (await factsOfType(session, "delivery.consumed")).find((fact) => fact.data.steer);
     expect(steer?.data).toMatchObject({ deliveryId: "dlv_steer", turnId: "turn_0" });
-    expect(factsOfType(session, "interaction.settled")[0].data).toMatchObject({
+    expect((await factsOfType(session, "interaction.settled"))[0].data).toMatchObject({
       outcome: "withdrawn",
       reason: "message",
     });
@@ -173,8 +173,8 @@ describe("steering a paused turn", () => {
     expect(fakeProviders.turns).toHaveLength(2);
     expect(lastRequest().prompt).toContain("não apaga, só lista");
     expect(lastRequest().resume).toBe("prov-steer");
-    expect(repliesOf(session)).toEqual(["Ok, não apago e sigo assim."]);
-    expect(factsOfType(session, "turn.started")).toHaveLength(1);
+    expect(await repliesOf(session)).toEqual(["Ok, não apago e sigo assim."]);
+    expect(await factsOfType(session, "turn.started")).toHaveLength(1);
   });
 
   test("retries from the handoff when the resumed steer run fails", async () => {
@@ -202,8 +202,8 @@ describe("steering a paused turn", () => {
     expect(errors).not.toHaveBeenCalled();
     expect(fakeProviders.turns.map((turn) => turn.request.resume)).toEqual([null, "prov-a", null]);
     expect(fakeProviders.turns[2].request.prompt).toContain("segue sem isso");
-    expect(repliesOf(session)).toEqual(["Recomecei."]);
-    expect(settledOf(session)?.outcome).toBe("completed");
+    expect(await repliesOf(session)).toEqual(["Recomecei."]);
+    expect((await settledOf(session))?.outcome).toBe("completed");
   });
 
   test("queues voice, skill, attachment, empty and non-chat messages instead of steering", async () => {
@@ -217,11 +217,11 @@ describe("steering a paused turn", () => {
     send(session, { text: "skill", skills: [{ slug: "s", name: "S", body: "b", files: [] }] });
     send(session, { text: "   " });
     send(session, { text: "rotina", source: "schedule" });
-    expect(opened(session)).toHaveLength(1);
+    expect(await opened(session)).toHaveLength(1);
     answer(session, "dlv_ok", card.interactionId, "approve");
     await idle(session);
-    expect(factsOfType(session, "turn.started")).toHaveLength(5);
-    expect(factsOfType(session, "delivery.consumed").some((fact) => fact.data.steer)).toBe(false);
+    expect(await factsOfType(session, "turn.started")).toHaveLength(5);
+    expect((await factsOfType(session, "delivery.consumed")).some((fact) => fact.data.steer)).toBe(false);
   });
 });
 
@@ -241,8 +241,8 @@ describe("cancel", () => {
     expect(cancel(session)).toBe(true);
     await idle(session);
     expect(finished).toEqual([{ outcome: "cancelled", reply: "" }]);
-    expect(factsOfType(session, "turn.started")).toHaveLength(1);
-    expect(settledOf(session)?.outcome).toBe("cancelled");
+    expect(await factsOfType(session, "turn.started")).toHaveLength(1);
+    expect((await settledOf(session))?.outcome).toBe("cancelled");
   });
 
   test("lets a tool cancel the turn with a reason", async () => {
@@ -256,7 +256,7 @@ describe("cancel", () => {
       turn.emit({ type: "done", ok: false, message: "cancelled" });
     });
     await run(session);
-    expect(settledOf(session)).toMatchObject({ outcome: "cancelled", reason: "Pedido sem sentido." });
+    expect(await settledOf(session)).toMatchObject({ outcome: "cancelled", reason: "Pedido sem sentido." });
   });
 
   test("settles as cancelled when the provider throws after a cancel", async () => {
@@ -267,8 +267,8 @@ describe("cancel", () => {
       throw new Error("abortado");
     });
     await run(session);
-    expect(settledOf(session)).toMatchObject({ outcome: "cancelled" });
-    expect(settledOf(session)?.reason).toBeUndefined();
+    expect(await settledOf(session)).toMatchObject({ outcome: "cancelled" });
+    expect((await settledOf(session))?.reason).toBeUndefined();
   });
 });
 
@@ -293,11 +293,11 @@ describe("progress guard", () => {
       "arruma o build",
       ["tentativa 1", "tentativa 2", "tentativa 3", "tentativa 4"],
     ]);
-    expect(settledOf(session)).toMatchObject({ outcome: "completed", stoppedBy: "progress_guard" });
-    const reply = repliesOf(session).join("\n");
+    expect(await settledOf(session)).toMatchObject({ outcome: "completed", stoppedBy: "progress_guard" });
+    const reply = (await repliesOf(session)).join("\n");
     expect(reply).toContain("Parei aqui porque não estava avançando");
     expect(reply).toContain("- tentativa 8");
-    expect(factsOfType(session, "decision.made").map((fact) => fact.data.outcome)).toEqual(["human", "stop"]);
+    expect((await factsOfType(session, "decision.made")).map((fact) => fact.data.outcome)).toEqual(["human", "stop"]);
   });
 
   test("keeps going when the guard says continue", async () => {
@@ -313,13 +313,13 @@ describe("progress guard", () => {
     fakeProviders.next(async (turn) => {
       const context = contextOf(turn);
       for (let index = 1; index <= 4; index++) context.onCallSettled(`passo ${index}`);
-      await waitFor(() => factsOfType(session, "decision.made").length > 0);
+      await waitFor(async () => (await factsOfType(session, "decision.made")).length > 0);
       turn.emit({ type: "text", part: "a", text: "terminei" });
       turn.emit({ type: "done", ok: true });
     });
     await run(session);
-    expect(settledOf(session).stoppedBy).toBeUndefined();
-    expect(repliesOf(session)).toEqual(["terminei"]);
+    expect((await settledOf(session)).stoppedBy).toBeUndefined();
+    expect(await repliesOf(session)).toEqual(["terminei"]);
   });
 
   test("ignores a stop that arrives after the turn was cancelled", async () => {
@@ -337,8 +337,8 @@ describe("progress guard", () => {
       for (let index = 5; index <= 8; index++) context.onCallSettled(`passo ${index}`);
     });
     await run(session);
-    expect(settledOf(session)).toMatchObject({ outcome: "cancelled", reason: "cancelado" });
-    expect(repliesOf(session)).toEqual([]);
+    expect(await settledOf(session)).toMatchObject({ outcome: "cancelled", reason: "cancelado" });
+    expect(await repliesOf(session)).toEqual([]);
   });
 });
 
@@ -353,8 +353,8 @@ describe("ending a run", () => {
       turn.emit({ type: "done", ok: false, message: "aborted" });
     });
     await run(session);
-    expect(settledOf(session)?.outcome).toBe("completed");
-    expect(repliesOf(session)).toEqual(["Abri o que precisava."]);
+    expect((await settledOf(session))?.outcome).toBe("completed");
+    expect(await repliesOf(session)).toEqual(["Abri o que precisava."]);
   });
 });
 
@@ -374,13 +374,13 @@ describe("turn slots", () => {
     const waiting = await newSession(bot.id);
     fakeProviders.next(replyWith("finalmente"));
     send(waiting);
-    await waitFor(() => factsOfType(waiting, "turn.queued").length > 0);
-    expect(factsOfType(waiting, "turn.queued")[0].data).toMatchObject({ position: 1, limit: 3 });
+    await waitFor(async () => (await factsOfType(waiting, "turn.queued")).length > 0);
+    expect((await factsOfType(waiting, "turn.queued"))[0].data).toMatchObject({ position: 1, limit: 3 });
     expect(isBusy(waiting.meta.sessionId)).toBe(true);
     holders[0].release();
     await idle(waiting);
-    expect(factsOfType(waiting, "turn.dequeued")).toHaveLength(1);
-    expect(repliesOf(waiting)).toEqual(["finalmente"]);
+    expect(await factsOfType(waiting, "turn.dequeued")).toHaveLength(1);
+    expect(await repliesOf(waiting)).toEqual(["finalmente"]);
     for (const held of holders.slice(1)) held.release();
     for (const session of sessions) await idle(session);
   });

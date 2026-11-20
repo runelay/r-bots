@@ -65,17 +65,17 @@ const patchOp = z.discriminatedUnion("op", [
   z.object({ op: z.literal("toggle_task"), line: z.number().int().min(0), done: z.boolean() }),
 ]);
 
-function titleOfNote(botId: string, id: unknown) {
+async function titleOfNote(botId: string, id: unknown) {
   try {
-    return requireNote(botId, String(id ?? "")).title;
+    return (await requireNote(botId, String(id ?? ""))).title;
   } catch {
     return "";
   }
 }
 
-function titleOfSheet(botId: string, id: unknown) {
+async function titleOfSheet(botId: string, id: unknown) {
   try {
-    return requireSheet(botId, String(id ?? "")).title;
+    return (await requireSheet(botId, String(id ?? ""))).title;
   } catch {
     return "";
   }
@@ -97,7 +97,7 @@ export function blockTools(botId: string): BotTool[] {
       },
       approval: null,
       label: () => "Listou as notas",
-      run: async (input) => listNotes(botId, input),
+      run: async (input) => await listNotes(botId, input),
     },
     {
       name: "note_tree",
@@ -105,18 +105,18 @@ export function blockTools(botId: string): BotTool[] {
       shape: { folder: z.string().max(300).optional() },
       approval: null,
       label: (input) => (input.folder ? `Abriu a pasta ${quoted(input.folder)}` : "Abriu as pastas das notas"),
-      run: async (input) => noteTree(botId, input),
+      run: async (input) => await noteTree(botId, input),
     },
     {
       name: "note_read",
       description: "Lê uma nota inteira por id ou por título, com links [[...]] resolvidos e contagem de backlinks.",
       shape: { id: z.string().max(60).optional(), title: z.string().max(200).optional() },
       approval: null,
-      label: (input) => `Leu a nota ${quoted(input.title ?? titleOfNote(botId, input.id))}`,
+      label: async (input) => `Leu a nota ${quoted(input.title ?? (await titleOfNote(botId, input.id)))}`,
       run: async (input) => {
-        if (input.id) return readNoteForBot(botId, String(input.id));
+        if (input.id) return await readNoteForBot(botId, String(input.id));
         if (!input.title) throw new BlockError("Passe id ou title.");
-        return readNoteForBot(botId, resolveNote(botId, String(input.title)).id);
+        return await readNoteForBot(botId, (await resolveNote(botId, String(input.title))).id);
       },
     },
     {
@@ -129,7 +129,7 @@ export function blockTools(botId: string): BotTool[] {
       },
       approval: null,
       label: (input) => `Buscou ${quoted(input.q)} nas notas`,
-      run: async (input) => searchNotes(botId, input),
+      run: async (input) => await searchNotes(botId, input),
     },
     {
       name: "note_write",
@@ -146,13 +146,13 @@ export function blockTools(botId: string): BotTool[] {
       label: (input) => `${input.id ? "Editou" : "Criou"} a nota ${quoted(input.title)}`,
       run: async (input) => {
         if (!input.id) {
-          const { note, event } = createNote(botId, input, "bot");
+          const { note, event } = await createNote(botId, input, "bot");
           return { ...note, blockEvent: event };
         }
-        const current = requireNote(botId, String(input.id));
+        const current = await requireNote(botId, String(input.id));
         if (input.folder !== undefined && String(input.folder) !== current.folder)
-          moveNote(botId, current.id, { folder: input.folder }, "bot");
-        const { note, event } = writeNote(botId, current.id, input, "bot");
+          await moveNote(botId, current.id, { folder: input.folder }, "bot");
+        const { note, event } = await writeNote(botId, current.id, input, "bot");
         return { ...note, blockEvent: event };
       },
     },
@@ -166,9 +166,9 @@ export function blockTools(botId: string): BotTool[] {
         baseVersion: z.number().int().optional(),
       },
       approval: null,
-      label: (input) => `Editou a nota ${quoted(titleOfNote(botId, input.id))}`,
+      label: async (input) => `Editou a nota ${quoted(await titleOfNote(botId, input.id))}`,
       run: async (input) => {
-        const { note, event } = patchNote(botId, String(input.id), input, "bot");
+        const { note, event } = await patchNote(botId, String(input.id), input, "bot");
         return { ...note, blockEvent: event };
       },
     },
@@ -181,12 +181,12 @@ export function blockTools(botId: string): BotTool[] {
         title: z.string().min(1).max(200).optional(),
       },
       approval: null,
-      label: (input) =>
+      label: async (input) =>
         input.title
           ? `Renomeou a nota para ${quoted(input.title)}`
-          : `Moveu a nota ${quoted(titleOfNote(botId, input.id))}`,
+          : `Moveu a nota ${quoted(await titleOfNote(botId, input.id))}`,
       run: async (input) => {
-        const { note, relinked, event } = moveNote(botId, String(input.id), input, "bot");
+        const { note, relinked, event } = await moveNote(botId, String(input.id), input, "bot");
         return { note, relinked, blockEvent: event };
       },
     },
@@ -195,8 +195,8 @@ export function blockTools(botId: string): BotTool[] {
       description: "Manda a nota para a lixeira (dá para recuperar).",
       shape: { id: z.string().min(1).max(60) },
       approval: null,
-      label: (input) => `Apagou a nota ${quoted(titleOfNote(botId, input.id))}`,
-      run: async (input) => ({ ok: true, blockEvent: deleteNote(botId, String(input.id), "bot") }),
+      label: async (input) => `Apagou a nota ${quoted(await titleOfNote(botId, input.id))}`,
+      run: async (input) => ({ ok: true, blockEvent: await deleteNote(botId, String(input.id), "bot") }),
     },
     {
       name: "sheet_list",
@@ -208,7 +208,7 @@ export function blockTools(botId: string): BotTool[] {
       },
       approval: null,
       label: () => "Listou as planilhas",
-      run: async (input) => listSheets(botId, input),
+      run: async (input) => await listSheets(botId, input),
     },
     {
       name: "sheet_create",
@@ -222,7 +222,7 @@ export function blockTools(botId: string): BotTool[] {
       approval: null,
       label: (input) => `Criou a planilha ${quoted(input.title)}`,
       run: async (input) => {
-        const { sheet, event } = createSheet(botId, input, "bot");
+        const { sheet, event } = await createSheet(botId, input, "bot");
         return { ...sheet, blockEvent: event };
       },
     },
@@ -232,11 +232,11 @@ export function blockTools(botId: string): BotTool[] {
         "Lê um intervalo (ex.: A1:F40) de uma aba com os valores já calculados. Sem tabId lê a primeira aba.",
       shape: { id: z.string().min(1).max(60), tabId: z.string().max(60).optional(), range: z.string().min(2).max(30) },
       approval: null,
-      label: (input) => `Leu a planilha ${quoted(titleOfSheet(botId, input.id))}`,
+      label: async (input) => `Leu a planilha ${quoted(await titleOfSheet(botId, input.id))}`,
       run: async (input) => {
-        const range = readRange(botId, String(input.id), input.tabId, input.range);
-        markSheetSeen(botId, String(input.id));
-        return { sheet: sheetOf(requireSheet(botId, String(input.id))), ...range };
+        const range = await readRange(botId, String(input.id), input.tabId, input.range);
+        await markSheetSeen(botId, String(input.id));
+        return { sheet: await sheetOf(await requireSheet(botId, String(input.id))), ...range };
       },
     },
     {
@@ -250,10 +250,10 @@ export function blockTools(botId: string): BotTool[] {
         baseVersion: z.number().int().optional(),
       },
       approval: null,
-      label: (input) => `Editou a planilha ${quoted(titleOfSheet(botId, input.id))}`,
+      label: async (input) => `Editou a planilha ${quoted(await titleOfSheet(botId, input.id))}`,
       run: async (input) => {
-        const { result, event } = writeCells(botId, String(input.id), input.tabId, input, "bot");
-        markSheetSeen(botId, String(input.id));
+        const { result, event } = await writeCells(botId, String(input.id), input.tabId, input, "bot");
+        await markSheetSeen(botId, String(input.id));
         return { ...result, blockEvent: event };
       },
     },
@@ -268,9 +268,9 @@ export function blockTools(botId: string): BotTool[] {
         format: formatShape,
       },
       approval: null,
-      label: (input) => `Formatou a planilha ${quoted(titleOfSheet(botId, input.id))}`,
+      label: async (input) => `Formatou a planilha ${quoted(await titleOfSheet(botId, input.id))}`,
       run: async (input) => {
-        const { result, event } = formatCells(botId, String(input.id), input.tabId, input, "bot");
+        const { result, event } = await formatCells(botId, String(input.id), input.tabId, input, "bot");
         return { ...result, blockEvent: event };
       },
     },
@@ -290,9 +290,9 @@ export function blockTools(botId: string): BotTool[] {
         count: z.number().int().min(1).max(10_000).optional(),
       },
       approval: null,
-      label: (input) => `Editou a planilha ${quoted(titleOfSheet(botId, input.id))}`,
+      label: async (input) => `Editou a planilha ${quoted(await titleOfSheet(botId, input.id))}`,
       run: async (input) => {
-        const { sheet, event } = sheetTabTool(botId, input);
+        const { sheet, event } = await sheetTabTool(botId, input);
         return { ...sheet, blockEvent: event };
       },
     },
@@ -333,8 +333,8 @@ export function blockTools(botId: string): BotTool[] {
         description: z.string().max(8000).nullable().optional(),
         attendees: z.array(z.string().email()).max(50).optional(),
       },
-      approval: (input) => {
-        const outside = externalAttendeesCached(input);
+      approval: async (input) => {
+        const outside = await externalAttendeesCached(input);
         return outside.length
           ? `Posso marcar ${quoted(input.title)} e mandar convite por e-mail para ${outside.join(", ")}?`
           : null;
@@ -389,8 +389,8 @@ export function blockTools(botId: string): BotTool[] {
         send: z.boolean().optional(),
       },
       approval: null,
-      label: (input) =>
-        `Exportou ${input.kind === "sheet" ? "a planilha" : "a nota"} ${quoted(input.kind === "sheet" ? titleOfSheet(botId, input.id) : titleOfNote(botId, input.id))} em ${String(input.format).toUpperCase()}`,
+      label: async (input) =>
+        `Exportou ${input.kind === "sheet" ? "a planilha" : "a nota"} ${quoted(input.kind === "sheet" ? await titleOfSheet(botId, input.id) : await titleOfNote(botId, input.id))} em ${String(input.format).toUpperCase()}`,
       run: async (input) => {
         const job = await createExport(botId, input);
         if (job.status !== "ready") throw new BlockError(job.error ?? "A exportação falhou.");
@@ -417,8 +417,8 @@ export const blocksGuide = [
   "Depois de criar ou editar, diga em uma frase o que mudou: a pessoa vê o bloco na conversa e não precisa de link nem id.",
 ].join("\n");
 
-export function blocksEditNote(botId: string) {
-  const lines = [...noteEditNote(botId), ...sheetEditNote(botId)];
+export async function blocksEditNote(botId: string) {
+  const lines = [...(await noteEditNote(botId)), ...(await sheetEditNote(botId))];
   if (!lines.length) return "";
   return [
     "## Notas e planilhas editadas pela pessoa",

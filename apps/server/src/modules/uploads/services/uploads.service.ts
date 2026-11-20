@@ -370,7 +370,7 @@ async function materialize(botId: string, meta: UploadMeta, blobKey: string, thu
 
 export async function readUpload(botId: string, uploadId: string): Promise<UploadMeta | null> {
   if (!idPattern.test(uploadId)) return null;
-  const row = readUploadRow(botId, uploadId);
+  const row = await readUploadRow(botId, uploadId);
   if (!row) return null;
   const meta = uploadFromRow(row);
   try {
@@ -384,7 +384,7 @@ export async function readUpload(botId: string, uploadId: string): Promise<Uploa
 }
 
 async function writeMeta(botId: string, meta: UploadMeta) {
-  updateUploadMeta(botId, meta);
+  await updateUploadMeta(botId, meta);
 }
 
 async function storeUpload(botId: string, meta: UploadMeta) {
@@ -402,7 +402,7 @@ async function storeUpload(botId: string, meta: UploadMeta) {
         })
       : null;
   if (meta.thumb && !thumb) delete meta.thumb;
-  saveUploadRow(botId, meta, { blobKey: original.key, sha256: original.sha256, thumbKey: thumb?.key ?? null });
+  await saveUploadRow(botId, meta, { blobKey: original.key, sha256: original.sha256, thumbKey: thumb?.key ?? null });
 }
 
 export function publicUpload(botId: string, meta: UploadMeta) {
@@ -486,7 +486,8 @@ export async function receiveUpload(botId: string, req: Req) {
   return register(botId, meta);
 }
 
-const sendRoots = () => [dataDir, ...fileRoots(), "/home/runelaybot", "/tmp"].map((root) => resolve(root));
+const sendRoots = async () =>
+  [dataDir, ...(await fileRoots()), "/home/runelaybot", "/tmp"].map((root) => resolve(root));
 const protectedFile = /(^|\/)(\.env[^/]*|\.git|\.ssh|\.claude)(\/|$)/;
 const maxMacFileBytes = 20 * 1024 * 1024;
 
@@ -524,7 +525,7 @@ export async function importBotFile(botId: string, rawPath: string, name?: strin
         : `Não achei ${rawPath} no servidor, e o Mac está desconectado.`,
     );
   }
-  if (!sendRoots().some((root) => real === root || real.startsWith(root + sep))) {
+  if (!(await sendRoots()).some((root) => real === root || real.startsWith(root + sep))) {
     throw new Error(
       `${real} está fora das pastas que posso enviar: dados do bot, worktrees, computador do bot ou /tmp do servidor.`,
     );
@@ -1111,7 +1112,7 @@ export async function serveUpload(req: Req, res: Res, botId: string, uploadId: s
 }
 
 export async function listUploads(botId: string) {
-  return listUploadRows(botId).map((row) => {
+  return (await listUploadRows(botId)).map((row) => {
     const meta = uploadFromRow(row);
     rememberLabel(meta);
     return meta;

@@ -25,7 +25,7 @@ describe("bot code summary", () => {
   });
 
   test("summarizes the thread workspace and caches it briefly", async () => {
-    makeRepo("bc-repo");
+    await makeRepo("bc-repo");
     await listRepos(true);
     const thread = await ensureThread("bc-coder");
     const session = getStoredSession(thread.sessionId);
@@ -62,7 +62,7 @@ describe("bot code summary", () => {
 
 describe("bot is coding", () => {
   test("only counts thread and conversation sessions with an active workspace", async () => {
-    makeRepo("bc-coding");
+    await makeRepo("bc-coding");
     await listRepos(true);
     expect(await botIsCoding("bc-coding-bot")).toBe(false);
     const side = await newSession("bc-coding-bot", "session");

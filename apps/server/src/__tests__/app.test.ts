@@ -24,7 +24,7 @@ beforeAll(async () => {
   server = await startTestServer();
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const restore of restores.splice(0).reverse()) restore();
   useAuthModule(null);
 });

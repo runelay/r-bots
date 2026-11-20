@@ -28,7 +28,7 @@ beforeEach(async () => {
   await resetData();
 });
 
-afterEach(() => {
+afterEach(async () => {
   jest.useRealTimers();
 });
 
@@ -49,7 +49,7 @@ describe("grants", () => {
     expect(listed[0]).toMatchObject({ uses: 1 });
     expect(listed[0].lastUsedAt).not.toBeNull();
     await settle();
-    const stored = readSetting<Record<string, Array<{ key: string }>>>("code.grants", {});
+    const stored = await readSetting<Record<string, Array<{ key: string }>>>("code.grants", {});
     expect(stored["/repo/grants"].map((grant) => grant.key)).toEqual(["git push", "npm publish"]);
 
     expect(await removeGrant("/repo/grants", "git push")).toBe(true);
@@ -60,7 +60,7 @@ describe("grants", () => {
   });
 
   test("loads stored grants and logs write failures", async () => {
-    writeSetting("code.grants", { "/repo/stored": [{ key: "k", createdAt: "", uses: 2, lastUsedAt: null }] });
+    await writeSetting("code.grants", { "/repo/stored": [{ key: "k", createdAt: "", uses: 2, lastUsedAt: null }] });
     const fresh = (await import(grantsSpecifier)) as typeof import("../repositories/code.repository");
     expect(await fresh.listGrants()).toEqual([
       { repo: "/repo/stored", key: "k", createdAt: "", uses: 2, lastUsedAt: null },
@@ -83,8 +83,8 @@ describe("grants", () => {
       warn.mockRestore();
     }
     expect((await fresh.listGrants()).map((grant) => grant.key)).toEqual(["k", "other"]);
-    expect(readSetting<Record<string, unknown[]>>("code.grants", {})["/repo/stored"]).toHaveLength(1);
-    expect(worktreeRows.loadWorktreeRows().some((row) => row.id === "reg-fail")).toBe(false);
+    expect((await readSetting<Record<string, unknown[]>>("code.grants", {}))["/repo/stored"]).toHaveLength(1);
+    expect((await worktreeRows.loadWorktreeRows()).some((row) => row.id === "reg-fail")).toBe(false);
   });
 });
 
@@ -128,7 +128,7 @@ describe("worktree registry", () => {
     const ids = (await listWorktrees()).map((item) => item.id);
     expect(ids.indexOf("reg-b")).toBeLessThan(ids.indexOf("reg-a"));
     await settle();
-    const stored = worktreeRows.loadWorktreeRows().find((item) => item.id === "reg-b");
+    const stored = (await worktreeRows.loadWorktreeRows()).find((item) => item.id === "reg-b");
     expect(stored).toMatchObject({
       status: "closed",
       prUrl: "https://example.test/pull/1",
@@ -139,7 +139,7 @@ describe("worktree registry", () => {
 });
 
 async function realWorktree(name: string) {
-  makeRepo(name);
+  await makeRepo(name);
   await listRepos(true);
   const session = await newSession(`bot-${name}`);
   const { workspace } = await openWorkspace(session, `bot-${name}`, name, "gc task");

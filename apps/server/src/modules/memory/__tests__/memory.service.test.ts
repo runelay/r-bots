@@ -37,17 +37,17 @@ let log: EventLog;
 beforeEach(async () => {
   await resetData();
   bot = await makeBot();
-  getDb().delete(tables.teamMemory).run();
+  await getDb().delete(tables.teamMemory);
   log = (await createStoredSession({ botId: bot.id, kind: "session", source: "chat", title: "" })).log;
 });
 
-afterEach(() => {
+afterEach(async () => {
   stopJev();
   jest.useRealTimers();
 });
 
 describe("memory constants", () => {
-  test("recall and capture are on by default", () => {
+  test("recall and capture are on by default", async () => {
     expect(defaultMemory).toEqual({ recall: true, capture: true });
   });
 });
@@ -98,7 +98,7 @@ describe("recall", () => {
 });
 
 describe("recallBlock", () => {
-  test("is empty without items and lists items until the cap", () => {
+  test("is empty without items and lists items until the cap", async () => {
     expect(recallBlock([])).toBe("");
     const block = recallBlock([{ slug: "s", name: "Nome", description: "Desc" }]);
     expect(block).toContain("## O que você já sabe");
@@ -121,9 +121,9 @@ describe("teamLogBlock", () => {
 
   test("shows today's entries from other bots only", async () => {
     const today = new Date().toISOString();
-    addTeamEntry({ at: today, botId: "other", botName: "Outro", summary: "fez a planilha" });
-    addTeamEntry({ at: today, botId: bot.id, botName: bot.name, summary: "eu mesmo" });
-    addTeamEntry({ at: "2001-01-01T10:00:00.000Z", botId: "other", botName: "Outro", summary: "velho" });
+    await addTeamEntry({ at: today, botId: "other", botName: "Outro", summary: "fez a planilha" });
+    await addTeamEntry({ at: today, botId: bot.id, botName: bot.name, summary: "eu mesmo" });
+    await addTeamEntry({ at: "2001-01-01T10:00:00.000Z", botId: "other", botName: "Outro", summary: "velho" });
     const block = await teamLogBlock(bot.id);
     expect(block).toContain("## O que o time fez hoje");
     expect(block).toContain(`${today.slice(11, 16)} Outro: fez a planilha`);
@@ -132,13 +132,13 @@ describe("teamLogBlock", () => {
   });
 
   test("is empty when nothing from today remains", async () => {
-    addTeamEntry({ at: "2001-01-01T00:00:00Z", botId: "o", botName: "O", summary: "s" });
+    await addTeamEntry({ at: "2001-01-01T00:00:00Z", botId: "o", botName: "O", summary: "s" });
     expect(await teamLogBlock(bot.id)).toBe("");
   });
 });
 
 describe("hasSecret", () => {
-  test("flags tokens, keys, cards and documents", () => {
+  test("flags tokens, keys, cards and documents", async () => {
     for (const text of [
       "sk-abcdefghijklmnopqrstu",
       "ghp_abcdefghijklmnopqrstuvwxyz",
@@ -155,7 +155,7 @@ describe("hasSecret", () => {
 });
 
 describe("cheapModel", () => {
-  test("picks the cheap model per provider", () => {
+  test("picks the cheap model per provider", async () => {
     expect(cheapModel(account("claude"), "big")).toBe("claude-haiku-5-5");
     expect(cheapModel(account("cursor"), "big")).toBe("auto");
     expect(cheapModel(account("codex"), "big")).toBe("big");
@@ -216,7 +216,7 @@ describe("capture", () => {
 
   test("does nothing while Jev is off", async () => {
     await capture(input());
-    expect(log.lines).toHaveLength(0);
+    expect(await log.lines()).toHaveLength(0);
   });
 
   test("does nothing while runelay is off", async () => {
@@ -227,13 +227,13 @@ describe("capture", () => {
     } finally {
       enabled.mockRestore();
     }
-    expect(log.lines).toHaveLength(0);
+    expect(await log.lines()).toHaveLength(0);
   });
 
   test("records a fallback decision when Jev fails", async () => {
     fakeJev(() => new Response("down", { status: 503 }));
     await capture(input());
-    const [decision] = factsOfType(log, "decision.made");
+    const [decision] = await factsOfType(log, "decision.made");
     expect(decision.data).toMatchObject({ kind: "memory", outcome: "fallback", answer: null });
     expect(String(decision.data.reason)).toContain("503");
   });
@@ -241,13 +241,13 @@ describe("capture", () => {
   test("skips when the exchange carries a secret or is not durable", async () => {
     fakeJev(() => ({ answers: {} }));
     await capture(input());
-    expect(factsOfType(log, "decision.made")[0].data).toMatchObject({
+    expect((await factsOfType(log, "decision.made"))[0].data).toMatchObject({
       outcome: "skip_secret",
       answer: { durable: 0, secret: 1 },
     });
     fakeJev(() => ({ answers: { durable: { type: "noul", noul: 0.2 }, secret: { type: "noul", noul: 0 } } }));
     await capture(input());
-    expect(factsOfType(log, "decision.made")[1].data).toMatchObject({ outcome: "skip", model: "jev-test" });
+    expect((await factsOfType(log, "decision.made"))[1].data).toMatchObject({ outcome: "skip", model: "jev-test" });
     expect(fakeProviders.turns).toHaveLength(0);
   });
 
@@ -276,7 +276,7 @@ describe("capture", () => {
     const writes = fakeRunelay.toolCalls.filter((call) => call.name === "write_memory").map((call) => call.args);
     expect(writes.map((item) => item.slug)).toEqual(["pref-tabela", `rb-${bot.id}-usa-linear`]);
     expect(String(writes[1].body)).toContain(`Tags: runelay-bots, ${bot.id}`);
-    const saved = factsOfType(log, "memory.saved")[0];
+    const saved = (await factsOfType(log, "memory.saved"))[0];
     expect(saved.data).toMatchObject({
       titles: ["Prefere números em tabela", "Usa Linear"],
       items: [
@@ -285,10 +285,12 @@ describe("capture", () => {
       ],
       botId: bot.id,
     });
-    const [team] = getDb().select().from(tables.teamMemory).all();
+    const [team] = await getDb().select().from(tables.teamMemory);
     expect(team).toMatchObject({ botId: bot.id, botName: bot.name, summary: "combinou formato de tabela" });
-    expect(teamEntryExists({ at: team.at, botId: bot.id, botName: bot.name, summary: team.summary })).toBe(true);
-    expect(teamEntryExists({ at: team.at, botId: "other", botName: bot.name, summary: team.summary })).toBe(false);
+    expect(await teamEntryExists({ at: team.at, botId: bot.id, botName: bot.name, summary: team.summary })).toBe(true);
+    expect(await teamEntryExists({ at: team.at, botId: "other", botName: bot.name, summary: team.summary })).toBe(
+      false,
+    );
   });
 
   test("stops when the extraction is not JSON or holds nothing new", async () => {
@@ -307,8 +309,8 @@ describe("capture", () => {
     fakeProviders.next(({ emit }) => emit({ type: "text", part: "0", text: JSON.stringify({}) }));
     await capture(input());
     expect(fakeRunelay.toolCalls.filter((call) => call.name === "write_memory")).toHaveLength(0);
-    expect(factsOfType(log, "memory.saved")).toHaveLength(0);
-    expect(getDb().select().from(tables.teamMemory).all()).toEqual([]);
+    expect(await factsOfType(log, "memory.saved")).toHaveLength(0);
+    expect(await getDb().select().from(tables.teamMemory)).toEqual([]);
   });
 });
 

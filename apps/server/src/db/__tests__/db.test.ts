@@ -2,122 +2,204 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import { freshDb } from "../../../test/db-helpers";
+import { createDatabase, settingsFor } from "../../../test/postgres";
+import type { Db } from "..";
 
 const dir = mkdtempSync(join(tmpdir(), "rb-db-"));
-const { openDatabase, runMigrations, tables, writeTransaction, getDb, closeDb } = await import("..");
-const { dbFile } = await import("../../config/storage");
+const db = await import("..");
+const { readSetting, writeSetting } = await import("../settings");
+const { isoOf, jsonText } = await import("../schema/types");
+const search = await import("../search");
+const { tables } = db;
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function seedConversation(db: ReturnType<typeof openDatabase>) {
-  db.insert(tables.conversations)
-    .values({ sessionId: "s1", botId: "b1", kind: "thread", source: "chat", startedAt: "t", updatedAt: "t", meta: {} })
-    .run();
+const at = "2026-11-19T10:00:00.123Z";
+
+async function seedConversation(target: Db) {
+  await target
+    .insert(tables.conversations)
+    .values({ sessionId: "s1", botId: "b1", kind: "thread", source: "chat", startedAt: at, updatedAt: at, meta: {} });
 }
 
 describe("openDatabase", () => {
-  test("applies pragmas and migrations once", () => {
-    const file = join(dir, "nested", "a.db");
-    const db = openDatabase(file);
-    expect(db.$client.query<{ journal_mode: string }, []>("PRAGMA journal_mode").get()?.journal_mode).toBe("wal");
-    expect(db.$client.query<{ foreign_keys: number }, []>("PRAGMA foreign_keys").get()?.foreign_keys).toBe(1);
-    expect(runMigrations(db.$client)).toEqual([]);
-    db.$client.close();
-    const reopened = openDatabase(file, { readonly: true });
-    expect(reopened.select().from(tables.bots).all()).toEqual([]);
-    reopened.$client.close();
+  test("migrates a new database once and can skip migrations", async () => {
+    const name = await createDatabase();
+    const migrated = await db.openDatabase({ settings: settingsFor(name) });
+    expect(await db.runMigrations(migrated)).toEqual([]);
+    expect(await migrated.select().from(tables.bots)).toEqual([]);
+    await migrated.$client.close();
+    const bare = await freshDb({ migrate: false });
+    const [found] = await db.queryRows<{ name: string | null }>(
+      sql`select to_regclass('public.bots')::text as name`,
+      bare,
+    );
+    expect(found.name).toBeNull();
   });
 
-  test("skips migrations when asked", () => {
-    const db = openDatabase(":memory:", { migrate: false });
-    expect(db.$client.query("SELECT name FROM sqlite_master WHERE name = 'bots'").get()).toBeNull();
-  });
-
-  test("fails on a missing migration file", () => {
-    const db = openDatabase(":memory:", { migrate: false });
-    expect(() => runMigrations(db.$client, [{ tag: "x", when: 1 }], {})).toThrow("migration file missing: x");
-  });
-
-  test("runs custom migrations in order", () => {
-    const db = openDatabase(":memory:", { migrate: false });
+  test("fails on a missing migration file and runs custom migrations in order", async () => {
+    const bare = await freshDb({ migrate: false });
+    await expect(db.runMigrations(bare, [{ tag: "x", when: 1 }], {})).rejects.toThrow("migration file missing: x");
     const file = join(dir, "one.sql");
     writeFileSync(file, "CREATE TABLE a (id integer);\n--> statement-breakpoint\n\nINSERT INTO a VALUES (1);");
-    expect(runMigrations(db.$client, [{ tag: "one", when: 5 }], { one: file })).toEqual(["one"]);
-    expect(runMigrations(db.$client, [{ tag: "one", when: 5 }], { one: file })).toEqual([]);
+    expect(await db.runMigrations(bare, [{ tag: "one", when: 5 }], { one: file })).toEqual(["one"]);
+    expect(await db.runMigrations(bare, [{ tag: "one", when: 5 }], { one: file })).toEqual([]);
+    expect(await db.queryRows<{ id: number }>(sql`select id from a`, bare)).toEqual([{ id: 1 }]);
   });
 });
 
-describe("search", () => {
-  test("indexes messages and follows updates and deletes", () => {
-    const db = openDatabase(":memory:");
-    seedConversation(db);
-    const search = (term: string) =>
-      db.$client.query("SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?").all(term).length;
-    db.insert(tables.conversationEvents)
-      .values({ sessionId: "s1", seq: 1, at: "t", text: "Produção caiu", facts: [] })
-      .run();
-    db.insert(tables.conversationEvents).values({ sessionId: "s1", seq: 2, at: "t", facts: [] }).run();
-    expect(search("producao")).toBe(1);
-    db.update(tables.conversationEvents)
+describe("search columns", () => {
+  test("index message text without accents and follow updates and deletes", async () => {
+    const target = await freshDb();
+    await seedConversation(target);
+    const hits = async (term: string) =>
+      (
+        await db.queryRows<{ seq: number }>(
+          sql`select seq from conversation_events where search @@ to_tsquery('rb_search', ${term})`,
+          target,
+        )
+      ).length;
+    await target
+      .insert(tables.conversationEvents)
+      .values({ sessionId: "s1", seq: 1, at, text: "Produção caiu", facts: [] });
+    await target.insert(tables.conversationEvents).values({ sessionId: "s1", seq: 2, at, facts: [] });
+    expect(await hits("producao")).toBe(1);
+    expect(await hits("PRODUÇÃO")).toBe(1);
+    await target
+      .update(tables.conversationEvents)
       .set({ text: "outro assunto" })
-      .where(eq(tables.conversationEvents.seq, 1))
-      .run();
-    expect(search("producao")).toBe(0);
-    expect(search("assunto")).toBe(1);
-    db.update(tables.conversationEvents).set({ text: "texto novo" }).where(eq(tables.conversationEvents.seq, 2)).run();
-    db.delete(tables.conversationEvents).run();
-    expect(search("assunto")).toBe(0);
-    expect(search("novo")).toBe(0);
+      .where(eq(tables.conversationEvents.seq, 1));
+    expect(await hits("producao")).toBe(0);
+    expect(await hits("assunto")).toBe(1);
+    await target.delete(tables.conversationEvents);
+    expect(await hits("assunto")).toBe(0);
   });
 
-  test("indexes live notes only", () => {
-    const db = openDatabase(":memory:");
-    const search = (term: string) =>
-      db.$client.query("SELECT note_id FROM notes_fts WHERE notes_fts MATCH ?").all(term).length;
-    db.insert(tables.notes)
-      .values({ id: "n1", title: "Reunião", markdown: "pauta", createdAt: "t", updatedAt: "t" })
-      .run();
-    expect(search("reuniao")).toBe(1);
-    db.update(tables.notes).set({ deletedAt: "t" }).where(eq(tables.notes.id, "n1")).run();
-    expect(search("reuniao")).toBe(0);
-    db.update(tables.notes).set({ deletedAt: null, markdown: "ata" }).where(eq(tables.notes.id, "n1")).run();
-    expect(search("ata")).toBe(1);
-    db.delete(tables.notes).run();
-    expect(search("ata")).toBe(0);
+  test("weights note titles over the body", async () => {
+    const target = await freshDb();
+    await target
+      .insert(tables.notes)
+      .values({ id: "n1", title: "Reunião", markdown: "pauta da semana", createdAt: at, updatedAt: at });
+    const hits = async (query: string) =>
+      (
+        await db.queryRows<{ id: string }>(
+          sql`select id from notes where search @@ to_tsquery('rb_search', ${query})`,
+          target,
+        )
+      ).length;
+    expect(await hits("reuniao:*A")).toBe(1);
+    expect(await hits("pauta:*A")).toBe(0);
+    expect(await hits("pauta:*")).toBe(1);
+    await target.update(tables.notes).set({ title: "Ata" }).where(eq(tables.notes.id, "n1"));
+    expect(await hits("reuniao:*")).toBe(0);
   });
 });
 
 describe("writeTransaction", () => {
-  test("commits and rolls back", () => {
-    const db = openDatabase(":memory:");
-    writeTransaction(() => seedConversation(db), db);
-    expect(() =>
-      writeTransaction(() => {
-        db.delete(tables.conversations).run();
+  test("commits, rolls back, reuses an open transaction and runs inside a given one", async () => {
+    const target = await freshDb();
+    await db.writeTransaction(() => seedConversation(target), target);
+    await expect(
+      db.writeTransaction(async (tx) => {
+        await tx.delete(tables.conversations);
         throw new Error("boom");
-      }, db),
-    ).toThrow("boom");
-    expect(db.select().from(tables.conversations).all()).toHaveLength(1);
+      }, target),
+    ).rejects.toThrow("boom");
+    expect(await target.select().from(tables.conversations)).toHaveLength(1);
+    const nested = await target.transaction(async (tx) =>
+      db.writeTransaction(async (inner) => {
+        expect(inner).toBe(tx);
+        return 7;
+      }, tx),
+    );
+    expect(nested).toBe(7);
+    const outer = await db.writeTransaction(async (tx) =>
+      db.writeTransaction(async (inner) => {
+        expect(db.getDb()).toBe(tx);
+        expect(inner).toBe(tx);
+        return 8;
+      }),
+    );
+    expect(outer).toBe(8);
   });
 });
 
 describe("shared instance", () => {
-  test("opens lazily and closes", () => {
-    const first = getDb();
-    expect(getDb()).toBe(first);
-    expect(first.$client.filename).toBe(dbFile);
-    expect(writeTransaction(() => 1)).toBe(1);
-    closeDb();
-    closeDb();
-    expect(getDb()).not.toBe(first);
-    closeDb();
+  test("opens lazily, can be replaced and closes", async () => {
+    const shared = db.rootDb();
+    expect(db.getDb()).toBe(shared);
+    db.useDb(null);
+    const lazy = db.rootDb();
+    expect(lazy).not.toBe(shared);
+    expect(db.rootDb()).toBe(lazy);
+    expect(await db.queryRows<{ one: number }>(sql`select 1 as one`)).toEqual([{ one: 1 }]);
+    await db.closeDb();
+    await db.closeDb();
+    const { forgetSecretValue, redactText } = await import("../../shared/redact");
+    expect(redactText(`senha ${new URL(process.env.DATABASE_URL as string).password}`)).toBe("senha ••••");
+    forgetSecretValue("database");
+    const initialized = await db.initDb();
+    expect(db.rootDb()).toBe(initialized);
+    await db.closeDb();
+    db.useDb(shared);
+    expect(db.getDb()).toBe(shared);
+  });
+});
+
+describe("settings", () => {
+  test("reads a fallback, then any json value it wrote", async () => {
+    const target = await freshDb();
+    expect(await readSetting("k", 3, target)).toBe(3);
+    for (const value of [{ a: [1, "x"] }, [1, 2], "texto", 5, true]) {
+      await writeSetting("k", value, target);
+      expect(await readSetting<unknown>("k", 0, target)).toEqual(value);
+    }
+  });
+});
+
+describe("column helpers", () => {
+  test("jsonText keeps text and replaces the NUL escape postgres refuses", () => {
+    expect(jsonText({ a: "x\u0000y" })).toBe('{"a":"x\\ufffdy"}');
+    expect(jsonText({ a: "literal \\u0000" })).toBe('{"a":"literal \\\\u0000"}');
+    expect(isoOf(new Date(at))).toBe(at);
+    expect(isoOf("2026-11-19 10:00:00.123+00")).toBe(at);
+  });
+
+  test("timestamps and json survive a round trip", async () => {
+    const target = await freshDb();
+    await seedConversation(target);
+    await target
+      .insert(tables.conversationEvents)
+      .values({ sessionId: "s1", seq: 1, at, facts: [{ type: "x", data: { text: "a\u0000b" } }] });
+    const [event] = await target.select().from(tables.conversationEvents);
+    expect(event.facts).toEqual([{ type: "x", data: { text: "a\u0000b" } }]);
+    await target.insert(tables.settings).values({ key: "nul", value: { text: "a\u0000b" }, updatedAt: at });
+    const [row] = await target.select().from(tables.settings).where(eq(tables.settings.key, "nul"));
+    expect(row).toEqual({ key: "nul", value: { text: "a�b" }, updatedAt: at });
+  });
+});
+
+describe("search helpers", () => {
+  test("terms, prefix queries and ellipsis around a headline", () => {
+    expect(search.searchTerms("  Olá, mundo_novo! ")).toEqual(["olá", "mundo", "novo"]);
+    expect(search.prefixQuery(["a", "b"], "A")).toBe("a:*A & b:*A");
+    expect(search.headlineOptions(16)).toContain("MaxWords=16");
+    const open = search.markers.open;
+    const close = search.markers.close;
+    expect(search.withEllipsis(`${open}tudo${close}`, "tudo")).toBe(`${open}tudo${close}`);
+    expect(search.withEllipsis("", "algo")).toBe("");
+    expect(search.withEllipsis(`meio ${open}x${close}`, "começo meio x fim")).toBe(`…meio ${open}x${close}…`);
+    expect(search.withEllipsis(`começo ${open}x${close}`, "começo x fim")).toBe(`começo ${open}x${close}…`);
+    expect(search.withEllipsis(`${open}x${close} fim`, "começo x fim")).toBe(`…${open}x${close} fim`);
+    expect(search.withEllipsis("trecho", "sem relação")).toBe("trecho…");
   });
 });
 
 describe("schema", () => {
   test("every foreign key points to a known table", async () => {
-    const { getTableConfig, SQLiteTable } = await import("drizzle-orm/sqlite-core");
-    const all = Object.values(tables).filter((value) => value instanceof SQLiteTable);
+    const { getTableConfig, PgTable } = await import("drizzle-orm/pg-core");
+    const all = Object.values(tables).filter((value) => value instanceof PgTable);
     const names = new Set(all.map((table) => getTableConfig(table).name));
     for (const table of all) {
       for (const key of getTableConfig(table).foreignKeys) {
@@ -127,13 +209,22 @@ describe("schema", () => {
       }
     }
   });
-});
 
-describe("auth schema", () => {
+  test("auth tables build their indexes", async () => {
+    const { getTableConfig, PgTable } = await import("drizzle-orm/pg-core");
+    const auth = await import("../schema/auth");
+    const all = Object.values(auth).filter((value) => value instanceof PgTable);
+    expect(all.map((table) => getTableConfig(table).indexes.length).reduce((sum, count) => sum + count, 0)).toBe(11);
+    const targets = all.flatMap((table) =>
+      getTableConfig(table).foreignKeys.map((key) => getTableConfig(key.reference().foreignTable).name),
+    );
+    expect(new Set(targets)).toEqual(new Set(["user"]));
+  });
+
   test("ownerId builds a required owner column that follows the user on delete", async () => {
-    const { getTableConfig, sqliteTable } = await import("drizzle-orm/sqlite-core");
+    const { getTableConfig, pgTable } = await import("drizzle-orm/pg-core");
     const { ownerId, user } = await import("../schema/auth");
-    const config = getTableConfig(sqliteTable("owned", { ownerId: ownerId() }));
+    const config = getTableConfig(pgTable("owned", { ownerId: ownerId() }));
     expect(config.columns.map((column) => [column.name, column.notNull])).toEqual([["owner_id", true]]);
     const [key] = config.foreignKeys;
     const reference = key.reference();

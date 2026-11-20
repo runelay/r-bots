@@ -18,6 +18,7 @@ export interface FakeAgendaSpec {
   pageSize?: number;
   whoamiFails?: boolean;
   listFails?: boolean;
+  deleteFails?: (eventId: string) => boolean;
   createReply?: (args: Record<string, unknown>, id: string) => unknown;
 }
 
@@ -75,6 +76,7 @@ function register(account: FakeAgendaAccount) {
     return account.createReply ? account.createReply(args, id) : { event: { id, status: "confirmed" } };
   });
   tool(`${account.name}.calendar_delete_event`, (args) => {
+    if (account.deleteFails?.(String(args.eventId))) throw new Error("backend error");
     account.deleted.push(args);
     const calendarId = String(args.calendarId);
     account.events[calendarId] = (account.events[calendarId] ?? []).filter((item) => item.id !== args.eventId);

@@ -23,7 +23,7 @@ import {
 } from "../services/runelay.service";
 
 const realFetch = globalThis.fetch;
-const restores: Array<() => void> = [];
+const restores: Array<() => unknown> = [];
 let server: TestServer;
 
 const catalog = {
@@ -46,8 +46,8 @@ beforeAll(async () => {
   server = await startTestServer();
 });
 
-afterEach(() => {
-  for (const restore of restores.splice(0).reverse()) restore();
+afterEach(async () => {
+  for (const restore of restores.splice(0).reverse()) await restore();
 });
 
 afterAll(async () => {
@@ -182,7 +182,7 @@ describe("searchTools", () => {
 });
 
 describe("classifyTool", () => {
-  test("read-only sql is a read and anything else in sql touches the database", () => {
+  test("read-only sql is a read and anything else in sql touches the database", async () => {
     expect(classifyTool("supabase.execute_sql", { query: "select count(*) from users" })).toBe("read");
     expect(classifyTool("supabase.execute_sql", { query: "with a as (select 1) select * from a" })).toBe("read");
     expect(classifyTool("supabase.execute_sql", { query: "select 1; delete from x" })).toBe("outbound");
@@ -192,7 +192,7 @@ describe("classifyTool", () => {
     expect(touchesDatabase("linear.save_issue")).toBe(false);
   });
 
-  test("classifies reads, writes and outbound actions", () => {
+  test("classifies reads, writes and outbound actions", async () => {
     expect(classifyTool("gmail.send_email")).toBe("outbound");
     expect(classifyTool("linear.list_messages")).toBe("read");
     expect(classifyTool("supabase.execute_sql", { query: "delete from x" })).toBe("outbound");
@@ -206,7 +206,7 @@ describe("classifyTool", () => {
     expect(classifyTool("supabase.run_query", { params: { op: "lookup" } })).toBe("write");
   });
 
-  test("accepts only single read-only SQL statements", () => {
+  test("accepts only single read-only SQL statements", async () => {
     expect(isReadOnlySql("select 1;")).toBe(true);
     expect(isReadOnlySql("  WITH x AS (select 1) select * from x")).toBe(true);
     expect(isReadOnlySql("explain select * from t")).toBe(true);
@@ -222,7 +222,7 @@ describe("classifyTool", () => {
     expect(isReadOnlySql("select * into backup from t")).toBe(false);
   });
 
-  test("detects tools that touch a database", () => {
+  test("detects tools that touch a database", async () => {
     expect(touchesDatabase("supabase.list_tables")).toBe(true);
     expect(touchesDatabase("neon.run_sql")).toBe(true);
     expect(touchesDatabase("github.apply_migration")).toBe(true);
@@ -438,9 +438,9 @@ describe("routes", () => {
   });
 });
 
-function forgetStoredRunelay() {
-  getDb().delete(settings).where(eq(settings.key, "integration:runelay")).run();
-  resetIntegrationCache();
+async function forgetStoredRunelay() {
+  await getDb().delete(settings).where(eq(settings.key, "integration:runelay"));
+  await resetIntegrationCache();
 }
 
 describe("configuration", () => {
@@ -465,7 +465,7 @@ describe("configuration", () => {
     await listConnections(true);
     expect(connectorsOf(anyBot).allowed).toEqual(["notion"]);
     restores.push(forgetStoredRunelay);
-    writeStored("runelay", "", null);
+    await writeStored("runelay", "", null);
     expect(runelayEnabled()).toBe(false);
     expect(connectorsOf(anyBot).allowed).toEqual([]);
   });
@@ -476,7 +476,7 @@ describe("configuration", () => {
     const close = spyOn(Client.prototype, "close").mockRejectedValueOnce(new Error("already closed"));
     restores.push(() => close.mockRestore());
     restores.push(forgetStoredRunelay);
-    writeStored("runelay", fakeRunelay.token, fakeRunelay.mcpUrl);
+    await writeStored("runelay", fakeRunelay.token, fakeRunelay.mcpUrl);
     expect(close).toHaveBeenCalledTimes(1);
     for (let attempt = 0; attempt < 10_000 && !connectorsOf(anyBot).allowed.includes("notion"); attempt++)
       await new Promise((resolve) => setImmediate(resolve));
@@ -484,10 +484,10 @@ describe("configuration", () => {
     fakeRunelay.route("GET", "/thing", { data: { from: "stored" } });
     expect(await runelayApi("GET", "/thing")).toEqual({ from: "stored" });
     const calls = fakeRunelay.toolCalls.length;
-    writeStored("jev", "jev-secret-123", null);
-    restores.push(() => {
-      getDb().delete(settings).where(eq(settings.key, "integration:jev")).run();
-      resetIntegrationCache();
+    await writeStored("jev", "jev-secret-123", null);
+    restores.push(async () => {
+      await getDb().delete(settings).where(eq(settings.key, "integration:jev"));
+      await resetIntegrationCache();
     });
     expect(fakeRunelay.toolCalls.length).toBe(calls);
   });
@@ -497,7 +497,7 @@ describe("configuration", () => {
       throw new Error("not yet");
     });
     restores.push(forgetStoredRunelay);
-    writeStored("runelay", fakeRunelay.token, fakeRunelay.mcpUrl);
+    await writeStored("runelay", fakeRunelay.token, fakeRunelay.mcpUrl);
     for (
       let attempt = 0;
       attempt < 10_000 && !fakeRunelay.toolCalls.some((call) => call.name === "list_connections");

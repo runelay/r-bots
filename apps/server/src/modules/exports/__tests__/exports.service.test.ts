@@ -25,15 +25,15 @@ const bot = "bot-exports";
 
 beforeEach(async () => {
   await resetData();
-  getDb().delete(exports).run();
-  getDb().delete(noteLinks).run();
-  getDb().delete(notes).run();
-  getDb().delete(sheetCells).run();
-  getDb().delete(sheetTabs).run();
-  getDb().delete(sheets).run();
+  await getDb().delete(exports);
+  await getDb().delete(noteLinks);
+  await getDb().delete(notes);
+  await getDb().delete(sheetCells);
+  await getDb().delete(sheetTabs);
+  await getDb().delete(sheets);
 });
 
-afterEach(() => {
+afterEach(async () => {
   jest.useRealTimers();
 });
 
@@ -154,12 +154,14 @@ describe("note exports", () => {
       "1 | 2",
       "<div>bloco html</div>",
     ]);
+    const fromZero = docText(await noteDocx("Contagem", "0. zero\n1. um"));
+    expect(fromZero).toEqual(["Contagem", "0. zero", "1. um"]);
     const titled = docText(await noteDocx("Ignorado", "# Já tem título\n\ntexto"));
     expect(titled).toEqual(["Já tem título", "texto"]);
   });
 
   test("md, docx and pdf exports are stored and downloadable", async () => {
-    const { note } = createNote(bot, { title: "Relatório", content: "corpo [[Alvo|alias]]" }, "bot");
+    const { note } = await createNote(bot, { title: "Relatório", content: "corpo [[Alvo|alias]]" }, "bot");
     const md = await createExport(bot, { kind: "note", id: note.id, format: "md" });
     expect(md).toMatchObject({
       kind: "note",
@@ -185,7 +187,7 @@ describe("note exports", () => {
   });
 
   test("pdf of a note with its own title skips the extra heading and escapes html", async () => {
-    const { note } = createNote(bot, { title: "A & B", content: "# Topo <x>\n\ntexto" }, "bot");
+    const { note } = await createNote(bot, { title: "A & B", content: "# Topo <x>\n\ntexto" }, "bot");
     const chrome = fakeChrome();
     await createExport(bot, { kind: "note", id: note.id, format: "pdf" });
     expect(chrome.pages[0]).toContain("<title>A &amp; B</title>");
@@ -193,7 +195,7 @@ describe("note exports", () => {
   });
 
   test("a chromium that writes nothing marks the export failed", async () => {
-    const { note } = createNote(bot, { title: "Falha" }, "bot");
+    const { note } = await createNote(bot, { title: "Falha" }, "bot");
     fakeChrome({ write: false });
     const job = await createExport(bot, { kind: "note", id: note.id, format: "pdf" });
     expect(job).toMatchObject({ status: "failed", url: null, error: "Chromium não gerou o PDF (código 3)." });
@@ -201,7 +203,7 @@ describe("note exports", () => {
   });
 
   test("a chromium that hangs is killed after the timeout", async () => {
-    const { note } = createNote(bot, { title: "Lenta" }, "bot");
+    const { note } = await createNote(bot, { title: "Lenta" }, "bot");
     jest.useFakeTimers();
     const chrome = fakeChrome({ write: false, hang: true });
     const pending = createExport(bot, { kind: "note", id: note.id, format: "pdf" });
@@ -214,8 +216,8 @@ describe("note exports", () => {
 });
 
 describe("sheet exports", () => {
-  function sample() {
-    const { sheet } = createSheet(
+  async function sample() {
+    const { sheet } = await createSheet(
       bot,
       {
         title: "Vendas",
@@ -239,25 +241,25 @@ describe("sheet exports", () => {
       "bot",
     );
     const tab = sheet.tabs[0].id;
-    formatCells(
+    await formatCells(
       bot,
       sheet.id,
       tab,
       { ranges: "C2", format: { type: "number", decimals: 1, bold: true, align: "center" } },
       "bot",
     );
-    formatCells(bot, sheet.id, tab, { ranges: ["A3"], format: { type: "datetime" } }, "bot");
-    formatCells(bot, sheet.id, tab, { ranges: ["B3"], format: { type: "text" } }, "bot");
-    formatCells(bot, sheet.id, tab, { ranges: ["C3"], format: { type: "general" } }, "bot");
-    formatCells(bot, sheet.id, tab, { ranges: ["D3"], format: { type: "percent", decimals: 2 } }, "bot");
-    formatCells(bot, sheet.id, tab, { ranges: ["E3"], format: { type: "brl", decimals: 0 } }, "bot");
-    formatCells(bot, sheet.id, tab, { ranges: ["F3"], format: { type: "number" } }, "bot");
-    patchTab(bot, sheet.id, tab, { frozenRows: 1, colWidths: { A: 140 } }, "bot");
+    await formatCells(bot, sheet.id, tab, { ranges: ["A3"], format: { type: "datetime" } }, "bot");
+    await formatCells(bot, sheet.id, tab, { ranges: ["B3"], format: { type: "text" } }, "bot");
+    await formatCells(bot, sheet.id, tab, { ranges: ["C3"], format: { type: "general" } }, "bot");
+    await formatCells(bot, sheet.id, tab, { ranges: ["D3"], format: { type: "percent", decimals: 2 } }, "bot");
+    await formatCells(bot, sheet.id, tab, { ranges: ["E3"], format: { type: "brl", decimals: 0 } }, "bot");
+    await formatCells(bot, sheet.id, tab, { ranges: ["F3"], format: { type: "number" } }, "bot");
+    await patchTab(bot, sheet.id, tab, { frozenRows: 1, colWidths: { A: 140 } }, "bot");
     return { sheet, tab, empty: sheet.tabs[1].id };
   }
 
   test("xlsx keeps values, formulas, formats, frozen panes and widths", async () => {
-    const { sheet } = sample();
+    const { sheet } = await sample();
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load((await sheetXlsx(bot, sheet.id)).buffer as ArrayBuffer);
     expect(workbook.worksheets.map((ws) => ws.name)).toEqual(["Dados", "Vazia"]);
@@ -286,17 +288,15 @@ describe("sheet exports", () => {
   });
 
   test("xlsx writes error cells and date results stored on formulas", async () => {
-    const { sheet, tab } = sample();
-    getDb()
+    const { sheet, tab } = await sample();
+    await getDb()
       .update(sheetCells)
       .set({ type: "e", value: JSON.stringify("#N/A") })
-      .where(eq(sheetCells.input, "Produto"))
-      .run();
-    getDb()
+      .where(eq(sheetCells.input, "Produto"));
+    await getDb()
       .update(sheetCells)
       .set({ type: "d", value: JSON.stringify("2026-01-02") })
-      .where(eq(sheetCells.input, "=D1+1"))
-      .run();
+      .where(eq(sheetCells.input, "=D1+1"));
     expect(tab).toBeTruthy();
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load((await sheetXlsx(bot, sheet.id)).buffer as ArrayBuffer);
@@ -305,22 +305,38 @@ describe("sheet exports", () => {
     expect(ws.getCell("H1").value).toEqual({ formula: "D1+1", result: 46024 });
   });
 
-  test("csv shows what the grid shows, quoted and with a BOM", () => {
-    const { sheet, tab, empty } = sample();
-    const csv = sheetCsv(bot, sheet.id, tab);
+  test("csv shows what the grid shows, quoted and with a BOM", async () => {
+    const { sheet, tab, empty } = await sample();
+    const csv = await sheetCsv(bot, sheet.id, tab);
     const lines = csv.slice(1).split("\r\n");
     expect(csv.startsWith("﻿")).toBe(true);
     expect(lines[0]).toBe('Produto,"R$\u00a01.234,50","12,5%",20/11/2026,VERDADEIRO,#DIV/0!,2469,46347');
-    expect(lines[1]).toBe('"diz ""oi"", tchau","1234567,891",-5,VERDADEIRO,FALSO,,,');
+    expect(lines[1]).toBe('"diz ""oi"", tchau","1234567,891","-5,0",VERDADEIRO,FALSO,,,');
     expect(lines[2]).toBe(",,,,,,,");
     expect(lines[3]).toBe("");
-    expect(sheetCsv(bot, sheet.id)).toBe(csv);
-    expect(sheetCsv(bot, sheet.id, empty)).toBe("﻿\r\n");
+    expect(await sheetCsv(bot, sheet.id)).toBe(csv);
+    expect(await sheetCsv(bot, sheet.id, empty)).toBe("﻿\r\n");
+    await writeCells(
+      bot,
+      sheet.id,
+      tab,
+      {
+        cells: [
+          { a: "D3", input: "0,125" },
+          { a: "E3", input: "1234,567" },
+          { a: "F3", input: "1234,5" },
+        ],
+      },
+      "bot",
+    );
+    expect((await sheetCsv(bot, sheet.id, tab)).slice(1).split("\r\n")[2]).toBe(
+      ',,,"12,50%",R$\u00a01.235,"1.234,5",,',
+    );
   });
 
   test("pdf renders a table with alignment and bold", async () => {
-    const { sheet, tab, empty } = sample();
-    writeCells(bot, sheet.id, tab, { cells: [{ a: "A4", input: "<b>" }] }, "bot");
+    const { sheet, tab, empty } = await sample();
+    await writeCells(bot, sheet.id, tab, { cells: [{ a: "A4", input: "<b>" }] }, "bot");
     const chrome = fakeChrome();
     const job = await createExport(bot, { kind: "sheet", id: sheet.id, format: "pdf", tabId: tab });
     expect(job).toMatchObject({ status: "ready", fileName: "Vendas.pdf" });
@@ -329,7 +345,7 @@ describe("sheet exports", () => {
     expect(page).toContain("<tr><th></th><th>A</th><th>B</th>");
     expect(page).toContain('<td style="text-align:left">Produto</td>');
     expect(page).toContain('<td style="text-align:right">R$\u00a01.234,50</td>');
-    expect(page).toContain('<td style="text-align:center;font-weight:600">-5</td>');
+    expect(page).toContain('<td style="text-align:center;font-weight:600">-5,0</td>');
     expect(page).toContain('<td style="text-align:left">&lt;b&gt;</td>');
     expect(page).toContain('<td style="text-align:left"></td>');
     const blank = await createExport(bot, { kind: "sheet", id: sheet.id, format: "pdf", tabId: empty });
@@ -338,13 +354,13 @@ describe("sheet exports", () => {
   });
 
   test("xlsx and csv exports go through the job pipeline", async () => {
-    const { sheet, tab } = sample();
+    const { sheet, tab } = await sample();
     const xlsx = await createExport(bot, { kind: "sheet", id: sheet.id, format: "xlsx" });
     expect(xlsx).toMatchObject({ status: "ready", fileName: "Vendas.xlsx" });
     expect((await exportFile(bot, xlsx.id)).mime).toBe(mimeOf("xlsx"));
     const csv = await createExport(bot, { kind: "sheet", id: sheet.id, format: "csv", tabId: tab });
     expect(new TextDecoder("utf-8", { ignoreBOM: true }).decode((await exportBytes(bot, csv.id)).data)).toBe(
-      sheetCsv(bot, sheet.id, tab),
+      await sheetCsv(bot, sheet.id, tab),
     );
     const missingTab = await createExport(bot, { kind: "sheet", id: sheet.id, format: "csv", tabId: "tab_nope" });
     expect(missingTab).toMatchObject({ status: "failed", error: "Aba não encontrada." });
@@ -353,7 +369,7 @@ describe("sheet exports", () => {
 
 describe("export jobs", () => {
   test("validates kind, format and source", async () => {
-    const { note } = createNote(bot, { title: "N" }, "bot");
+    const { note } = await createNote(bot, { title: "N" }, "bot");
     expect((await errorOf(() => createExport(bot, { kind: "video", id: note.id }))).message).toBe(
       "kind precisa ser note ou sheet.",
     );
@@ -365,24 +381,24 @@ describe("export jobs", () => {
     );
     expect((await errorOf(() => createExport(bot, { kind: "note", format: "md" }))).status).toBe(404);
     expect((await errorOf(() => createExport(bot, { kind: "sheet", id: "nope", format: "csv" }))).status).toBe(404);
-    expect(getDb().select().from(exports).all()).toEqual([]);
+    expect(await getDb().select().from(exports)).toEqual([]);
   });
 
   test("reads jobs per bot and reports a missing file", async () => {
-    const { note } = createNote(bot, { title: "N", content: "x" }, "bot");
+    const { note } = await createNote(bot, { title: "N", content: "x" }, "bot");
     const job = await createExport(bot, { kind: "note", id: note.id, format: "md" });
-    expect(readExport(bot, job.id)).toEqual(job);
-    expect((await errorOf(async () => readExport("other", job.id))).status).toBe(404);
+    expect(await readExport(bot, job.id)).toEqual(job);
+    expect((await errorOf(async () => await readExport("other", job.id))).status).toBe(404);
     expect((await errorOf(() => exportFile("other", job.id))).status).toBe(404);
-    const row = getDb().select().from(exports).where(eq(exports.id, job.id)).get()!;
+    const row = (await getDb().select().from(exports).where(eq(exports.id, job.id)).limit(1))[0]!;
     await getBlobStore().delete(row.blobKey!);
     const gone = await errorOf(() => exportFile(bot, job.id));
     expect(gone).toMatchObject({ status: 404, message: "Arquivo da exportação não encontrado." });
-    getDb().update(exports).set({ fileName: null, size: null }).where(eq(exports.id, job.id)).run();
-    expect(readExport(bot, job.id)).toMatchObject({ fileName: "", size: null });
+    await getDb().update(exports).set({ fileName: null, size: null }).where(eq(exports.id, job.id));
+    expect(await readExport(bot, job.id)).toMatchObject({ fileName: "", size: null });
   });
 
-  test("mime types", () => {
+  test("mime types", async () => {
     expect(mimeOf("pdf")).toBe("application/pdf");
     expect(mimeOf("csv")).toBe("text/csv; charset=utf-8");
     expect(mimeOf("zip")).toBe("application/octet-stream");

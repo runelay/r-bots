@@ -57,7 +57,7 @@ export async function publicConversation(session: StoredSession) {
   return {
     sessionId: meta.sessionId,
     botId: meta.botId,
-    title: isMain ? mainTitle(session) : meta.title || "Nova conversa",
+    title: isMain ? await mainTitle(session) : meta.title || "Nova conversa",
     titleSource: details.titleSource,
     main: isMain,
     createdAt: meta.startedAt,
@@ -75,8 +75,8 @@ export async function publicConversation(session: StoredSession) {
 
 const placeholderTitles = new Set(["", "Conversa principal"]);
 
-function firstUserText(session: StoredSession) {
-  for (const line of session.log.lines) {
+async function firstUserText(session: StoredSession) {
+  for (const line of await session.log.lines()) {
     if (!line.includes('"delivery.consumed"')) continue;
     try {
       const parsed = JSON.parse(line) as {
@@ -96,11 +96,11 @@ function firstUserText(session: StoredSession) {
   return null;
 }
 
-function mainTitle(session: StoredSession) {
+async function mainTitle(session: StoredSession) {
   const details = info(session);
   if (details.titleSource === "user" && session.meta.title) return session.meta.title;
   if (!placeholderTitles.has(session.meta.title)) return session.meta.title;
-  const text = firstUserText(session);
+  const text = await firstUserText(session);
   if (!text) return "Nova conversa";
   session.meta.title = autoTitle(text);
   details.titleSource = "auto";

@@ -67,7 +67,7 @@ beforeEach(async () => {
   await resetUsageTables();
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const restore of restores.splice(0)) restore();
 });
 
@@ -126,13 +126,9 @@ describe("claude logs", () => {
       { p: "claude", h: hour(earlier), m: "claude-b" },
       { p: "claude", h: hour(at), m: "claude-a" },
     ]);
-    expect(
-      getDb()
-        .select()
-        .from(usageCursors)
-        .all()
-        .map((row) => row.path),
-    ).toEqual([join(claudeRoot, "proj", "a.jsonl")]);
+    expect((await getDb().select().from(usageCursors)).map((row) => row.path)).toEqual([
+      join(claudeRoot, "proj", "a.jsonl"),
+    ]);
   });
 
   test("reads only appended complete lines and restarts a truncated file", async () => {
@@ -217,15 +213,9 @@ describe("index", () => {
     const old = new Date(Date.now() - 120 * 86_400_000).toISOString();
     await put(join(claudeRoot, "a.jsonl"), [claudeRecord({ timestamp: old, sessionId: "old" }), claudeRecord()]);
     await new UsageScanner(claudeRoot, codexRoot).snapshot();
-    expect(getDb().select().from(usageBuckets).all()).toHaveLength(1);
-    expect(
-      getDb()
-        .select()
-        .from(usageSessions)
-        .all()
-        .map((row) => row.key),
-    ).toEqual(["claude:s1"]);
-    expect(getDb().select().from(usageSeen).all()).toHaveLength(1);
+    expect(await getDb().select().from(usageBuckets)).toHaveLength(1);
+    expect((await getDb().select().from(usageSessions)).map((row) => row.key)).toEqual(["claude:s1"]);
+    expect(await getDb().select().from(usageSeen)).toHaveLength(1);
     const reloaded = new UsageScanner(claudeRoot, codexRoot);
     const snap = await reloaded.snapshot();
     expect(snap.rows).toHaveLength(1);
@@ -235,7 +225,7 @@ describe("index", () => {
   test("ignores a stored index of another version", async () => {
     await put(join(claudeRoot, "a.jsonl"), [claudeRecord()]);
     await new UsageScanner(claudeRoot, codexRoot).snapshot();
-    writeSetting("usage.index.version", 99);
+    await writeSetting("usage.index.version", 99);
     const snap = await new UsageScanner(claudeRoot, codexRoot).snapshot();
     expect(snap.rows).toHaveLength(1);
     expect(snap.rows[0].c[6]).toBe(1);

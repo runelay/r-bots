@@ -175,14 +175,14 @@ describe("groups service", () => {
     await loadGroups();
     expect(getGroup(group.id)).toMatchObject({ name: "Persistido", members: [a, b] });
 
-    saveGroupRow({
+    await saveGroupRow({
       id: "grp_extra",
       name: undefined,
       members: undefined,
       createdAt: "2026-01-01T00:00:00.000Z",
       note: "x",
     });
-    const extra = loadGroupRows().find((item) => item.id === "grp_extra") as unknown as Record<string, unknown>;
+    const extra = (await loadGroupRows()).find((item) => item.id === "grp_extra") as unknown as Record<string, unknown>;
     expect(extra).toMatchObject({
       name: "",
       members: [],
@@ -190,14 +190,14 @@ describe("groups service", () => {
       archivedAt: null,
       note: "x",
     });
-    getDb().delete(groupMembers).run();
-    getDb().delete(groups).run();
-    expect(loadGroupRows()).toEqual([]);
+    await getDb().delete(groupMembers);
+    await getDb().delete(groups);
+    expect(await loadGroupRows()).toEqual([]);
     await loadGroups();
     expect(getGroup(group.id)).toBeUndefined();
   });
 
-  test("finds mentioned members in order", () => {
+  test("finds mentioned members in order", async () => {
     const members = [
       { id: "ana", name: "Ána" },
       { id: "bia", name: "Bia Souza" },

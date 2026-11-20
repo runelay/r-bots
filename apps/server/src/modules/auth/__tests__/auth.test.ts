@@ -1,11 +1,8 @@
-import { Database } from "bun:sqlite";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/api";
-import { drizzle } from "drizzle-orm/bun-sqlite";
-import * as schema from "../../../db/schema/auth";
+import { freshDb } from "../../../../test/db-helpers";
 import { type AuthModule, createAuthModule, isPublicRoute } from "..";
 import { safeEqual, signSessionCookie } from "../services/accounts-access.service";
 import { resolveAuthSecret } from "../services/auth-secret.service";
@@ -13,15 +10,6 @@ import { resolveAuthSecret } from "../services/auth-secret.service";
 const base = "http://127.0.0.1:2999";
 let dir: string;
 let mod: AuthModule;
-
-async function freshDb() {
-  const sqlite = new Database(":memory:");
-  const db = drizzle(sqlite);
-  const empty = await generateSQLiteDrizzleJson({});
-  const current = await generateSQLiteDrizzleJson(schema as Record<string, unknown>);
-  for (const statement of await generateSQLiteMigration(empty, current)) sqlite.run(statement);
-  return db;
-}
 
 function req(path: string, init: RequestInit & { token?: string } = {}) {
   const headers = new Headers(init.headers);
@@ -55,10 +43,10 @@ beforeAll(async () => {
   });
 });
 
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
+afterAll(async () => rmSync(dir, { recursive: true, force: true }));
 
 describe("secret", () => {
-  test("generates once into the data dir with mode 600 and prefers env", () => {
+  test("generates once into the data dir with mode 600 and prefers env", async () => {
     const dataDir = join(dir, "secret-data");
     const first = resolveAuthSecret({ env: {}, dataDir });
     expect(first.generated).toBe(true);
@@ -72,7 +60,7 @@ describe("secret", () => {
 });
 
 describe("routes", () => {
-  test("public routes", () => {
+  test("public routes", async () => {
     expect(isPublicRoute("GET", "/health")).toBe(true);
     expect(isPublicRoute("POST", "/api/auth/sign-in/email")).toBe(true);
     expect(isPublicRoute("GET", "/device")).toBe(true);
@@ -245,7 +233,7 @@ describe("sessions", () => {
 });
 
 describe("helpers", () => {
-  test("safeEqual and cookie signing", () => {
+  test("safeEqual and cookie signing", async () => {
     expect(safeEqual("abc", "abc")).toBe(true);
     expect(safeEqual("abc", "abd")).toBe(false);
     expect(safeEqual("abc", "abcd")).toBe(false);

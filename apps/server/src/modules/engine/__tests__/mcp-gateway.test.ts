@@ -71,12 +71,12 @@ async function open(options: ContextOptions = {}, target: BotDefinition = bot) {
   return { ...harness, client, call };
 }
 
-function settledOf(callIndex = -1) {
-  return factsOfType(session, "call.settled").at(callIndex)?.data;
+async function settledOf(callIndex = -1) {
+  return (await factsOfType(session, "call.settled")).at(callIndex)?.data;
 }
 
-function startedOf(callIndex = -1) {
-  return factsOfType(session, "call.started").at(callIndex)?.data;
+async function startedOf(callIndex = -1) {
+  return (await factsOfType(session, "call.started")).at(callIndex)?.data;
 }
 
 function spy<T extends object, K extends keyof T>(target: T, key: K) {
@@ -142,9 +142,13 @@ describe("self configuration", () => {
     const role = await call("set_role", { text: "Analista" });
     expect(role.text).toBe('Papel: "Tester" → "Analista". Vale a partir da próxima mensagem.');
     expect(getBot(bot.id)?.role).toBe("Analista");
-    const requested = factsOfType(session, "call.requested")[0].data;
+    const requested = (await factsOfType(session, "call.requested"))[0].data;
     expect(requested).toMatchObject({ owner: { callId: "call_parent" }, origin: { agent: "Ana" } });
-    expect(factsOfType(session, "bot.updated")[0].data).toMatchObject({ botId: bot.id, by: "bot", fields: ["role"] });
+    expect((await factsOfType(session, "bot.updated"))[0].data).toMatchObject({
+      botId: bot.id,
+      by: "bot",
+      fields: ["role"],
+    });
     await call("update_instructions", { markdown: "Responda em tabela." });
     expect(getBot(bot.id)?.instructions).toBe("Você testa.\n\nResponda em tabela.");
     const replaced = await call("update_instructions", { markdown: "Só isso.", mode: "replace" });
@@ -167,7 +171,7 @@ describe("self configuration", () => {
     expect(created.text).toContain('Rotina "diaria" criada: 0 9 * * 1-5 (America/Sao_Paulo).');
     expect(approvals[0].prompt).toContain('Posso criar a rotina "diaria"');
     expect(decisions[0]).toMatchObject({ kind: "approval", outcome: "fallback" });
-    expect(startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
     expect(getBot(bot.id)?.schedules.map((item) => item.name)).toEqual(["diaria"]);
     const replaced = await call("add_schedule", {
       name: "diaria",
@@ -186,11 +190,11 @@ describe("self configuration", () => {
     const denied = await open({ approve: () => "deny" });
     const result = await denied.call("add_schedule", { name: "x", cron: "0 9 * * *", prompt: "p" });
     expect(result).toMatchObject({ isError: true, text: "A pessoa negou essa mudança." });
-    expect(settledOf()).toMatchObject({ outcome: "rejected", cause: { interactionId: "int_1" } });
+    expect(await settledOf()).toMatchObject({ outcome: "rejected", cause: { interactionId: "int_1" } });
     const scheduled = await open({ isSchedule: true });
     const quiet = await scheduled.call("add_schedule", { name: "x", cron: "0 9 * * *", prompt: "p" });
     expect(quiet.text).toBe("Ninguém está aqui para aprovar mudanças agora.");
-    expect(settledOf()).not.toHaveProperty("cause");
+    expect(await settledOf()).not.toHaveProperty("cause");
     const invalid = await open({ permission: "full" });
     const broken = await invalid.call("add_schedule", { name: "x", cron: "nunca", prompt: "p" });
     expect(broken).toMatchObject({ isError: true, text: "Cron inválido. (schedules[0].cron)" });
@@ -202,7 +206,7 @@ describe("self configuration", () => {
     const { call, approvals } = await open();
     expect((await call("add_schedule", { name: "y", cron: "0 9 * * *", prompt: "p" })).isError).toBe(false);
     expect(approvals).toHaveLength(0);
-    expect(startedOf()).toMatchObject({ clearedBy: { decision: "jev", model: "jev-test" } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { decision: "jev", model: "jev-test" } });
   });
 
   test("remove_schedule removes an existing routine and fails for unknown ones", async () => {
@@ -210,7 +214,7 @@ describe("self configuration", () => {
     const { call } = await open({ permission: "full" });
     const missing = await call("remove_schedule", { name: "nope" });
     expect(missing).toMatchObject({ isError: true, text: 'Não existe rotina "nope".' });
-    expect(settledOf()).toMatchObject({ outcome: "failed" });
+    expect(await settledOf()).toMatchObject({ outcome: "failed" });
     expect((await call("remove_schedule", { name: "r1" })).text).toContain('Rotina "r1" removida.');
     expect(getBot(bot.id)?.schedules).toEqual([]);
   });
@@ -345,7 +349,7 @@ describe("connector tools", () => {
     expect(JSON.parse(found.text)).toEqual([
       { name: "linear_server.list_issues", description: "lista", inputSchema: {} },
     ]);
-    expect(factsOfType(session, "call.requested")[0].data).toMatchObject({
+    expect((await factsOfType(session, "call.requested"))[0].data).toMatchObject({
       capability: { name: "connector_search", label: "Procurar ferramentas: issues" },
     });
   });
@@ -360,7 +364,7 @@ describe("connector tools", () => {
     expect(blocked.text).toContain("não está liberada");
     const read = await call("connector_call", { tool: "linear_server.list_issues", args: { team: "x" } });
     expect(read.text).toContain("(cortado)");
-    expect(factsOfType(session, "call.requested").at(-1)?.data).toMatchObject({
+    expect((await factsOfType(session, "call.requested")).at(-1)?.data).toMatchObject({
       capability: {
         name: "connector:linear_server.list_issues",
         label: "Linear: list_issues",
@@ -371,7 +375,7 @@ describe("connector tools", () => {
     expect(sent.isError).toBe(false);
     expect(approvals[0].prompt).toContain("Posso rodar solo send_email?");
     expect(decisions.at(-1)?.reason).toContain("Lista dura");
-    expect(startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
   });
 
   test("connector_call follows the conversation permission", async () => {
@@ -393,7 +397,7 @@ describe("connector tools", () => {
     );
     const full = await open({ permission: "full" });
     expect((await full.call("connector_call", { tool: "solo.send_email" })).text).toBe("ok");
-    expect(startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
     const fallback = await open({ permission: undefined });
     expect((await fallback.call("connector_call", { tool: "solo.update_doc" })).text).toBe("ok");
   });
@@ -424,7 +428,7 @@ describe("connector tools", () => {
     const { call, settled } = await open();
     const failed = await call("connector_call", { tool: "solo.get_thing" });
     expect(failed).toMatchObject({ isError: true, text: "remote broke" });
-    expect(settledOf()).toMatchObject({ outcome: "failed", error: { message: "remote broke" } });
+    expect(await settledOf()).toMatchObject({ outcome: "failed", error: { message: "remote broke" } });
     expect(settled.at(-1)).toContain("erro: remote broke");
   });
 
@@ -445,7 +449,7 @@ describe("connector tools", () => {
     expect((await call("skill_read", { slug: "s" })).text).toBe("skill s");
     expect((await call("skill_read", { slug: "s", path: "a.md" })).text).toBe("arquivo a.md");
     expect((await call("memory_write", { slug: "m", body: "b", name: "N" })).text).toBe("salvo");
-    expect(factsOfType(session, "call.requested").at(-1)?.data).toMatchObject({
+    expect((await factsOfType(session, "call.requested")).at(-1)?.data).toMatchObject({
       input: { slug: "m", name: "N" },
       capability: { label: "Salvar memória m" },
     });
@@ -480,7 +484,7 @@ describe("computer tools", () => {
     const { call, approvals } = await open({ approve: () => "deny" });
     const tree = await call("computer_ui_tree", { app: "Mail" });
     expect(JSON.parse(tree.text).app).toBe("Mail");
-    expect(factsOfType(session, "call.requested")[0].data).toMatchObject({
+    expect((await factsOfType(session, "call.requested"))[0].data).toMatchObject({
       capability: { name: "computer_ui_tree", label: "Ler a tela do Mail", surface: "computer" },
     });
     expect((await call("computer_apps")).text).toBe('{"ok":true}');
@@ -522,7 +526,7 @@ describe("computer tools", () => {
     await call("computer_key", { combo: "cmd+l" });
     expect(approvals[1].details).toEqual({});
     await call("files_list", { path: "~/Desktop" });
-    expect(settledOf()).toMatchObject({ outcome: "completed", output: null });
+    expect(await settledOf()).toMatchObject({ outcome: "completed", output: null });
   });
 
   test("acts after approval, by Jev, with full access or with only vault secrets", async () => {
@@ -531,20 +535,20 @@ describe("computer tools", () => {
     const approved = await open();
     expect((await approved.call("computer_type", { text: "olá" })).isError).toBe(false);
     expect(approved.approvals[0].prompt).toBe('Posso digitar no seu Mac: "olá"?');
-    expect(factsOfType(session, "computer.action")[0].data).toMatchObject({
+    expect((await factsOfType(session, "computer.action"))[0].data).toMatchObject({
       tool: "computer_type",
       summary: 'Digitar "olá"',
       screenshotPath: "/tmp/shot.png",
     });
     await approved.call("computer_type", { text: "segredo:senha-mail" });
-    expect(startedOf()).toMatchObject({ clearedBy: { vault: true } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { vault: true } });
     const full = await open({ permission: "full" });
     await full.call("computer_drag", { fromX: 1, fromY: 1, toX: 2, toY: 2 });
-    expect(startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
     approvalJev(0.1);
     const jev = await open();
     await jev.call("files_mkdir", { path: "~/Desktop/x" });
-    expect(startedOf()).toMatchObject({ clearedBy: { decision: "jev" } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { decision: "jev" } });
     expect(jev.approvals).toHaveLength(0);
   });
 
@@ -559,7 +563,7 @@ describe("computer tools", () => {
     const scheduled = await open({ isSchedule: true });
     const result = await scheduled.call("computer_applescript", { script: 'tell application "Mail" to send' });
     expect(result.text).toBe("A pessoa negou essa ação no computador.");
-    expect(settledOf()).not.toHaveProperty("cause");
+    expect(await settledOf()).not.toHaveProperty("cause");
     const asked = await open({ approve: () => "deny" });
     await asked.call("computer_applescript", { script: 'tell application "Mail" to send' });
     expect(asked.approvals[0].prompt).toBe('Posso rodar este AppleScript no seu Mac?\ntell application "Mail" to send');
@@ -575,7 +579,7 @@ describe("computer tools", () => {
     const shot = await claude.call("computer_screenshot");
     expect(shot.content[0]).toEqual({ type: "image", data: "aW1n", mimeType: "image/jpeg" });
     expect(shot.content).toHaveLength(2);
-    expect(settledOf()).toEqual({ callId: expect.any(String), outcome: "completed", output: { width: 10 } });
+    expect(await settledOf()).toEqual({ callId: expect.any(String), outcome: "completed", output: { width: 10 } });
     const codex = await open({ provider: "codex" });
     const withTree = await codex.call("computer_screenshot", { display: 1 });
     expect(withTree.content).toHaveLength(3);
@@ -600,7 +604,7 @@ describe("computer tools", () => {
     expect((await harness.call("record_status")).text).toBe("COMPUTER_UNAVAILABLE: fora");
     computerCall.mockRejectedValueOnce("estranho");
     expect((await harness.call("files_read", { path: "a" })).text).toBe("estranho");
-    expect(settledOf()).toMatchObject({ error: { code: "TOOL_EXECUTION_FAILED" } });
+    expect(await settledOf()).toMatchObject({ error: { code: "TOOL_EXECUTION_FAILED" } });
     expect(harness.cancelled).toEqual(["Você assumiu o computador.", "A pessoa apertou Parar."]);
   });
 
@@ -618,7 +622,7 @@ describe("computer tools", () => {
     await call("computer_key", { combo: "return" });
     await call("computer_applescript", { script: "beep" });
     await call("computer_ui_tree");
-    const labels = factsOfType(session, "call.requested").map(
+    const labels = (await factsOfType(session, "call.requested")).map(
       (fact) => (fact.data.capability as { label: string }).label,
     );
     expect(labels).toEqual([
@@ -658,7 +662,7 @@ describe("bot tools", () => {
     const { call, settled } = await open({ tools: [tool({})] });
     const result = await call("plain_tool", { value: "v" });
     expect(JSON.parse(result.text)).toEqual({ echoed: { value: "v" } });
-    expect(startedOf()).toEqual({ callId: expect.any(String) });
+    expect(await startedOf()).toEqual({ callId: expect.any(String) });
     expect(settled[0]).toBe('plain_tool({"value":"v"}) → {"echoed":{"value":"v"}}');
   });
 
@@ -700,11 +704,14 @@ describe("bot tools", () => {
     });
     const shot = await call("shot");
     expect(shot.content[0]).toEqual({ type: "image", data: "aW1n", mimeType: "image/png" });
-    expect(settledOf()).toMatchObject({ output: { width: 5, image: `/bots/${bot.id}/desktop/latest.png` } });
+    expect(await settledOf()).toMatchObject({ output: { width: 5, image: `/bots/${bot.id}/desktop/latest.png` } });
     expect(JSON.parse((await call("send")).text)).toEqual({ ok: true });
-    expect(factsOfType(session, "file.sent")[0].data).toMatchObject({ attachment, botId: bot.id });
+    expect((await factsOfType(session, "file.sent"))[0].data).toMatchObject({ attachment, botId: bot.id });
     expect(JSON.parse((await call("art")).text)).toEqual({ id: "art_1" });
-    expect(factsOfType(session, "artifact.created")[0].data).toMatchObject({ artifactId: "art_1", botId: bot.id });
+    expect((await factsOfType(session, "artifact.created"))[0].data).toMatchObject({
+      artifactId: "art_1",
+      botId: bot.id,
+    });
     expect(settled).toEqual(['shot() → print {"width":5}', "send(r.csv) → enviado", "art(Painel) → v1"]);
   });
 
@@ -732,12 +739,19 @@ describe("bot tools", () => {
       ],
     });
     expect(JSON.parse((await call("note")).text)).toEqual({ id: "nt_1" });
-    expect(settledOf()).toMatchObject({ outcome: "completed", output: { id: "nt_1" } });
-    expect(factsOfType(session, "block.created")[0].data).toMatchObject({ id: "nt_1", title: "Ata", botId: bot.id });
+    expect(await settledOf()).toMatchObject({ outcome: "completed", output: { id: "nt_1" } });
+    expect((await factsOfType(session, "block.created"))[0].data).toMatchObject({
+      id: "nt_1",
+      title: "Ata",
+      botId: bot.id,
+    });
     const thread = await ensureThread(bot.id);
     const main = getStoredSession(thread.sessionId);
     expect(main).toBeDefined();
-    expect(factsOfType(main as StoredSession, "block.created")[0].data).toMatchObject({ id: "nt_1", botId: bot.id });
+    expect((await factsOfType(main as StoredSession, "block.created"))[0].data).toMatchObject({
+      id: "nt_1",
+      botId: bot.id,
+    });
     expect(settled).toEqual(["note(Ata) → v1"]);
   });
 
@@ -761,18 +775,18 @@ describe("bot tools", () => {
       origin: "Ana",
       details: { reason: "porque sim" },
     });
-    expect(startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
     await harness.call("risky_two");
     expect(harness.approvals[1].details).toBeUndefined();
     const denied = await open({ tools: [gated], approve: () => "deny" });
     expect((await denied.call("risky", { value: "x" })).text).toBe(
       "A pessoa negou essa ação. Não tente de novo sem pedir.",
     );
-    expect(settledOf()).toMatchObject({ outcome: "rejected", output: { approval: { interactionId: "int_1" } } });
+    expect(await settledOf()).toMatchObject({ outcome: "rejected", output: { approval: { interactionId: "int_1" } } });
     const scheduled = await open({ tools: [gated], isSchedule: true });
     const refused = await scheduled.call("risky", { value: "x" });
     expect(refused.text).toContain("Ninguém está aqui para aprovar");
-    expect(settledOf()).toMatchObject({ output: { approval: { interactionId: null } } });
+    expect(await settledOf()).toMatchObject({ output: { approval: { interactionId: null } } });
   });
 
   test("gated tools ask Jev first and some always need a person", async () => {
@@ -786,7 +800,7 @@ describe("bot tools", () => {
       browserBot,
     );
     await harness.call("browser_click", { ref: "@e1" });
-    expect(startedOf()).toMatchObject({ clearedBy: { decision: "jev", model: "jev-test" } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { decision: "jev", model: "jev-test" } });
     expect(harness.approvals).toHaveLength(0);
     await harness.call("desktop_type", { text: "x" });
     expect(harness.decisions.at(-1)).toMatchObject({
@@ -799,10 +813,10 @@ describe("bot tools", () => {
     expect(harness.decisions.at(-1)?.outcome).toBe("auto_approved");
     expect(harness.approvals).toHaveLength(2);
     await harness.call("browser_fill", { ref: "@e2", text: "segredo:token-x" });
-    expect(factsOfType(session, "call.started").at(-1)?.data).toMatchObject({ clearedBy: { vault: true } });
+    expect((await factsOfType(session, "call.started")).at(-1)?.data).toMatchObject({ clearedBy: { vault: true } });
     const full = await open({ tools: [gated("browser_click")], permission: "full" });
     await full.call("browser_click", { ref: "@e1" });
-    expect(startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
+    expect(await startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
   });
 });
 
@@ -812,7 +826,7 @@ describe("delegate and handoff", () => {
     const harness = await open({ delegates: [mate] });
     const done = await harness.call("delegate", { bot: mate.id, message: "faz o relatório" });
     expect(done.text).toBe("relatório");
-    expect(factsOfType(session, "call.requested")[0].data).toMatchObject({
+    expect((await factsOfType(session, "call.requested"))[0].data).toMatchObject({
       capability: { name: mate.id, label: `Delegar para ${mate.name}` },
       delegation: { botId: mate.id },
     });
@@ -838,7 +852,11 @@ describe("delegate and handoff", () => {
     const passed = await harness.call("handoff", { bot: mate.id, note: "sua vez" });
     expect(passed.text).toBe(`Ok, ${mate.name} responde em seguida.`);
     expect(harness.handoffs).toEqual([{ botId: mate.id, note: "sua vez" }]);
-    expect(factsOfType(session, "handoff.requested")[0].data).toEqual({ from: bot.id, to: mate.id, note: "sua vez" });
+    expect((await factsOfType(session, "handoff.requested"))[0].data).toEqual({
+      from: bot.id,
+      to: mate.id,
+      note: "sua vez",
+    });
   });
 });
 
@@ -869,10 +887,10 @@ describe("code tools", () => {
 });
 
 describe("buildServer", () => {
-  test("builds a server for a context without connecting it", () => {
+  test("builds a server for a context without connecting it", async () => {
     const harness = toolContext(bot, session);
     revokes.push(harness.revoke);
     expect(buildServer(harness.context)).toBeDefined();
-    expect(factsOf(session)).toHaveLength(0);
+    expect(await factsOf(session)).toHaveLength(0);
   });
 });

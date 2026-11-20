@@ -55,13 +55,18 @@ export function recallBlock(items: RecallItem[]) {
 
 export async function teamLogBlock(botId: string) {
   const today = new Date().toISOString().slice(0, 10);
-  const lines = recentTeamEntries(botId, today, 5);
+  const lines = await recentTeamEntries(botId, today, 5);
   if (lines.length === 0) return "";
   return `## O que o time fez hoje\n${lines.map((item) => `- ${item.at.slice(11, 16)} ${item.botName}: ${item.summary}`).join("\n")}`;
 }
 
 async function appendTeamLog(bot: BotDefinition, summary: string) {
-  addTeamEntry({ at: new Date().toISOString(), botId: bot.id, botName: bot.name, summary: summary.slice(0, 240) });
+  await addTeamEntry({
+    at: new Date().toISOString(),
+    botId: bot.id,
+    botName: bot.name,
+    summary: summary.slice(0, 240),
+  });
 }
 
 const secretPatterns = [

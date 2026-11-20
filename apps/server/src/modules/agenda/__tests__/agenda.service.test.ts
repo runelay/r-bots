@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { agendaBlockId } from "@runelay-bots/protocol";
+import { and, eq } from "drizzle-orm";
 import { fakeAgenda, toolCallsOf } from "../../../../test/agenda-helpers";
+import { getDb } from "../../../db";
+import { calendarCache } from "../../../db/tables";
 import { agendaVersion, type BlockError } from "../../blocks/services/blocks.shared";
 import * as runelay from "../../connectors/services/runelay.service";
 import {
@@ -22,7 +25,7 @@ import {
 const range = { start: "2026-11-20T00:00:00-03:00", end: "2026-11-21T00:00:00-03:00" };
 const spies: Array<{ mockRestore(): void }> = [];
 
-afterEach(() => {
+afterEach(async () => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
@@ -99,7 +102,7 @@ describe("event ids and mapping", () => {
     }
   });
 
-  test("maps a Google event with meet, attendees and status", () => {
+  test("maps a Google event with meet, attendees and status", async () => {
     const event = toEvent("acc", "primary", {
       id: "e1",
       summary: "  Reunião  ",
@@ -142,7 +145,7 @@ describe("event ids and mapping", () => {
     });
   });
 
-  test("fills defaults for a bare event and flags recurring and cancelled ones", () => {
+  test("fills defaults for a bare event and flags recurring and cancelled ones", async () => {
     const bare = toEvent("acc", "primary", { id: "e2_20261120T130000Z", status: "cancelled" });
     expect(bare).toMatchObject({
       title: "(sem título)",
@@ -172,8 +175,10 @@ describe("event ids and mapping", () => {
     expect(externalAttendees(["Ana@Gmail.com", "joao@fora.com"], ["ana@gmail.com"])).toEqual(["joao@fora.com"]);
     await fakeAgenda([{ email: "dona@casa.com" }]);
     await listAccounts();
-    expect(externalAttendeesCached({ attendees: ["DONA@casa.com", "visita@fora.com"] })).toEqual(["visita@fora.com"]);
-    expect(externalAttendeesCached({ attendees: "x" })).toEqual([]);
+    expect(await externalAttendeesCached({ attendees: ["DONA@casa.com", "visita@fora.com"] })).toEqual([
+      "visita@fora.com",
+    ]);
+    expect(await externalAttendeesCached({ attendees: "x" })).toEqual([]);
     expect(await needsApproval({})).toEqual([]);
     expect(await needsApproval({ attendees: ["dona@casa.com", "outro@fora.com"] })).toEqual(["outro@fora.com"]);
     spies.push(spyOn(runelay, "listConnections").mockRejectedValueOnce(new Error("fetch failed")));
@@ -181,7 +186,62 @@ describe("event ids and mapping", () => {
   });
 });
 
+describe("approval after a restart", () => {
+  test("uses the stored e-mails of the accounts, not only what this process saw", async () => {
+    const [account] = await fakeAgenda([{ email: "dona@reinicio.com" }]);
+    await listAccounts();
+    const stored = (
+      await getDb()
+        .select()
+        .from(calendarCache)
+        .where(and(eq(calendarCache.calendarId, "identity"), eq(calendarCache.eventId, account.name)))
+        .limit(1)
+    )[0];
+    expect(stored?.data).toEqual({ email: "dona@reinicio.com" });
+    await getDb()
+      .insert(calendarCache)
+      .values({
+        calendarId: "identity",
+        eventId: "google_calendar_antes_do_restart",
+        startsAt: "",
+        data: { email: "Trabalho@Empresa.com" },
+        fetchedAt: new Date().toISOString(),
+      });
+    expect(
+      await externalAttendeesCached({ attendees: ["trabalho@empresa.com", "DONA@reinicio.com", "visita@fora.com"] }),
+    ).toEqual(["visita@fora.com"]);
+  });
+});
+
 describe("listEvents", () => {
+  test("sorts by the real instant across days, with all-day events at local midnight", async () => {
+    await fakeAgenda([
+      {
+        email: "ana@gmail.com",
+        events: {
+          primary: [
+            { id: "next", summary: "Feriado amanhã", start: { date: "2026-11-21" }, end: { date: "2026-11-22" } },
+            {
+              id: "night",
+              summary: "Noite",
+              start: { dateTime: "2026-11-20T22:00:00-03:00" },
+              end: { dateTime: "2026-11-20T23:00:00-03:00" },
+            },
+            {
+              id: "utc",
+              summary: "Manhã seguinte",
+              start: { dateTime: "2026-11-21T12:00:00Z" },
+              end: { dateTime: "2026-11-21T13:00:00Z" },
+            },
+            { id: "today", summary: "Feriado hoje", start: { date: "2026-11-20" }, end: { date: "2026-11-21" } },
+          ],
+        },
+      },
+    ]);
+    const list = await listEvents({ start: range.start, end: "2026-11-22T00:00:00-03:00" });
+    expect(list.items.map((item) => item.title)).toEqual(["Feriado hoje", "Noite", "Feriado amanhã", "Manhã seguinte"]);
+  });
+
   test("validates the period", async () => {
     expect((await failure(listEvents({ end: range.end }))).message).toBe("start é obrigatório.");
     expect((await failure(listEvents({ start: "ontem", end: range.end }))).message).toBe("start inválido.");
@@ -379,7 +439,7 @@ describe("createEvent", () => {
       description: "Conversa",
       attendees: [{ email: "ana@gmail.com", response: "needsAction" }],
     });
-    expect(agendaVersion(bot)).toBe(1);
+    expect(await agendaVersion(bot)).toBe(1);
     expect(blockEvent.type).toBe("block.updated");
     expect(blockEvent.data).toMatchObject({
       kind: "agenda",
@@ -522,7 +582,70 @@ describe("updateEvent", () => {
       title: "Foco total",
       description: "Dia todo",
     });
-    expect(agendaVersion(bot)).toBe(2);
+    expect(await agendaVersion(bot)).toBe(2);
+  });
+
+  test("undoes the new copy when the old event cannot be deleted", async () => {
+    const [account] = await fakeAgenda([
+      {
+        email: "ana@gmail.com",
+        deleteFails: (eventId) => eventId === "solo",
+        events: {
+          primary: [
+            {
+              id: "solo",
+              summary: "Foco",
+              start: { dateTime: "2026-11-20T09:00:00-03:00" },
+              end: { dateTime: "2026-11-20T10:00:00-03:00" },
+            },
+          ],
+        },
+      },
+    ]);
+    const bot = botId();
+    await listEvents(range);
+    const oldId = encodeEventId(account.name, "primary", "solo");
+    const error = await failure(updateEvent(bot, oldId, { title: "Foco total" }, "user"));
+    expect([error.status, error.code, error.extra]).toEqual([502, "update_failed", { eventIds: [oldId] }]);
+    expect(error.message).toBe(
+      "O Google Calendar não apagou o evento antigo, então desfiz a cópia nova. Nada mudou na agenda.",
+    );
+    expect(account.created).toHaveLength(1);
+    const copy = account.deleted.map((item) => item.eventId);
+    expect(copy).toHaveLength(1);
+    expect(copy[0]).not.toBe("solo");
+    expect(account.events.primary.map((item) => item.id)).toEqual(["solo"]);
+    expect(await agendaVersion(bot)).toBe(0);
+    const after = await listEvents(range);
+    expect(after.items.map((item) => item.title)).toEqual(["Foco"]);
+  });
+
+  test("reports both copies when the rollback fails too", async () => {
+    const [account] = await fakeAgenda([
+      {
+        email: "ana@gmail.com",
+        deleteFails: () => true,
+        events: {
+          primary: [
+            {
+              id: "solo",
+              summary: "Foco",
+              start: { dateTime: "2026-11-20T09:00:00-03:00" },
+              end: { dateTime: "2026-11-20T10:00:00-03:00" },
+            },
+          ],
+        },
+      },
+    ]);
+    await listEvents(range);
+    const oldId = encodeEventId(account.name, "primary", "solo");
+    const error = await failure(updateEvent(botId(), oldId, { title: "Foco total" }, "user"));
+    const newId = encodeEventId(account.name, "primary", String(account.events.primary[1].id));
+    expect([error.status, error.code, error.extra]).toEqual([502, "update_duplicated", { eventIds: [oldId, newId] }]);
+    expect(error.message).toBe(
+      "O Google Calendar não apagou o evento antigo nem a cópia nova. Os dois ficaram na agenda; apague um deles.",
+    );
+    expect(account.events.primary).toHaveLength(2);
   });
 
   test("refuses unknown, shared and recurring events", async () => {

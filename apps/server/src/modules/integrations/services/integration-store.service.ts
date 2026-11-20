@@ -1,11 +1,11 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { dataDir } from "../../../config/env";
 import { readOrCreateSecret } from "../../../config/runtime-secrets";
 import { getDb } from "../../../db/client";
-import { readSetting, writeSetting } from "../../../db/settings";
+import { writeSetting } from "../../../db/settings";
 import { settings } from "../../../db/tables";
 import { forgetSecretValue, rememberSecretValue } from "../../../shared/redact";
 
@@ -33,6 +33,7 @@ export interface StoredIntegration {
 
 const listeners = new Set<(id: IntegrationId) => void>();
 const plain = new Map<IntegrationId, string | null>();
+const stored = new Map<IntegrationId, StoredIntegration | null>();
 
 export function isIntegrationId(value: string): value is IntegrationId {
   return (integrationIds as readonly string[]).includes(value);
@@ -65,8 +66,19 @@ function aad(id: IntegrationId) {
   return Buffer.from(`runelay-bots:integration:v1:${id}`, "utf8");
 }
 
+export async function loadIntegrations() {
+  const rows = await getDb().select().from(settings).where(like(settings.key, "integration:%"));
+  stored.clear();
+  plain.clear();
+  for (const row of rows) {
+    const id = row.key.slice("integration:".length);
+    if (isIntegrationId(id)) stored.set(id, row.value as StoredIntegration);
+  }
+  return stored.size;
+}
+
 export function readStored(id: IntegrationId) {
-  return readSetting<StoredIntegration | null>(settingKey(id), null);
+  return stored.get(id) ?? null;
 }
 
 function open(id: IntegrationId, stored: StoredIntegration) {
@@ -85,8 +97,8 @@ function open(id: IntegrationId, stored: StoredIntegration) {
 
 function savedSecret(id: IntegrationId) {
   if (plain.has(id)) return plain.get(id) ?? null;
-  const stored = readStored(id);
-  const value = stored ? open(id, stored) : null;
+  const current = readStored(id);
+  const value = current ? open(id, current) : null;
   if (value) rememberSecretValue(`integration:${id}`, value);
   plain.set(id, value);
   return value;
@@ -121,7 +133,7 @@ export function last4(value: string) {
   return value.length >= 8 ? value.slice(-4) : "";
 }
 
-export function writeStored(id: IntegrationId, secret: string, url: string | null) {
+export async function writeStored(id: IntegrationId, secret: string, url: string | null) {
   const vault = vaultKey();
   const keyRef: KeyRef = vault ? "vault" : "data";
   const key = vault ?? dataKey();
@@ -130,7 +142,7 @@ export function writeStored(id: IntegrationId, secret: string, url: string | nul
   cipher.setAAD(aad(id));
   const ct = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
   const now = new Date().toISOString();
-  const stored: StoredIntegration = {
+  const next: StoredIntegration = {
     iv: iv.toString("base64"),
     tag: cipher.getAuthTag().toString("base64"),
     ct: ct.toString("base64"),
@@ -140,19 +152,20 @@ export function writeStored(id: IntegrationId, secret: string, url: string | nul
     validatedAt: now,
     savedAt: now,
   };
-  writeSetting(settingKey(id), stored);
+  await writeSetting(settingKey(id), next);
+  stored.set(id, next);
   rememberSecretValue(`integration:${id}`, secret);
   plain.set(id, secret);
   notify(id);
-  return stored;
+  return next;
 }
 
-export function clearStored(id: IntegrationId) {
+export async function clearStored(id: IntegrationId) {
   const existed = readStored(id) !== null;
-  getDb()
+  await getDb()
     .delete(settings)
-    .where(eq(settings.key, settingKey(id)))
-    .run();
+    .where(eq(settings.key, settingKey(id)));
+  stored.delete(id);
   forgetSecretValue(`integration:${id}`);
   plain.delete(id);
   notify(id);
@@ -177,6 +190,6 @@ function notify(id: IntegrationId) {
   }
 }
 
-export function resetIntegrationCache() {
-  plain.clear();
+export async function resetIntegrationCache() {
+  await loadIntegrations();
 }

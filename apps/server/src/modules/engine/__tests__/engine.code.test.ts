@@ -99,7 +99,7 @@ describe("an open workspace", () => {
     expect(request.systemPrompt).toContain("instalando em segundo plano (bun install)");
     expect(request.systemPrompt).toContain("Servidores no ar: http://127.0.0.1:5173 (bun dev).");
     expect(request.systemPrompt).not.toContain("Você não tem acesso a arquivos");
-    expect(repliesOf(session)).toEqual(["Mudei o a.ts."]);
+    expect(await repliesOf(session)).toEqual(["Mudei o a.ts."]);
     expect(session.meta.providerSessions).toEqual({ [`vps:claude@${open.id}`]: "prov-code" });
   });
 
@@ -144,7 +144,7 @@ describe("an open workspace", () => {
     track(spyOn(workspaces, "createCheckpoint").mockRejectedValue(new Error("sem git")));
     track(spyOn(workspaces, "snapshotChanges").mockRejectedValue(new Error("sem status")));
     await run(session);
-    expect(settledOf(session)?.outcome).toBe("completed");
+    expect((await settledOf(session))?.outcome).toBe("completed");
     expect(console.warn).toHaveBeenCalledWith("checkpoint failed", expect.any(Error));
   });
 });
@@ -161,14 +161,14 @@ describe("a mentioned repository", () => {
     expect(mentioned.mock.calls[0][0]).toBe("@conty-api arruma o login");
     expect(mentioned.mock.calls[0][1]).toContain(bot.id);
     expect(opening).toHaveBeenCalledWith(session, bot.id, "/repos/conty-api", "@conty-api arruma o login");
-    expect(factsOfType(session, "code.workspace")[0].data).toEqual({
+    expect((await factsOfType(session, "code.workspace"))[0].data).toEqual({
       action: "failed",
       repo: "conty-api",
       error: "repo sujo",
     });
     opening.mockRejectedValue("cru");
     await run(session, { text: "@conty-api de novo" });
-    expect(factsOfType(session, "code.workspace")[1].data.error).toBe("cru");
+    expect((await factsOfType(session, "code.workspace"))[1].data.error).toBe("cru");
   });
 
   test("keeps the open workspace of the same repository and ignores lookup failures", async () => {
@@ -183,7 +183,7 @@ describe("a mentioned repository", () => {
     track(spyOn(actions, "mentionedRepo").mockRejectedValue(new Error("sem repos")));
     await run(session, { text: "@qualquer coisa" });
     expect(opening).not.toHaveBeenCalled();
-    expect(settledOf(session)?.outcome).toBe("completed");
+    expect((await settledOf(session))?.outcome).toBe("completed");
   });
 });
 
@@ -218,8 +218,8 @@ describe("switching workspaces mid-turn", () => {
     expect(next.prompt).toBe(
       `Até aqui: li o código.\n\n---\n\nO repositório ${second.repoName} está aberto na worktree ${second.path} (branch ${second.branch}), que é o seu diretório de trabalho. Continue agora o pedido da pessoa com as ferramentas de código:\ncorrige nos dois`,
     );
-    expect(repliesOf(session, "narration")).toEqual(["Vou abrir o outro repositório."]);
-    expect(repliesOf(session)).toEqual(["Feito no segundo repositório."]);
+    expect(await repliesOf(session, "narration")).toEqual(["Vou abrir o outro repositório."]);
+    expect(await repliesOf(session)).toEqual(["Feito no segundo repositório."]);
     expect(scan.mock.calls.filter((call) => call[1] === "sweep")).toHaveLength(2);
     expect(Object.keys(session.meta.providerSessions ?? {})).toEqual([`vps:claude@${second.id}`]);
   });
@@ -265,7 +265,7 @@ describe("switching workspaces mid-turn", () => {
     });
     await run(session);
     expect(fakeProviders.turns).toHaveLength(1);
-    expect(settledOf(session)?.outcome).toBe("failed");
+    expect((await settledOf(session))?.outcome).toBe("failed");
   });
 });
 
@@ -287,7 +287,7 @@ describe("limits during a schedule", () => {
     ]);
     expect(fakeProviders.turns[1].request.prompt).toBe("Rodar rotina.");
     expect(carry).not.toHaveBeenCalled();
-    expect(repliesOf(session)).toEqual(["Rotina feita."]);
+    expect(await repliesOf(session)).toEqual(["Rotina feita."]);
   });
 
   test("keeps attachment images for the VPS Claude fallback on retry", async () => {
@@ -325,6 +325,6 @@ describe("limits during a schedule", () => {
     expect(fakeProviders.turns.map((turn) => turn.request.provider)).toEqual(["codex", "claude"]);
     expect(fakeProviders.turns[0].request.images).toEqual([image]);
     expect(fakeProviders.turns[1].request.images).toEqual([image]);
-    expect(repliesOf(session)).toEqual(["Vi a imagem."]);
+    expect(await repliesOf(session)).toEqual(["Vi a imagem."]);
   });
 });

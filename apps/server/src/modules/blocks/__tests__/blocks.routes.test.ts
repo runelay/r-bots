@@ -34,7 +34,7 @@ afterAll(async () => {
   await server.close();
 });
 
-afterEach(() => {
+afterEach(async () => {
   for (const spy of spies.splice(0)) spy.mockRestore();
 });
 
@@ -42,7 +42,7 @@ async function threadFacts(type: string) {
   const thread = await ensureThread(bot.id);
   const session = getStoredSession(thread.sessionId);
   if (!session) throw new Error("thread session missing");
-  return factsOfType(session, type) as Array<{ data: Record<string, unknown> }>;
+  return (await factsOfType(session, type)) as Array<{ data: Record<string, unknown> }>;
 }
 
 describe("notes routes", () => {
@@ -136,8 +136,8 @@ describe("notes routes", () => {
   });
 
   test("a stale bot write returns the conflict code and version", async () => {
-    const { note } = createNote(bot.id, { title: `Conflito ${Date.now()}`, content: "a" }, "bot");
-    writeNote(bot.id, note.id, { content: "b" }, "bot");
+    const { note } = await createNote(bot.id, { title: `Conflito ${Date.now()}`, content: "a" }, "bot");
+    await writeNote(bot.id, note.id, { content: "b" }, "bot");
     const stale = await request<Failure>(`${base}/notes/${note.id}`, {
       method: "PUT",
       body: { content: "c", baseVersion: 1 },

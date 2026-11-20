@@ -12,9 +12,10 @@ import { Req, Res } from "../../../shared/http";
 import { type BotDefinition, setArchived, setDeleted } from "../../bots/services/bots.service";
 import * as runelay from "../../connectors/services/runelay.service";
 import { deliver, isBusy } from "../../engine/services/engine.service";
+import { appendEventRow, parseLine } from "../repositories/sessions.repository";
 import { handleEve } from "../routes/sessions.routes";
 import { createConversation } from "../services/conversations.service";
-import { getStoredSession, type StoredSession } from "../services/sessions.service";
+import { EventLog, getStoredSession, type StoredSession } from "../services/sessions.service";
 import { ensureThread } from "../services/threads.service";
 
 interface Conversation {
@@ -444,6 +445,21 @@ describe("eve sessions", () => {
     expect(bad.status).toBe(400);
     expect(bad.body.field).toBe("before");
   });
+
+  test("skips a stored line that is not json", async () => {
+    const session = await createConversation(bot.id, {});
+    session.log.emit({ type: "content.completed", data: { kind: "text", value: "ok" } });
+    await session.log.flush();
+    const broken = parseLine("{broken");
+    const size = session.log.size;
+    await appendEventRow(session.meta.sessionId, size + 1, broken.at, broken.facts);
+    (session as { log: EventLog }).log = new EventLog(session.meta.sessionId, size + 1);
+    const page = await request<{ events: Array<{ index: number }>; total: number }>(
+      `${eve()}/${session.meta.sessionId}/events`,
+    );
+    expect(page.body.total).toBe(size + 1);
+    expect(page.body.events.map((event) => event.index)).toEqual([...Array(size).keys()]);
+  });
 });
 
 describe("eve stream", () => {
@@ -468,6 +484,33 @@ describe("eve stream", () => {
     expect(lines).toHaveLength(session.log.size);
     const skipped = await open(session, `?includeTailIndex=1&startIndex=${session.log.size - 1}`);
     expect((await (await skipped.pending).text()).trim().split("\n")).toHaveLength(1);
+  });
+
+  test("keeps the lines emitted while it replays, in order", async () => {
+    const session = await createConversation(bot.id, {});
+    session.log.emit({ type: "content.completed", data: { kind: "text", value: "antes" } });
+    const slice = session.log.slice.bind(session.log);
+    const spy = spyOn(session.log, "slice").mockImplementationOnce(async (start, end) => {
+      const lines = await slice(start, end);
+      session.log.emit({ type: "content.completed", data: { kind: "text", value: "durante" } });
+      return lines;
+    });
+    const { pending, controller } = await open(session, "?startIndex=0");
+    spy.mockRestore();
+    session.log.emit({ type: "content.completed", data: { kind: "text", value: "depois" } });
+    const reader = (await pending).body?.getReader();
+    if (!reader) throw new Error("no body");
+    const decoder = new TextDecoder();
+    let text = "";
+    while (!text.includes("depois")) text += decoder.decode((await reader.read()).value);
+    const values = text
+      .trim()
+      .split("\n")
+      .flatMap((line) => (JSON.parse(line) as { facts: Array<{ data: { value?: string } }> }).facts)
+      .map((fact) => fact.data.value)
+      .filter(Boolean);
+    expect(values.slice(-3)).toEqual(["antes", "durante", "depois"]);
+    controller.abort();
   });
 
   test("follows new lines, heartbeats and ends the lease", async () => {

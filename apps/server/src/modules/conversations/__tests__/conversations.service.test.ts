@@ -28,8 +28,8 @@ import {
 import { createStoredSession, type StoredSession } from "../services/sessions.service";
 import { ensureThread, recordThreadMessage } from "../services/threads.service";
 
-function storedTitle(sessionId: string) {
-  return loadConversationRows().find((row) => row.meta.sessionId === sessionId)?.meta.title;
+async function storedTitle(sessionId: string) {
+  return (await loadConversationRows()).find((row) => row.meta.sessionId === sessionId)?.meta.title;
 }
 
 let bot: BotDefinition;
@@ -43,7 +43,7 @@ beforeEach(async () => {
   stopListening = onConversation((event) => events.push(event)) as unknown as () => void;
 });
 
-afterEach(() => {
+afterEach(async () => {
   stopListening();
 });
 
@@ -68,7 +68,7 @@ async function busySession(session: StoredSession) {
 }
 
 describe("autoTitle", () => {
-  test("cleans greetings, asks, code and links into a short title", () => {
+  test("cleans greetings, asks, code and links into a short title", async () => {
     expect(autoTitle("oi, bom dia! pode por favor, revisar o PR?")).toBe("Revisar o PR");
     expect(autoTitle("```ts\ncode\n``` https://x.com veja isso")).toBe("Veja isso");
     expect(autoTitle("  ?? ")).toBe("Nova conversa");
@@ -84,7 +84,7 @@ describe("createConversation", () => {
     const typed = await createConversation(bot.id, { title: "  Meu título  ", permission: "edit" });
     expect(typed.meta).toMatchObject({ title: "Meu título", kind: "conversation", permission: "edit" });
     expect(typed.meta.conversation?.titleSource).toBe("user");
-    expect(factsOfType(typed, "session.started")[0].data).toMatchObject({ conversation: true });
+    expect((await factsOfType(typed, "session.started"))[0].data).toMatchObject({ conversation: true });
     const fromMessage = await createConversation(bot.id, { firstMessage: "oi, pode ver as vendas?" });
     expect(fromMessage.meta.title).toBe("Ver as vendas");
     expect(fromMessage.meta.conversation?.titleSource).toBe("auto");
@@ -129,14 +129,14 @@ describe("publicConversation", () => {
     stored.log.emit({ type: "delivery.consumed", data: { source: "schedule", parts: [{ kind: "text", text: "x" }] } });
     stored.log.emit({ type: "delivery.consumed", data: { source: "chat", parts: [{ kind: "file" }] } });
     stored.log.emit({ type: "delivery.consumed", data: { source: "chat" } });
-    stored.log.lines.push('{"delivery.consumed" broken');
+    (await stored.log.lines()).push('{"delivery.consumed" broken');
     stored.log.emit({
       type: "delivery.consumed",
       data: { source: "chat", parts: [{ kind: "text", text: "pode ver as metas?" }] },
     });
     const view = await publicConversation(stored);
     expect(view).toMatchObject({ main: true, title: "Ver as metas", titleSource: "auto" });
-    await waitFor(() => storedTitle(state.sessionId) === "Ver as metas");
+    await waitFor(async () => (await storedTitle(state.sessionId)) === "Ver as metas");
     stored.meta.title = "Outro";
     expect((await publicConversation(stored)).title).toBe("Outro");
     await updateConversation(stored, { title: "Do usuário" });
@@ -206,16 +206,20 @@ describe("conversation listing", () => {
 describe("recordConversationMessage", () => {
   test("tracks the last message, unread count and pending title", async () => {
     const session = await createConversation(bot.id);
-    await recordConversationMessage(session, { role: "user", text: "oi, ver o funil", at: "t1" });
+    await recordConversationMessage(session, { role: "user", text: "oi, ver o funil", at: "2026-01-01T00:00:01.000Z" });
     expect(session.meta.title).toBe("Ver o funil");
-    await recordConversationMessage(session, { role: "user", text: "outra", at: "t2" });
+    await recordConversationMessage(session, { role: "user", text: "outra", at: "2026-01-01T00:00:02.000Z" });
     expect(session.meta.title).toBe("Ver o funil");
-    await recordConversationMessage(session, { role: "bot", text: "feito", at: "t3" });
-    await recordConversationMessage(session, { role: "bot", text: "quieto", at: "t4" }, true);
-    expect(session.meta.conversation).toMatchObject({ unread: 1, updatedAt: "t4", lastMessage: { text: "quieto" } });
+    await recordConversationMessage(session, { role: "bot", text: "feito", at: "2026-01-01T00:00:03.000Z" });
+    await recordConversationMessage(session, { role: "bot", text: "quieto", at: "2026-01-01T00:00:04.000Z" }, true);
+    expect(session.meta.conversation).toMatchObject({
+      unread: 1,
+      updatedAt: "2026-01-01T00:00:04.000Z",
+      lastMessage: { text: "quieto" },
+    });
     const legacy = await newSession(bot.id, "conversation");
     legacy.meta.title = "Legado";
-    await recordConversationMessage(legacy, { role: "user", text: "x", at: "t" });
+    await recordConversationMessage(legacy, { role: "user", text: "x", at: "2026-01-01T00:00:09.000Z" });
     expect(legacy.meta.conversation?.titleSource).toBe("auto");
     expect(legacy.meta.title).toBe("Legado");
   });
@@ -293,7 +297,7 @@ describe("archive, read and move", () => {
     expect(session.meta.providerSessions).toBeUndefined();
     expect(session.meta.providerSynced).toBeUndefined();
     expect(session.meta.lastEngine).toBeUndefined();
-    expect(factsOfType(session, "conversation.moved")[0].data).toEqual({
+    expect((await factsOfType(session, "conversation.moved"))[0].data).toEqual({
       from: bot.id,
       to: other.id,
       toName: other.name,

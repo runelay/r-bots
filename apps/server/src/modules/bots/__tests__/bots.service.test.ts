@@ -60,7 +60,7 @@ async function fieldOf(promise: Promise<unknown>) {
 }
 
 describe("bot defaults", () => {
-  test("engine, fallback and settings fill from defaults", () => {
+  test("engine, fallback and settings fill from defaults", async () => {
     expect(defaultEngine()).toEqual({ account: "vps:claude", model: defaultClaudeModel, effort: null });
     expect(suggestedFallback("vps:codex")).toEqual({ account: "vps:claude", model: defaultClaudeModel });
     expect(suggestedFallback("mac:claude")).toEqual({ account: "vps:codex", model: defaultModels.codex });
@@ -79,14 +79,14 @@ describe("bot defaults", () => {
     expect(isActive({ ...bare, archivedAt: null })).toBe(true);
   });
 
-  test("connectors merge the known list and always keep memory", () => {
+  test("connectors merge the known list and always keep memory", async () => {
     setKnownConnectors(["linear"]);
     const bot = { id: "c", connectors: { allowed: ["github", "linear"], memory: false } } as BotDefinition;
     expect(connectorsOf(bot)).toEqual({ allowed: ["linear", "github"], memory: true });
     expect(connectorsOf({ id: "d" } as BotDefinition)).toEqual({ allowed: ["linear"], memory: true });
   });
 
-  test("derives a role from the first sentence", () => {
+  test("derives a role from the first sentence", async () => {
     expect(deriveRole("")).toBe("");
     expect(deriveRole("# Você cuida do **financeiro** agora. Depois faz outra coisa.")).toBe(
       "Você cuida do financeiro agora",
@@ -122,7 +122,7 @@ describe("createBot", () => {
     expect(first.connectors).toEqual({ allowed: [], memory: true });
     expect(changes).toBe(before + 3);
     expect(getBot(first.id)).toBe(first);
-    expect(loadBotRows().find((row) => row.id === first.id)?.name).toBe(name);
+    expect((await loadBotRows()).find((row) => row.id === first.id)?.name).toBe(name);
   });
 
   test("reserved and empty slugs get a suffix or a fallback", async () => {
@@ -364,8 +364,8 @@ describe("bots repository", () => {
     const again = botFromRow(botToRow(full as unknown as Record<string, unknown>));
     expect(again).toMatchObject({ id: full.id, permission: "full", engine: full.engine });
 
-    saveBotRow({ id: "loaded-bot", name: "Loaded", capabilities: { browser: false, delegate: [] } });
-    saveBotRow({ id: "", name: "No id" });
+    await saveBotRow({ id: "loaded-bot", name: "Loaded", capabilities: { browser: false, delegate: [] } });
+    await saveBotRow({ id: "", name: "No id" });
     await loadBots();
     expect(getBot("loaded-bot")?.capabilities).toEqual({
       browser: true,
@@ -373,9 +373,9 @@ describe("bots repository", () => {
       delegate: [],
     });
     expect(getBot("")).toBeUndefined();
-    deleteBotRow("loaded-bot");
-    deleteBotRow("");
-    expect(loadBotRows().some((item) => item.id === "loaded-bot")).toBe(false);
-    expect(getDb().select().from(botsTable).all().length).toBeGreaterThan(0);
+    await deleteBotRow("loaded-bot");
+    await deleteBotRow("");
+    expect((await loadBotRows()).some((item) => item.id === "loaded-bot")).toBe(false);
+    expect((await getDb().select().from(botsTable)).length).toBeGreaterThan(0);
   });
 });

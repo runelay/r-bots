@@ -88,15 +88,15 @@ export function botFromRow(row: BotRow): BotDefinition {
   } as unknown as BotDefinition;
 }
 
-export function loadBotRows(db: Db = getDb()) {
-  return db.select().from(bots).all().map(botFromRow);
+export async function loadBotRows(db: Db = getDb()) {
+  return (await db.select().from(bots)).map(botFromRow);
 }
 
-export function saveBotRow(bot: BotDefinition | Json, db: Db = getDb()) {
+export async function saveBotRow(bot: BotDefinition | Json, db: Db = getDb()) {
   const row = botToRow(bot as Json);
-  db.insert(bots).values(row).onConflictDoUpdate({ target: bots.id, set: row }).run();
+  await db.insert(bots).values(row).onConflictDoUpdate({ target: bots.id, set: row });
 }
 
-export function deleteBotRow(id: string, db: Db = getDb()) {
-  db.delete(bots).where(eq(bots.id, id)).run();
+export async function deleteBotRow(id: string, db: Db = getDb()) {
+  await db.delete(bots).where(eq(bots.id, id));
 }

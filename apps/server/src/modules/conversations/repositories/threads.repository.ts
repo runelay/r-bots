@@ -28,21 +28,21 @@ function rowOf(id: string, ownerId: string, state: ThreadState | Json, archivedA
   };
 }
 
-export function readLiveThread(ownerId: string, db: Db = getDb()) {
-  const row = db
+export async function readLiveThread(ownerId: string, db: Db = getDb()) {
+  const [row] = await db
     .select()
     .from(threads)
     .where(and(eq(threads.ownerId, ownerId), isNull(threads.archivedAt)))
-    .get();
+    .limit(1);
   return row ? stateOf(row) : null;
 }
 
-export function saveLiveThread(ownerId: string, state: ThreadState | Json, db: Db = getDb()) {
+export async function saveLiveThread(ownerId: string, state: ThreadState | Json, db: Db = getDb()) {
   const row = rowOf(ownerId, ownerId, state, null);
-  db.insert(threads).values(row).onConflictDoUpdate({ target: threads.id, set: row }).run();
+  await db.insert(threads).values(row).onConflictDoUpdate({ target: threads.id, set: row });
 }
 
-export function saveArchivedThread(
+export async function saveArchivedThread(
   ownerId: string,
   archiveId: string,
   archivedAt: string,
@@ -50,19 +50,19 @@ export function saveArchivedThread(
   db: Db = getDb(),
 ) {
   const row = rowOf(archiveId, ownerId, state, archivedAt);
-  db.insert(threads).values(row).onConflictDoUpdate({ target: threads.id, set: row }).run();
+  await db.insert(threads).values(row).onConflictDoUpdate({ target: threads.id, set: row });
 }
 
-export function readArchivedThread(ownerId: string, archiveId: string, db: Db = getDb()) {
-  const row = db
+export async function readArchivedThread(ownerId: string, archiveId: string, db: Db = getDb()) {
+  const [row] = await db
     .select()
     .from(threads)
     .where(and(eq(threads.id, archiveId), eq(threads.ownerId, ownerId)))
-    .get();
+    .limit(1);
   if (!row?.archivedAt) return null;
   return { archiveId: row.id, archivedAt: row.archivedAt, state: stateOf(row) };
 }
 
-export function deleteThreadRow(id: string, db: Db = getDb()) {
-  db.delete(threads).where(eq(threads.id, id)).run();
+export async function deleteThreadRow(id: string, db: Db = getDb()) {
+  await db.delete(threads).where(eq(threads.id, id));
 }

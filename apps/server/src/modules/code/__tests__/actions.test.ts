@@ -22,7 +22,7 @@ beforeEach(async () => {
 });
 
 async function task(name: string, origin = true) {
-  makeRepo(name, { origin });
+  await makeRepo(name, { origin });
   await listRepos(true);
   const session = await newSession(`bot-${name}`);
   const { workspace } = await openTaskWorkspace(session, `bot-${name}`, name, "deliver task");

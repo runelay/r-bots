@@ -6,7 +6,7 @@ import { admin } from "better-auth/plugins/admin";
 import { adminAc, userAc } from "better-auth/plugins/admin/access";
 import { bearer } from "better-auth/plugins/bearer";
 import { deviceAuthorization } from "better-auth/plugins/device-authorization";
-import type { BaseSQLiteDatabase } from "drizzle-orm/sqlite-core";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { authSchema } from "../../../db/schema/auth";
 
 export const authBasePath = "/api/auth";
@@ -16,7 +16,7 @@ export const apiKeyPrefix = "rbk_";
 export const ownerRole = "owner";
 export const memberRole = "member";
 
-export type AuthDatabase = BaseSQLiteDatabase<"sync" | "async", unknown, Record<string, unknown>>;
+export type AuthDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
 
 export interface AuthConfig {
   db: AuthDatabase;
@@ -34,7 +34,7 @@ export function createAuth(config: AuthConfig) {
     baseURL: config.baseURL,
     basePath: authBasePath,
     secret: config.secret,
-    database: drizzleAdapter(config.db, { provider: "sqlite", schema: authSchema }),
+    database: drizzleAdapter(config.db, { provider: "pg", schema: authSchema }),
     trustedOrigins: [origin, ...(config.trustedOrigins ?? [])],
     emailAndPassword: {
       enabled: true,

@@ -18,14 +18,14 @@ import {
 import { ensureThread, markThreadRead, markThreadUnread } from "../services/threads.service";
 import { checkFields, deliveryText, rejectInactiveBot, resolveAttachments, resolveSkills } from "./delivery-input";
 
-function handleSearch(res: Res, url: URL, bot: BotDefinition) {
+async function handleSearch(res: Res, url: URL, bot: BotDefinition) {
   const q = (url.searchParams.get("q") ?? "").trim();
   if (!q) return sendJson(res, 400, { ok: false, error: "Mande o texto da busca em q.", field: "q" });
   if (q.length > 200)
     return sendJson(res, 400, { ok: false, error: "A busca pode ter até 200 caracteres.", field: "q" });
   const limit = Number(url.searchParams.get("limit") ?? 20);
   const cursor = Number(url.searchParams.get("cursor") ?? 0);
-  const page = searchMessages({
+  const page = await searchMessages({
     q,
     botId: bot.id,
     limit: Number.isFinite(limit) ? limit : 20,
