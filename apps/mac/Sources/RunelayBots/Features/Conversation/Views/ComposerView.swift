@@ -5,13 +5,14 @@ struct ComposerView: View {
     let bot: Bot
     let focusToken: Int
     var mentionables: [Bot] = []
-    @FocusState private var isFocused: Bool
+    @State private var isFocused = false
+    @State private var focusRequest = 0
+    @State private var composerHeight = ComposerTextView.minimumHeight
     @Namespace private var glassSpace
     @Environment(\.appReduceMotion) private var reduceMotion
     @Environment(AppModel.self) private var model
     @State private var slashSelection = 0
     @State private var dismissedSlashDraft: String?
-    @State private var slashChosenAt: Date?
     @State private var pasteMonitor: Any?
     private let voice = VoiceInput.shared
     private let skillCatalog = SkillCatalog.shared
@@ -79,73 +80,30 @@ struct ComposerView: View {
             if !store.attachedSkills.isEmpty {
                 SkillChipRow(skills: store.attachedSkills) { skill in
                     store.detachSkill(skill)
-                    isFocused = true
+                    focus()
                 }
                 .padding(.top, Spacing.s)
                 .transition(.opacity.combined(with: .offset(y: 4)))
             }
-            TextField(placeholder, text: $store.draft, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(TypeScale.body)
-                .lineLimit(1...8)
-                .focused($isFocused)
-                .onSubmit {
-                    if let chosen = slashChosenAt, Date().timeIntervalSince(chosen) < 0.6 {
-                        slashChosenAt = nil
-                        return
+            ComposerTextView(
+                text: $store.draft,
+                height: $composerHeight,
+                focusRequest: focusRequest,
+                placeholder: placeholder,
+                onFocusChange: { focused in isFocused = focused },
+                onCommand: handle
+            )
+                .frame(height: composerHeight)
+                .overlay(alignment: .topLeading) {
+                    if store.draft.isEmpty && !placeholder.isEmpty {
+                        Text(placeholder)
+                            .font(TypeScale.body)
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                            .padding(.vertical, ComposerTextView.verticalInset)
+                            .allowsHitTesting(false)
                     }
-                    send()
                 }
-                .onKeyPress(.upArrow) {
-                    guard !slashItems.isEmpty else { return .ignored }
-                    slashSelection = max(0, slashSelection - 1)
-                    return .handled
-                }
-                .onKeyPress(.downArrow) {
-                    guard !slashItems.isEmpty else { return .ignored }
-                    slashSelection = min(slashItems.count - 1, slashSelection + 1)
-                    return .handled
-                }
-                .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
-                        NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
-                        return .handled
-                    }
-                    guard slashQuery != nil else { return .ignored }
-                    guard slashItems.indices.contains(slashSelection) else { return .handled }
-                    chooseSlash(slashItems[slashSelection])
-                    return .handled
-                }
-                .onKeyPress(.delete) {
-                    guard store.draft.isEmpty, let last = store.attachedSkills.last else { return .ignored }
-                    store.detachSkill(last)
-                    return .handled
-                }
-                .onKeyPress(.escape) {
-                    if slashQuery != nil {
-                        dismissedSlashDraft = store.draft
-                        return .handled
-                    }
-                    if isListening {
-                        voice.stop()
-                        return .handled
-                    }
-                    guard !store.draft.isEmpty else { return .ignored }
-                    store.clearDraft()
-                    return .handled
-                }
-                .onKeyPress(.tab) {
-                    if slashQuery != nil {
-                        if slashItems.indices.contains(slashSelection) {
-                            chooseSlash(slashItems[slashSelection])
-                        }
-                        return .handled
-                    }
-                    guard let first = suggestions.first else { return .ignored }
-                    insertMention(first)
-                    return .handled
-                }
-                .padding(.vertical, Spacing.s)
                 .overlay(alignment: .leading) {
                     if isListening && store.draft.isEmpty {
                         listeningIndicator
@@ -291,7 +249,7 @@ struct ComposerView: View {
             }
         }
         .onAppear {
-            isFocused = true
+            focus()
             installPasteMonitor()
             voice.focusedStore = store
             skillCatalog.prefetch(client: model.client)
@@ -309,7 +267,59 @@ struct ComposerView: View {
             }
         }
         .onChange(of: focusToken) {
-            isFocused = true
+            focus()
+        }
+    }
+
+    private func focus() {
+        focusRequest &+= 1
+    }
+
+    private func handle(_ command: ComposerCommand) -> Bool {
+        switch command {
+        case .submit:
+            if slashQuery != nil {
+                if slashItems.indices.contains(slashSelection) {
+                    chooseSlash(slashItems[slashSelection])
+                }
+                return true
+            }
+            send()
+            return true
+        case .moveUp:
+            guard !slashItems.isEmpty else { return false }
+            slashSelection = max(0, slashSelection - 1)
+            return true
+        case .moveDown:
+            guard !slashItems.isEmpty else { return false }
+            slashSelection = min(slashItems.count - 1, slashSelection + 1)
+            return true
+        case .tab:
+            if slashQuery != nil {
+                if slashItems.indices.contains(slashSelection) {
+                    chooseSlash(slashItems[slashSelection])
+                }
+                return true
+            }
+            guard let first = suggestions.first else { return false }
+            insertMention(first)
+            return true
+        case .escape:
+            if slashQuery != nil {
+                dismissedSlashDraft = store.draft
+                return true
+            }
+            if isListening {
+                voice.stop()
+                return true
+            }
+            guard !store.draft.isEmpty else { return false }
+            store.clearDraft()
+            return true
+        case .deleteOnEmpty:
+            guard store.draft.isEmpty, let last = store.attachedSkills.last else { return false }
+            store.detachSkill(last)
+            return true
         }
     }
 
@@ -417,13 +427,12 @@ struct ComposerView: View {
     private func chooseSlash(_ item: SlashItem) {
         removeSlashToken()
         dismissedSlashDraft = nil
-        slashChosenAt = Date()
         switch item {
         case .command(let command):
             command.action()
         case .skill(let skill):
             store.attachSkill(skill)
-            isFocused = true
+            focus()
         }
     }
 
@@ -446,7 +455,7 @@ struct ComposerView: View {
         }
         parts.append("@\(member.name) ")
         store.draft = parts.joined(separator: " ")
-        isFocused = true
+        focus()
     }
 
     private func send() {
@@ -458,7 +467,7 @@ struct ComposerView: View {
         withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
             store.send()
         }
-        isFocused = true
+        focus()
     }
 }
 
