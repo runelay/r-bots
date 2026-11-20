@@ -79,6 +79,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v46 | agenda no fuso da pessoa (`user.timezone`), sem `-03:00` fixo | [blocks](blocks.md) |
 | v47 | contas de IA por diretório no servidor (`~/.claude*`, `~/.codex*`), sem contas de modelo do Mac, `PATCH/DELETE /accounts/:id`, `POST /accounts/dirs`, `GET /accounts/login-guide`, uso e limites por conta (`account`), failover outra Claude → reserva também com a conta fora do ar | [accounts](accounts.md), [usage-status-limits](usage-status-limits.md) |
 | v48 | servidores de desenvolvimento: `GET/POST /servers`, stop/restart/logs (NDJSON ao vivo), `/servers/projects`, `/servers/scripts`, perfis em `/servers/profiles`, linhas `server` no `/status/stream`, ferramentas `server_*` e evento `server.card` | [servers](servers.md) |
+| v49 | perguntas estruturadas: ferramenta `ask_user`, `interaction.opened` com `kind:"question"`, resposta por `answers[].questions` ou `optionId:"skip"`, `summary` no `interaction.settled`, perguntas na chamada de voz (`question.asked`, `action:"question"/"answered"`) | [approvals](approvals.md) |
 
 ## Contrato
 

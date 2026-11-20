@@ -118,3 +118,60 @@ Agora (`apps/server/src/modules/engine/services/engine.service.ts`): mensagem de
   - **Acesso total**: nenhum card (`clearedBy: {permission: "full"}`), também nas ferramentas de navegador/computador, de autoconfiguração e nos conectores. Continua negado sem card: assinatura de IA em commit/PR e `push --force` em main/master/develop (`fixedRuleViolation`, inclusive `HEAD:develop` e `+ref`). As outras negações técnicas (caminho protegido, `git config`, `&`) continuam.
 - Conectores (`runRemote`): leitura passa em todos; escrita comum e mensagem para fora → negadas no Somente leitura, card no Editar, só mensagem para fora pede card no Padrão, nada pede no Acesso total.
 - Limite conhecido: Codex não tem gate por chamada, então no Editar ele roda comandos como no Padrão.
+
+## v49 (20/11): perguntas estruturadas (`ask_user`)
+
+O bot pode fazer à pessoa de 1 a 4 perguntas de múltipla escolha num card. Usa o mesmo mecanismo das aprovações: o turno pausa (`turn.paused`, status `awaiting`, ponto de "precisa de você", notificação) até a resposta.
+
+### Ferramenta `ask_user` (MCP `bots`)
+
+```json
+{"questions":[{"question":"Qual tom você quer para a mensagem?","header":"Tom","multiSelect":false,
+  "options":[{"label":"Descontraído","description":"Linguagem leve e próxima","recommended":true},
+             {"label":"Formal","description":"Linguagem profissional e polida"}]}]}
+```
+
+- `questions`: 1 a 4. `question` até 200 caracteres, `header` até 24, `options` 2 a 4 (`label` até 60, `description` até 200), `multiSelect` opcional, `recommended` opcional (vale só a primeira marcada).
+- "Outra coisa" com texto livre existe sempre (id `other`); a ferramenta não recebe essa opção.
+- Resultado para o bot: `Respostas da pessoa:\n- <pergunta> → <resposta>\n…\nSiga com isso, sem perguntar de novo.` Pergunta pulada: `→ pulou; decida com o padrão sensato e diga qual escolheu`. Tudo pulado: "A pessoa pulou as perguntas. Decida com o padrão sensato e diga em uma linha qual escolheu." Fechada por mensagem: "A pessoa respondeu por mensagem em vez de usar o card. Siga a mensagem dela."
+- Rotina, agendamento ou contexto sem pessoa (`isSchedule`): não bloqueia, não abre card; o bot recebe a opção recomendada (ou a primeira) de cada pergunta e a ordem de registrar a dúvida no resumo. `call.settled.output = {"unattended":true}`.
+- Prompt: seção "## Perguntas à pessoa (`ask_user`)": só para decisão que é da pessoa e muda o trabalho; nunca para permissão, para o que dá para descobrir sozinho ou para escolha com padrão óbvio; no máximo uma rodada por tarefa; recomendada primeiro.
+
+### Eventos
+
+`interaction.opened` com `request.kind:"question"`, `display:"questions"`, `allowFreeform:true`, `options:[]`, `prompt` = título da 1ª pergunta e `questions[]` com ids (`q1…`) e letras (`a…d`). `subject.callId` é o `callId` da `ask_user`.
+
+Resposta: `POST {sessionBasePath}/session/:sessionId` com `answers[]`, um item por card:
+
+```json
+{"answers":[{"interactionId":"EmSo1B_TMxbuqusS","questions":[
+  {"questionId":"q1","optionIds":["other"],"text":"Acolhedor, meio termo"},
+  {"questionId":"q2","optionIds":["b"]}]}]}
+```
+
+- Pular o card inteiro: `{"interactionId":"…","optionId":"skip"}` (um `optionId:"deny"` pela rota antiga também pula).
+- Pular uma pergunta: `{"questionId":"q2","skipped":true}`, ou omitir, ou `optionIds:[]` sem texto.
+- `text` sem `other` em `optionIds` soma "Outra coisa" às opções escolhidas. `other` sem texto → 400.
+- Erros → `400 {"ok":false,"error":"Opção desconhecida 'z' na pergunta 'q1'.","field":"answers"}` (também: pergunta desconhecida, "A pergunta 'q1' aceita uma opção só.", "“Outra coisa” precisa de texto."). Card que já fechou → `409 interaction_not_pending` ("Essa aprovação ou pergunta não está mais pendente.").
+- Fecha com `response.submitted` (`value.answers`), `response.settled` e `interaction.settled` com `outcome` `accepted` (alguma resposta) ou `declined` (tudo pulado), `response.answers[]` (`questionId`, `title`, `optionIds`, `labels`, `text?`, `skipped`) e `summary` ("Respondeu: Acolhedor, meio termo · E-mail" ou "Pulou"). É o que o app mostra na linha colapsada.
+- Mensagem de chat com a pergunta aberta: igual à v27, o card fecha com `outcome:"withdrawn", reason:"message"` e o turno segue com a mensagem.
+
+### Voz
+
+Na chamada, `interaction.opened` de pergunta vira `question.asked` no stream da chamada (`{interactionId, questions}`) e a fala fixa "Pergunta 1 de 2. <título> A, <rótulo>, que eu recomendo; B, <rótulo>. Ou fala outra coisa." Cada `POST …/utterance` responde uma pergunta: letra ("B", "bê", "letra c"), ordinal ("a segunda", até 4 palavras), rótulo dito ("manter o critério de Reels"; vários no multiSelect) ou texto livre (vira `other`). "pula", "tanto faz", "você decide" pulam. Resposta da rota: `{"action":"question","interactionId":"…","index":1}` enquanto faltam perguntas; na última o servidor aplica a resposta e devolve `{"action":"answered","interactionId":"…","applied":true}` (o app não manda nada).
+
+### Verificado (20/11, bot de teste, Claude Sonnet 5.5)
+
+Pedido: "Escreve um texto curto de boas-vindas… Não sei se quero formal ou descontraído, nem se é para e-mail ou WhatsApp…".
+
+```json
+{"type":"interaction.opened","data":{"interactionId":"EmSo1B_TMxbuqusS","request":{"kind":"question","display":"questions","allowFreeform":true,"prompt":"Qual tom você quer para a mensagem?","options":[],"questions":[{"id":"q1","title":"Qual tom você quer para a mensagem?","header":"Tom","multiSelect":false,"options":[{"id":"a","label":"Descontraído","description":"Linguagem leve e próxima","recommended":true},{"id":"b","label":"Formal","description":"Linguagem profissional e polida"}]},{"id":"q2","title":"Para qual canal é a mensagem?","header":"Canal","multiSelect":false,"options":[{"id":"a","label":"WhatsApp","description":"Curto, direto, sem assunto","recommended":true},{"id":"b","label":"E-mail","description":"Com assunto e assinatura"}]}]},"subject":{"callId":"call_noqStIPNZJ1p"}},"scope":{"turnId":"turn_0"}}
+```
+
+Depois da resposta acima (`202`):
+
+```json
+{"type":"interaction.settled","data":{"cause":{"responseId":"response_75ff362b-5972-4b78-8b5b-dcf9d3c4832a_0"},"interactionId":"EmSo1B_TMxbuqusS","outcome":"accepted","response":{"answers":[{"questionId":"q1","title":"Qual tom você quer para a mensagem?","optionIds":["other"],"labels":[],"text":"Acolhedor, meio termo","skipped":false},{"questionId":"q2","title":"Para qual canal é a mensagem?","optionIds":["b"],"labels":["E-mail"],"skipped":false}]},"summary":"Respondeu: Acolhedor, meio termo · E-mail"},"scope":{"turnId":"turn_0"}}
+```
+
+O turno retomou e respondeu com um e-mail ("**Assunto:** Bem-vindo(a) à Conty!…") no tom pedido; `turn.settled outcome:"completed"`. Num pedido vago sem preferência ("monta um plano de lançamento"), o bot não perguntou: decidiu, deixou os campos `[definir]` e disse em uma linha o que faltava.
