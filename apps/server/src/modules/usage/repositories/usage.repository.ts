@@ -7,7 +7,7 @@ export interface UsageIndexRows {
   version: number;
   files: Record<string, Record<string, unknown>>;
   buckets: Record<string, number[]>;
-  sessions: Record<string, [number, string]>;
+  sessions: Record<string, [number, string, string]>;
   seen: Record<string, number>;
 }
 
@@ -32,8 +32,8 @@ export async function loadUsageIndex(db: Db = getDb()): Promise<UsageIndexRows> 
   };
   for (const row of await db.select().from(usageCursors)) index.files[row.path] = row.state;
   for (const row of await db.select().from(usageBuckets))
-    index.buckets[`${row.hour}|${row.provider}|${row.model}|${row.tier}`] = row.counters;
-  for (const row of await db.select().from(usageSessions)) index.sessions[row.key] = [row.hour, row.model];
+    index.buckets[`${row.hour}|${row.provider}|${row.model}|${row.tier}|${row.account}`] = row.counters;
+  for (const row of await db.select().from(usageSessions)) index.sessions[row.key] = [row.hour, row.model, row.account];
   for (const row of await db.select().from(usageSeen)) index.seen[row.key] = row.hour;
   return index;
 }
@@ -45,8 +45,14 @@ function chunks<T>(items: T[], size = 500) {
 }
 
 function bucketOf(key: string) {
-  const [hour, provider, model, tier] = key.split("|");
-  return { hour: Number(hour), provider: String(provider), model: String(model), tier: String(tier ?? "") };
+  const [hour, provider, model, tier, account] = key.split("|");
+  return {
+    hour: Number(hour),
+    provider: String(provider),
+    model: String(model),
+    tier: String(tier ?? ""),
+    account: String(account ?? ""),
+  };
 }
 
 export async function saveUsageChanges(index: UsageIndexRows, changes: UsageChanges, db: Db = getDb()) {
@@ -57,7 +63,7 @@ export async function saveUsageChanges(index: UsageIndexRows, changes: UsageChan
   const goneBuckets = [...changes.buckets].filter((key) => !index.buckets[key]).map(bucketOf);
   const sessions = [...changes.sessions].flatMap((key) => {
     const value = index.sessions[key];
-    return value ? [{ key, hour: value[0], model: value[1] }] : [];
+    return value ? [{ key, hour: value[0], model: value[1], account: value[2] ?? "" }] : [];
   });
   const goneSessions = [...changes.sessions].filter((key) => !index.sessions[key]);
   const seen = [...changes.seen].flatMap((key) =>
@@ -75,7 +81,13 @@ export async function saveUsageChanges(index: UsageIndexRows, changes: UsageChan
         .insert(usageBuckets)
         .values(part)
         .onConflictDoUpdate({
-          target: [usageBuckets.hour, usageBuckets.provider, usageBuckets.model, usageBuckets.tier],
+          target: [
+            usageBuckets.hour,
+            usageBuckets.provider,
+            usageBuckets.model,
+            usageBuckets.tier,
+            usageBuckets.account,
+          ],
           set: { counters: sql`excluded.counters` },
         });
     for (const bucket of goneBuckets)
@@ -87,6 +99,7 @@ export async function saveUsageChanges(index: UsageIndexRows, changes: UsageChan
             eq(usageBuckets.provider, bucket.provider),
             eq(usageBuckets.model, bucket.model),
             eq(usageBuckets.tier, bucket.tier),
+            eq(usageBuckets.account, bucket.account),
           ),
         );
     for (const part of chunks(sessions))
@@ -95,7 +108,7 @@ export async function saveUsageChanges(index: UsageIndexRows, changes: UsageChan
         .values(part)
         .onConflictDoUpdate({
           target: usageSessions.key,
-          set: { hour: sql`excluded.hour`, model: sql`excluded.model` },
+          set: { hour: sql`excluded.hour`, model: sql`excluded.model`, account: sql`excluded.account` },
         });
     for (const part of chunks(goneSessions)) await tx.delete(usageSessions).where(inArray(usageSessions.key, part));
     for (const part of chunks(seen))

@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, jest, spyOn, test } 
 import { mkdtemp, rm } from "node:fs/promises";
 import * as os from "node:os";
 import { join } from "node:path";
-import { resetData } from "../../../../test/helpers";
+import { fakeProviders, resetData } from "../../../../test/helpers";
 import {
   type CodexResponder,
   fakeCodexAppServer,
@@ -10,7 +10,7 @@ import {
   writeFixture,
 } from "../../../../test/usage-helpers";
 import * as settings from "../../../db/settings";
-import * as macRunner from "../../accounts/services/mac-runner.service";
+import * as accounts from "../../accounts/services/accounts.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import * as botsService from "../../bots/services/bots.service";
 import * as usageRepository from "../repositories/usage.repository";
@@ -18,7 +18,8 @@ import * as usageRepository from "../repositories/usage.repository";
 type Service = typeof import("../services/usage.service");
 
 const home = await mkdtemp(join(os.tmpdir(), "rb-usage-home-"));
-const homeSpy = spyOn(os, "homedir").mockReturnValue(home);
+const previousHome = process.env.HOST_HOME;
+process.env.HOST_HOME = home;
 const restores: Array<() => void> = [];
 let tag = 0;
 
@@ -32,21 +33,8 @@ function track<T extends { mockRestore(): void }>(spy: T) {
   return spy;
 }
 
-function mac(options: {
-  connected?: boolean;
-  supports?: boolean;
-  limits?: () => Promise<Record<string, unknown>>;
-  buckets?: (since: number) => Promise<Record<string, unknown>>;
-}) {
-  track(spyOn(macRunner, "macRunnerConnected").mockReturnValue(options.connected ?? false));
-  track(spyOn(macRunner, "macRunnerSupports").mockReturnValue(options.supports ?? false));
-  const limits = track(
-    spyOn(macRunner, "macUsageLimits").mockImplementation(options.limits ?? (() => Promise.resolve({}))),
-  );
-  const buckets = track(
-    spyOn(macRunner, "macUsageBuckets").mockImplementation(options.buckets ?? (() => Promise.resolve({}))),
-  );
-  return { limits, buckets };
+async function discover() {
+  await accounts.refreshAccounts();
 }
 
 function bots(list: Array<Partial<BotDefinition>>) {
@@ -80,6 +68,9 @@ beforeEach(async () => {
   await rm(join(home, ".claude"), { recursive: true, force: true });
   await rm(join(home, ".claude.json"), { force: true });
   await rm(join(home, ".codex"), { recursive: true, force: true });
+  await rm(join(home, ".claude-2"), { recursive: true, force: true });
+  await rm(join(home, ".codex-2"), { recursive: true, force: true });
+  await discover();
 });
 
 afterEach(async () => {
@@ -89,7 +80,8 @@ afterEach(async () => {
 });
 
 afterAll(async () => {
-  homeSpy.mockRestore();
+  process.env.HOST_HOME = previousHome;
+  await accounts.refreshAccounts();
   await rm(home, { recursive: true, force: true });
 });
 
@@ -253,97 +245,75 @@ describe("readCodexRateLimits", () => {
 });
 
 describe("usageLimits", () => {
-  test("reads Claude and Codex on the VPS, Mac limits and bot failovers, then caches", async () => {
+  test("reads the limits of each account with its own login, the failover target, then caches", async () => {
     await writeFixture(join(home, ".claude.json"), { oauthAccount: { displayName: "Ana" } });
     await writeFixture(join(home, ".claude", ".credentials.json"), {
       claudeAiOauth: { accessToken: "tok", expiresAt: Date.now() + 60_000, subscriptionType: "max" },
     });
-    const calls = fetchReplies(() => Response.json({ five_hour: { utilization: 20 } }));
+    await writeFixture(join(home, ".claude-2", ".claude.json"), { oauthAccount: { displayName: "Bia" } });
+    await writeFixture(join(home, ".claude-2", ".credentials.json"), {
+      claudeAiOauth: { accessToken: "tok2", subscriptionType: "team" },
+    });
+    await discover();
+    const calls = fetchReplies((_url, init) =>
+      new Headers(init?.headers).get("authorization") === "Bearer tok"
+        ? Response.json({ five_hour: { utilization: 20 } })
+        : Response.json({ seven_day: { utilization: 9 } }),
+    );
     const server = fakeCodexAppServer(codexOk({ rateLimits: { planType: "pro", primary: { usedPercent: 3 } } }));
     restores.push(server.restore);
-    mac({
-      connected: true,
-      supports: true,
-      limits: () =>
-        Promise.resolve({
-          claude: { ok: true, label: "Bia", plan: "pro", raw: { seven_day: { utilization: 9 } } },
-          codex: { ok: true, raw: { planType: "plus", secondary: { usedPercent: 4 } } },
-        }),
-    });
     bots([
       {
         id: "b1",
         name: "One",
-        engine: { account: "vps:claude", model: "m", effort: null, fallback: { account: "mac:codex", model: "m" } },
+        engine: { account: "vps:claude", model: "m", effort: null, fallback: { account: "vps:codex", model: "m" } },
       },
-      {
-        id: "b2",
-        name: "Two",
-        engine: { account: "vps:claude", model: "m", effort: null, fallback: { account: "vps:claude", model: "m" } },
-      },
+      { id: "b2", name: "Two", engine: { account: "claude-2:claude", model: "m", effort: null, fallback: null } },
       {
         id: "b3",
         name: "Three",
-        engine: { account: "vps:claude", model: "m", effort: null, fallback: { account: "vps:grok", model: "m" } },
+        engine: { account: "vps:codex", model: "m", effort: null, fallback: { account: "vps:claude", model: "m" } },
       },
-      {
-        id: "b4",
-        name: "Four",
-        engine: { account: "vps:claude", model: "m", effort: null, fallback: { account: "mac:cursor", model: "m" } },
-      },
-      {
-        id: "b5",
-        name: "Five",
-        engine: { account: "vps:claude", model: "m", effort: null, fallback: { account: "vps:other", model: "m" } },
-      },
-      { id: "b6", name: "Six", engine: { account: "vps:claude", model: "m", effort: null, fallback: null } },
-      {
-        id: "b7",
-        name: "Seven",
-        engine: { account: "vps:codex", model: "m", effort: null, fallback: { account: "vps:codex", model: "m" } },
-      },
+      { id: "b4", name: "Four", engine: { account: "vps:codex", model: "m", effort: null, fallback: null } },
+      { id: "b5", name: "Five", engine: { account: "vps:grok", model: "m", effort: null, fallback: null } },
     ] as unknown as Array<Partial<BotDefinition>>);
     const service = await fresh();
-    const accounts = await service.usageLimits();
-    expect(calls[0].url).toBe("https://api.anthropic.com/api/oauth/usage");
-    expect(new Headers(calls[0].init?.headers).get("authorization")).toBe("Bearer tok");
-    expect(accounts.map((account) => [account.id, account.label, account.plan, account.ok, account.error])).toEqual([
-      ["vps:claude", "Claude Ana", "max", true, null],
-      ["vps:codex", "Codex VPS", "pro", true, null],
-      ["mac:claude", "Claude Bia", "pro", true, null],
-      ["mac:codex", "Codex Mac", "plus", true, null],
+    const limits = await service.usageLimits();
+    expect(calls.every((call) => call.url === "https://api.anthropic.com/api/oauth/usage")).toBe(true);
+    expect(
+      limits.map((account) => [account.id, account.label, account.plan, account.isDefault, account.ok, account.error]),
+    ).toEqual([
+      ["vps:claude", "Claude Ana", "max", true, true, null],
+      ["claude-2:claude", "Claude Bia", "team", false, true, null],
+      ["vps:codex", "Codex", "pro", true, true, null],
     ]);
-    expect(accounts[0].windows.map((window) => [window.kind, window.usedPercent])).toEqual([["session", 20]]);
-    expect(accounts[2].windows.map((window) => [window.kind, window.usedPercent])).toEqual([["weekly", 9]]);
-    expect(accounts[3].windows.map((window) => [window.kind, window.usedPercent])).toEqual([["weekly", 4]]);
-    expect(accounts[0].failover).toEqual([
-      { botId: "b1", botName: "One", to: "mac:codex", toLabel: "Codex (Mac)" },
-      { botId: "b2", botName: "Two", to: "vps:claude", toLabel: "Claude (VPS)" },
-      { botId: "b3", botName: "Three", to: "vps:grok", toLabel: "Grok (VPS)" },
-      { botId: "b4", botName: "Four", to: "mac:cursor", toLabel: "Cursor (Mac)" },
-      { botId: "b5", botName: "Five", to: "vps:other", toLabel: "other (VPS)" },
-    ]);
-    expect(accounts[1].failover).toEqual([{ botId: "b7", botName: "Seven", to: "vps:codex", toLabel: "Codex (VPS)" }]);
-    expect(await service.usageLimits()).toBe(accounts);
-    expect(calls).toHaveLength(1);
+    expect(limits[0].windows.map((window) => [window.kind, window.usedPercent])).toEqual([["session", 20]]);
+    expect(limits[1].windows.map((window) => [window.kind, window.usedPercent])).toEqual([["weekly", 9]]);
+    expect(limits[0].failover).toEqual([{ botId: "b1", botName: "One", to: "claude-2:claude", toLabel: "Claude Bia" }]);
+    expect(limits[1].failover).toEqual([{ botId: "b2", botName: "Two", to: "vps:claude", toLabel: "Claude Ana" }]);
+    expect(limits[2].failover).toEqual([{ botId: "b3", botName: "Three", to: "vps:claude", toLabel: "Claude Ana" }]);
+    expect(await service.usageLimits()).toBe(limits);
+    expect(calls).toHaveLength(2);
     const checked = Date.parse(service.limitsCheckedAt());
     expect(Math.abs(checked - Date.now())).toBeLessThan(5000);
     const [a, b] = [service.usageLimits(true), service.usageLimits(true)];
     expect(a).toBe(b);
-    expect(await a).not.toBe(accounts);
-    expect(calls).toHaveLength(2);
+    expect(await a).not.toBe(limits);
+    expect(calls).toHaveLength(4);
   });
 
   test("reports each Claude login problem and Codex failure", async () => {
     bots([]);
-    mac({});
     const server = fakeCodexAppServer(() => "close");
     restores.push(server.restore);
-    const claudeOf = async () => (await (await fresh()).usageLimits())[0];
+    const claudeOf = async () => {
+      await discover();
+      return (await (await fresh()).usageLimits())[0];
+    };
 
     let account = await claudeOf();
     expect([account.label, account.ok, account.error]).toEqual([
-      "Claude VPS",
+      "Claude",
       false,
       expect.stringContaining("Não deu para ler os limites do Claude:"),
     ]);
@@ -351,7 +321,7 @@ describe("usageLimits", () => {
     await writeFixture(join(home, ".claude.json"), { oauthAccount: { organizationName: "Org" } });
     await writeFixture(join(home, ".claude", ".credentials.json"), { claudeAiOauth: {} });
     account = await claudeOf();
-    expect([account.label, account.error]).toEqual(["Claude Org", "Claude não está logado na VPS."]);
+    expect([account.label, account.error]).toEqual(["Claude Org", "Claude Org não está logado."]);
 
     await writeFixture(join(home, ".claude.json"), "{");
     await writeFixture(join(home, ".claude", ".credentials.json"), {
@@ -359,9 +329,9 @@ describe("usageLimits", () => {
     });
     account = await claudeOf();
     expect([account.label, account.plan, account.error]).toEqual([
-      "Claude VPS",
+      "Claude",
       "pro",
-      "O login do Claude na VPS expirou. Ele renova no próximo turno.",
+      "O login do Claude expirou. Ele renova no próximo turno.",
     ]);
 
     await writeFixture(join(home, ".claude", ".credentials.json"), { claudeAiOauth: { accessToken: "t" } });
@@ -378,49 +348,34 @@ describe("usageLimits", () => {
       windows: [],
     });
     expect(all).toHaveLength(2);
+
+    track(spyOn(accounts, "accountPath").mockReturnValue(null));
+    expect((await (await fresh()).usageLimits())[0].error).toBe("Claude não tem diretório de configuração.");
+
+    fakeProviders.probes.codex = { provider: "codex", status: "missing", detail: "", models: [] };
+    await discover();
+    expect((await (await fresh()).usageLimits()).map((item) => item.id)).toEqual(["vps:claude"]);
   });
 
-  test("marks Mac accounts offline when the app is old, incomplete or fails", async () => {
+  test("reads Codex limits from the directory of an extra Codex account", async () => {
     bots([]);
-    const server = fakeCodexAppServer(() => "close");
+    await writeFixture(join(home, ".codex-2", "auth.json"), { tokens: {} });
+    await discover();
+    expect(
+      (await accounts.listAccounts())
+        .filter((item) => item.provider !== "grok" && item.provider !== "cursor")
+        .map((item) => item.id),
+    ).toEqual(["vps:claude", "codex-2:codex"]);
+    await writeFixture(join(home, ".codex", "auth.json"), { tokens: {} });
+    await discover();
+    const server = fakeCodexAppServer(codexOk({ rateLimits: { planType: "plus" } }));
     restores.push(server.restore);
-    const macAccounts = async () => (await (await fresh()).usageLimits()).slice(2);
-
-    mac({ connected: true, supports: false });
-    expect((await macAccounts()).map((account) => [account.id, account.label, account.ok, account.error])).toEqual([
-      ["mac:claude", "Claude Mac", false, "Atualize o app no Mac para ler os limites de lá."],
-      ["mac:codex", "Codex Mac", false, "Atualize o app no Mac para ler os limites de lá."],
-    ]);
-    for (const restore of restores.splice(1).reverse()) restore();
-
-    mac({
-      connected: true,
-      supports: true,
-      limits: () => Promise.resolve({ claude: { ok: false, label: "Bia" }, codex: undefined }),
-    });
-    expect((await macAccounts()).map((account) => [account.label, account.error])).toEqual([
-      ["Claude Bia", "O Mac não conseguiu ler os limites."],
-      ["Codex Mac", "O Mac não mandou os limites."],
-    ]);
-    for (const restore of restores.splice(1).reverse()) restore();
-
-    mac({
-      connected: true,
-      supports: true,
-      limits: () => Promise.resolve({ claude: { ok: true, error: "x" }, codex: { ok: false, error: "sem login" } }),
-    });
-    expect((await macAccounts()).map((account) => [account.label, account.error])).toEqual([
-      ["Claude Mac", "x"],
-      ["Codex Mac", "sem login"],
-    ]);
-    for (const restore of restores.splice(1).reverse()) restore();
-
-    mac({ connected: true, supports: true, limits: () => Promise.reject("runner gone") });
-    expect((await macAccounts()).map((account) => account.error)).toEqual(["runner gone", "runner gone"]);
-    for (const restore of restores.splice(1).reverse()) restore();
-
-    mac({ connected: true, supports: true, limits: () => Promise.reject(new Error("timeout")) });
-    expect((await macAccounts()).map((account) => account.error)).toEqual(["timeout", "timeout"]);
+    const spawn = Bun.spawn as unknown as { mock: { calls: Array<[string[], { env: Record<string, string> }]> } };
+    const limits = await (await fresh()).usageLimits();
+    expect(limits.map((item) => item.id)).toEqual(["vps:claude", "vps:codex", "codex-2:codex"]);
+    const homes = spawn.mock.calls.map((call) => call[1].env.CODEX_HOME ?? null);
+    expect(homes).toContain(join(home, ".codex-2"));
+    expect(homes).toContain(null);
   });
 });
 
@@ -449,7 +404,7 @@ const priceTableFixture = {
 };
 
 describe("usageSummary", () => {
-  test("adds VPS logs priced from the stored table, grouped by day, model, speed and environment", async () => {
+  test("adds the logs of every account priced from the stored table, grouped by day, model, speed and account", async () => {
     jest.useFakeTimers();
     const now = Date.now();
     await settings.writeSetting("usage.prices", { at: now, table: priceTableFixture });
@@ -477,36 +432,55 @@ describe("usageSummary", () => {
         payload: { type: "token_count", info: { total_token_usage: { input_tokens: 20, output_tokens: 1 } } },
       })}\n`,
     );
-    mac({ connected: false });
+    await writeFixture(join(home, ".claude-2", ".credentials.json"), {});
+    await writeFixture(join(home, ".claude-2", ".claude.json"), { oauthAccount: { displayName: "Bia" } });
+    await writeFixture(
+      join(home, ".claude-2", "projects", "q", "b.jsonl"),
+      `${claudeLine(now - 2 * 3_600_000, "claude-a", { input_tokens: 7 }, "s9")}\n`,
+    );
+    await discover();
     const service = await fresh();
-    const summary = await service.usageSummary("bogus", null, "vps");
+    const summary = await service.usageSummary("bogus", null, null);
     expect(summary.range).toBe("30d");
     expect(summary.granularity).toBe("day");
-    expect(summary.environments).toEqual({
-      vps: { ok: true, error: null, scannedAt: expect.any(String), pending: false },
-      mac: null,
-    });
+    expect(summary.scannedAt).toEqual(expect.any(String));
+    expect(summary.accounts.map((item) => [item.id, item.label, item.processed, item.requests, item.sessions])).toEqual(
+      [
+        ["vps:claude", "Claude", 23 + 2 + 5, 3, 3],
+        ["claude-2:claude", "Claude Bia", 7, 1, 1],
+        ["vps:codex", "Codex", 21, 1, 0],
+      ],
+    );
+    const bia = await service.usageSummary("30d", null, "claude-2:claude");
+    expect(bia.totals).toMatchObject({ input: 7, requests: 1, sessions: 1, costUsd: 7 });
+    expect(bia.accounts.map((item) => item.id)).toEqual(["claude-2:claude"]);
+    expect(bia.detail[0]).toMatchObject({ account: "claude-2:claude", model: "claude-a" });
+    await rm(join(home, ".claude-2"), { recursive: true, force: true });
+    await discover();
+    const gone = await (await fresh()).usageSummary("30d", null, null);
+    expect(gone.accounts.map((item) => [item.id, item.label])).toContainEqual(["claude-2:claude", "claude-2:claude"]);
+    expect(gone.accounts.at(-1)?.id).toBe("claude-2:claude");
     expect(summary.totals).toEqual({
-      processed: 23 + 2 + 5 + 21,
-      input: 10 + 1 + 5 + 20,
+      processed: 23 + 2 + 5 + 21 + 7,
+      input: 10 + 1 + 5 + 20 + 7,
       cacheRead: 4,
       cacheWrite: 6,
       output: 3 + 1 + 1,
       reasoning: 0,
-      requests: 4,
-      sessions: 3,
-      costUsd: 2 * (10 + 2 + 4 * 1.5 + 2 * 3 + 6) + 3 + 2,
+      requests: 5,
+      sessions: 4,
+      costUsd: 2 * (10 + 2 + 4 * 1.5 + 2 * 3 + 6) + 3 + 2 + 7,
       savingsUsd: 4 * 0.5 * 2,
       unpricedTokens: 5,
     });
-    expect(summary.costByType).toEqual({ input: 20 + 1 + 2, cacheRead: 4, cacheWrite: 24, output: 12 + 2 });
+    expect(summary.costByType).toEqual({ input: 20 + 1 + 2 + 7, cacheRead: 4, cacheWrite: 24, output: 12 + 2 });
     expect(summary.speeds.map((speed) => speed.speed)).toEqual(["fast", "standard"]);
     expect(summary.detail.find((row) => row.model === "unknown-model")?.costUsd).toBeNull();
-    expect(summary.detail.find((row) => row.model === "gpt-z")).toMatchObject({ environment: "vps", costUsd: 2 });
+    expect(summary.detail.find((row) => row.model === "gpt-z")).toMatchObject({ account: "vps:codex", costUsd: 2 });
     expect(summary.series.every((point, i, all) => i === 0 || all[i - 1].bucket <= point.bucket)).toBe(true);
     expect(summary.pricing).toEqual({ source: "LiteLLM (preço de API)", updatedAt: new Date(now).toISOString() });
 
-    const claudeOnly = await service.usageSummary("24h", "claude", "vps");
+    const claudeOnly = await service.usageSummary("24h", "claude", "vps:claude");
     expect(claudeOnly.granularity).toBe("hour");
     expect(claudeOnly.totals.requests).toBe(3);
     expect(claudeOnly.series[0].bucket).toBe(new Date(hourOf(now - 3 * 3_600_000) * 1000).toISOString());
@@ -514,7 +488,6 @@ describe("usageSummary", () => {
 
   test("downloads prices when the stored table is stale and keeps the old table when the download fails", async () => {
     jest.useFakeTimers();
-    mac({ connected: false });
     await settings.writeSetting("usage.prices", { at: 0, table: { old: { input_cost_per_token: 9 } } });
     const calls = fetchReplies(() =>
       Response.json({
@@ -526,10 +499,7 @@ describe("usageSummary", () => {
       }),
     );
     const service = await fresh();
-    const [first] = await Promise.all([
-      service.usageSummary("7d", null, "mac"),
-      service.usageSummary("7d", null, "mac"),
-    ]);
+    const [first] = await Promise.all([service.usageSummary("7d", null, null), service.usageSummary("7d", null, null)]);
     expect(calls.map((call) => call.url)).toEqual([
       "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
     ]);
@@ -540,121 +510,28 @@ describe("usageSummary", () => {
     expect(Object.keys(stored.table).sort()).toEqual(["claude-a", "gpt-y"]);
     expect(first.pricing.updatedAt).toBe(new Date(stored.at).toISOString());
 
-    for (const restore of restores.splice(2).reverse()) restore();
+    for (const restore of restores.splice(0).reverse()) restore();
     await settings.writeSetting("usage.prices", { at: 0, table: { old: { input_cost_per_token: 9 } } });
     fetchReplies(() => new Response("down", { status: 503 }));
-    const failed = await (await fresh()).usageSummary("90d", null, "mac");
+    const failed = await (await fresh()).usageSummary("90d", null, null);
     expect(Date.parse(failed.pricing.updatedAt ?? "")).toBeLessThan(Date.now() - 22 * 3_600_000);
 
     await resetData();
     fetchReplies(() => Promise.reject(new Error("offline")));
-    expect((await (await fresh()).usageSummary("30d", null, "mac")).totals.costUsd).toBe(0);
-  });
-
-  test("sums Mac buckets and reports the Mac state", async () => {
-    jest.useFakeTimers();
-    const now = Date.now();
-    await settings.writeSetting("usage.prices", { at: now, table: priceTableFixture });
-    const recentHour = hourOf(now - 3_600_000);
-    const macRows = {
-      rows: [
-        { h: recentHour, p: "codex", m: "gpt-z", s: "standard", c: [10, 0, 0, 0, 0, 0, 1] },
-        { h: hourOf(now - 200 * 86_400_000), p: "codex", m: "gpt-z", s: "standard", c: [99, 0, 0, 0, 0, 0, 1] },
-      ],
-      sessions: [
-        { p: "codex", h: recentHour, m: "gpt-z" },
-        { p: "claude", h: recentHour, m: "claude-a" },
-      ],
-      scannedAt: "2026-11-19T00:00:00.000Z",
-    };
-    const { buckets } = mac({ connected: true, supports: true, buckets: () => Promise.resolve(macRows) });
-    const service = await fresh();
-    const summary = await service.usageSummary("30d", "codex", "mac");
-    expect(buckets).toHaveBeenCalledTimes(1);
-    expect(buckets.mock.calls[0][0]).toBe(Math.floor(now / 1000) - 91 * 86_400);
-    expect(summary.totals).toMatchObject({ input: 10, requests: 1, sessions: 1, costUsd: 1 });
-    expect(summary.environments.mac).toEqual({ ok: true, error: null, scannedAt: macRows.scannedAt, pending: false });
-    expect(summary.detail[0]).toMatchObject({ environment: "mac", model: "gpt-z" });
-    await service.usageSummary("30d", "codex", "mac");
-    expect(buckets).toHaveBeenCalledTimes(1);
-
-    jest.setSystemTime(now + 121_000);
-    buckets.mockImplementation(() => Promise.reject(new Error("socket closed")));
-    const failed = await service.usageSummary("30d", null, "mac");
-    expect(failed.environments.mac).toEqual({
-      ok: false,
-      error: "Não deu para ler o uso do Mac: socket closed",
-      scannedAt: macRows.scannedAt,
-      pending: false,
-    });
-    expect(failed.totals.input).toBe(10);
-
-    jest.setSystemTime(now + 250_000);
-    for (const restore of restores.splice(1).reverse()) restore();
-    mac({ connected: false });
-    const closed = await service.usageSummary("30d", null, "mac");
-    expect(closed.environments.mac?.error).toBe(
-      "O app do Mac está fechado. Os números do Mac podem estar desatualizados.",
-    );
-    expect(closed.totals.input).toBe(10);
-
-    jest.setSystemTime(now + 400_000);
-    for (const restore of restores.splice(1).reverse()) restore();
-    mac({ connected: true, supports: false });
-    const old = await service.usageSummary("30d", null, "mac");
-    expect(old.environments.mac).toEqual({
-      ok: false,
-      error: "Atualize o app no Mac para somar o uso de lá.",
-      scannedAt: null,
-      pending: false,
-    });
-    expect(old.totals.input).toBe(0);
-  });
-
-  test("defaults missing Mac fields and reports a first scan still running", async () => {
-    jest.useFakeTimers();
-    await settings.writeSetting("usage.prices", { at: Date.now(), table: {} });
-    let finish: (value: Record<string, unknown>) => void = () => undefined;
-    const { buckets } = mac({
-      connected: true,
-      supports: true,
-      buckets: () =>
-        new Promise((resolve) => {
-          finish = resolve;
-        }),
-    });
-    const service = await fresh();
-    const waiting = service.usageSummary("30d", null, "mac");
-    await Promise.resolve();
-    await Promise.resolve();
-    jest.advanceTimersByTime(8000);
-    const pending = await waiting;
-    expect(pending.environments.mac).toEqual({
-      ok: false,
-      error: "Somando o histórico do Mac pela primeira vez. Pode levar alguns minutos.",
-      scannedAt: null,
-      pending: true,
-    });
-    finish({});
-    await Promise.resolve();
-    await Promise.resolve();
-    const done = await service.usageSummary("30d", null, "mac");
-    expect(done.environments.mac).toMatchObject({ ok: true, pending: false, scannedAt: expect.any(String) });
-    expect(buckets).toHaveBeenCalledTimes(1);
+    expect((await (await fresh()).usageSummary("30d", null, null)).totals.costUsd).toBe(0);
   });
 });
 
 describe("failures", () => {
   test("keeps going when the price file cannot be written", async () => {
     jest.useFakeTimers();
-    mac({ connected: false });
     const write = track(
       spyOn(settings, "writeSetting").mockImplementation(() => {
         throw new Error("readonly database");
       }),
     );
     fetchReplies(() => Response.json({ "claude-a": { input_cost_per_token: 1 } }));
-    const summary = await (await fresh()).usageSummary("30d", null, "mac");
+    const summary = await (await fresh()).usageSummary("30d", null, null);
     expect(summary.pricing.updatedAt).not.toBeNull();
     expect(write).toHaveBeenCalledTimes(1);
   });

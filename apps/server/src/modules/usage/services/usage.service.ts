@@ -1,17 +1,22 @@
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { readSetting, writeSetting } from "../../../db/settings";
 import {
-  macRunnerConnected,
-  macRunnerSupports,
-  macUsageBuckets,
-  macUsageLimits,
-} from "../../accounts/services/mac-runner.service";
+  type Account,
+  accountDir,
+  accountPath,
+  listAccounts,
+  siblingAccounts,
+} from "../../accounts/services/accounts.service";
 import { engineOf, listBots } from "../../bots/services/bots.service";
-import { type Counters, type SessionRow, type UsageProvider, type UsageRow, UsageScanner } from "./usage-scan.service";
-
-type Environment = "vps" | "mac";
+import {
+  type Counters,
+  type SessionRow,
+  type UsageProvider,
+  type UsageRow,
+  UsageScanner,
+  type UsageSource,
+} from "./usage-scan.service";
 
 export interface LimitWindow {
   kind: "session" | "weekly" | "monthly" | "weekly_model";
@@ -25,10 +30,11 @@ export interface LimitWindow {
 
 export interface LimitAccount {
   id: string;
-  environment: Environment;
   provider: UsageProvider;
   label: string;
+  email: string | null;
   plan: string | null;
+  isDefault: boolean;
   ok: boolean;
   error: string | null;
   windows: LimitWindow[];
@@ -59,22 +65,28 @@ interface RawCodexLimits {
 }
 
 const zone = "America/Sao_Paulo";
-const scanner = new UsageScanner();
+const usageProviders: readonly string[] = ["claude", "codex"];
+
+async function usageAccounts() {
+  return (await listAccounts()).filter((account) => usageProviders.includes(account.provider));
+}
+
+export async function usageSources(): Promise<UsageSource[]> {
+  const accounts = await usageAccounts();
+  return accounts.flatMap((account) => {
+    const dir = accountPath(account.id);
+    if (!dir) return [];
+    const provider = account.provider as UsageProvider;
+    return [{ account: account.id, provider, root: join(dir, provider === "claude" ? "projects" : "sessions") }];
+  });
+}
+
+const scanner = new UsageScanner(usageSources);
 const pricesKey = "usage.prices";
 const pricesUrl = "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
-const providerLabels: Record<UsageProvider, string> = { claude: "Claude", codex: "Codex" };
 
 let limitsCache: { at: number; value: LimitAccount[] } | null = null;
 let limitsPending: Promise<LimitAccount[]> | null = null;
-let macSnapshot: {
-  at: number;
-  since: number;
-  rows: UsageRow[];
-  sessions: SessionRow[];
-  error: string | null;
-  scannedAt: string | null;
-} | null = null;
-let macPending: Promise<void> | null = null;
 
 function clampPercent(value: number) {
   return Math.max(0, Math.min(100, Math.round(value * 10) / 10));
@@ -159,36 +171,36 @@ export function codexWindows(raw: RawCodexLimits): LimitWindow[] {
   return windows;
 }
 
-async function claudeIdentity() {
-  try {
-    const parsed = JSON.parse(await readFile(join(homedir(), ".claude.json"), "utf8")) as {
-      oauthAccount?: { displayName?: string; organizationName?: string };
-    };
-    return parsed.oauthAccount?.displayName || parsed.oauthAccount?.organizationName || null;
-  } catch {
-    return null;
-  }
+type LimitBase = Omit<LimitAccount, "failover" | "ok" | "error" | "windows">;
+
+function limitBase(account: Account): LimitBase {
+  return {
+    id: account.id,
+    provider: account.provider as UsageProvider,
+    label: account.label,
+    email: account.email,
+    plan: account.plan,
+    isDefault: account.isDefault,
+  };
 }
 
-async function vpsClaudeLimits(): Promise<Omit<LimitAccount, "failover">> {
-  const base = { id: "vps:claude", environment: "vps" as const, provider: "claude" as const, plan: null };
-  const name = await claudeIdentity();
-  const label = `Claude ${name ?? "VPS"}`;
+function limitFailure(base: LimitBase, error: string): Omit<LimitAccount, "failover"> {
+  return { ...base, ok: false, error: error.slice(0, 200), windows: [] };
+}
+
+async function claudeLimits(account: Account): Promise<Omit<LimitAccount, "failover">> {
+  const base = limitBase(account);
+  const dir = accountPath(account.id);
   try {
-    const credentials = JSON.parse(await readFile(join(homedir(), ".claude", ".credentials.json"), "utf8")) as {
+    if (!dir) return limitFailure(base, `${account.label} não tem diretório de configuração.`);
+    const credentials = JSON.parse(await readFile(join(dir, ".credentials.json"), "utf8")) as {
       claudeAiOauth?: { accessToken?: string; expiresAt?: number; subscriptionType?: string };
     };
     const oauth = credentials.claudeAiOauth;
-    if (!oauth?.accessToken) return { ...base, label, ok: false, error: "Claude não está logado na VPS.", windows: [] };
+    if (oauth?.subscriptionType) base.plan = oauth.subscriptionType;
+    if (!oauth?.accessToken) return limitFailure(base, `${account.label} não está logado.`);
     if (oauth.expiresAt && oauth.expiresAt < Date.now())
-      return {
-        ...base,
-        label,
-        plan: oauth.subscriptionType ?? null,
-        ok: false,
-        error: "O login do Claude na VPS expirou. Ele renova no próximo turno.",
-        windows: [],
-      };
+      return limitFailure(base, `O login do ${account.label} expirou. Ele renova no próximo turno.`);
     const response = await fetch("https://api.anthropic.com/api/oauth/usage", {
       headers: {
         authorization: `Bearer ${oauth.accessToken}`,
@@ -198,43 +210,25 @@ async function vpsClaudeLimits(): Promise<Omit<LimitAccount, "failover">> {
       },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok)
-      return {
-        ...base,
-        label,
-        plan: oauth.subscriptionType ?? null,
-        ok: false,
-        error: `A Anthropic respondeu ${response.status} ao ler os limites.`,
-        windows: [],
-      };
-    return {
-      ...base,
-      label,
-      plan: oauth.subscriptionType ?? null,
-      ok: true,
-      error: null,
-      windows: claudeWindows((await response.json()) as RawClaudeUsage),
-    };
+    if (!response.ok) return limitFailure(base, `A Anthropic respondeu ${response.status} ao ler os limites.`);
+    return { ...base, ok: true, error: null, windows: claudeWindows((await response.json()) as RawClaudeUsage) };
   } catch (error) {
-    return {
-      ...base,
-      label,
-      ok: false,
-      error: `Não deu para ler os limites do Claude: ${error instanceof Error ? error.message : String(error)}`.slice(
-        0,
-        200,
-      ),
-      windows: [],
-    };
+    return limitFailure(
+      base,
+      `Não deu para ler os limites do Claude: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
-export function readCodexRateLimits(binary = "codex", timeoutMs = 20_000) {
+export function readCodexRateLimits(binary = "codex", timeoutMs = 20_000, codexHome: string | null = null) {
   return new Promise<RawCodexLimits>((resolve, reject) => {
+    const { CODEX_HOME: _inherited, ...inherited } = process.env;
     const env = Object.fromEntries(
-      Object.entries({ ...process.env, CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "runelay_bots" }).filter(
-        (entry): entry is [string, string] => entry[1] !== undefined,
-      ),
+      Object.entries({
+        ...inherited,
+        ...(codexHome ? { CODEX_HOME: codexHome } : {}),
+        CODEX_INTERNAL_ORIGINATOR_OVERRIDE: "runelay_bots",
+      }).filter((entry): entry is [string, string] => entry[1] !== undefined),
     );
     let child: Bun.Subprocess<"pipe", "pipe", "ignore">;
     try {
@@ -299,105 +293,41 @@ export function readCodexRateLimits(binary = "codex", timeoutMs = 20_000) {
   });
 }
 
-async function vpsCodexLimits(): Promise<Omit<LimitAccount, "failover">> {
-  const base = { id: "vps:codex", environment: "vps" as const, provider: "codex" as const, label: "Codex VPS" };
+async function codexLimits(account: Account): Promise<Omit<LimitAccount, "failover">> {
+  const base = limitBase(account);
   try {
-    const raw = await readCodexRateLimits();
-    return { ...base, plan: raw.planType ?? null, ok: true, error: null, windows: codexWindows(raw) };
+    const raw = await readCodexRateLimits("codex", 20_000, accountDir(account.id));
+    return { ...base, plan: raw.planType ?? base.plan, ok: true, error: null, windows: codexWindows(raw) };
   } catch (error) {
-    return {
-      ...base,
-      plan: null,
-      ok: false,
-      error: `Não deu para ler os limites do Codex: ${error instanceof Error ? error.message : String(error)}`.slice(
-        0,
-        200,
-      ),
-      windows: [],
-    };
+    return limitFailure(
+      base,
+      `Não deu para ler os limites do Codex: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 }
 
-async function macLimits(): Promise<Array<Omit<LimitAccount, "failover">>> {
-  const offline = (provider: UsageProvider, error: string) => ({
-    id: `mac:${provider}`,
-    environment: "mac" as const,
-    provider,
-    label: `${providerLabels[provider]} Mac`,
-    plan: null,
-    ok: false,
-    error,
-    windows: [],
-  });
-  if (!macRunnerConnected()) return [];
-  if (!macRunnerSupports("usage"))
-    return [
-      offline("claude", "Atualize o app no Mac para ler os limites de lá."),
-      offline("codex", "Atualize o app no Mac para ler os limites de lá."),
-    ];
-  try {
-    const result = await macUsageLimits();
-    return (["claude", "codex"] as const).map((provider) => {
-      const entry = result[provider] as
-        | { ok?: boolean; error?: string; label?: string; plan?: string; raw?: unknown }
-        | undefined;
-      if (!entry) return offline(provider, "O Mac não mandou os limites.");
-      const label = `${providerLabels[provider]} ${entry.label || "Mac"}`;
-      if (!entry.ok || !entry.raw)
-        return { ...offline(provider, entry.error ?? "O Mac não conseguiu ler os limites."), label };
-      const windows =
-        provider === "claude" ? claudeWindows(entry.raw as RawClaudeUsage) : codexWindows(entry.raw as RawCodexLimits);
-      const plan = provider === "codex" ? ((entry.raw as RawCodexLimits).planType ?? null) : (entry.plan ?? null);
-      return {
-        id: `mac:${provider}`,
-        environment: "mac" as const,
-        provider,
-        label,
-        plan,
-        ok: true,
-        error: null,
-        windows,
-      };
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return [offline("claude", message), offline("codex", message)];
-  }
-}
-
-function accountLabel(account: string) {
-  const [runner, provider] = account.split(":");
-  const name =
-    provider === "codex"
-      ? "Codex"
-      : provider === "claude"
-        ? "Claude"
-        : provider === "grok"
-          ? "Grok"
-          : provider === "cursor"
-            ? "Cursor"
-            : provider;
-  return `${name} (${runner?.startsWith("mac") ? "Mac" : "VPS"})`;
-}
-
-function failoversFor(accountId: string) {
+function failoversFor(accountId: string, accounts: Account[]) {
   const result: LimitAccount["failover"] = [];
+  const account = accounts.find((item) => item.id === accountId);
+  if (!account) return result;
+  const sibling = siblingAccounts(accounts, account).find((item) => item.status === "ready");
   for (const bot of listBots()) {
     const engine = engineOf(bot);
-    if (engine.account !== accountId || !engine.fallback) continue;
-    result.push({
-      botId: bot.id,
-      botName: bot.name,
-      to: engine.fallback.account,
-      toLabel: accountLabel(engine.fallback.account),
-    });
+    if (engine.account !== accountId) continue;
+    const target = sibling ?? accounts.find((item) => item.id === engine.fallback?.account);
+    if (!target) continue;
+    result.push({ botId: bot.id, botName: bot.name, to: target.id, toLabel: target.label });
   }
   return result;
 }
 
 async function computeLimits() {
-  const [claude, codex, mac] = await Promise.all([vpsClaudeLimits(), vpsCodexLimits(), macLimits()]);
-  return [claude, codex, ...mac].map((account) => ({ ...account, failover: failoversFor(account.id) }));
+  const all = await listAccounts();
+  const accounts = all.filter((account) => usageProviders.includes(account.provider) && account.status !== "missing");
+  const limits = await Promise.all(
+    accounts.map((account) => (account.provider === "claude" ? claudeLimits(account) : codexLimits(account))),
+  );
+  return limits.map((limit) => ({ ...limit, failover: failoversFor(limit.id, all) }));
 }
 
 export function usageLimits(refresh = false) {
@@ -502,84 +432,35 @@ function dayKey(hour: number) {
   );
 }
 
-function refreshMac(since: number) {
-  if (macPending) return macPending;
-  macPending = (async () => {
-    if (!macRunnerConnected()) {
-      macSnapshot = {
-        at: Date.now(),
-        since,
-        rows: macSnapshot?.rows ?? [],
-        sessions: macSnapshot?.sessions ?? [],
-        error: "O app do Mac está fechado. Os números do Mac podem estar desatualizados.",
-        scannedAt: macSnapshot?.scannedAt ?? null,
-      };
-      return;
-    }
-    if (!macRunnerSupports("usage")) {
-      macSnapshot = {
-        at: Date.now(),
-        since,
-        rows: [],
-        sessions: [],
-        error: "Atualize o app no Mac para somar o uso de lá.",
-        scannedAt: null,
-      };
-      return;
-    }
-    try {
-      const result = await macUsageBuckets(since);
-      macSnapshot = {
-        at: Date.now(),
-        since,
-        rows: (result.rows as UsageRow[]) ?? [],
-        sessions: (result.sessions as SessionRow[]) ?? [],
-        error: null,
-        scannedAt: String(result.scannedAt ?? new Date().toISOString()),
-      };
-    } catch (error) {
-      macSnapshot = {
-        at: Date.now(),
-        since,
-        rows: macSnapshot?.rows ?? [],
-        sessions: macSnapshot?.sessions ?? [],
-        error: `Não deu para ler o uso do Mac: ${error instanceof Error ? error.message : String(error)}`.slice(0, 200),
-        scannedAt: macSnapshot?.scannedAt ?? null,
-      };
-    }
-  })().finally(() => {
-    macPending = null;
-  });
-  return macPending;
-}
-
-async function macRows(since: number) {
-  const stale = !macSnapshot || Date.now() - macSnapshot.at > 120_000 || macSnapshot.since > since;
-  if (stale) {
-    const work = refreshMac(Math.floor(Date.now() / 1000) - ranges["90d"] - 86_400);
-    await Promise.race([work, new Promise((resolve) => setTimeout(resolve, macSnapshot ? 3000 : 8000))]);
-  }
-  if (!macSnapshot)
-    return { at: Date.now(), since, rows: [], sessions: [], error: null, scannedAt: null, pending: true };
-  return { ...macSnapshot, pending: macPending !== null && !macSnapshot.scannedAt };
-}
-
-export async function usageSummary(rangeKey: string, provider: string | null, environment: string | null) {
+export async function usageSummary(rangeKey: string, provider: string | null, account: string | null) {
   const span = ranges[rangeKey] ?? ranges["30d"];
   const now = Math.floor(Date.now() / 1000);
   const since = Math.floor((now - span) / 3600) * 3600;
   const hourly = rangeKey === "24h";
-  const wantVps = !environment || environment === "vps";
-  const wantMac = !environment || environment === "mac";
-  const [vps, mac, table] = await Promise.all([
-    wantVps ? scanner.snapshot() : null,
-    wantMac ? macRows(since) : null,
-    priceTable(),
-  ]);
-  const sources: Array<{ env: Environment; rows: UsageRow[]; sessions: SessionRow[] }> = [];
-  if (vps) sources.push({ env: "vps", rows: vps.rows, sessions: vps.sessions });
-  if (mac) sources.push({ env: "mac", rows: mac.rows, sessions: mac.sessions });
-  const keep = (p: string, h: number) => h >= since && (!provider || provider === p);
+  const [snapshot, table, known] = await Promise.all([scanner.snapshot(), priceTable(), usageAccounts()]);
+  const keep = (row: { p: string; h: number; a: string }) =>
+    row.h >= since && (!provider || provider === row.p) && (!account || account === row.a);
+  const perAccount = new Map<
+    string,
+    {
+      id: string;
+      provider: UsageProvider;
+      label: string;
+      processed: number;
+      requests: number;
+      sessions: number;
+      costUsd: number;
+    }
+  >();
+  const accountEntry = (id: string, p: UsageProvider) => {
+    let entry = perAccount.get(id);
+    if (!entry) {
+      const found = known.find((item) => item.id === id);
+      entry = { id, provider: p, label: found?.label ?? id, processed: 0, requests: 0, sessions: 0, costUsd: 0 };
+      perAccount.set(id, entry);
+    }
+    return entry;
+  };
   const totals = {
     processed: 0,
     input: 0,
@@ -602,7 +483,7 @@ export async function usageSummary(rangeKey: string, provider: string | null, en
       day: string;
       provider: UsageProvider;
       model: string;
-      environment: Environment;
+      account: string;
       input: number;
       cacheRead: number;
       cacheWrite: number;
@@ -612,9 +493,9 @@ export async function usageSummary(rangeKey: string, provider: string | null, en
       costUsd: number | null;
     }
   >();
-  for (const source of sources) {
-    for (const row of source.rows) {
-      if (!keep(row.p, row.h)) continue;
+  {
+    for (const row of snapshot.rows as UsageRow[]) {
+      if (!keep(row)) continue;
       const c = row.c;
       const write = c[2] + c[3];
       const processed = c[0] + c[1] + write + c[4];
@@ -645,12 +526,16 @@ export async function usageSummary(rangeKey: string, provider: string | null, en
       speed.costUsd += cost?.total ?? 0;
       speeds.set(row.s, speed);
       const day = dayKey(row.h);
-      const detailKey = `${day}|${row.p}|${row.m}|${source.env}`;
+      const owner = accountEntry(row.a, row.p);
+      owner.processed += processed;
+      owner.requests += c[6];
+      owner.costUsd += cost?.total ?? 0;
+      const detailKey = `${day}|${row.p}|${row.m}|${row.a}`;
       const entry = detail.get(detailKey) ?? {
         day,
         provider: row.p,
         model: row.m,
-        environment: source.env,
+        account: row.a,
         input: 0,
         cacheRead: 0,
         cacheWrite: 0,
@@ -668,8 +553,13 @@ export async function usageSummary(rangeKey: string, provider: string | null, en
       if (cost) entry.costUsd = (entry.costUsd ?? 0) + cost.total;
       detail.set(detailKey, entry);
     }
-    totals.sessions += source.sessions.filter((session) => keep(session.p, session.h)).length;
+    for (const session of snapshot.sessions as SessionRow[]) {
+      if (!keep(session)) continue;
+      totals.sessions += 1;
+      accountEntry(session.a, session.p).sessions += 1;
+    }
   }
+  if (!provider && !account) for (const item of known) accountEntry(item.id, item.provider as UsageProvider);
   return {
     range: rangeKey in ranges ? rangeKey : "30d",
     since: new Date(since * 1000).toISOString(),
@@ -681,19 +571,13 @@ export async function usageSummary(rangeKey: string, provider: string | null, en
     series: [...series.values()].sort((a, b) => a.bucket.localeCompare(b.bucket)),
     speeds: [...speeds.values()].sort((a, b) => b.costUsd - a.costUsd),
     detail: [...detail.values()].sort((a, b) => b.day.localeCompare(a.day) || b.processed - a.processed),
-    environments: {
-      vps: wantVps ? { ok: true, error: null, scannedAt: vps?.scannedAt ?? null, pending: false } : null,
-      mac: wantMac
-        ? {
-            ok: !mac?.error && !mac?.pending,
-            error: mac?.pending
-              ? "Somando o histórico do Mac pela primeira vez. Pode levar alguns minutos."
-              : (mac?.error ?? null),
-            scannedAt: mac?.scannedAt ?? null,
-            pending: Boolean(mac?.pending),
-          }
-        : null,
-    },
+    accounts: [...perAccount.values()].sort(
+      (a, b) =>
+        Number(known.findIndex((item) => item.id === a.id) < 0) -
+          Number(known.findIndex((item) => item.id === b.id) < 0) ||
+        known.findIndex((item) => item.id === a.id) - known.findIndex((item) => item.id === b.id),
+    ),
+    scannedAt: snapshot.scannedAt,
     pricing: { source: "LiteLLM (preço de API)", updatedAt: prices ? new Date(prices.at).toISOString() : null },
   };
 }

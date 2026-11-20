@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream, type Dirent, type Stats } from "node:fs";
 import { readdir, stat } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { emptyChanges, loadUsageIndex, saveUsageChanges } from "../repositories/usage.repository";
 
@@ -14,6 +13,7 @@ export interface UsageRow {
   p: UsageProvider;
   m: string;
   s: string;
+  a: string;
   c: Counters;
 }
 
@@ -21,6 +21,13 @@ export interface SessionRow {
   p: UsageProvider;
   h: number;
   m: string;
+  a: string;
+}
+
+export interface UsageSource {
+  account: string;
+  provider: UsageProvider;
+  root: string;
 }
 
 export interface UsageSnapshot {
@@ -48,7 +55,7 @@ interface ScanIndex {
   version: number;
   files: Record<string, FileCursor>;
   buckets: Record<string, Counters>;
-  sessions: Record<string, [number, string]>;
+  sessions: Record<string, [number, string, string]>;
   seen: Record<string, number>;
 }
 
@@ -113,10 +120,7 @@ export class UsageScanner {
   private lastAt = 0;
   private changes = emptyChanges();
 
-  constructor(
-    private readonly claudeRoot = join(homedir(), ".claude", "projects"),
-    private readonly codexRoot = join(homedir(), ".codex", "sessions"),
-  ) {}
+  constructor(private readonly sources: () => Promise<UsageSource[]> | UsageSource[]) {}
 
   snapshot(maxAgeMs = 60_000) {
     if (this.last && Date.now() - this.lastAt < maxAgeMs) return Promise.resolve(this.last);
@@ -137,25 +141,33 @@ export class UsageScanner {
     return this.index;
   }
 
-  private add(index: ScanIndex, hour: number, provider: UsageProvider, model: string, speed: string, values: Counters) {
-    const key = `${hour}|${provider}|${model}|${speed}`;
+  private add(
+    index: ScanIndex,
+    account: string,
+    hour: number,
+    provider: UsageProvider,
+    model: string,
+    speed: string,
+    values: Counters,
+  ) {
+    const key = `${hour}|${provider}|${model}|${speed}|${account}`;
     const bucket = index.buckets[key] ?? emptyCounters();
     for (let i = 0; i < values.length; i++) bucket[i] += values[i];
     index.buckets[key] = bucket;
     this.changes.buckets.add(key);
   }
 
-  private session(index: ScanIndex, provider: UsageProvider, id: string, hour: number, model: string) {
+  private session(index: ScanIndex, account: string, provider: UsageProvider, id: string, hour: number, model: string) {
     if (!id) return;
     const key = `${provider}:${id}`;
     const current = index.sessions[key];
     if (!current || hour < current[0]) {
-      index.sessions[key] = [hour, model];
+      index.sessions[key] = [hour, model, account];
       this.changes.sessions.add(key);
     }
   }
 
-  private claudeLine(index: ScanIndex, line: string) {
+  private claudeLine(index: ScanIndex, account: string, line: string) {
     if (!line.includes('"usage"')) return;
     let record: Record<string, unknown>;
     try {
@@ -181,7 +193,7 @@ export class UsageScanner {
     const write = num(usage.cache_creation_input_tokens);
     const write1h = Math.min(write, num(creation?.ephemeral_1h_input_tokens));
     const speed = usage.speed === "fast" ? "fast" : "standard";
-    this.add(index, hour, "claude", model, speed, [
+    this.add(index, account, hour, "claude", model, speed, [
       num(usage.input_tokens),
       num(usage.cache_read_input_tokens),
       write - write1h,
@@ -190,10 +202,10 @@ export class UsageScanner {
       0,
       1,
     ]);
-    this.session(index, "claude", String(record.sessionId ?? ""), hour, model);
+    this.session(index, account, "claude", String(record.sessionId ?? ""), hour, model);
   }
 
-  private codexLine(index: ScanIndex, state: CodexFileState, line: string) {
+  private codexLine(index: ScanIndex, account: string, state: CodexFileState, line: string) {
     let record: Record<string, unknown>;
     try {
       record = JSON.parse(line) as Record<string, unknown>;
@@ -246,15 +258,25 @@ export class UsageScanner {
     if (hour === null) return;
     const model = state.model || "codex";
     const uncached = Math.max(0, delta[0] - delta[1] - delta[2]);
-    this.add(index, hour, "codex", model, state.speed, [uncached, delta[1], delta[2], 0, delta[3], delta[4], 1]);
-    this.session(index, "codex", state.session, hour, model);
+    this.add(index, account, hour, "codex", model, state.speed, [
+      uncached,
+      delta[1],
+      delta[2],
+      0,
+      delta[3],
+      delta[4],
+      1,
+    ]);
+    this.session(index, account, "codex", state.session, hour, model);
   }
 
   private async scan(): Promise<UsageSnapshot> {
     const index = await this.load();
-    const [claudeFiles, codexFiles] = await Promise.all([listJsonl(this.claudeRoot), listJsonl(this.codexRoot)]);
+    const sources = await this.sources();
+    const listed = await Promise.all(sources.map((source) => listJsonl(source.root)));
     let changed = false;
-    const visit = async (path: string, provider: UsageProvider) => {
+    let files = 0;
+    const visit = async (path: string, provider: UsageProvider, account: string) => {
       let info: Stats;
       try {
         info = await stat(path);
@@ -271,21 +293,24 @@ export class UsageScanner {
         cursor.codex = { model: "", speed: "standard", session: "", start: 0, prev: null };
       const state = cursor.codex;
       cursor.offset = await readNewLines(path, cursor.offset, info.size, (line) => {
-        if (provider === "claude") this.claudeLine(index, line);
-        else if (state) this.codexLine(index, state, line);
+        if (provider === "claude") this.claudeLine(index, account, line);
+        else if (state) this.codexLine(index, account, state, line);
       });
       cursor.size = info.size;
       index.files[path] = cursor;
       this.changes.files.add(path);
       changed = true;
     };
-    for (const path of claudeFiles) await visit(path, "claude");
-    for (const path of codexFiles) await visit(path, "codex");
+    for (const [position, source] of sources.entries()) {
+      const paths = listed[position] ?? [];
+      files += paths.length;
+      for (const path of paths) await visit(path, source.provider, source.account);
+    }
     if (changed) {
       this.prune(index);
       await this.save(index);
     }
-    this.last = this.toSnapshot(index, claudeFiles.length + codexFiles.length);
+    this.last = this.toSnapshot(index, files);
     this.lastAt = Date.now();
     return this.last;
   }
@@ -317,14 +342,13 @@ export class UsageScanner {
 
   private toSnapshot(index: ScanIndex, files: number): UsageSnapshot {
     const rows: UsageRow[] = Object.entries(index.buckets).map(([key, c]) => {
-      const [h, p, m, s] = key.split("|");
-      return { h: Number(h), p: p as UsageProvider, m, s, c: [...c] as Counters };
+      const [h, p, m, s, a] = key.split("|");
+      return { h: Number(h), p: p as UsageProvider, m, s, a: a || `vps:${p}`, c: [...c] as Counters };
     });
-    const sessions: SessionRow[] = Object.entries(index.sessions).map(([key, [h, m]]) => ({
-      p: key.split(":")[0] as UsageProvider,
-      h,
-      m,
-    }));
+    const sessions: SessionRow[] = Object.entries(index.sessions).map(([key, [h, m, a]]) => {
+      const p = key.split(":")[0] as UsageProvider;
+      return { p, h, m, a: a || `vps:${p}` };
+    });
     return { rows, sessions, scannedAt: new Date().toISOString(), files };
   }
 }

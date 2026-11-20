@@ -8,9 +8,10 @@ export const usageBuckets = pgTable(
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     tier: text("tier").notNull(),
+    account: text("account").notNull().default(""),
     counters: jsonb<number[]>("counters").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.hour, table.provider, table.model, table.tier] })],
+  (table) => [primaryKey({ columns: [table.hour, table.provider, table.model, table.tier, table.account] })],
 );
 
 export const usageSessions = pgTable(
@@ -19,6 +20,7 @@ export const usageSessions = pgTable(
     key: text("key").primaryKey(),
     hour: bigint("hour", { mode: "number" }).notNull(),
     model: text("model").notNull(),
+    account: text("account").notNull().default(""),
   },
   (table) => [index("usage_sessions_hour_idx").on(table.hour)],
 );

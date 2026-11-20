@@ -3,13 +3,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import * as os from "node:os";
 import { join } from "node:path";
 import { request, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
-import { fakeCodexAppServer, resetUsageTables } from "../../../../test/usage-helpers";
-import * as macRunner from "../../accounts/services/mac-runner.service";
+import { fakeCodexAppServer, resetUsageTables, writeFixture } from "../../../../test/usage-helpers";
+import * as accounts from "../../accounts/services/accounts.service";
 import * as botsService from "../../bots/services/bots.service";
 import type { LimitAccount } from "../services/usage.service";
 
 const home = await mkdtemp(join(os.tmpdir(), "rb-usage-routes-"));
 const restores: Array<() => void> = [];
+const previousHome = process.env.HOST_HOME;
 let server: TestServer;
 
 function track<T extends { mockRestore(): void }>(spy: T) {
@@ -31,11 +32,14 @@ afterEach(() => {
 
 afterAll(async () => {
   await server.close();
+  process.env.HOST_HOME = previousHome;
+  await accounts.refreshAccounts();
   await rm(home, { recursive: true, force: true });
 });
 
-function isolate() {
-  track(spyOn(os, "homedir").mockReturnValue(home));
+async function isolate() {
+  process.env.HOST_HOME = home;
+  await accounts.refreshAccounts();
   track(spyOn(botsService, "listBots").mockReturnValue([]));
   const codex = fakeCodexAppServer(() => "close");
   restores.push(codex.restore);
@@ -43,8 +47,7 @@ function isolate() {
 
 describe("GET /usage/limits", () => {
   test("returns the accounts with the check time", async () => {
-    isolate();
-    track(spyOn(macRunner, "macRunnerConnected").mockReturnValue(false));
+    await isolate();
     const response = await request<{ checkedAt: string; accounts: LimitAccount[] }>("/usage/limits?refresh=1");
     expect(response.status).toBe(200);
     expect(Number.isNaN(Date.parse(response.body.checkedAt))).toBe(false);
@@ -55,9 +58,9 @@ describe("GET /usage/limits", () => {
   });
 
   test("answers 500 with the reason when the limits cannot be computed", async () => {
-    isolate();
+    await isolate();
     track(
-      spyOn(macRunner, "macRunnerConnected").mockImplementation(() => {
+      spyOn(accounts, "listAccounts").mockImplementation(() => {
         throw new Error("runner state broken");
       }),
     );
@@ -67,9 +70,9 @@ describe("GET /usage/limits", () => {
   });
 
   test("answers 500 for a non-Error failure", async () => {
-    isolate();
+    await isolate();
     track(
-      spyOn(macRunner, "macRunnerConnected").mockImplementation(() => {
+      spyOn(accounts, "listAccounts").mockImplementation(() => {
         throw "plain failure";
       }),
     );
@@ -79,22 +82,28 @@ describe("GET /usage/limits", () => {
 });
 
 describe("GET /usage/summary", () => {
-  test("passes range, provider and environment through", async () => {
+  test("passes range, provider and account through", async () => {
     jest.useFakeTimers();
-    isolate();
-    track(spyOn(macRunner, "macRunnerConnected").mockReturnValue(true));
-    track(spyOn(macRunner, "macRunnerSupports").mockReturnValue(true));
-    const hour = Math.floor(Date.now() / 3_600_000) * 3600 - 3600;
-    track(
-      spyOn(macRunner, "macUsageBuckets").mockResolvedValue({
-        rows: [
-          { h: hour, p: "codex", m: "unpriced-model", s: "standard", c: [5, 0, 0, 0, 1, 0, 1] },
-          { h: hour, p: "claude", m: "unpriced-model", s: "standard", c: [7, 0, 0, 0, 0, 0, 1] },
-        ],
-        sessions: [],
-        scannedAt: "2026-11-19T00:00:00.000Z",
-      }),
+    const at = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000 - 1800_000).toISOString();
+    await writeFixture(
+      join(home, ".claude", "projects", "p", "a.jsonl"),
+      `${JSON.stringify({
+        type: "assistant",
+        timestamp: at,
+        sessionId: "s1",
+        requestId: "r1",
+        message: { id: "m1", model: "unpriced-model", usage: { input_tokens: 7 } },
+      })}\n`,
     );
+    await writeFixture(
+      join(home, ".codex", "sessions", "r.jsonl"),
+      `${JSON.stringify({
+        type: "event_msg",
+        timestamp: at,
+        payload: { type: "token_count", info: { total_token_usage: { input_tokens: 5, output_tokens: 1 } } },
+      })}\n`,
+    );
+    await isolate();
     const localFetch = globalThis.fetch;
     const priceCalls: string[] = [];
     track(
@@ -106,14 +115,14 @@ describe("GET /usage/summary", () => {
       }) as typeof fetch),
     );
     const codex = await request<{ range: string; granularity: string; totals: { input: number } }>(
-      "/usage/summary?range=24h&provider=codex&environment=mac",
+      "/usage/summary?range=24h&provider=codex&account=vps:codex",
     );
     expect(codex.status).toBe(200);
     expect([codex.body.range, codex.body.granularity, codex.body.totals.input]).toEqual(["24h", "hour", 5]);
-    const any = await request<{ range: string; totals: { input: number } }>(
-      "/usage/summary?provider=grok&environment=mac",
-    );
+    const any = await request<{ range: string; totals: { input: number } }>("/usage/summary?provider=grok&account=%20");
     expect([any.body.range, any.body.totals.input]).toEqual(["30d", 12]);
+    const claude = await request<{ totals: { input: number } }>("/usage/summary?account=vps:claude");
+    expect(claude.body.totals.input).toBe(7);
     expect(priceCalls.every((url) => url.includes("litellm"))).toBe(true);
   });
 });

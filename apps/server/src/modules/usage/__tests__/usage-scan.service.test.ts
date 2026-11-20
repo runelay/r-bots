@@ -1,7 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as fsPromises from "node:fs/promises";
 import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import * as os from "node:os";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { resetUsageTables } from "../../../../test/usage-helpers";
@@ -14,6 +13,12 @@ const root = await mkdtemp(join(tmpdir(), "rb-usage-scan-"));
 let claudeRoot = "";
 let codexRoot = "";
 let run = 0;
+
+const scannerFor = () =>
+  new UsageScanner(() => [
+    { account: "vps:claude", provider: "claude", root: claudeRoot },
+    { account: "vps:codex", provider: "codex", root: codexRoot },
+  ]);
 
 const hour = (iso: string) => Math.floor(Date.parse(iso) / 3_600_000) * 3600;
 const recent = (hoursAgo: number) => new Date(Date.now() - hoursAgo * 3_600_000).toISOString();
@@ -113,18 +118,18 @@ describe("claude logs", () => {
       claudeRecord({ timestamp: at, sessionId: undefined, requestId: undefined, uuid: "u1" }, {}, "claude-a"),
     ]);
     await writeFile(join(claudeRoot, "proj", "ignored.txt"), "x");
-    const scanner = new UsageScanner(claudeRoot, codexRoot);
+    const scanner = scannerFor();
     const snap = await scanner.snapshot();
     expect(snap.files).toBe(1);
     const rows = snap.rows.sort((a, b) => a.m.localeCompare(b.m) || a.s.localeCompare(b.s));
     expect(rows).toEqual([
-      { h: hour(at), p: "claude", m: "claude-a", s: "fast", c: [100, 50, 0, 30, 7, 0, 1] },
-      { h: hour(at), p: "claude", m: "claude-a", s: "standard", c: [20, 0, 0, 0, 10, 0, 2] },
-      { h: hour(earlier), p: "claude", m: "claude-b", s: "standard", c: [0, 0, 0, 0, 0, 0, 1] },
+      { h: hour(at), p: "claude", m: "claude-a", s: "fast", a: "vps:claude", c: [100, 50, 0, 30, 7, 0, 1] },
+      { h: hour(at), p: "claude", m: "claude-a", s: "standard", a: "vps:claude", c: [20, 0, 0, 0, 10, 0, 2] },
+      { h: hour(earlier), p: "claude", m: "claude-b", s: "standard", a: "vps:claude", c: [0, 0, 0, 0, 0, 0, 1] },
     ]);
     expect(snap.sessions.sort((a, b) => a.h - b.h)).toEqual([
-      { p: "claude", h: hour(earlier), m: "claude-b" },
-      { p: "claude", h: hour(at), m: "claude-a" },
+      { p: "claude", h: hour(earlier), m: "claude-b", a: "vps:claude" },
+      { p: "claude", h: hour(at), m: "claude-a", a: "vps:claude" },
     ]);
     expect((await getDb().select().from(usageCursors)).map((row) => row.path)).toEqual([
       join(claudeRoot, "proj", "a.jsonl"),
@@ -137,7 +142,7 @@ describe("claude logs", () => {
     await put(file, [first]);
     const partial = JSON.stringify(claudeRecord({}, { input_tokens: 2, output_tokens: 0 }));
     await appendFile(file, partial.slice(0, 20));
-    const scanner = new UsageScanner(claudeRoot, codexRoot);
+    const scanner = scannerFor();
     expect((await scanner.snapshot()).rows[0].c[0]).toBe(1);
     await appendFile(file, `${partial.slice(20)}\n`);
     expect((await scanner.snapshot(0)).rows[0].c[0]).toBe(3);
@@ -150,7 +155,7 @@ describe("claude logs", () => {
     const file = join(claudeRoot, "big.jsonl");
     const padded = { ...claudeRecord({}, { input_tokens: 9 }), pad: "x".repeat(200_000) };
     await put(file, [padded, claudeRecord({}, { input_tokens: 1 })]);
-    const snap = await new UsageScanner(claudeRoot, codexRoot).snapshot();
+    const snap = await scannerFor().snapshot();
     expect(snap.rows[0].c[0]).toBe(10);
   });
 });
@@ -180,13 +185,13 @@ describe("codex logs", () => {
       tokenCount(t2, [10, 0, 0, 0, 0], [40, 30, 20, 4, 0]),
       tokenCount("bad", [20, 0, 0, 1, 0]),
     ]);
-    const snap = await new UsageScanner(claudeRoot, codexRoot).snapshot();
+    const snap = await scannerFor().snapshot();
     const rows = snap.rows.sort((a, b) => a.h - b.h || a.s.localeCompare(b.s));
     expect(rows).toEqual([
-      { h: hour(t1), p: "codex", m: "gpt-x", s: "fast", c: [100, 0, 0, 0, 0, 0, 1] },
-      { h: hour(t2), p: "codex", m: "gpt-x", s: "standard", c: [40, 40, 20, 0, 9, 1, 2] },
+      { h: hour(t1), p: "codex", m: "gpt-x", s: "fast", a: "vps:codex", c: [100, 0, 0, 0, 0, 0, 1] },
+      { h: hour(t2), p: "codex", m: "gpt-x", s: "standard", a: "vps:codex", c: [40, 40, 20, 0, 9, 1, 2] },
     ]);
-    expect(snap.sessions).toEqual([{ p: "codex", h: hour(t1), m: "gpt-x" }]);
+    expect(snap.sessions).toEqual([{ p: "codex", h: hour(t1), m: "gpt-x", a: "vps:codex" }]);
   });
 
   test("falls back to the codex model name and to the record timestamp, and resets state on truncation", async () => {
@@ -197,9 +202,9 @@ describe("codex logs", () => {
       { type: "session_meta", payload: {} },
       tokenCount(at, [5, 0, 0, 2, 0]),
     ]);
-    const scanner = new UsageScanner(claudeRoot, codexRoot);
+    const scanner = scannerFor();
     expect((await scanner.snapshot()).rows).toEqual([
-      { h: hour(at), p: "codex", m: "codex", s: "standard", c: [5, 0, 0, 0, 2, 0, 1] },
+      { h: hour(at), p: "codex", m: "codex", s: "standard", a: "vps:codex", c: [5, 0, 0, 0, 2, 0, 1] },
     ]);
     await writeFile(file, `${JSON.stringify(tokenCount(at, [1, 0, 0, 0, 0]))}\n`);
     expect((await scanner.snapshot(0)).rows[0].c).toEqual([6, 0, 0, 0, 2, 0, 2]);
@@ -212,11 +217,11 @@ describe("index", () => {
   test("persists cursors, reloads them and prunes data older than 100 days", async () => {
     const old = new Date(Date.now() - 120 * 86_400_000).toISOString();
     await put(join(claudeRoot, "a.jsonl"), [claudeRecord({ timestamp: old, sessionId: "old" }), claudeRecord()]);
-    await new UsageScanner(claudeRoot, codexRoot).snapshot();
+    await scannerFor().snapshot();
     expect(await getDb().select().from(usageBuckets)).toHaveLength(1);
     expect((await getDb().select().from(usageSessions)).map((row) => row.key)).toEqual(["claude:s1"]);
     expect(await getDb().select().from(usageSeen)).toHaveLength(1);
-    const reloaded = new UsageScanner(claudeRoot, codexRoot);
+    const reloaded = scannerFor();
     const snap = await reloaded.snapshot();
     expect(snap.rows).toHaveLength(1);
     expect(snap.rows[0].c[6]).toBe(1);
@@ -224,9 +229,9 @@ describe("index", () => {
 
   test("ignores a stored index of another version", async () => {
     await put(join(claudeRoot, "a.jsonl"), [claudeRecord()]);
-    await new UsageScanner(claudeRoot, codexRoot).snapshot();
+    await scannerFor().snapshot();
     await writeSetting("usage.index.version", 99);
-    const snap = await new UsageScanner(claudeRoot, codexRoot).snapshot();
+    const snap = await scannerFor().snapshot();
     expect(snap.rows).toHaveLength(1);
     expect(snap.rows[0].c[6]).toBe(1);
   });
@@ -241,7 +246,7 @@ describe("index", () => {
         ? Promise.reject(new Error("ENOENT"))
         : realStat(path)) as unknown as typeof fsPromises.stat);
     restores.push(() => spy.mockRestore());
-    const snap = await new UsageScanner(claudeRoot, codexRoot).snapshot();
+    const snap = await scannerFor().snapshot();
     expect(snap.files).toBe(1);
     expect(snap.rows).toEqual([]);
   });
@@ -250,7 +255,7 @@ describe("index", () => {
 describe("snapshot cache", () => {
   test("reuses a fresh snapshot and shares a scan in flight", async () => {
     await put(join(claudeRoot, "a.jsonl"), [claudeRecord()]);
-    const scanner = new UsageScanner(claudeRoot, codexRoot);
+    const scanner = scannerFor();
     const [a, b] = await Promise.all([scanner.snapshot(), scanner.snapshot()]);
     expect(a).toBe(b);
     await put(join(claudeRoot, "b.jsonl"), [claudeRecord()]);
@@ -258,14 +263,30 @@ describe("snapshot cache", () => {
     expect((await scanner.snapshot(0)).files).toBe(2);
   });
 
-  test("defaults to the Claude and Codex folders under the home directory", async () => {
-    const home = join(root, `home-${run}`);
-    const spy = spyOn(os, "homedir").mockReturnValue(home);
-    restores.push(() => spy.mockRestore());
-    await put(join(home, ".claude", "projects", "p", "a.jsonl"), [claudeRecord()]);
-    await put(join(home, ".codex", "sessions", "r.jsonl"), [tokenCount(recent(1), [3, 0, 0, 1, 0])]);
-    const snap = await new UsageScanner().snapshot();
+  test("keeps each account apart and reads rows saved before accounts existed", async () => {
+    const second = join(root, `claude2-${run}`);
+    await put(join(claudeRoot, "a.jsonl"), [claudeRecord({}, {}, "claude-a")]);
+    await put(join(second, "b.jsonl"), [claudeRecord({ sessionId: "s9" }, {}, "claude-a")]);
+    await getDb()
+      .insert(usageBuckets)
+      .values({
+        hour: hour(recent(2)),
+        provider: "codex",
+        model: "gpt",
+        tier: "standard",
+        counters: [1, 0, 0, 0, 0, 0, 1],
+      });
+    await getDb()
+      .insert(usageSessions)
+      .values({ key: "codex:velha", hour: hour(recent(2)), model: "gpt" });
+    const snap = await new UsageScanner(async () => [
+      { account: "vps:claude", provider: "claude", root: claudeRoot },
+      { account: "claude-2:claude", provider: "claude", root: second },
+    ]).snapshot();
     expect(snap.files).toBe(2);
-    expect(snap.rows.map((row) => row.p).sort()).toEqual(["claude", "codex"]);
+    expect(snap.rows.map((row) => row.a).sort()).toEqual(["claude-2:claude", "vps:claude", "vps:codex"]);
+    expect(snap.sessions.map((row) => row.a).sort()).toEqual(["claude-2:claude", "vps:claude", "vps:codex"]);
+    const stored = await getDb().select().from(usageBuckets);
+    expect(stored.map((row) => row.account).sort()).toEqual(["", "claude-2:claude", "vps:claude"]);
   });
 });

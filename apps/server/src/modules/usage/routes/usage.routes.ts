@@ -9,14 +9,14 @@ export async function handleUsageRoute(res: Res, url: URL) {
     }
     if (url.pathname === "/usage/summary") {
       const provider = url.searchParams.get("provider");
-      const environment = url.searchParams.get("environment");
+      const account = url.searchParams.get("account");
       return sendJson(
         res,
         200,
         await usageSummary(
           url.searchParams.get("range") ?? "30d",
           provider === "claude" || provider === "codex" ? provider : null,
-          environment === "vps" || environment === "mac" ? environment : null,
+          account?.trim() || null,
         ),
       );
     }

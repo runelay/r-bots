@@ -15,6 +15,13 @@
       "when": 1795131712190,
       "tag": "0001_search",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795144965664,
+      "tag": "0002_usage_accounts",
+      "breakpoints": true
     }
   ]
 }
