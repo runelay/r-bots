@@ -1601,6 +1601,10 @@ extension ConversationStore {
             default:
                 break
             }
+        case "code.branch":
+            if let branch = data["to"]?.stringValue, !branch.isEmpty {
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Trocou para a branch \(branch)", "arrow.triangle.branch")), date: currentLineDateValue)
+            }
         case "code.install":
             switch data["status"]?.stringValue ?? "" {
             case "running":
