@@ -1,5 +1,5 @@
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
-import { childEnv, findBinary, parseJson, runLines } from "./proc";
+import { accountEnv, childEnv, findBinary, parseJson, runLines } from "./proc";
 
 const disabledFeatures = [
   "shell_tool",
@@ -69,7 +69,10 @@ export async function runCodex(
     );
   }
   const args = ["exec", ...options, ...(request.resume ? ["resume", request.resume] : []), "-"];
-  const env = childEnv(request.mcp ? { RUNELAY_MCP_TOKEN: request.mcp.token } : {});
+  const env = childEnv({
+    ...accountEnv("codex", request.configDir),
+    ...(request.mcp ? { RUNELAY_MCP_TOKEN: request.mcp.token } : {}),
+  });
   let failure: string | null = null;
   let finished = false;
   const { code: exitCode, stderr } = await runLines(

@@ -124,6 +124,18 @@ describe("runCodex", () => {
     expect(args).not.toContain("shell_tool");
     expect(args.slice(-3)).toEqual(["resume", "th-9", "-"]);
     expect(fakeCli.env("codex")).toContain("RUNELAY_MCP_TOKEN=tok");
+    expect(fakeCli.env("codex").some((line) => line.startsWith("CODEX_HOME="))).toBe(false);
+  });
+
+  test("runs in the account directory it was given", async () => {
+    fakeCli.lines("codex", [{ type: "turn.completed", usage: {} }]);
+    await runCodex(
+      turnRequest({ provider: "codex", configDir: "/home/x/.codex-work" }),
+      fakeCli.home,
+      new AbortController().signal,
+      () => {},
+    );
+    expect(fakeCli.env("codex")).toContain("CODEX_HOME=/home/x/.codex-work");
   });
 
   test("read-only code turns stay in the read-only sandbox", async () => {

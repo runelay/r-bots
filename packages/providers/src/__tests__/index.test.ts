@@ -34,6 +34,18 @@ describe("probe", () => {
       models: claudeModels,
     });
     expect(fakeCli.args("claude")).toEqual(["auth", "status"]);
+    expect(fakeCli.env("claude").some((line) => line.startsWith("CLAUDE_CONFIG_DIR="))).toBe(false);
+  });
+
+  test("probes the account directory it was given", async () => {
+    fakeCli.install("claude");
+    fakeCli.reply("claude", { stdout: JSON.stringify({ loggedIn: true }) }, ["auth", "status"]);
+    expect(await probe("claude", "/home/x/.claude-2")).toMatchObject({ status: "ready", detail: "" });
+    expect(fakeCli.env("claude")).toContain("CLAUDE_CONFIG_DIR=/home/x/.claude-2");
+    fakeCli.install("codex");
+    fakeCli.reply("codex", { stdout: "Logged in using ChatGPT" }, ["login", "status"]);
+    await probe("codex", "/home/x/.codex-2");
+    expect(fakeCli.env("codex")).toContain("CODEX_HOME=/home/x/.codex-2");
   });
 
   test("claude is logged out with the CLI message or a default", async () => {

@@ -9,7 +9,7 @@ import {
   type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
-import { childEnv } from "./proc";
+import { accountEnv, childEnv } from "./proc";
 import { spawnMarked } from "./proc-tree";
 
 export const nativeTools = ["Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "Bash", "TodoWrite"];
@@ -95,7 +95,11 @@ export async function runClaude(
   let currentMessage = "";
   let contextTokens: number | null = null;
   let result: Extract<SDKMessage, { type: "result" }> | null = null;
-  const env = childEnv({ CLAUDE_AGENT_SDK_CLIENT_APP: "runelay-bots/3.0.0", MCP_TOOL_TIMEOUT: "900000" });
+  const env = childEnv({
+    ...accountEnv("claude", request.configDir),
+    CLAUDE_AGENT_SDK_CLIENT_APP: "runelay-bots/3.0.0",
+    MCP_TOOL_TIMEOUT: "900000",
+  });
 
   const stream = query({
     prompt: await promptWithImages(request),

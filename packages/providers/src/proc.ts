@@ -32,6 +32,8 @@ export function childEnv(extra: Record<string, string> = {}) {
   delete env.JEV_API_KEY;
   delete env.RUNELAY_MCP_TOKEN;
   delete env.ELEVENLABS_API_KEY;
+  delete env.CLAUDE_CONFIG_DIR;
+  delete env.CODEX_HOME;
   env.PATH = searchPath();
   return { ...env, ...extra };
 }
@@ -79,8 +81,15 @@ export async function run(bin: string, args: string[], options: RunOptions = {})
   return { code: result.code, stdout: new TextDecoder().decode(result.stdout), stderr: result.stderr };
 }
 
-export function capture(bin: string, args: string[], timeoutMs = 20_000) {
-  return run(bin, args, { timeoutMs, env: childEnv() });
+export function accountEnv(provider: string, configDir: string | null | undefined): Record<string, string> {
+  if (!configDir) return {};
+  if (provider === "claude") return { CLAUDE_CONFIG_DIR: configDir };
+  if (provider === "codex") return { CODEX_HOME: configDir };
+  return {};
+}
+
+export function capture(bin: string, args: string[], timeoutMs = 20_000, extra: Record<string, string> = {}) {
+  return run(bin, args, { timeoutMs, env: childEnv(extra) });
 }
 
 export async function runLines(

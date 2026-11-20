@@ -94,6 +94,18 @@ describe("runClaude", () => {
     expect(options.resume).toBeUndefined();
     expect(options.effort).toBeUndefined();
     expect(options.env?.CLAUDE_AGENT_SDK_CLIENT_APP).toBe("runelay-bots/3.0.0");
+    expect(options.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
+  });
+
+  test("runs in the account directory it was given", async () => {
+    replay([{ type: "result", subtype: "success", usage: {} } as unknown as SDKMessage]);
+    await runClaude(
+      turnRequest({ configDir: "/home/x/.claude-2" }),
+      fakeCli.home,
+      new AbortController().signal,
+      () => {},
+    );
+    expect(fakeSdk.calls.at(-1)?.options?.env?.CLAUDE_CONFIG_DIR).toBe("/home/x/.claude-2");
   });
 
   test("message_start without id or usage falls back to a timestamp id and zero context", async () => {

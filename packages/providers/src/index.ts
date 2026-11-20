@@ -12,7 +12,9 @@ import { runClaude } from "./claude";
 import { runCodex } from "./codex";
 import { runCursor } from "./cursor";
 import { runGrok } from "./grok";
-import { capture, findBinary } from "./proc";
+import { accountEnv, capture, findBinary } from "./proc";
+
+export { accountEnv } from "./proc";
 
 export const claudeModels: ModelOption[] = [
   { id: "claude-sonnet-5-5", label: "Sonnet 5.5" },
@@ -39,8 +41,8 @@ function clean(text: string) {
   return text.replace(/\u001b\[[0-9;]*m/g, "").trim();
 }
 
-async function probeClaude(bin: string): Promise<AccountProbe> {
-  const { stdout, stderr } = await capture(bin, ["auth", "status"]);
+async function probeClaude(bin: string, extra: Record<string, string>): Promise<AccountProbe> {
+  const { stdout, stderr } = await capture(bin, ["auth", "status"], 20_000, extra);
   try {
     const status = JSON.parse(stdout) as { loggedIn?: boolean; email?: string; subscriptionType?: string };
     if (status.loggedIn) {
@@ -60,11 +62,11 @@ async function probeClaude(bin: string): Promise<AccountProbe> {
   };
 }
 
-async function probeCodex(bin: string): Promise<AccountProbe> {
-  const status = await capture(bin, ["login", "status"]);
+async function probeCodex(bin: string, extra: Record<string, string>): Promise<AccountProbe> {
+  const status = await capture(bin, ["login", "status"], 20_000, extra);
   const text = clean(`${status.stdout}\n${status.stderr}`);
   let models: ModelOption[] = [{ id: defaultModels.codex, label: "GPT-5.6-Sol" }];
-  const catalog = await capture(bin, ["debug", "models"]);
+  const catalog = await capture(bin, ["debug", "models"], 20_000, extra);
   try {
     const parsed = JSON.parse(catalog.stdout) as {
       models?: Array<{ slug: string; display_name?: string; visibility?: string }>;
@@ -118,12 +120,12 @@ async function probeGrok(bin: string): Promise<AccountProbe> {
   };
 }
 
-export async function probe(provider: Provider): Promise<AccountProbe> {
+export async function probe(provider: Provider, configDir: string | null = null): Promise<AccountProbe> {
   const bin = findBinary(binaries[provider]);
   if (!bin) return { provider, status: "missing", detail: "CLI não instalada nesta máquina.", models: [] };
   try {
-    if (provider === "claude") return await probeClaude(bin);
-    if (provider === "codex") return await probeCodex(bin);
+    if (provider === "claude") return await probeClaude(bin, accountEnv(provider, configDir));
+    if (provider === "codex") return await probeCodex(bin, accountEnv(provider, configDir));
     if (provider === "cursor") return await probeCursor(bin);
     return await probeGrok(bin);
   } catch (error) {

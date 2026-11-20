@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 import { join } from "node:path";
-import { capture, childEnv, findBinary, parseJson, runLines, searchPath } from "../proc";
+import { accountEnv, capture, childEnv, findBinary, parseJson, runLines, searchPath } from "../proc";
 import { fakeCli } from "./fakes";
 
 const savedPath = process.env.PATH;
@@ -68,6 +68,19 @@ describe("proc", () => {
     expect(env.RB_KEEP).toBe("kept");
     expect(env.EXTRA).toBe("1");
     expect(env.PATH).toBe(searchPath());
+  });
+
+  test("childEnv never inherits an account directory and accountEnv picks one per provider", () => {
+    process.env.CLAUDE_CONFIG_DIR = "/inherited/claude";
+    process.env.CODEX_HOME = "/inherited/codex";
+    const env = childEnv(accountEnv("claude", "/home/x/.claude-2"));
+    delete process.env.CLAUDE_CONFIG_DIR;
+    delete process.env.CODEX_HOME;
+    expect(env.CLAUDE_CONFIG_DIR).toBe("/home/x/.claude-2");
+    expect(env.CODEX_HOME).toBeUndefined();
+    expect(accountEnv("codex", "/home/x/.codex-work")).toEqual({ CODEX_HOME: "/home/x/.codex-work" });
+    expect(accountEnv("claude", null)).toEqual({});
+    expect(accountEnv("grok", "/home/x/.grok")).toEqual({});
   });
 
   test("capture resolves stdout, stderr and exit code", async () => {
