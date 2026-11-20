@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { EventEmitter } from "node:events";
-import { readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import net from "node:net";
 import { join } from "node:path";
 import {
@@ -23,11 +25,14 @@ import {
   onServerLog,
   type PublicDevServer,
   portOwner,
+  portsIn,
   previewTarget,
   rawLines,
+  ServerRunning,
   serverLogs,
   serversOf,
   startDevServer,
+  strayServers,
   stopAllDevServers,
   stopDevServer,
   stopDevServers,
@@ -189,8 +194,9 @@ describe("starting dev servers", () => {
     bash(serving);
     const cases: Array<[string, (port: number) => string]> = [
       [
-        "bash -c 'set -a; . ./.env.local; set +a; npx wrangler dev --env dev --port 8799'",
-        () => "bash -c 'set -a; . ./.env.local; set +a; npx wrangler dev --ip 127.0.0.1 --env dev --port 8799'",
+        `bash -c 'set -a; . ./.env.local; set +a; npx wrangler dev --env dev --port ${portBase + 90}'`,
+        () =>
+          `bash -c 'set -a; . ./.env.local; set +a; npx wrangler dev --ip 127.0.0.1 --env dev --port ${portBase + 90}'`,
       ],
       [
         'sh -c "npx vite build && npx vite" extra',
@@ -253,7 +259,7 @@ describe("starting dev servers", () => {
     const ws = workspace();
     const first = await startDevServer(ws, { cmd: "node a.js", port: portBase }, () => undefined);
     expect(first.port).toBe(portBase + 1);
-    const second = await startDevServer(ws, { cmd: "node b.js", port: portBase + 1 }, () => undefined);
+    const second = await startDevServer(ws, { cmd: "node b.js", port: portBase + 1, cwd: "b" }, () => undefined);
     expect(second.port).toBe(portBase + 2);
     expect(serversOf(ws, portBase + 2).map((item) => item.port)).toEqual([portBase + 2]);
     const newest = serversOf(ws).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0];
@@ -271,6 +277,54 @@ describe("starting dev servers", () => {
       );
     } finally {
       create.mockRestore();
+    }
+  });
+
+  test("refuses a second server in the same folder and reuses the port on replace", async () => {
+    bash(serving);
+    const ws = workspace();
+    const first = await startDevServer(ws, { cmd: "npm run dev" }, () => undefined);
+    const again = await startDevServer(ws, { cmd: "npm run dev", port: portBase + 80 }, () => undefined).catch(
+      (error) => error,
+    );
+    expect(again).toBeInstanceOf(ServerRunning);
+    expect(again.server.id).toBe(first.id);
+    expect(again.message).toContain(`já está no ar em ${first.url}`);
+    await closeAll();
+    const replaced = await startDevServer(ws, { cmd: "npm run dev", replace: true }, () => undefined);
+    expect(replaced.port).toBe(first.port);
+    expect(getServer(first.id)?.status).toBe("stopped");
+    const fixed = await startDevServer(workspace(), { cmd: `wrangler dev --port ${portBase + 85}` }, () => undefined);
+    expect(fixed.port).toBe(portBase + 85);
+    expect(portsIn("npx wrangler dev --inspector-port 9230 --port 8799 -p 3000 PORT=4000 --port 80")).toEqual([
+      8799, 3000, 4000,
+    ]);
+  });
+
+  test("finds a server started outside r/bots in the same folder", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "stray-"));
+    const port = portBase + 95;
+    const child = spawn(
+      process.execPath,
+      ["-e", `require("net").createServer().listen(${port}, "127.0.0.1")`, "--", "--port", String(port)],
+      { cwd: dir, stdio: "ignore" },
+    );
+    try {
+      let found: Awaited<ReturnType<typeof strayServers>> = [];
+      for (let attempt = 0; attempt < 50 && found.length === 0; attempt++) {
+        await Bun.sleep(50);
+        found = await strayServers(dir);
+      }
+      expect(found).toEqual([{ pid: child.pid as number, port, command: expect.stringContaining(`--port ${port}`) }]);
+      const refused = await startDevServer(
+        { ...workspace(), path: dir },
+        { cmd: "npm run dev" },
+        () => undefined,
+      ).catch((error) => error);
+      expect(refused).toBeInstanceOf(ServerRunning);
+      expect(refused.message).toContain(`porta ${port} (pid ${child.pid}`);
+    } finally {
+      child.kill("SIGKILL");
     }
   });
 
@@ -422,7 +476,7 @@ describe("loopback and limits", () => {
     devLimits.maxMinutes = 0.0005;
     try {
       const first = await startDevServer(ws, { cmd: "node a.js" }, () => undefined);
-      await expect(startDevServer(ws, { cmd: "node b.js" }, () => undefined)).rejects.toThrow(
+      await expect(startDevServer(ws, { cmd: "node b.js", cwd: "b" }, () => undefined)).rejects.toThrow(
         "Já há 1 servidores rodando nesta tarefa.",
       );
       for (let attempt = 0; attempt < 200 && serversOf(ws)[0].status !== "stopped"; attempt++) await Bun.sleep(2);

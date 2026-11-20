@@ -91,6 +91,7 @@ export interface StartInput {
   cmd?: string;
   profile?: string;
   port?: number;
+  replace?: boolean;
   startedBy: "bot" | "user";
   botId?: string | null;
   sessionId?: string | null;
@@ -167,6 +168,7 @@ export async function startProjectServer(input: StartInput, onExit?: (server: Pu
       botId: input.botId ?? null,
       sessionId: input.sessionId ?? null,
       ...(spec.port ? { port: spec.port } : {}),
+      ...(input.replace ? { replace: true } : {}),
     },
     onExit,
   );

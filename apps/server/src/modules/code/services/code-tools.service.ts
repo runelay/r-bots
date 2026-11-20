@@ -13,6 +13,7 @@ import {
   devServerLogs,
   devServersOf,
   exitNote,
+  ServerRunning,
   startDevServer,
   stopDevServers,
   stopReasons,
@@ -182,11 +183,12 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
     "dev_server_start",
     {
       description:
-        "Sobe um servidor de desenvolvimento desta tarefa em segundo plano (npm run dev, wrangler dev…), numa porta livre, e espera ele responder. Devolve a url (http://localhost:<porta>) para testar com browser_open. Não use & no Bash para isso. cmd pode usar {port}; sem isso a porta vai como --port. cwd é uma subpasta da worktree, se o app não estiver na raiz.",
+        "Sobe um servidor de desenvolvimento desta tarefa em segundo plano (npm run dev, wrangler dev…), numa porta livre, e espera ele responder. Devolve a url (http://localhost:<porta>) para testar com browser_open. Não use & no Bash para isso. cmd pode usar {port}; sem isso a porta vai como --port. cwd é uma subpasta da worktree, se o app não estiver na raiz. Só um servidor por pasta: se já há um no ar, devolve a url dele em vez de subir outro; replace: true para o antigo e sobe o novo na mesma porta.",
       inputSchema: {
         cmd: z.string().min(1).max(500),
         port: z.number().int().min(1024).max(65535).optional(),
         cwd: z.string().max(300).optional(),
+        replace: z.boolean().optional(),
       },
     },
     async (args: Record<string, unknown>) => {
@@ -203,7 +205,12 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       try {
         const result = await startDevServer(
           workspace,
-          { cmd, ...(args.port ? { port: Number(args.port) } : {}), ...(args.cwd ? { cwd: String(args.cwd) } : {}) },
+          {
+            cmd,
+            ...(args.port ? { port: Number(args.port) } : {}),
+            ...(args.cwd ? { cwd: String(args.cwd) } : {}),
+            ...(args.replace === true ? { replace: true } : {}),
+          },
           (server) => {
             session()?.log.emit({
               type: "code.devserver",
@@ -229,6 +236,10 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
           `Servidor no ar em ${result.url} (porta ${result.port}). Teste com browser_open("${result.url}"). Últimas linhas:\n${logs}`,
         );
       } catch (error) {
+        if (error instanceof ServerRunning && error.server) {
+          endCall(context, start.callId, "dev_server_start", args, { ok: true, output: error.server });
+          return text(error.message);
+        }
         const message = error instanceof Error ? error.message : String(error);
         endCall(context, start.callId, "dev_server_start", args, { ok: false, error: message });
         return text(message, true);

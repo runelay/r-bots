@@ -62,6 +62,7 @@ Para todo bot, no MCP `bots`:
 
 - `server_list {}`: servidores, projetos liberados (com as branches das worktrees) e perfis.
 - `server_start {project?, branch?, script?, profile?, cmd?, cwd?, port?}`: sobe e espera responder. `script` e `profile` rodam direto; `cmd` livre abre card de aprovação. Na classe de permissão é `command` (como o `dev_server_start`).
+- Um servidor por pasta (`server_start` e `dev_server_start` juntos): se a pasta já tem um no ar, a ferramenta devolve o que está rodando (url, porta, id) em vez de subir outro; `replace: true` para o antigo e sobe o novo, reaproveitando a porta. Processo subido fora do r/bots (terminal) com `--port` e que referencia a pasta aparece na mensagem com o pid, sem ser derrubado. Porta fixa no comando (`--port N`, `-p N`, `PORT=N`) vira a porta do servidor; sem ela, a última porta usada na pasta é a preferida.
 - `server_logs {id, lines?, query?}`, `server_restart {id}`, `server_stop {id}`.
 
 Todas emitem `call.*` como as outras ferramentas. `server_start`, `server_logs`, `server_restart` e `server_stop` também emitem:

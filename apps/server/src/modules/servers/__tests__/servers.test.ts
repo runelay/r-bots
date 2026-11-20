@@ -20,6 +20,7 @@ import {
   getServer,
   listensEverywhere,
   listServers,
+  ServerRunning,
   stopAllDevServers,
   stopDevServer,
   wildcardListeners,
@@ -366,16 +367,35 @@ describe("project servers", () => {
     expect(viaCmd.server.tool).toBe("wrangler");
     expect(viaCmd.server.command).toBe(`npm run api -- --x --port ${viaCmd.server.port} --ip 127.0.0.1`);
     await viaCmd.ready;
-    const fromProfile = await startProjectServer({ profile: "api", startedBy: "bot", botId: "b", sessionId: "s" });
+    const duplicate = await startProjectServer({ profile: "api", startedBy: "bot" }).catch((error) => error);
+    expect(duplicate).toBeInstanceOf(ServerRunning);
+    expect(duplicate.server.id).toBe(viaCmd.server.id);
+    expect(duplicate.message).toContain(`já está no ar em ${viaCmd.server.url}`);
+    await Promise.all(listeners.splice(0).map((item) => new Promise((done) => item.close(done))));
+    const fromProfile = await startProjectServer({
+      profile: "api",
+      replace: true,
+      startedBy: "bot",
+      botId: "b",
+      sessionId: "s",
+    });
     expect(fromProfile.server).toMatchObject({
       profileId: "api",
       tool: "wrangler",
       startedBy: "bot",
       botId: "b",
       sessionId: "s",
+      port: viaCmd.server.port,
     });
+    expect(getServer(viaCmd.server.id)?.status).toBe("stopped");
     await fromProfile.ready;
-    const fromCmd = await startProjectServer({ path: repo.path, cmd: "bun x.ts", port: 5990, startedBy: "user" });
+    const fromCmd = await startProjectServer({
+      path: repo.path,
+      cmd: "bun x.ts",
+      port: 5990,
+      replace: true,
+      startedBy: "user",
+    });
     expect(fromCmd.server).toMatchObject({ tool: "bun", startedBy: "user", botId: null, port: 5990 });
     await fromCmd.ready;
     await expect(startProjectServer({ profile: "zzz", startedBy: "user" })).rejects.toThrow("perfil zzz");

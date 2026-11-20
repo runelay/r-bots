@@ -1,6 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { exitNote, listServers, type PublicDevServer, serverLogs } from "../../code/services/dev-server.service";
+import {
+  exitNote,
+  listServers,
+  type PublicDevServer,
+  ServerRunning,
+  serverLogs,
+} from "../../code/services/dev-server.service";
 import { beginCall, endCall } from "../../code/services/hooks.service";
 import type { Gate } from "../../code/services/policy.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
@@ -41,7 +47,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
     "server_list",
     {
       description:
-        "Lista os servidores de desenvolvimento que o r/bots subiu (no ar, subindo, caiu), os projetos liberados com as worktrees e os perfis salvos.",
+        "Lista os servidores de desenvolvimento que o r/bots subiu (no ar, subindo, caiu), os projetos liberados com as worktrees e os perfis salvos. Confira aqui antes de subir um projeto: se já está no ar, reuse.",
       inputSchema: {},
     },
     async () => {
@@ -68,7 +74,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
     "server_start",
     {
       description:
-        "Sobe um servidor de desenvolvimento de um projeto liberado e espera ele responder. Use script (do package.json) ou profile; cmd livre pede aprovação. Devolve id, porta e as últimas linhas do log.",
+        "Sobe um servidor de desenvolvimento de um projeto liberado e espera ele responder. Use script (do package.json) ou profile; cmd livre pede aprovação. Devolve id, porta e as últimas linhas do log. Só um servidor por pasta: se a pasta já tem um no ar, devolve o que está rodando em vez de subir outro; replace: true para o antigo e sobe o novo na mesma porta.",
       inputSchema: {
         project: z.string().max(200).optional().describe("Nome do repositório liberado"),
         branch: z.string().max(200).optional().describe("Branch da worktree; sem isso, o checkout principal"),
@@ -77,6 +83,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
         cmd: z.string().max(500).optional(),
         cwd: z.string().max(300).optional().describe("Subpasta do app dentro do repositório"),
         port: z.number().int().min(1024).max(65535).optional(),
+        replace: z.boolean().optional().describe("Para o servidor que já roda nesta pasta e sobe este no lugar"),
       },
     },
     async (args: Record<string, unknown>) => {
@@ -107,6 +114,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
           ...(typeof args.cwd === "string" ? { cwd: args.cwd } : {}),
           ...(cmd ? { cmd } : {}),
           ...(typeof args.port === "number" ? { port: args.port } : {}),
+          ...(args.replace === true ? { replace: true } : {}),
           startedBy: "bot",
           botId: context.botId,
           sessionId: context.sessionId,
@@ -123,6 +131,11 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
           return text(`O servidor saiu antes de responder. ${exitNote(view)} Últimas linhas:\n${logs}`, true);
         return text(`No ar: ${summary(view)}. Últimas linhas:\n${logs}`);
       } catch (error) {
+        if (error instanceof ServerRunning && error.server) {
+          endCall(context, start.callId, "server_start", args, { ok: true, output: error.server });
+          emitServerCard(context, error.server);
+          return text(error.message);
+        }
         endCall(context, start.callId, "server_start", args, { ok: false, error: messageOf(error) });
         return text(messageOf(error), true);
       }

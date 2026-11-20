@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, readlink } from "node:fs/promises";
 import net from "node:net";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { childEnv } from "@runelay-bots/providers/proc";
@@ -34,6 +34,7 @@ export interface LaunchInput {
   startedBy?: "bot" | "user";
   botId?: string | null;
   sessionId?: string | null;
+  replace?: boolean;
   before?: () => Promise<unknown>;
 }
 
@@ -89,6 +90,114 @@ const reserved = new Set<number>();
 const rawLimit = 2000;
 const stoppedTtlMs = 10 * 60_000;
 const failures = new Map<string, Array<{ reason: string; at: number }>>();
+const pendingDirs = new Set<string>();
+const lastPorts = new Map<string, number>();
+
+export interface StrayServer {
+  pid: number;
+  port: number;
+  command: string;
+}
+
+export class ServerRunning extends Error {
+  constructor(
+    readonly server: PublicDevServer | null,
+    readonly strays: StrayServer[],
+  ) {
+    super(runningMessage(server, strays));
+    this.name = "ServerRunning";
+  }
+}
+
+function runningMessage(server: PublicDevServer | null, strays: StrayServer[]) {
+  const parts: string[] = [];
+  if (server) {
+    const how =
+      server.kind === "workspace"
+        ? "use dev_server_start com replace: true para reiniciar ou dev_server_stop para parar"
+        : `use server_restart para reiniciar ou server_stop para parar (id ${server.id})`;
+    parts.push(`${server.name} já está no ar em ${server.url} (porta ${server.port}); ${how}. Não subi outro.`);
+  }
+  if (strays.length > 0) {
+    const list = strays.map((item) => `porta ${item.port} (pid ${item.pid}: ${item.command})`).join("; ");
+    const escape = server ? "" : ", ou passe replace: true para subir mesmo assim";
+    parts.push(
+      `Esta pasta já tem servidor subido fora do r/bots: ${list}. Pare com kill <pid> em vez de subir outro${escape}.`,
+    );
+  }
+  return parts.join(" ");
+}
+
+export function portsIn(command: string) {
+  return [...command.matchAll(/(?:--port|(?:^|\s)-p|\bPORT)(?:=|\s+)(\d{4,5})(?!\d)/g)]
+    .map((match) => Number(match[1]))
+    .filter((port) => port >= 1024 && port <= 65535);
+}
+
+function liveAt(cwd: string) {
+  return (
+    [...servers.values()].find(
+      (item) => item.cwd === cwd && item.child && (item.status === "running" || item.status === "starting"),
+    ) ?? null
+  );
+}
+
+async function readProc(pid: string) {
+  return (await readFile(`/proc/${pid}/cmdline`, "utf8").catch(() => "")).split("\0").join(" ").trim();
+}
+
+async function parentOf(pid: string) {
+  const stat = await readFile(`/proc/${pid}/stat`, "utf8").catch(() => "");
+  return Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]) || 0;
+}
+
+export async function strayServers(cwd: string) {
+  const owned = new Set<number>();
+  for (const item of servers.values()) {
+    if (!item.child) continue;
+    owned.add(item.port);
+    for (const port of portsIn(item.command)) owned.add(port);
+  }
+  const procs = new Map<number, { command: string; ports: number[]; parent: number; here: boolean }>();
+  for (const name of await readdir("/proc").catch(() => [] as string[])) {
+    if (!/^\d+$/.test(name) || Number(name) === process.pid) continue;
+    const command = await readProc(name);
+    const ports = portsIn(command).filter((port) => !owned.has(port));
+    if (ports.length === 0) continue;
+    const dir = await readlink(`/proc/${name}/cwd`).catch(() => "");
+    procs.set(Number(name), {
+      command,
+      ports,
+      parent: await parentOf(name),
+      here: dir === cwd || command.includes(`${cwd}/`),
+    });
+  }
+  const found = new Map<number, StrayServer>();
+  for (const [pid, proc] of procs) {
+    if (!proc.here) continue;
+    for (const port of proc.ports) {
+      if (found.has(port)) continue;
+      let top = pid;
+      for (let parent = procs.get(top)?.parent ?? 0; procs.get(parent)?.ports.includes(port); ) {
+        top = parent;
+        parent = procs.get(top)?.parent ?? 0;
+      }
+      if (!(await portOpen(port))) continue;
+      const text = proc.command.replace(/\s+/g, " ");
+      found.set(port, { pid: top, port, command: text.length > 120 ? `${text.slice(0, 119)}…` : text });
+    }
+  }
+  return [...found.values()];
+}
+
+async function pickPort(fixed: number | undefined, preferred: number | undefined) {
+  if (!fixed) return freePort(preferred);
+  if (reserved.has(fixed) || !(await usable(fixed)))
+    throw new Error(
+      `A porta ${fixed} do comando já está em uso. Tire o --port para eu escolher uma livre, ou pare quem está nela.`,
+    );
+  return fixed;
+}
 
 function portFree(port: number) {
   return new Promise<boolean>((done) => {
@@ -538,6 +647,38 @@ export async function launchServer(
   if (target.kind === "workspace") {
     const problem = await sandboxProblem();
     if (problem) throw new Error(problem);
+  }
+  const hosted = inShell(command, withHost);
+  if (pendingDirs.has(cwd) && !input.replace)
+    throw new Error("Já estou subindo um servidor nesta pasta. Espere ele responder antes de subir outro.");
+  const existing = liveAt(cwd);
+  if (existing && !input.replace) throw new ServerRunning(publicServer(existing), await strayServers(cwd));
+  if (!existing && !input.replace) {
+    const strays = await strayServers(cwd);
+    if (strays.length > 0) throw new ServerRunning(null, strays);
+  }
+  pendingDirs.add(cwd);
+  try {
+    return await spawnNew(target, input, command, cwd, hosted, existing, onExit);
+  } finally {
+    pendingDirs.delete(cwd);
+  }
+}
+
+async function spawnNew(
+  target: ServerTarget,
+  input: LaunchInput,
+  command: string,
+  cwd: string,
+  hosted: string,
+  existing: DevServer | null,
+  onExit: (server: PublicDevServer) => void,
+) {
+  if (existing) {
+    await stopDevServer(existing);
+    await existing.done;
+  }
+  if (target.kind === "workspace") {
     const running = [...servers.values()].filter(
       (item) => item.workspacePath === target.path && (item.status === "running" || item.status === "starting"),
     ).length;
@@ -546,10 +687,10 @@ export async function launchServer(
         `Já há ${devLimits.perWorkspace} servidores rodando nesta tarefa. Pare um com dev_server_stop antes de subir outro.`,
       );
   }
-  const hosted = inShell(command, withHost);
   if (input.before) await input.before();
-  const port = await freePort(input.port);
+  const port = await pickPort(portsIn(hosted)[0], input.port ?? existing?.port ?? lastPorts.get(cwd));
   reserved.add(port);
+  lastPorts.set(cwd, port);
   const server: DevServer = {
     id: `dev_${randomBytes(5).toString("hex")}`,
     workspaceId: target.key,
@@ -586,7 +727,7 @@ export async function launchServer(
 
 export async function startDevServer(
   workspace: WorkspaceState,
-  input: { cmd: string; port?: number; cwd?: string },
+  input: { cmd: string; port?: number; cwd?: string; replace?: boolean },
   onExit: (server: PublicDevServer) => void,
 ) {
   const target: ServerTarget = {
