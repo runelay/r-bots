@@ -24,6 +24,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 - [integrations.md](integrations.md): ElevenLabs, Jev e runelay configurados pelo app (chave cifrada, validação, fallback sem cada uma) e tokens internos gerados no primeiro boot.
 - [auth.md](auth.md): autenticação (better-auth): primeiro dono, convites, login por senha e Touch ID, chaves de API do runner e rotas livres.
 - [servers.md](servers.md): servidores de desenvolvimento dos projetos liberados (lista, logs ao vivo, perfis, prévia) e as ferramentas `server_*` do bot.
+- [simulators.md](simulators.md): simuladores do Mac, ponte do Metro (`/runner/tunnel`), testes e2e com Maestro e Playwright e o card `test.result`.
 
 ## Versão → arquivo
 
@@ -87,6 +88,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v51 | sandbox de ferramentas (`BOTS_TOOL_SANDBOX`, usuário `runelaytool`, `rb-sandbox-exec`), git do servidor sem hooks nem config do repositório, portão com realpath e somente leitura estrito, card que vence em 600 s, provedores sem shell nativo fora do Acesso total, ambiente dos filhos por lista permitida, dev server só em loopback | [code](code.md) |
 | v51 | servidores com o endurecimento: escrita em `/servers` e `/accounts` só do dono, host público recusado, sandbox, limite e vencimento para servidor de bot, navegador do bot alcança servidor de projeto, shell nativo de Codex/Cursor/Grok fora do Somente leitura | [servers](servers.md), [code](code.md) |
 | v52 | bot se configura sozinho: `settings_get`, `bot_update`, `bot_archive`, `section_update`, `schedule_update`/`schedule_run` (rotina pausável), perfis, `repo_remove`, `vault_update_meta`, `usage_get`, `account_update`, `integration_setup` (formulário seguro), `connector_connect`, `preferences_set`, evento `settings.changed` com Desfazer, `GET/PATCH /preferences`, linhas `settings`/`preferences` no `/status/stream`; lista dura no Acesso total pelo Jev; subir o modo sempre com card | [bots](bots.md), [approvals](approvals.md) |
+| v53 | simuladores e testes: `/runner/tunnel`, operações `sim.*`/`maestro.*` do runner, `GET /simulators`, `POST /simulators/open-expo` (com ponte das portas da API do app), `/tests/:id` (arquivos, `rerun`), evento `test.result`, ferramentas `simulator_*`, `test_maestro`, `test_playwright`, `maestro_install`, `playwright_install` | [simulators](simulators.md) |
 
 ## Contrato
 
