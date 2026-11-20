@@ -15,9 +15,16 @@ struct AccountModel: Identifiable, Hashable, Sendable, Decodable {
     }
 }
 
+struct AccountDevice: Hashable, Sendable, Decodable {
+    let id: String
+    let name: String
+    let connected: Bool
+}
+
 struct AIAccount: Identifiable, Hashable, Sendable, Decodable {
     let id: String
     let runner: String
+    let device: AccountDevice?
     let provider: String
     let label: String
     let status: String
@@ -25,7 +32,7 @@ struct AIAccount: Identifiable, Hashable, Sendable, Decodable {
     let detail: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, runner, provider, label, status, models, detail
+        case id, runner, provider, label, status, models, detail, device
     }
 
     init(from decoder: any Decoder) throws {
@@ -37,12 +44,18 @@ struct AIAccount: Identifiable, Hashable, Sendable, Decodable {
         status = (try? container.decodeIfPresent(String.self, forKey: .status)) ?? "offline"
         models = ((try? container.decodeIfPresent([Lossy<AccountModel>].self, forKey: .models)) ?? []).compactMap(\.value)
         detail = try? container.decodeIfPresent(String.self, forKey: .detail)
+        device = try? container.decodeIfPresent(AccountDevice.self, forKey: .device)
+    }
+
+    var machineKey: String {
+        device.map { "device:\($0.id)" } ?? id.split(separator: ":").first.map(String.init) ?? runner
     }
 
     var isReady: Bool { status == "ready" }
 
     var providerTitle: String {
-        label
+        let base = device.map { label.replacingOccurrences(of: " · \($0.name)", with: "") } ?? label
+        return base
             .replacingOccurrences(of: " (VPS)", with: "")
             .replacingOccurrences(of: " (Mac)", with: "")
     }
@@ -52,10 +65,11 @@ struct AIAccount: Identifiable, Hashable, Sendable, Decodable {
     }
 
     var machineLabel: String {
+        if let device { return device.name }
         switch runner {
-        case "vps": "VPS"
-        case "mac": "Mac"
-        default: runner.uppercased()
+        case "vps": return "VPS"
+        case "mac": return "Mac"
+        default: return runner.uppercased()
         }
     }
 

@@ -165,44 +165,55 @@ struct AccountMachine: Identifiable {
     let title: String
     let ready: [AIAccount]
     let missing: [AIAccount]
+    var disconnected = false
 
     static func group(_ accounts: [AIAccount]) -> [AccountMachine] {
         var order: [String] = []
-        for account in accounts where !order.contains(account.runner) {
-            order.append(account.runner)
+        for account in accounts where !order.contains(account.machineKey) {
+            order.append(account.machineKey)
         }
-        order.sort { rank($0) < rank($1) }
-        return order.map { runner in
-            let items = accounts.filter { $0.runner == runner }
+        order.sort { rank($0, accounts) < rank($1, accounts) }
+        return order.map { key in
+            let items = accounts.filter { $0.machineKey == key }
+            let first = items.first
+            let offline = first?.runner == "mac" && items.allSatisfy { $0.status == "offline" }
             return AccountMachine(
-                id: runner,
-                title: title(runner),
+                id: key,
+                title: title(first),
                 ready: items.filter { $0.status != "missing" },
-                missing: items.filter { $0.status == "missing" }
+                missing: items.filter { $0.status == "missing" },
+                disconnected: offline
             )
         }
     }
 
     var caption: String? {
+        if disconnected { return "Mac desconectado" }
         let count = ready.filter(\.isReady).count
         guard !ready.isEmpty else { return nil }
         if count == ready.count { return count == 1 ? "1 pronta" : "\(count) prontas" }
         return "\(count) de \(ready.count) prontas"
     }
 
-    private static func rank(_ runner: String) -> Int {
-        switch runner {
-        case "mac": 0
-        case "vps": 1
-        default: 2
+    private static func rank(_ key: String, _ accounts: [AIAccount]) -> Int {
+        guard let account = accounts.first(where: { $0.machineKey == key }) else { return 3 }
+        if account.device?.id == DeviceIdentity.currentId, account.device != nil { return 0 }
+        switch account.runner {
+        case "mac": return 1
+        case "vps": return 2
+        default: return 3
         }
     }
 
-    private static func title(_ runner: String) -> String {
-        switch runner {
-        case "mac": "Este Mac"
-        case "vps": "VPS"
-        default: runner.uppercased()
+    private static func title(_ account: AIAccount?) -> String {
+        guard let account else { return "" }
+        if let device = account.device {
+            return device.id == DeviceIdentity.currentId ? "\(device.name) · este Mac" : device.name
+        }
+        switch account.runner {
+        case "mac": return "Este Mac"
+        case "vps": return "VPS"
+        default: return account.runner.uppercased()
         }
     }
 }

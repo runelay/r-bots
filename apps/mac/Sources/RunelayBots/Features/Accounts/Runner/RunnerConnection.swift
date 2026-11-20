@@ -14,10 +14,7 @@ enum RunnerToken {
     }
 
     static func read() -> String? {
-        if let key = AuthStore.read(.runner) { return key }
-        guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
-        let token = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return token.count >= 24 ? token : nil
+        AuthStore.read(.device)
     }
 }
 
@@ -38,7 +35,9 @@ final class RunnerConnection {
     static let shared = RunnerConnection()
 
     var state: RunnerLinkState = .connecting
+    var revoked = false
     @ObservationIgnored private var loop: Task<Void, Never>?
+    @ObservationIgnored private var mcpWaiting: [String: CheckedContinuation<McpReply, Never>] = [:]
     @ObservationIgnored private var sender: RunnerSender?
     @ObservationIgnored private var turns: [String: TurnHandle] = [:]
     @ObservationIgnored private let session = URLSession(configuration: .default)
@@ -46,6 +45,7 @@ final class RunnerConnection {
     func start() {
         guard loop == nil else { return }
         signal(SIGPIPE, SIG_IGN)
+        McpProxy.shared.start()
         ComputerExecutor.shared.eventSink = { event in
             RunnerConnection.shared.sender?.send(["type": .string("computer.event"), "event": event])
         }
@@ -74,7 +74,7 @@ final class RunnerConnection {
         var delay: Double = 1
         while !Task.isCancelled {
             guard let token = RunnerToken.read() else {
-                state = .offline("Falta a chave do servidor neste Mac.")
+                state = .offline(revoked ? "Este Mac foi desconectado da conta. Conecte de novo em Ajustes › Dispositivos." : "Entre na sua conta para conectar este Mac.")
                 try? await Task.sleep(for: .seconds(10))
                 continue
             }
@@ -96,7 +96,12 @@ final class RunnerConnection {
             do {
                 try await socket.send(.string(Self.helloText))
             } catch {
+                let status = (socket.response as? HTTPURLResponse)?.statusCode ?? 0
                 socket.cancel()
+                if status == 401 || status == 403 {
+                    forgetDevice()
+                    continue
+                }
                 state = .offline("Não deu para falar com o servidor.")
                 try? await Task.sleep(for: .seconds(delay))
                 delay = min(delay * 2, 15)
@@ -123,6 +128,8 @@ final class RunnerConnection {
                 }
             }
             pinger.cancel()
+            let closeCode = socket.closeCode.rawValue
+            let status = (socket.response as? HTTPURLResponse)?.statusCode ?? 0
             socket.cancel()
             if self.sender?.socket === socket {
                 self.sender = nil
@@ -131,7 +138,12 @@ final class RunnerConnection {
                 handle.cancel()
             }
             turns.removeAll()
+            failMcp()
             guard !Task.isCancelled else { return }
+            if closeCode == 4001 || closeCode == 4003 || status == 401 || status == 403 {
+                forgetDevice()
+                continue
+            }
             state = .offline("A conexão com o servidor caiu. Tentando de novo…")
             try? await Task.sleep(for: .seconds(delay))
             delay = min(delay * 2, 15)
@@ -143,7 +155,7 @@ final class RunnerConnection {
             "type": .string("hello"),
             "app": .string("runelay bots"),
             "version": .string(AppInfo.version),
-            "capabilities": .array([.string("turns"), .string("accounts"), .string("computer"), .string("transcribe"), .string("vault"), .string("usage"), .string("files")]),
+            "capabilities": .array([.string("turns"), .string("accounts"), .string("computer"), .string("transcribe"), .string("vault"), .string("usage"), .string("files"), .string("mcp-proxy")]),
         ])
         return String(decoding: (try? JSONEncoder().encode(hello)) ?? Data(), as: UTF8.self)
     }
@@ -185,8 +197,72 @@ final class RunnerConnection {
             }
         case "turn.cancel":
             turns[id]?.cancel()
+        case "mcp.response":
+            resolveMcp(id, message)
         default:
             break
+        }
+    }
+
+    func forgetDevice() {
+        AuthStore.remove(.device)
+        DeviceIdentity.setRevoked(true)
+        revoked = true
+        state = .offline("Este Mac foi desconectado da conta. Conecte de novo em Ajustes › Dispositivos.")
+    }
+
+    func deviceRegistered() {
+        DeviceIdentity.setRevoked(false)
+        revoked = false
+        restart()
+    }
+
+    func forwardMcp(method: String, path: String, headers: [String: String], body: Data) async -> McpReply {
+        guard let sender else { return .failure(503, "Mac desconectado do servidor.") }
+        let id = UUID().uuidString
+        var forwarded: [String: JSONValue] = [:]
+        for name in ["authorization", "content-type", "accept", "mcp-session-id", "mcp-protocol-version"] {
+            if let value = headers[name] { forwarded[name] = .string(value) }
+        }
+        return await withCheckedContinuation { continuation in
+            mcpWaiting[id] = continuation
+            sender.send([
+                "type": .string("mcp.request"),
+                "id": .string(id),
+                "method": .string(method),
+                "path": .string(path),
+                "headers": .object(forwarded),
+                "body": .string(String(decoding: body, as: UTF8.self)),
+            ])
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(905))
+                self?.resolveMcp(id, nil)
+            }
+        }
+    }
+
+    private func resolveMcp(_ id: String, _ message: JSONValue?) {
+        guard let continuation = mcpWaiting.removeValue(forKey: id) else { return }
+        guard let message else {
+            continuation.resume(returning: .failure(504, "O servidor não respondeu a tempo."))
+            return
+        }
+        var headers: [String: String] = [:]
+        if case .object(let object) = message["headers"] ?? .null {
+            for (name, value) in object {
+                if let text = value.stringValue { headers[name] = text }
+            }
+        }
+        let status = message["status"]?.intValue ?? 502
+        let body = Data((message["body"]?.stringValue ?? "").utf8)
+        continuation.resume(returning: McpReply(status: status, headers: headers, body: body))
+    }
+
+    private func failMcp() {
+        let waiting = mcpWaiting
+        mcpWaiting.removeAll()
+        for continuation in waiting.values {
+            continuation.resume(returning: .failure(502, "A conexão com o servidor caiu."))
         }
     }
 

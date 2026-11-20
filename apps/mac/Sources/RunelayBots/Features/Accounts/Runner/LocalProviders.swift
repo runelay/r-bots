@@ -28,7 +28,8 @@ struct LocalTurn: Sendable {
         self.systemPrompt = systemPrompt
         self.prompt = prompt
         self.resume = value["resume"]?.stringValue
-        self.mcpURL = value["mcp"]?["url"]?.stringValue
+        let rawURL = value["mcp"]?["url"]?.stringValue
+        self.mcpURL = rawURL.flatMap { $0.hasPrefix("/") ? McpProxy.shared.url(for: $0) : $0 }
         self.mcpToken = value["mcp"]?["token"]?.stringValue
         self.workKey = workKey
     }

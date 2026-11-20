@@ -5,6 +5,7 @@ import Synchronization
 enum AuthSecret: String, Sendable {
     case session
     case runner
+    case device
 }
 
 enum AuthStore {

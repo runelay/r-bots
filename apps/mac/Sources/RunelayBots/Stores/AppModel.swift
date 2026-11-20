@@ -140,6 +140,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case notifications
     case bots
     case computer
+    case devices
     case integrations
     case shortcuts
     case about
@@ -154,6 +155,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: "Notificações"
         case .bots: "Bots"
         case .computer: "Uso do computador"
+        case .devices: "Dispositivos"
         case .integrations: "Integrações"
         case .shortcuts: "Atalhos"
         case .about: "Sobre"
@@ -168,6 +170,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: "bell"
         case .bots: "person.2"
         case .computer: "desktopcomputer"
+        case .devices: "laptopcomputer.and.iphone"
         case .integrations: "key.horizontal"
         case .shortcuts: "command"
         case .about: "info.circle"

@@ -264,12 +264,9 @@ final class AuthSession: NSObject {
     }
 
     private func ensureRunnerKey(token: String, force: Bool = false) {
-        guard force || AuthStore.read(.runner) == nil else { return }
-        let client = client
+        guard force || AuthStore.read(.device) == nil else { return }
         Task {
-            guard let key = try? await client.runnerKey(token: token) else { return }
-            AuthStore.save(key, as: .runner)
-            RunnerConnection.shared.restart()
+            await DeviceStore.shared.register(sessionToken: token, automatic: !force)
         }
     }
 
