@@ -162,6 +162,7 @@ struct PullRequestPillBadge: View {
 
 struct PullRequestRow: View {
     let store: ConversationStore
+    var workspaceID: String? = nil
     let pr: PullRequestInfo
     let closeRepository: () -> Void
     @State private var hovering = false
@@ -210,7 +211,7 @@ struct PullRequestRow: View {
             }
         }
         .popover(isPresented: $showsCard, arrowEdge: .trailing) {
-            PullRequestCard(store: store, pr: pr, closeRepository: {
+            PullRequestCard(store: store, workspaceID: workspaceID, pr: pr, closeRepository: {
                 showsCard = false
                 closeRepository()
             })
@@ -221,6 +222,7 @@ struct PullRequestRow: View {
 
 struct PullRequestCard: View {
     let store: ConversationStore
+    var workspaceID: String? = nil
     let pr: PullRequestInfo
     let closeRepository: () -> Void
     @State private var working = false
@@ -351,7 +353,7 @@ struct PullRequestCard: View {
         problem = nil
         Task {
             do {
-                try await store.reopenPullRequest()
+                try await store.reopenPullRequest(workspaceID: workspaceID)
             } catch {
                 problem = "Não consegui reabrir o PR agora."
             }

@@ -22,8 +22,9 @@ extension BotsClient {
         "/bots/\(botID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? botID)/code"
     }
 
-    private static func sessionQuery(_ sessionID: String?) -> [URLQueryItem] {
-        sessionID.map { [URLQueryItem(name: "sessionId", value: $0)] } ?? []
+    private static func sessionQuery(_ sessionID: String?, workspaceID: String? = nil) -> [URLQueryItem] {
+        (sessionID.map { [URLQueryItem(name: "sessionId", value: $0)] } ?? [])
+            + (workspaceID.map { [URLQueryItem(name: "workspaceId", value: $0)] } ?? [])
     }
 
     func repos(query: String = "") async throws -> [RepoInfo] {
@@ -41,25 +42,25 @@ extension BotsClient {
         return CodeState(try await codeSend(Self.codeRoot(botID) + "/workspace", method: "POST", query: Self.sessionQuery(sessionID), body: .object(body), timeout: 120))
     }
 
-    func closeWorkspace(botID: String, sessionID: String?) async throws {
-        _ = try await codeSend(Self.codeRoot(botID) + "/workspace", method: "DELETE", query: Self.sessionQuery(sessionID))
+    func closeWorkspace(botID: String, sessionID: String?, workspaceID: String? = nil) async throws {
+        _ = try await codeSend(Self.codeRoot(botID) + "/workspace", method: "DELETE", query: Self.sessionQuery(sessionID, workspaceID: workspaceID))
     }
 
-    func finishWorkspace(botID: String, sessionID: String?) async throws {
-        _ = try await codeSend(Self.codeRoot(botID) + "/finish", method: "POST", query: Self.sessionQuery(sessionID), timeout: 120)
+    func finishWorkspace(botID: String, sessionID: String?, workspaceID: String? = nil) async throws {
+        _ = try await codeSend(Self.codeRoot(botID) + "/finish", method: "POST", query: Self.sessionQuery(sessionID, workspaceID: workspaceID), timeout: 120)
     }
 
-    func reopenPullRequest(botID: String, sessionID: String?) async throws {
-        _ = try await codeSend(Self.codeRoot(botID) + "/pr/reopen", method: "POST", query: Self.sessionQuery(sessionID), timeout: 90)
+    func reopenPullRequest(botID: String, sessionID: String?, workspaceID: String? = nil) async throws {
+        _ = try await codeSend(Self.codeRoot(botID) + "/pr/reopen", method: "POST", query: Self.sessionQuery(sessionID, workspaceID: workspaceID), timeout: 90)
     }
 
-    func pullRequest(botID: String, sessionID: String?, refresh: Bool) async throws -> PullRequestInfo? {
-        let json = try await codeSend(Self.codeRoot(botID) + "/pr", query: Self.sessionQuery(sessionID) + (refresh ? [URLQueryItem(name: "refresh", value: "1")] : []), timeout: 60)
+    func pullRequest(botID: String, sessionID: String?, workspaceID: String? = nil, refresh: Bool) async throws -> PullRequestInfo? {
+        let json = try await codeSend(Self.codeRoot(botID) + "/pr", query: Self.sessionQuery(sessionID, workspaceID: workspaceID) + (refresh ? [URLQueryItem(name: "refresh", value: "1")] : []), timeout: 60)
         return PullRequestInfo(json["pr"])
     }
 
-    func fileDiff(botID: String, sessionID: String?, path: String) async throws -> CodeEdit {
-        let json = try await codeSend(Self.codeRoot(botID) + "/diff", query: Self.sessionQuery(sessionID) + [URLQueryItem(name: "path", value: path)])
+    func fileDiff(botID: String, sessionID: String?, workspaceID: String? = nil, path: String) async throws -> CodeEdit {
+        let json = try await codeSend(Self.codeRoot(botID) + "/diff", query: Self.sessionQuery(sessionID, workspaceID: workspaceID) + [URLQueryItem(name: "path", value: path)])
         return CodeEdit(
             path: json["path"]?.stringValue ?? path,
             before: json["before"]?.stringValue,
@@ -72,8 +73,8 @@ extension BotsClient {
         )
     }
 
-    func allDiffs(botID: String, sessionID: String?) async throws -> [CodeEdit] {
-        let json = try await codeSend(Self.codeRoot(botID) + "/diff", query: Self.sessionQuery(sessionID), timeout: 60)
+    func allDiffs(botID: String, sessionID: String?, workspaceID: String? = nil) async throws -> [CodeEdit] {
+        let json = try await codeSend(Self.codeRoot(botID) + "/diff", query: Self.sessionQuery(sessionID, workspaceID: workspaceID), timeout: 60)
         return json["files"]?.arrayValue?.compactMap { item -> CodeEdit? in
             guard let path = item["path"]?.stringValue else { return nil }
             let status = item["status"]?.stringValue ?? ""
@@ -90,26 +91,26 @@ extension BotsClient {
         } ?? []
     }
 
-    func revertFile(botID: String, sessionID: String?, path: String) async throws {
-        _ = try await codeSend(Self.codeRoot(botID) + "/revert", method: "POST", query: Self.sessionQuery(sessionID), body: .object(["path": .string(path)]))
+    func revertFile(botID: String, sessionID: String?, workspaceID: String? = nil, path: String) async throws {
+        _ = try await codeSend(Self.codeRoot(botID) + "/revert", method: "POST", query: Self.sessionQuery(sessionID, workspaceID: workspaceID), body: .object(["path": .string(path)]))
     }
 
     func rewind(botID: String, sessionID: String?, turnID: String) async throws {
         _ = try await codeSend(Self.codeRoot(botID) + "/rewind", method: "POST", query: Self.sessionQuery(sessionID), body: .object(["turnId": .string(turnID)]), timeout: 120)
     }
 
-    func deliver(botID: String, sessionID: String?, action: String, message: String) async throws -> JSONValue {
+    func deliver(botID: String, sessionID: String?, workspaceID: String? = nil, action: String, message: String) async throws -> JSONValue {
         try await codeSend(
             Self.codeRoot(botID) + "/deliver",
             method: "POST",
-            query: Self.sessionQuery(sessionID),
+            query: Self.sessionQuery(sessionID, workspaceID: workspaceID),
             body: .object(["action": .string(action), "message": .string(message)]),
             timeout: 300
         )
     }
 
-    func stopDevServers(botID: String, sessionID: String?) async throws {
-        _ = try await codeSend(Self.codeRoot(botID) + "/servers/stop", method: "POST", query: Self.sessionQuery(sessionID), body: .object([:]))
+    func stopDevServers(botID: String, sessionID: String?, workspaceID: String? = nil) async throws {
+        _ = try await codeSend(Self.codeRoot(botID) + "/servers/stop", method: "POST", query: Self.sessionQuery(sessionID, workspaceID: workspaceID), body: .object([:]))
     }
 
     func previewURL(path: String) -> URL? {

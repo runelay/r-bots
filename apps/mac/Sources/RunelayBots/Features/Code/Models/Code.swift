@@ -133,6 +133,9 @@ struct CodeWorkspace: Hashable, Sendable {
     let installStatus: String?
     let installError: String?
     var pr: PullRequestInfo?
+    let primary: Bool
+    var changes: [CodeFileChange]
+    var servers: [CodeDevServer]
 
     init?(_ value: JSONValue?) {
         guard let value, let id = value["id"]?.stringValue else { return nil }
@@ -147,11 +150,15 @@ struct CodeWorkspace: Hashable, Sendable {
         installStatus = value["install"]?["status"]?.stringValue
         installError = value["install"]?["error"]?.stringValue
         pr = PullRequestInfo(value["pr"])
+        primary = value["primary"]?.boolValue ?? true
+        changes = value["changes"]?.arrayValue?.compactMap(CodeFileChange.init) ?? []
+        servers = value["servers"]?.arrayValue?.compactMap(CodeDevServer.init) ?? []
     }
 }
 
 struct CodeState: Hashable, Sendable {
     var workspace: CodeWorkspace?
+    var workspaces: [CodeWorkspace]
     var files: [CodeFileChange]
     var servers: [CodeDevServer]
     var checkpoints: [CodeCheckpoint]
@@ -160,9 +167,34 @@ struct CodeState: Hashable, Sendable {
         workspace = CodeWorkspace(value["workspace"])
         files = value["files"]?.arrayValue?.compactMap(CodeFileChange.init) ?? []
         servers = value["servers"]?.arrayValue?.compactMap(CodeDevServer.init) ?? []
+        let listed = value["workspaces"]?.arrayValue?.compactMap { CodeWorkspace($0) } ?? []
+        if listed.isEmpty, var single = workspace {
+            single.changes = files
+            single.servers = servers
+            workspaces = [single]
+        } else {
+            workspaces = listed
+        }
         checkpoints = value["checkpoints"]?.arrayValue?.compactMap { item in
             item["turnId"]?.stringValue.map { CodeCheckpoint(turnID: $0, at: item["at"]?.stringValue.flatMap(ISODate.parse), request: item["request"]?.stringValue) }
         } ?? []
+    }
+}
+
+extension CodeState {
+    func workspace(id: String?) -> CodeWorkspace? {
+        guard let id else { return workspace.flatMap { primary in workspaces.first { $0.id == primary.id } } ?? workspaces.first }
+        return workspaces.first { $0.id == id }
+    }
+
+    mutating func update(workspaceID: String, _ change: (inout CodeWorkspace) -> Void) {
+        if let index = workspaces.firstIndex(where: { $0.id == workspaceID }) {
+            change(&workspaces[index])
+        }
+        if var current = workspace, current.id == workspaceID {
+            change(&current)
+            workspace = current
+        }
     }
 }
 

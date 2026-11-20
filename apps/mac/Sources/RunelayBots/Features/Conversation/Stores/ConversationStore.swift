@@ -53,6 +53,7 @@ final class ConversationStore {
     private(set) var codeEdits: [String: CodeEdit] = [:] { didSet { transcriptRevision &+= 1 } }
     private(set) var codeBulks: [String: CodeBulk] = [:] { didSet { transcriptRevision &+= 1 } }
     private(set) var codeState: CodeState?
+    var changesWorkspaceID: String?
     private(set) var revertedTurns: Set<String> = [] { didSet { transcriptRevision &+= 1 } }
     private(set) var queuePosition: Int?
     let liveText = LiveTextBuffer()
@@ -1567,11 +1568,12 @@ extension ConversationStore {
             codeBulks[id] = bulk
             append(TranscriptEntry(id: id, kind: .codeBulk(id)), date: currentLineDateValue)
         case "code.status":
-            if isLiveLineValue, var state = codeState, var workspace = state.workspace, data["workspaceId"]?.stringValue == workspace.id {
-                workspace.files = data["files"]?.intValue ?? workspace.files
-                workspace.added = data["added"]?.intValue ?? workspace.added
-                workspace.removed = data["removed"]?.intValue ?? workspace.removed
-                state.workspace = workspace
+            if isLiveLineValue, var state = codeState, let id = data["workspaceId"]?.stringValue {
+                state.update(workspaceID: id) { workspace in
+                    workspace.files = data["files"]?.intValue ?? workspace.files
+                    workspace.added = data["added"]?.intValue ?? workspace.added
+                    workspace.removed = data["removed"]?.intValue ?? workspace.removed
+                }
                 codeState = state
             }
         case "code.workspace":
@@ -1582,6 +1584,8 @@ extension ConversationStore {
                 append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Abriu \(repo) na branch \(branch)", "arrow.triangle.branch")), date: currentLineDateValue)
             case "reopened":
                 append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Voltou a trabalhar em \(repo)", "arrow.triangle.branch")), date: currentLineDateValue)
+            case "adopted":
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Juntou \(repo) a esta conversa, na branch \(branch)", "square.stack.3d.up")), date: currentLineDateValue)
             case "closed":
                 append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Fechou \(repo). A branch \(branch) continua guardada", "folder")), date: currentLineDateValue)
             case "failed":
@@ -1634,9 +1638,8 @@ extension ConversationStore {
                 append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Commit \(commit) na branch \(data["branch"]?.stringValue ?? "")", "checkmark.circle")), date: currentLineDateValue)
             }
         case "code.pr":
-            if var state = codeState, var workspace = state.workspace, data["workspaceId"]?.stringValue == workspace.id, let pr = PullRequestInfo(data) {
-                workspace.pr = pr
-                state.workspace = workspace
+            if var state = codeState, let id = data["workspaceId"]?.stringValue, let pr = PullRequestInfo(data) {
+                state.update(workspaceID: id) { $0.pr = pr }
                 codeState = state
             }
         case "code.ci", "code.review":
@@ -1703,29 +1706,33 @@ extension ConversationStore {
         deliver(messageID: message.id, text: trimmed, queued: queued)
     }
 
-    func finishRepository() async throws {
-        try await clientValue.finishWorkspace(botID: bot.id, sessionID: sessionId)
+    func finishRepository(workspaceID: String? = nil) async throws {
+        try await clientValue.finishWorkspace(botID: bot.id, sessionID: sessionId, workspaceID: workspaceID)
         await refreshCode()
     }
 
-    func reopenPullRequest() async throws {
-        try await clientValue.reopenPullRequest(botID: bot.id, sessionID: sessionId)
+    func reopenPullRequest(workspaceID: String? = nil) async throws {
+        try await clientValue.reopenPullRequest(botID: bot.id, sessionID: sessionId, workspaceID: workspaceID)
         await refreshCode()
     }
 
-    func refreshPullRequest() async {
-        _ = try? await clientValue.pullRequest(botID: bot.id, sessionID: sessionId, refresh: true)
+    func refreshPullRequest(workspaceID: String? = nil) async {
+        _ = try? await clientValue.pullRequest(botID: bot.id, sessionID: sessionId, workspaceID: workspaceID, refresh: true)
         await refreshCode()
     }
 
-    func closeRepository() async throws {
-        try await clientValue.closeWorkspace(botID: bot.id, sessionID: sessionId)
+    func closeRepository(workspaceID: String? = nil) async throws {
+        try await clientValue.closeWorkspace(botID: bot.id, sessionID: sessionId, workspaceID: workspaceID)
         await refreshCode()
     }
 
-    func revertFile(_ path: String) async throws {
-        try await clientValue.revertFile(botID: bot.id, sessionID: sessionId, path: path)
+    func revertFile(_ path: String, workspaceID: String? = nil) async throws {
+        try await clientValue.revertFile(botID: bot.id, sessionID: sessionId, workspaceID: workspaceID, path: path)
         await refreshCode()
+    }
+
+    var changesWorkspace: CodeWorkspace? {
+        codeState?.workspace(id: changesWorkspaceID) ?? codeState?.workspace(id: nil)
     }
 
     func rewind(entryID: String) async throws {

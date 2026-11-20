@@ -24,6 +24,7 @@ struct ComposerView: View {
             })
             if store.codeState?.workspace != nil {
                 items.append(GlassMenuItem("Ver mudanças", systemImage: "plusminus") {
+                    store.changesWorkspaceID = nil
                     model.activeSheet = .changes(bot.id)
                 })
             }

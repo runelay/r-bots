@@ -3,6 +3,27 @@ import SwiftUI
 
 struct CodeStrip: View {
     let store: ConversationStore
+    let workspaces: [CodeWorkspace]
+    let running: Bool
+    let openChanges: (CodeWorkspace) -> Void
+
+    var body: some View {
+        HStack(spacing: Spacing.s) {
+            ForEach(workspaces, id: \.id) { workspace in
+                CodeRepoPill(store: store, workspace: workspace, running: running) {
+                    openChanges(workspace)
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.94)))
+            }
+        }
+        .springAnimation(value: workspaces.map(\.id))
+        .frame(maxWidth: .infinity)
+        .padding(.top, Spacing.s)
+    }
+}
+
+private struct CodeRepoPill: View {
+    let store: ConversationStore
     let workspace: CodeWorkspace
     let running: Bool
     let openChanges: () -> Void
@@ -74,8 +95,6 @@ struct CodeStrip: View {
         .springAnimation(value: workspace.added)
         .springAnimation(value: workspace.pr)
         .springAnimation(value: running)
-        .frame(maxWidth: .infinity)
-        .padding(.top, Spacing.s)
     }
 
     private var counts: (files: Int, added: Int, removed: Int)? {
@@ -172,13 +191,13 @@ struct CodeWorkspacePopover: View {
             .help("Copiar o nome da branch\(workspace.base.isEmpty ? "" : " · saiu de \(workspace.base)")")
             divider
             if let pr = workspace.pr {
-                PullRequestRow(store: store, pr: pr) {
+                PullRequestRow(store: store, workspaceID: workspace.id, pr: pr) {
                     finish(pr)
                 }
                 divider
             }
             changesRow
-            if let server = state?.servers.first, let path = server.previewPath, let url = model.client.previewURL(path: path) {
+            if let server = workspace.servers.first, let path = server.previewPath, let url = model.client.previewURL(path: path) {
                 PopoverRow(symbol: "safari", title: "Abrir o app", detail: "porta \(server.port)") {
                     NSWorkspace.shared.open(url)
                 }
@@ -194,7 +213,7 @@ struct CodeWorkspacePopover: View {
                     return
                 }
                 Task {
-                    try? await store.closeRepository()
+                    try? await store.closeRepository(workspaceID: workspace.id)
                     close()
                 }
             } label: {
@@ -224,7 +243,7 @@ struct CodeWorkspacePopover: View {
         .task {
             await store.refreshCode()
             if workspace.pr != nil {
-                await store.refreshPullRequest()
+                await store.refreshPullRequest(workspaceID: workspace.id)
             }
         }
     }
@@ -239,7 +258,7 @@ struct CodeWorkspacePopover: View {
         problem = nil
         Task {
             do {
-                try await store.finishRepository()
+                try await store.finishRepository(workspaceID: workspace.id)
                 close()
             } catch BotsClient.ClientError.http(_, let message) {
                 problem = message ?? "Não consegui fechar o repositório agora."
@@ -492,12 +511,18 @@ struct CodeChangesView: View {
 
     private var store: ConversationStore? { model.conversation(for: botID) }
 
+    private var workspace: CodeWorkspace? { store?.changesWorkspace }
+
+    private var changes: [CodeFileChange] {
+        (workspace?.changes ?? []).filter { $0.binary || $0.added + $0.removed > 0 }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
-            if let state = store?.codeState, state.workspace != nil {
+            if workspace != nil {
                 HStack(spacing: 0) {
-                    fileList(state.files.filter { $0.binary || $0.added + $0.removed > 0 })
+                    fileList(changes)
                         .frame(width: 240)
                         .background(Theme.panelBackground)
                     detail
@@ -511,15 +536,36 @@ struct CodeChangesView: View {
         }
         .task {
             await store?.refreshCode()
-            let files = (store?.codeState?.files ?? []).filter { !$0.binary && $0.added + $0.removed > 0 }
-            let focus = model.codeFocusPath.flatMap { path in files.first { $0.path == path } }
-            model.codeFocusPath = nil
-            if let focus {
-                await select(focus.path)
-            } else if !isHuge(files), let first = files.first {
-                await select(first.path)
+            if let path = model.codeFocusPath, let store, let state = store.codeState,
+               workspace?.changes.contains(where: { $0.path == path }) != true,
+               let owner = state.workspaces.first(where: { $0.changes.contains { $0.path == path } }) {
+                store.changesWorkspaceID = owner.id
             }
+            await selectFirst(focus: model.codeFocusPath)
+            model.codeFocusPath = nil
         }
+    }
+
+    private func selectFirst(focus path: String?) async {
+        let files = changes.filter { !$0.binary }
+        if let path, let focus = files.first(where: { $0.path == path }) {
+            await select(focus.path)
+        } else if !isHuge(files), let first = files.first {
+            await select(first.path)
+        } else {
+            selected = nil
+            diff = nil
+            blocks = []
+        }
+    }
+
+    private func show(_ next: CodeWorkspace) {
+        guard let store, next.id != workspace?.id else { return }
+        store.changesWorkspaceID = next.id
+        selected = nil
+        diff = nil
+        blocks = []
+        Task { await selectFirst(focus: nil) }
     }
 
     private var header: some View {
@@ -530,11 +576,20 @@ struct CodeChangesView: View {
             Text("Mudanças")
                 .font(TypeScale.sectionTitle)
                 .foregroundStyle(Theme.textPrimary)
-            if let workspace = store?.codeState?.workspace, workspace.files > 0 {
+            if let workspace, workspace.files > 0 {
                 ChangeCount(added: workspace.added, removed: workspace.removed)
                     .help("\(workspace.files) arquivo\(workspace.files == 1 ? "" : "s") em \(workspace.repoName) · \(workspace.branch)")
             }
             Spacer(minLength: 0)
+            if let all = store?.codeState?.workspaces, all.count > 1 {
+                HStack(spacing: 2) {
+                    ForEach(all, id: \.id) { item in
+                        RepoTab(title: item.repoName, selected: item.id == workspace?.id) {
+                            show(item)
+                        }
+                    }
+                }
+            }
             RoundIconButton(systemImage: "xmark", help: "Fechar (Esc)", size: 26) {
                 model.dismissSheet()
             }
@@ -682,8 +737,8 @@ struct CodeChangesView: View {
                 }
             }
             .transition(.opacity)
-        } else if let files = store?.codeState?.files.filter({ $0.binary || $0.added + $0.removed > 0 }), isHuge(files) {
-            summary(files)
+        } else if isHuge(changes) {
+            summary(changes)
         } else {
             PanelEmptyState(systemImage: "doc.text.magnifyingglass", title: "Escolha um arquivo", message: "O diff completo aparece aqui.")
         }
@@ -694,7 +749,7 @@ struct CodeChangesView: View {
         selected = path
         loading = diff == nil
         defer { loading = false }
-        let loaded = try? await model.client.fileDiff(botID: botID, sessionID: store.sessionId, path: path)
+        let loaded = try? await model.client.fileDiff(botID: botID, sessionID: store.sessionId, workspaceID: workspace?.id, path: path)
         guard selected == path else { return }
         guard let loaded else {
             diff = nil
@@ -733,10 +788,10 @@ struct CodeChangesView: View {
     private func revert(_ path: String) {
         guard let store, CodeActions.confirm("Desfazer \((path as NSString).lastPathComponent)?", message: "O arquivo volta a ser como era antes da tarefa.", action: "Desfazer") else { return }
         Task {
-            try? await store.revertFile(path)
+            try? await store.revertFile(path, workspaceID: workspace?.id)
             diff = nil
             blocks = []
-            if let next = store.codeState?.files.first(where: { !$0.binary && $0.added + $0.removed > 0 }) {
+            if let next = changes.first(where: { !$0.binary }) {
                 await select(next.path)
             } else {
                 selected = nil
@@ -745,7 +800,31 @@ struct CodeChangesView: View {
     }
 
     private func openInEditor(_ path: String) {
-        guard let workspace = store?.codeState?.workspace else { return }
+        guard let workspace else { return }
         CodeActions.openInEditor(absolutePath: "\(workspace.path)/\(path)")
+    }
+}
+
+private struct RepoTab: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(TypeScale.captionStrong)
+                .foregroundStyle(selected ? Theme.textPrimary : Theme.textTertiary)
+                .lineLimit(1)
+                .padding(.horizontal, Spacing.s)
+                .frame(height: 24)
+                .background(selected ? Theme.selection : hovering ? Theme.hover : Color.clear, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .clickable()
+        .onHover { hovering = $0 }
+        .springAnimation(value: selected)
     }
 }

@@ -218,7 +218,7 @@ struct ConversationView: View {
     private static let fadeHeight: CGFloat = 40
 
     private var topInset: CGFloat {
-        store.codeState?.workspace != nil && !bot.isGroup ? 40 : 0
+        store.codeState?.workspaces.isEmpty == false && !bot.isGroup ? 40 : 0
     }
 
     var body: some View {
@@ -232,8 +232,9 @@ struct ConversationView: View {
                     }
             }
             .overlay(alignment: .top) {
-                if let workspace = store.codeState?.workspace, !bot.isGroup {
-                    CodeStrip(store: store, workspace: workspace, running: store.phase == .working) {
+                if let workspaces = store.codeState?.workspaces, !workspaces.isEmpty, !bot.isGroup {
+                    CodeStrip(store: store, workspaces: workspaces, running: store.phase == .working) { workspace in
+                        store.changesWorkspaceID = workspace.id
                         model.activeSheet = .changes(bot.id)
                     }
                     .transition(.opacity.combined(with: .offset(y: -6)))
