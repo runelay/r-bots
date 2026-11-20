@@ -369,7 +369,7 @@ struct CallStartButton: View {
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(Theme.onAccent)
                 .frame(width: 34, height: 34)
-                .glassSurface(Circle(), interactive: true, tint: Theme.brandAccent, fallback: Theme.brandAccent)
+                .background(Theme.brandAccent, in: Circle())
                 .modifier(SoftPulse(isEnabled: active && !reduceMotion))
                 .contentShape(Circle())
         }
