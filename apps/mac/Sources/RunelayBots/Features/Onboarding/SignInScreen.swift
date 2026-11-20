@@ -8,7 +8,7 @@ enum AccountVariant: Equatable {
 
     var title: String {
         switch self {
-        case .setup: "Configurar este runelay bots"
+        case .setup: "Configure seus bots na runelay"
         case .signin: "Entrar na sua conta"
         case .invite: "Criar conta com convite"
         }
@@ -16,7 +16,7 @@ enum AccountVariant: Equatable {
 
     var description: String {
         switch self {
-        case .setup: "Crie a conta dona. Ela administra os bots, as conversas e as chaves deste servidor."
+        case .setup: "Crie a conta dona deste servidor para começar."
         case .signin: "Use seus dados para entrar."
         case .invite: "Use o convite que a dona ou o dono deste servidor mandou."
         }
@@ -27,14 +27,6 @@ enum AccountVariant: Equatable {
         case .setup: "Criar conta dona"
         case .signin: "Entrar"
         case .invite: "Criar conta"
-        }
-    }
-
-    var badge: String {
-        switch self {
-        case .setup: "person.badge.key"
-        case .signin: "person"
-        case .invite: "envelope.open"
         }
     }
 }
@@ -174,7 +166,7 @@ private struct SignInFormPane: View {
     private var form: some View {
         VStack(spacing: Spacing.xl) {
             VStack(spacing: Spacing.l) {
-                SignInBadge(systemImage: variant.badge)
+                SignInBadge()
                 VStack(spacing: Spacing.xs) {
                     Text(variant.title)
                         .font(BrandFonts.sans(21, weight: .semibold))
@@ -499,21 +491,13 @@ private struct OrDivider: View {
 }
 
 private struct SignInBadge: View {
-    let systemImage: String
-
     var body: some View {
         ZStack {
             Circle()
                 .fill(Theme.surface.opacity(0.7))
                 .frame(width: 84, height: 84)
-            Circle()
-                .fill(Theme.background)
-                .frame(width: 56, height: 56)
+            RunelayAppMark(size: 58)
                 .softElevation(lifted: true)
-            Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(Theme.textPrimary)
-                .contentTransition(.symbolEffect(.replace))
         }
         .accessibilityHidden(true)
     }
@@ -633,7 +617,7 @@ private struct BrowserPending: View {
 
     var body: some View {
         VStack(spacing: Spacing.l) {
-            SignInBadge(systemImage: "safari")
+            SignInBadge()
             Text("Confirme no navegador. O código tem que ser este:")
                 .font(TypeScale.rowSubtitle)
                 .foregroundStyle(Theme.textSecondary)
