@@ -64,7 +64,8 @@ import type { EventLog, Fact, StoredSession } from "../../conversations/services
 import { titleFrom } from "../../conversations/services/sessions.service";
 import { recordThreadMessage } from "../../conversations/services/threads.service";
 import { activeMembers, getGroup, mentionedMembers } from "../../groups/services/groups.service";
-import { capture, type RecallItem, recall, recallBlock, teamLogBlock } from "../../memory/services/memory.service";
+import { queueCapture } from "../../memory/services/capture-jobs.service";
+import { type RecallItem, recall, recallBlock, teamLogBlock } from "../../memory/services/memory.service";
 import { type LoadedSkill, skillsBlock } from "../../skills/services/skills.service";
 import {
   attachmentsTitle,
@@ -148,7 +149,8 @@ export function conversationStatus(sessionId: string): RunStatus | "queued" {
   const current = sessionStatus.get(sessionId)?.status;
   if (current) return current;
   const runtime = runtimes.get(sessionId);
-  return runtime && !runtime.turn && runtime.queue.length > 0 ? "queued" : "idle";
+  if (runtime && !runtime.turn && runtime.queue.length > 0) return "queued";
+  return (turnQueue?.queued(sessionId) ?? 0) > 0 ? "queued" : "idle";
 }
 
 export function sessionStatuses() {
@@ -423,8 +425,31 @@ export function isRunning(sessionId: string) {
 
 const draining = new Set<string>();
 
-export function isBusy(sessionId: string) {
+export function sessionBusy(sessionId: string) {
   return draining.has(sessionId) || isRunning(sessionId) || (runtimes.get(sessionId)?.queue.length ?? 0) > 0;
+}
+
+export function isBusy(sessionId: string) {
+  return sessionBusy(sessionId) || (turnQueue?.queued(sessionId) ?? 0) > 0;
+}
+
+export interface TurnQueue {
+  enqueue: (session: StoredSession, delivery: Delivery) => Promise<void>;
+  cancelSession: (sessionId: string) => Promise<void>;
+  withdraw: (hooks: DelegationHooks) => Promise<boolean>;
+  queued: (sessionId: string) => number;
+}
+
+let turnQueue: TurnQueue | null = null;
+const completions = new Map<string, () => void>();
+
+export function useTurnQueue(queue: TurnQueue | null) {
+  turnQueue = queue;
+}
+
+function settleCompletion(deliveryId: string) {
+  completions.get(deliveryId)?.();
+  completions.delete(deliveryId);
 }
 
 function steerPausedTurn(session: StoredSession, runtime: Runtime, delivery: Delivery) {
@@ -480,11 +505,25 @@ function steerPausedTurn(session: StoredSession, runtime: Runtime, delivery: Del
   return true;
 }
 
-export function deliver(session: StoredSession, delivery: Delivery) {
+function deliverInProcess(session: StoredSession, runtime: Runtime, delivery: Delivery) {
+  runtime.queue.push(delivery);
+  if (!runtime.turn && !draining.has(session.meta.sessionId)) void drain(session, runtime);
+}
+
+export async function deliver(session: StoredSession, delivery: Delivery) {
   const runtime = runtimeOf(session.meta.sessionId);
   if (steerPausedTurn(session, runtime, delivery)) return;
-  runtime.queue.push(delivery);
-  if (!runtime.turn) void drain(session, runtime);
+  if (!turnQueue || delivery.voice) return deliverInProcess(session, runtime, delivery);
+  await turnQueue.enqueue(session, delivery).catch((error) => {
+    console.warn(`fila indisponível, turno roda direto: ${error instanceof Error ? error.message : String(error)}`);
+    deliverInProcess(session, runtime, delivery);
+  });
+}
+
+export function runDelivery(session: StoredSession, delivery: Delivery) {
+  const done = new Promise<void>((resolve) => completions.set(delivery.deliveryId, resolve));
+  deliverInProcess(session, runtimeOf(session.meta.sessionId), delivery);
+  return done;
 }
 
 const maxGroupTurns = 4;
@@ -607,6 +646,7 @@ async function drain(session: StoredSession, runtime: Runtime) {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+      settleCompletion(delivery.deliveryId);
       if (runtime.queue.length === 0) setStatus(session.meta.sessionId, session.meta.botId, "idle");
     }
   } finally {
@@ -647,7 +687,11 @@ export function answer(
 
 export function cancel(session: StoredSession) {
   const runtime = runtimes.get(session.meta.sessionId);
-  for (const dropped of runtime?.queue.splice(0) ?? []) dropped.delegation?.finish({ outcome: "cancelled", reply: "" });
+  for (const dropped of runtime?.queue.splice(0) ?? []) {
+    dropped.delegation?.finish({ outcome: "cancelled", reply: "" });
+    settleCompletion(dropped.deliveryId);
+  }
+  void turnQueue?.cancelSession(session.meta.sessionId);
   const turn = runtime?.turn;
   if (!turn) return false;
   turn.cancelled = true;
@@ -947,14 +991,17 @@ function withdrawDelivery(session: StoredSession, hooks: DelegationHooks, reason
   const runtime = runtimes.get(session.meta.sessionId);
   if (!runtime) return;
   const index = runtime.queue.findIndex((item) => item.delegation === hooks);
+    settleCompletion(dropped.deliveryId);
   if (index >= 0) {
-    runtime.queue.splice(index, 1);
+    const [dropped] = runtime.queue.splice(index, 1);
     hooks.finish({ outcome: "cancelled", reply: "" });
     return;
   }
   const turn = runtime.turn;
   if (turn && turn.delegation === hooks && !turn.abort.signal.aborted) {
+    return;
     turn.cancelled = true;
+  void turnQueue?.withdraw(hooks);
     turn.cancelReason = reason;
     turn.abort.abort();
   }
@@ -1012,7 +1059,7 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
       parent.turn.abort.signal.addEventListener("abort", onAbort, { once: true });
       detach = () => parent.turn.abort.signal.removeEventListener("abort", onAbort);
       update(isBusy(session.meta.sessionId) ? "queued" : "starting");
-      deliver(session, {
+      void deliver(session, {
         deliveryId,
         text: message,
         source: "delegate",
@@ -1651,9 +1698,17 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       });
     } else {
       if (!isSchedule && !group && memorySettings.capture && replyText) {
-        void capture({ bot, account, model, userText: delivery.text, replyText, recalled, log, turnId }).catch(
-          (error) => console.warn("memory capture failed", error instanceof Error ? error.message : error),
-        );
+        void queueCapture({
+          bot,
+          account,
+          model,
+          userText: delivery.text,
+          replyText,
+          recalled,
+          log,
+          turnId,
+          sessionId: session.meta.sessionId,
+        }).catch((error) => console.warn("memory capture failed", error instanceof Error ? error.message : error));
       }
       let quiet = false;
       if (isSchedule && replyText) {

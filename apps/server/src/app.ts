@@ -20,8 +20,8 @@ import { handleDevices } from "./modules/devices/routes/devices.routes";
 import { handleMcp } from "./modules/engine/routes/mcp.routes";
 import { handleGroups } from "./modules/groups/routes/groups.routes";
 import { handleIntegrations } from "./modules/integrations/routes/integrations.routes";
-import { handleJobs } from "./modules/jobs/routes/jobs.routes";
 import { handleSections } from "./modules/sections/routes/sections.routes";
+import { handleJobs } from "./modules/jobs/routes/jobs.routes";
 import { handleSkills } from "./modules/skills/routes/skills.routes";
 import { handleHealth, handleMeta, handleStatus, handleStatusStream } from "./modules/status/routes/status.routes";
 import { handleUsageRoute } from "./modules/usage/routes/usage.routes";
@@ -50,9 +50,9 @@ async function route(req: Req, res: Res) {
   if (method === "GET" && url.pathname === "/skills") return handleSkills(res, url);
   if (parts[0] === "sections") return handleSections(req, res, method, parts);
   if (parts[0] === "groups") return handleGroups(req, res, url, method, parts);
-  if (parts[0] === "jobs") return handleJobs(req, res, url, method, parts);
   if (method === "GET" && url.pathname === "/status") return handleStatus(res);
   if (method === "GET" && url.pathname === "/status/stream") return handleStatusStream(req, res);
+  if (parts[0] === "jobs") return handleJobs(req, res, url, method, parts);
   if (method === "GET" && url.pathname === "/computer/health") return handleComputerHealth(res);
   if (parts[0] === "connectors" && parts.length >= 2 && parts[1] !== "refresh")
     return handleConnectorActions(req, res, url, method, parts);
