@@ -83,6 +83,7 @@ final class ConversationStore {
     @ObservationIgnored private var olderCursor: Int?
     @ObservationIgnored var onNeedsAttention: (@MainActor () -> Void)?
     @ObservationIgnored var onBotUpdated: (@MainActor () -> Void)?
+    @ObservationIgnored var onSettingsChanged: (@MainActor ([String]) -> Void)?
     @ObservationIgnored private var pendingLiveReply = false
     @ObservationIgnored private var turnIsSchedule = false
     @ObservationIgnored var onNotify: (@MainActor (StoreNotification) -> Void)?
@@ -91,6 +92,8 @@ final class ConversationStore {
     @ObservationIgnored private var progressStopShown: Set<String> = []
     private(set) var lastTurnEndedAt: Date?
     private(set) var voiceRatings: [String: String] = [:]
+    private(set) var settingsChanges: [String: SettingsChange] = [:] { didSet { transcriptRevision &+= 1 } }
+    var settingsUndo: [String: SettingsChange.UndoState] = [:]
     @ObservationIgnored private var streamTask: Task<Void, Never>?
     @ObservationIgnored private var seenFacts: Set<String> = []
 
@@ -866,6 +869,15 @@ final class ConversationStore {
                 ?? "atualizou a própria configuração"
             append(TranscriptEntry(id: "update-\(fact.key)", kind: .update("\(bot.name): \(summary)")), date: currentLineDate)
             onBotUpdated?()
+        case "settings.changed":
+            let id = "settings-\(fact.key)"
+            if let change = SettingsChange(id: id, data) {
+                settingsChanges[id] = change
+                append(TranscriptEntry(id: id, kind: .settingsChange(id)), date: currentLineDate)
+                if historySettled {
+                    onSettingsChanged?(change.areas)
+                }
+            }
         case "usage.recorded":
             tokens += Self.tokenCount(data)
         case "session.ended":
@@ -1149,6 +1161,7 @@ final class ConversationStore {
             reason: request["reason"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 },
             grant: request["grant"]?.stringValue,
             secretForm: SecretFormRequest(request["secret"]),
+            integrationForm: IntegrationFormRequest(request["integration"]),
             questions: kind == "question" ? Self.questionPrompts(request["questions"]) : []
         )
         append(TranscriptEntry(id: id, kind: .approval), date: currentLineDate)

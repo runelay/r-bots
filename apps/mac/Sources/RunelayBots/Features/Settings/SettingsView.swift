@@ -975,6 +975,10 @@ struct NotificationToggleRow: View {
         SettingsRow(title: preference.title, icon: icon, info: preference.detail) {
             SettingsToggle(title: preference.title, isOn: $isOn)
         }
+        .onChange(of: isOn) { _, value in
+            guard PreferencesSync.applying == false else { return }
+            PreferencesSync.push(.object(["notifications": .object([preference.rawValue: .bool(value)])]))
+        }
     }
 }
 

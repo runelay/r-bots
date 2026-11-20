@@ -147,7 +147,7 @@ struct IntegrationsSettings: View {
                 .padding(.horizontal, -Spacing.m)
             }
         }
-        .task {
+        .task(id: model.settingsRevision) {
             await store.load(model: model)
         }
     }

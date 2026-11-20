@@ -20,6 +20,7 @@ struct TranscriptEntry: Identifiable, Equatable {
         case pullRequest(PullRequestEvent)
         case contextHandoff(ContextHandoff)
         case file(AttachmentRef)
+        case settingsChange(String)
     }
 
     let id: String
@@ -363,6 +364,7 @@ struct Approval: Identifiable, Equatable {
     var reason: String? = nil
     var grant: String? = nil
     var secretForm: SecretFormRequest? = nil
+    var integrationForm: IntegrationFormRequest? = nil
     var questions: [QuestionPrompt] = []
 
     var isOpen: Bool { resolution == .open }
@@ -371,6 +373,9 @@ struct Approval: Identifiable, Equatable {
     func summary(for optionID: String) -> (String, ApprovalTone) {
         if secretForm != nil {
             return optionID == "approve" ? ("Salvo no cofre", .approved) : ("Não informado", .neutral)
+        }
+        if let integrationForm {
+            return optionID == "approve" ? ("\(integrationForm.name) configurado", .approved) : ("Não configurado", .neutral)
         }
         switch optionID {
         case "approve": return ("Aprovado", .approved)

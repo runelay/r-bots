@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import SwiftUI
 
 enum InspectorTab: String, CaseIterable, Identifiable {
     case activity
@@ -1998,6 +1999,46 @@ final class AppModel {
         }
     }
 
+    var settingsRevision = 0
+    @ObservationIgnored private var settingsRefresh: Task<Void, Never>?
+    @ObservationIgnored private var pendingAreas: Set<String> = []
+
+    func applySettingsAreas(_ areas: [String]) {
+        guard !areas.isEmpty else { return }
+        pendingAreas.formUnion(areas)
+        settingsRefresh?.cancel()
+        settingsRefresh = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard let self, !Task.isCancelled else { return }
+            let areas = self.pendingAreas
+            self.pendingAreas = []
+            if !areas.isDisjoint(with: ["bots", "schedules", "conversations"]) {
+                await self.refreshQuietly()
+            }
+            if areas.contains("sections") {
+                await self.loadSections()
+            }
+            if !areas.isDisjoint(with: ["accounts", "bots"]) {
+                await self.loadAccounts()
+            }
+            if !areas.isDisjoint(with: ["usage", "accounts"]) {
+                await UsageStore.shared.refreshLimits()
+            }
+            if areas.contains("servers") {
+                await ServerStore.shared.loadProfiles()
+            }
+            if areas.contains("vault") {
+                await VaultStore.shared.reload()
+            }
+            if areas.contains("integrations") {
+                self.applyMeta(await self.client.meta())
+            }
+            withAnimation(Motion.spring) {
+                self.settingsRevision &+= 1
+            }
+        }
+    }
+
     private func startStatusStream() {
         statusTask?.cancel()
         let client = client
@@ -2076,6 +2117,12 @@ final class AppModel {
             ServerStore.shared.applySnapshot(value["servers"])
         case "server":
             ServerStore.shared.applyLine(value)
+        case "settings":
+            applySettingsAreas(value["areas"]?.arrayValue?.compactMap(\.stringValue) ?? [])
+        case "preferences":
+            if let preferences = value["preferences"] {
+                PreferencesSync.apply(preferences)
+            }
         case "session":
             guard let id = value["sessionId"]?.stringValue else { return }
             let status = Self.botStatus(value["status"]?.stringValue)
@@ -2390,6 +2437,7 @@ final class AppModel {
 
     private func startRefreshing() {
         startStatusStream()
+        PreferencesSync.start()
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -2418,7 +2466,9 @@ final class AppModel {
         }
         let fresh = list.filter { !$0.isArchived }
         let pending = loadedBots.filter(\.isPending)
-        bots = .loaded(fresh + pending)
+        withAnimation(Motion.spring) {
+            bots = .loaded(fresh + pending)
+        }
         syncUnread(from: fresh)
         connection = .online(fresh.count)
         if let selected = selectedBot {
@@ -2444,6 +2494,9 @@ final class AppModel {
             Task {
                 await self.refreshQuietly()
             }
+        }
+        store.onSettingsChanged = { [weak self] areas in
+            self?.applySettingsAreas(areas)
         }
         store.onNotify = { [weak self] event in
             guard let self, let current = self.bot(id: bot.id) else { return }

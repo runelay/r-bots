@@ -193,6 +193,11 @@ final class MicrophoneCatalog {
     }
 
     func select(_ microphone: Microphone?) {
+        adopt(microphone)
+        PreferencesSync.push(.object(["microphone": microphone.map { .string($0.name) } ?? .null]))
+    }
+
+    func adopt(_ microphone: Microphone?) {
         Microphones.save(microphone)
         selectedUID = microphone?.uid
         lostName = nil

@@ -181,6 +181,7 @@ enum TranscriptItem: Identifiable {
         case .toolCall:
             guard let call = store.toolCalls[entry.id] else { return false }
             if call.name == "request_secret" { return false }
+            if call.status == .completed, SettingsChangeLine.lineTools.contains(call.name) { return false }
             return !((call.name.hasPrefix("artifact_") || call.name == "canvas_create" || call.name == "canvas_update" || call.name == "send_file") && call.status == .completed)
         case .approval:
             return store.approvals[entry.id] != nil
@@ -188,6 +189,8 @@ enum TranscriptItem: Identifiable {
             return !notice.text.isEmpty
         case .schedule, .update, .route, .handoff, .memory, .voiceCall, .artifact, .codeLine, .file, .pullRequest, .contextHandoff:
             return true
+        case .settingsChange(let id):
+            return store.settingsChanges[id] != nil
         case .codeEdit(let editID):
             return store.codeEdits[editID] != nil
         case .codeBulk(let bulkID):
@@ -745,6 +748,10 @@ struct TranscriptRow: View, Equatable {
         case .approval:
             if let approval = store.approvals[entry.id], approval.isQuestion {
                 QuestionLine(approval: approval)
+            } else if let approval = store.approvals[entry.id], let form = approval.integrationForm {
+                IntegrationFormCard(approval: approval, form: form, bot: store.bot) { optionID in
+                    store.respond(approvalID: approval.id, optionID: optionID)
+                }
             } else if let approval = store.approvals[entry.id], let form = approval.secretForm {
                 SecretFormCard(approval: approval, form: form, bot: store.bot) { optionID in
                     store.respond(approvalID: approval.id, optionID: optionID)
@@ -773,6 +780,10 @@ struct TranscriptRow: View, Equatable {
             ScheduleLine(title: title)
         case .update(let text):
             SystemLine(text: text)
+        case .settingsChange(let id):
+            if let change = store.settingsChanges[id] {
+                SettingsChangeLine(change: change, store: store)
+            }
         case .route(let botID, let confidence):
             RouteCaption(name: model.bot(id: botID)?.name ?? botID, confidence: confidence)
         case .handoff(let from, let to, let note):
