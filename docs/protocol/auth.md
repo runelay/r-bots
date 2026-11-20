@@ -147,7 +147,7 @@ Ganhou `required` e `methods`. O app decide o fluxo só por esta resposta:
 
 ### App
 
-- Fluxo no molde da runelay: boas-vindas e endereço do servidor (só numa instalação nova), conta (dono, entrar ou convite) e "Primeiros passos" em linha do tempo: contas de IA, integrações, permissões do Mac e primeiro bot. Cada passo pode ser pulado e o progresso fica salvo por servidor no Mac.
+- Fluxo no molde da runelay: boas-vindas e endereço do servidor (só numa instalação nova), conta (dono, entrar ou convite) e "Primeiros passos" num trilho de 6 etapas: perfil (nome e foto), primeiro bot, contas de IA, integrações, conectores e uso do Mac. As três últimas são opcionais; cada etapa tem "depois". O progresso fica salvo no Mac por servidor e por conta (`onboarding.v2.<origem>.<userId>`), então toda conta nova vê o setup, inclusive o dono criado num servidor que já tinha sido usado antes do login. Ajustes › Conta › "Configurar de novo" e o menu do app "Configurar de novo…" reabrem. O nome muda por `POST /api/auth/update-user` (bearer).
 - Instalação que já tinha dados e servidor sem dono: abre direto em "Configurar este runelay bots", avisando que os bots e conversas continuam e passam a ser da conta.
 - Sessão no Keychain (`com.runelay.bots.auth`), como na v32. Sair e trocar senha em Ajustes › Conta.
 
