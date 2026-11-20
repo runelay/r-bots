@@ -28,9 +28,9 @@ const infraCommands = new Set([
 const remoteDatabases = new Set(["psql", "mysql", "mongosh", "mongo", "redis-cli", "pg_restore"]);
 const pipeReaders = new Set(["head", "tail", "jq", "wc", "sort", "uniq", "grep", "column", "cut", "cat"]);
 const writeMethods = /^(POST|PUT|PATCH|DELETE)$/i;
-const deployDeny = "Deploy está na lista dura: sem pedido claro seu, passa por você.";
-const prodDeny = "Escrita em produção está na lista dura: sem pedido claro seu, passa por você.";
-const outboundDeny = "Mensagem para fora e dinheiro estão na lista dura: sem pedido claro seu, passam por você.";
+const deployDeny = "Isso coloca algo no ar, então preciso do seu ok.";
+const prodDeny = "Isso mexe em produção, então preciso do seu ok.";
+const outboundDeny = "Isso fala com gente de fora ou mexe com dinheiro, então preciso do seu ok.";
 
 function short(text: string, max = 140) {
   const clean = text.replace(/\s+/g, " ").trim();

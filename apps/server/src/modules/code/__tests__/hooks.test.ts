@@ -389,7 +389,7 @@ describe("beginCall", () => {
         `Rodar SQL no banco remoto sem --read-only: supabase db query --remote=abc update t set a=1?`,
         write.result.callId,
         null,
-        { reason: "Escrita em produção está na lista dura: sem pedido claro seu, passa por você.", timeoutMs: approvalTimeoutMs },
+        { reason: "Isso mexe em produção, então preciso do seu ok.", timeoutMs: approvalTimeoutMs },
       );
       const deploy = await start("full", "Bash", { command: "wrangler deploy" }, hard);
       expect(deploy.requestApproval).toHaveBeenCalledTimes(1);
@@ -414,7 +414,7 @@ describe("beginCall", () => {
         expect(hardList.mock.calls[0]?.[0]).toMatchObject({
           tool: "Bash",
           isSchedule: false,
-          reason: "Deploy está na lista dura: sem pedido claro seu, passa por você.",
+          reason: "Isso coloca algo no ar, então preciso do seu ok.",
         });
         hardList.mockResolvedValue(decision("denied"));
         const routine = makeContext({ permission: "full", isSchedule: true });

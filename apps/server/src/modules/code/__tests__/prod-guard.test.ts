@@ -4,9 +4,9 @@ import { botHomePath, ensureBotHome, shellSupported } from "../services/bot-home
 import { criticalCommand, prodReadCommand } from "../services/prod-guard.service";
 import { worktreesRoot } from "../services/repos.service";
 
-const prod = "Escrita em produção está na lista dura: sem pedido claro seu, passa por você.";
-const deploy = "Deploy está na lista dura: sem pedido claro seu, passa por você.";
-const outbound = "Mensagem para fora e dinheiro estão na lista dura: sem pedido claro seu, passam por você.";
+const prod = "Isso mexe em produção, então preciso do seu ok.";
+const deploy = "Isso coloca algo no ar, então preciso do seu ok.";
+const outbound = "Isso fala com gente de fora ou mexe com dinheiro, então preciso do seu ok.";
 
 describe("criticalCommand", () => {
   test("flags production writes", () => {
