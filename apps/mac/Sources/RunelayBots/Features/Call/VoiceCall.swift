@@ -80,6 +80,8 @@ final class VoiceCall {
     @ObservationIgnored private var reconnectAttempts = 0
     @ObservationIgnored private let turns = TurnTaker()
     @ObservationIgnored private var keyMonitor: Any?
+    @ObservationIgnored private var hangupSpeech: String?
+    @ObservationIgnored private var hangupTask: Task<Void, Never>?
     @ObservationIgnored private let logger = Logger(subsystem: "runelay.bots", category: "voice-call")
 
     private init() {
@@ -447,6 +449,10 @@ final class VoiceCall {
         case .speechCancelled(let id):
             liveSpeech.remove(id)
             speech?.cancel(id)
+            if id == hangupSpeech {
+                hangUp()
+                return
+            }
             if audio?.isPlaying != true, phase == .botSpeaking {
                 phase = .listening
             }
@@ -460,6 +466,16 @@ final class VoiceCall {
             }
         case .approvalAsked, .approvalSettled:
             break
+        case .hangup(let id):
+            CallDebug.log("despedida por voz: encerrando depois de \(id)")
+            hangupSpeech = id
+            turns.reset()
+            hangupTask?.cancel()
+            hangupTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(7))
+                guard !Task.isCancelled, self?.hangupSpeech == id else { return }
+                self?.hangUp()
+            }
         case .ended:
             if phase != .idle {
                 teardown()
@@ -505,7 +521,7 @@ final class VoiceCall {
     }
 
     private func deliver(_ trimmed: String, interrupted: Bool) {
-        guard phase != .idle, !isMuted else { return }
+        guard phase != .idle, !isMuted, hangupSpeech == nil else { return }
         userCaption = trimmed
         committedAt = Date()
         if phase != .botSpeaking {
@@ -595,6 +611,7 @@ final class VoiceCall {
     }
 
     private func bargeIn() {
+        guard hangupSpeech == nil else { return }
         audio?.stopPlayback()
         speech?.cancelAll()
         liveSpeech.removeAll()
@@ -632,6 +649,10 @@ final class VoiceCall {
             return
         }
         audibleSpeech.removeAll()
+        if hangupSpeech != nil {
+            hangUp()
+            return
+        }
         phase = .listening
         syncTurns()
     }
@@ -792,6 +813,9 @@ final class VoiceCall {
     }
 
     private func teardown() {
+        hangupTask?.cancel()
+        hangupTask = nil
+        hangupSpeech = nil
         monitorTask?.cancel()
         monitorTask = nil
         notice = nil

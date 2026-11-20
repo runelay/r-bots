@@ -33,6 +33,7 @@ const minSpeechMs = Number(process.env.VOICE_MIN_SPEECH_MS ?? 250);
 const fillerGapMs = 6_000;
 const maxFillersPerTurn = 3;
 const idleCallMs = 90_000;
+const hangupFallbackMs = 8_000;
 
 export class VoiceError extends Error {
   constructor(
@@ -380,7 +381,7 @@ function fastPrompt(bot: BotDefinition) {
     `Você é a voz de ${bot.name} (${bot.role || "bot do time"}) numa chamada de voz com a pessoa, em português do Brasil.`,
     `Quem faz o trabalho de verdade é ${bot.name}, com ferramentas, memória e aprovações. Você só fala: confirma o que entendeu, preenche a espera e resume o resultado.`,
     "Cada mensagem começa com uma etiqueta:",
-    '- PESSOA: a pessoa acabou de falar. Responda em uma frase curta confirmando o que entendeu e que vai ver ("Beleza, vou olhar seus e-mails do banco."). Nunca responda a pergunta você mesmo, nem diga o que o bot sabe ou consegue fazer: quem responde é o bot, e você resume depois. Se for só um cumprimento, cumprimente de volta em poucas palavras.',
+    '- PESSOA: a pessoa acabou de falar. Responda em uma frase curta confirmando o que entendeu e que vai ver ("Beleza, vou olhar seus e-mails do banco."). Nunca responda a pergunta você mesmo, nem diga o que o bot sabe ou consegue fazer: quem responde é o bot, e você resume depois. Se for só cumprimento, agradecimento ou despedida, responda exatamente (silêncio): o bot responde.',
     '- FERRAMENTA: o bot começou a usar uma ferramenta. Diga algo bem curto sobre a espera ("Tô abrindo o Gmail…"), ou responda exatamente (silêncio) se não acrescentar nada.',
     "- RESULTADO: a resposta escrita do bot. Resuma em no máximo duas frases curtas, faladas, sem markdown, sem links, sem listas, números por extenso quando curtos. Se você já disse tudo, responda (silêncio).",
     "- ERRO: o turno falhou. Diga em uma frase o que houve.",
@@ -421,6 +422,8 @@ export interface VoiceCall {
   startedAt: number;
   spoken: number;
   lastAck: { partId: string; text: string; at: number } | null;
+  language: string;
+  hangup: { speechId: string; timer: NodeJS.Timeout } | null;
 }
 
 const calls = new Map<string, VoiceCall>();
@@ -585,6 +588,7 @@ function recordSpoken(call: VoiceCall, id: string, text: string) {
 }
 
 function onFacts(call: VoiceCall, facts: Fact[]) {
+  if (call.hangup) return;
   for (const fact of facts) {
     const turnId = fact.scope?.turnId ?? String(fact.data.turnId ?? "");
     if (fact.type === "turn.started") {
@@ -662,6 +666,47 @@ function normalized(text: string) {
     .trim();
 }
 
+const courtesy =
+  /^(ok|okay|beleza|blz|certo|show|perfeito|otimo|tchau|tchau tchau|ate mais|ate logo|ate amanha|valeu|obrigad[oa]|muito obrigad[oa]|brigad[oa]|obrigad[oa] viu|bom dia|boa tarde|boa noite|oi|ola|e ai|tudo bem|tudo certo|de nada|por nada)( (ok|beleza|tchau|valeu|obrigad[oa]|entao|viu|mesmo|ai|pela ajuda|por tudo))*$/;
+const hangupClause =
+  /^((ok|okay|beleza|entao|bom|e|ja|agora|tchau|obrigad[oa]|valeu|pode|podemos|voce pode|pode ja|ja pode|pode ir|vou|vamos|por favor|pode sim)\s+)*(desliga|desligar|desligue|encerra|encerrar|encerre|finaliza|finalizar|finalize)( (a|essa|esta|nossa) (chamada|ligacao)| a chamada| a ligacao)?( (ai|agora|ja|entao|por favor|ok|obrigad[oa]|valeu|tchau|ta|beleza))*$/;
+const hangupBlock = /\b(nao|espera|perai|ainda|antes)\b/;
+
+export function isCourtesy(text: string) {
+  const value = normalized(text);
+  return value.length > 0 && value.split(" ").length <= 8 && courtesy.test(value);
+}
+
+export function wantsHangup(text: string) {
+  const clauses = text
+    .split(/[.,!?;:\n]+/)
+    .map(normalized)
+    .filter(Boolean);
+  while (clauses.length > 0 && courtesy.test(clauses.at(-1) ?? "")) clauses.pop();
+  const last = clauses.pop();
+  if (!last || !hangupClause.test(last) || hangupBlock.test(last)) return false;
+  const before = clauses.at(-1);
+  return !before || !hangupBlock.test(before);
+}
+
+const farewells: Record<string, string> = {
+  pt: "Combinado, até mais.",
+  en: "Alright, talk soon.",
+  es: "Listo, hasta luego.",
+};
+
+function hangUp(call: VoiceCall) {
+  if (call.hangup) return { action: "hangup" as const, speechId: call.hangup.speechId };
+  call.fast.cancelAll();
+  const speechId = sayFixed(call, "goodbye", farewells[call.language] ?? farewells.pt);
+  const timer = setTimeout(() => endCall(call), hangupFallbackMs);
+  timer.unref();
+  call.hangup = { speechId, timer };
+  emit(call, { type: "call.hangup", speechId });
+  console.log(`voice ${call.botId} hangup asked by voice`);
+  return { action: "hangup" as const, speechId };
+}
+
 export function classifyAnswer(text: string): "approve" | "deny" | null {
   const value = normalized(text);
   if (no.test(value)) return "deny";
@@ -671,6 +716,7 @@ export function classifyAnswer(text: string): "approve" | "deny" | null {
 
 export async function onUtterance(call: VoiceCall, text: string, interrupted = false) {
   const startedAt = Date.now();
+  if (call.hangup || (!call.ended && wantsHangup(text))) return hangUp(call);
   if (call.pending) {
     call.fast.cancelAll();
     const pending = call.pending;
@@ -697,7 +743,8 @@ export async function onUtterance(call: VoiceCall, text: string, interrupted = f
   call.fast.cancelAll();
   call.lastUtteranceAt = Date.now();
   deliver(call.session, { deliveryId, text, source: "chat", voice: true });
-  speak(call, "ack", text, startedAt);
+  if (isCourtesy(text)) call.lastAck = null;
+  else speak(call, "ack", text, startedAt);
   return { action: "message" as const, deliveryId, sessionId: call.session.meta.sessionId, continuation: false };
 }
 
@@ -713,6 +760,7 @@ export function endCall(call: VoiceCall) {
   if (call.ended) return;
   call.ended = true;
   if (call.idleTimer) clearTimeout(call.idleTimer);
+  if (call.hangup) clearTimeout(call.hangup.timer);
   call.unsubscribe();
   call.fast.close();
   const durationSecs = Math.max(1, Math.round((Date.now() - call.startedAt) / 1000));
@@ -760,6 +808,8 @@ export async function startCall(bot: BotDefinition) {
     startedAt: Date.now(),
     spoken: 0,
     lastAck: null,
+    language: voiceOf(bot).language,
+    hangup: null,
   };
   call.unsubscribe = session.log.subscribe((line) => {
     try {

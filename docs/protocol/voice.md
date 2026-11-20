@@ -1,5 +1,20 @@
 # Voz
 
+## v45 (20/11): desligar por voz, sem resposta dupla, fuso da pessoa
+
+### Desligar por voz
+`POST …/utterance` checa o pedido de desligar antes de tudo (inclusive antes de uma aprovação aberta, porque "pode desligar" casaria com "pode"). Vale só quando a última frase, tirando cortesias (`obrigado`, `tchau`, `valeu`…), é o pedido em si: `pode desligar`, `desliga (aí)`, `encerra a ligação`, `tchau, pode encerrar`, `vou desligar então`. Não vale com `não`/`espera`/`ainda`/`antes` nessa frase ou na anterior, nem com outro objeto (`desligar o servidor`).
+- Resposta `{"ok":true,"action":"hangup","speechId":"speech_…"}`. A fala **não** vai para o bot: nenhum turno roda.
+- Stream: `speech.started {kind:"goodbye"}` + `speech.delta` + `speech.done` com uma despedida fixa ("Combinado, até mais." / "Alright, talk soon." / "Listo, hasta luego."), gravada na conversa como linha falada, e logo depois `call.hangup {speechId}`.
+- O app espera essa fala tocar (playback ocioso, ou `speech.cancelled` dela) e encerra como o botão vermelho (`DELETE` + mesma limpeza de áudio); no máximo 7 s. O servidor encerra sozinho 8 s depois (`call.ended`) se o app não fizer.
+- Depois do `call.hangup`, outra fala devolve o mesmo `action:"hangup"` e os fatos do turno em curso não falam mais nada.
+
+### Agradecimento e despedida sem ack
+Uma fala que é só cortesia (`ok, obrigado`, `valeu, tchau`, `bom dia`…) vai para o bot sem ack da camada rápida: quem responde é só o bot. Antes, a camada rápida respondia ("Beleza, até mais.") e o turno também ("Por nada…"), duas falas para uma. O prompt da camada rápida também manda `(silêncio)` nesses casos.
+
+### Fuso da pessoa
+Todo turno de bot recebe no system prompt a seção "Data e hora": agora, hoje e amanhã no fuso da pessoa, com o deslocamento para ISO. O fuso vem do header `X-Timezone` (IANA, ex.: `America/Sao_Paulo`) que o app manda em toda requisição autenticada; fica no setting `user.timezone`. Padrão `America/Sao_Paulo`. As ferramentas de agenda usam `America/Sao_Paulo` fixo (horário sem deslocamento vira `-03:00`).
+
 ## v13 (19/11): voice call with ElevenLabs
 
 The app builds the call. The server never exposes ElevenLabs: it only mints single-use tokens (15 min, one connection each) and runs the fast voice layer. The ElevenLabs key lives in `.env.local` and never reaches the app.

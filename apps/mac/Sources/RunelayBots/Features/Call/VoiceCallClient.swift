@@ -99,6 +99,7 @@ enum CallEvent: Sendable {
     case botState(String)
     case approvalAsked(id: String, prompt: String)
     case approvalSettled(id: String)
+    case hangup(speechID: String)
     case ended
 }
 
@@ -232,6 +233,8 @@ struct VoiceCallClient: Sendable {
             return .approvalAsked(id: json["interactionId"]?.stringValue ?? "", prompt: json["prompt"]?.stringValue ?? "")
         case "approval.settled":
             return .approvalSettled(id: json["interactionId"]?.stringValue ?? "")
+        case "call.hangup":
+            return .hangup(speechID: json["speechId"]?.stringValue ?? "")
         case "call.ended":
             return .ended
         default:

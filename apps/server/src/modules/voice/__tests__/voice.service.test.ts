@@ -14,6 +14,7 @@ import {
   endAllCalls,
   endCall,
   findCall,
+  isCourtesy,
   listVoices,
   mintToken,
   onUtterance,
@@ -24,6 +25,7 @@ import {
   type VoiceCall,
   VoiceError,
   voiceEnabled,
+  wantsHangup,
   warmVoiceLayers,
 } from "../services/voice.service";
 
@@ -243,6 +245,101 @@ describe("pure helpers", () => {
   });
 });
 
+describe("hang up by voice", () => {
+  test("wantsHangup accepts a direct request and refuses negations and other objects", () => {
+    for (const text of [
+      "Ok, obrigado. Pode desligar.",
+      "Pode desligar, obrigado!",
+      "desliga",
+      "Desliga aí",
+      "tchau, pode encerrar",
+      "Encerra a ligação.",
+      "pode encerrar a chamada agora",
+      "Beleza, vou desligar então. Tchau!",
+    ])
+      expect([text, wantsHangup(text)]).toEqual([text, true]);
+    for (const text of [
+      "não desliga ainda",
+      "Não. Pode desligar.",
+      "ainda não, espera",
+      "desligar o servidor",
+      "pode desligar o servidor de teste?",
+      "quando eu terminar você desliga",
+      "tchau",
+      "obrigado",
+      "",
+    ])
+      expect([text, wantsHangup(text)]).toEqual([text, false]);
+  });
+
+  test("isCourtesy spots thanks and goodbyes only", () => {
+    expect(isCourtesy("Ok, obrigado.")).toBe(true);
+    expect(isCourtesy("valeu, tchau")).toBe(true);
+    expect(isCourtesy("obrigado, agora olha meus emails")).toBe(false);
+    expect(isCourtesy("...")).toBe(false);
+  });
+
+  test("a spoken goodbye says one farewell, skips the bot turn and ends the call after playback", async () => {
+    jest.useFakeTimers();
+    const { call, query } = await warmCall();
+    emitFacts(call, { type: "turn.started", data: {}, scope: { turnId: "running" } });
+    const events = listen(call);
+    const result = await onUtterance(call, "Ok, obrigado. Pode desligar.");
+    expect(result).toMatchObject({ action: "hangup" });
+    expect(deliver).not.toHaveBeenCalled();
+    expect(query.prompts).toHaveLength(1);
+    expect(events.map((event) => event.type)).toEqual([
+      "speech.started",
+      "speech.delta",
+      "speech.done",
+      "call.hangup",
+    ]);
+    expect(events[0]).toMatchObject({ kind: "goodbye" });
+    expect(events[2]).toMatchObject({ text: "Combinado, até mais." });
+    expect(events[3]).toMatchObject({ speechId: events[0]?.id });
+    emitFacts(
+      call,
+      { type: "content.completed", data: { phase: "reply", value: "Por nada." }, scope: { turnId: "running" } },
+      { type: "turn.settled", data: { outcome: "completed" }, scope: { turnId: "running" } },
+    );
+    expect(await onUtterance(call, "alô?")).toEqual(result);
+    expect(events.filter((event) => event.type === "speech.done")).toHaveLength(1);
+    expect(call.ended).toBe(false);
+    jest.advanceTimersByTime(8_000);
+    expect(call.ended).toBe(true);
+    expect(events.at(-1)).toMatchObject({ type: "call.ended" });
+    const spoken = (await factsOf(call)).filter((fact) => fact.type === "content.completed");
+    expect(spoken.map((fact) => fact.data.value)).toEqual(["Combinado, até mais.", "Por nada."]);
+  });
+
+  test("goodbye wins over an open approval and follows the voice language", async () => {
+    const { call } = await warmCall(botOf({ voiceId: "abcdefgh12", speed: 1, language: "en" } as BotDefinition["voice"]));
+    const events = listen(call);
+    call.pending = { interactionId: "i1", prompt: "Posso mandar o e-mail?" };
+    expect(await onUtterance(call, "pode desligar")).toMatchObject({ action: "hangup" });
+    expect(events.find((event) => event.type === "speech.done")).toMatchObject({ text: "Alright, talk soon." });
+    endCall(call);
+    expect(call.hangup).not.toBeNull();
+  });
+
+  test("thanks get only the bot reply, with no acknowledgement on top", async () => {
+    const { call, query } = await warmCall();
+    const events = listen(call);
+    expect(await onUtterance(call, "Ok, obrigado.")).toMatchObject({ action: "message", continuation: false });
+    expect(deliver).toHaveBeenCalledTimes(1);
+    emitFacts(
+      call,
+      { type: "turn.started", data: {}, scope: { turnId: "thanks" } },
+      { type: "content.completed", data: { phase: "reply", value: "Por nada." }, scope: { turnId: "thanks" } },
+      { type: "turn.settled", data: { outcome: "completed" }, scope: { turnId: "thanks" } },
+    );
+    const done = events.filter((event) => event.type === "speech.done");
+    expect(done).toHaveLength(1);
+    expect(done[0]).toMatchObject({ text: "Por nada." });
+    expect(query.prompts.some((prompt) => prompt.startsWith("PESSOA"))).toBe(false);
+  });
+});
+
 describe("calls", () => {
   test("startCall opens the thread session, warms the fast layer and replaces an older call of the bot", async () => {
     const bot = botOf(undefined, "Analista");
@@ -328,7 +425,7 @@ describe("calls", () => {
     const { call, query } = await warmCall();
     const events = listen(call);
     fast.responder = () => ({ hold: true });
-    await onUtterance(call, "oi");
+    await onUtterance(call, "olha isso");
     await until(() => query.prompts.length === 2, "ack prompt");
     query.delta("Oi");
     query.delta("(");
