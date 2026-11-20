@@ -31,7 +31,7 @@ final class AccessibilityTools {
 
     func requireTrusted() throws {
         guard AXIsProcessTrusted() else {
-            ComputerPermissionsSnapshot.registerOnce(.accessibility)
+            ComputerPermissionsSnapshot.promptMissing(.accessibility)
             throw ToolFailure.missing(.accessibility)
         }
     }

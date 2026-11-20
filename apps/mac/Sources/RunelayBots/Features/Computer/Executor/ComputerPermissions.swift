@@ -75,12 +75,11 @@ struct ComputerPermissionsSnapshot: Equatable, Sendable {
         return AEDeterminePermissionToAutomateTarget(&target, AEEventClass(typeWildCard), AEEventID(typeWildCard), ask)
     }
 
-    nonisolated(unsafe) private static var registered: Set<String> = []
+    nonisolated(unsafe) private static var lastPrompt: [ComputerPermission: Date] = [:]
 
-    static func registerOnce(_ permission: ComputerPermission) {
-        let key = "\(permission)"
-        guard !registered.contains(key) else { return }
-        registered.insert(key)
+    static func promptMissing(_ permission: ComputerPermission) {
+        if let last = lastPrompt[permission], Date().timeIntervalSince(last) < 60 { return }
+        lastPrompt[permission] = Date()
         switch permission {
         case .accessibility:
             let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
@@ -90,6 +89,7 @@ struct ComputerPermissionsSnapshot: Equatable, Sendable {
         case .automation:
             break
         }
+        NSWorkspace.shared.open(permission.settingsURL)
     }
 
     static func request(_ permission: ComputerPermission) async {

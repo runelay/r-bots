@@ -7,7 +7,7 @@ enum ScreenTools {
 
     static func screenshot(display: Int?, region: CGRect?) async throws -> JSONValue {
         guard CGPreflightScreenCaptureAccess() else {
-            ComputerPermissionsSnapshot.registerOnce(.screenRecording)
+            ComputerPermissionsSnapshot.promptMissing(.screenRecording)
             throw ToolFailure.missing(.screenRecording)
         }
         let content: SCShareableContent
@@ -102,7 +102,7 @@ final class ScreenRecorder: NSObject {
 
     func start(display: Int?, window: String?, region: CGRect?, botName: String) async throws -> JSONValue {
         guard CGPreflightScreenCaptureAccess() else {
-            ComputerPermissionsSnapshot.registerOnce(.screenRecording)
+            ComputerPermissionsSnapshot.promptMissing(.screenRecording)
             throw ToolFailure.missing(.screenRecording)
         }
         guard !isRecording else {
