@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { copyFile, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -1134,16 +1134,56 @@ export function fileEventOf(output: unknown): FileEvent | null {
 }
 
 const generatedImage = /(^|\/)generated_images\/[^/]+\/[^/]+\.(png|jpe?g|webp|gif)$/i;
+const generatedImageMention = /[^\s`'"()]*generated_images\/[^/\s`'"()]+\/([^/\s`'"()]+\.(?:png|jpe?g|webp|gif))/gi;
+
+function generatedImageName(source: string) {
+  const stem = basename(source, extname(source))
+    .replace(/^exec-/, "")
+    .slice(0, 8);
+  return `imagem-${stem}${extname(source).toLowerCase()}`;
+}
+
+export function generatedImageTarget(botId: string, source: string) {
+  return join(outboxDir(botId), "imagens", generatedImageName(source));
+}
+
+export function rewriteGeneratedPaths(botId: string, text: string) {
+  return text.replace(generatedImageMention, (_match, file: string) => generatedImageTarget(botId, file));
+}
 
 export async function importGeneratedImage(botId: string, source: string) {
   if (!generatedImage.test(source)) throw new Error("Imagem gerada fora da pasta do Codex.");
-  const dir = join(outboxDir(botId), "imagens");
-  await mkdir(dir, { recursive: true });
-  const stem = basename(source, extname(source)).replace(/^exec-/, "").slice(0, 8);
-  const name = `imagem-${stem}${extname(source).toLowerCase()}`;
-  const target = join(dir, name);
+  const target = generatedImageTarget(botId, source);
+  await mkdir(join(outboxDir(botId), "imagens"), { recursive: true });
   await copyFile(source, target);
-  return publicUpload(botId, await importBotFile(botId, target, name));
+  return publicUpload(botId, await importBotFile(botId, target, basename(target)));
+}
+
+async function freePath(dir: string, name: string) {
+  const ext = extname(name);
+  const stem = basename(name, ext);
+  for (let index = 1; ; index++) {
+    const candidate = join(dir, index === 1 ? name : `${stem}-${index}${ext}`);
+    if (!(await Bun.file(candidate).exists())) return candidate;
+  }
+}
+
+export async function shareUpload(fromBotId: string, uploadId: string, toBotId: string, readableDir: string | null) {
+  const meta = await readUpload(fromBotId, uploadId);
+  if (!meta) throw new Error("Anexo não encontrado.");
+  const dir = join(outboxDir(toBotId), "recebidos");
+  await mkdir(dir, { recursive: true });
+  const path = await freePath(dir, meta.name);
+  await copyFile(uploadPath(fromBotId, meta), path);
+  const copied = await importBotFile(toBotId, path, basename(path));
+  let readable: string | null = null;
+  if (readableDir) {
+    await mkdir(readableDir, { recursive: true });
+    readable = await freePath(readableDir, basename(path));
+    await copyFile(path, readable);
+    await chmod(readable, 0o644);
+  }
+  return { path, readable, upload: publicUpload(toBotId, copied) };
 }
 
 export function uploadTools(botId: string): BotTool[] {

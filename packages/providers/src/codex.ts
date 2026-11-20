@@ -20,7 +20,7 @@ const disabledFeatures = [
 ];
 
 const imageGuide =
-  "## Imagens\nVocê gera e edita imagens com a ferramenta nativa `image_gen`, sem chave de API e sem shell. Cada imagem gerada entra sozinha na conversa como anexo quando a sua resposta termina e fica salva na pasta de saída do bot (`outbox/imagens`). Não use `send_file` para ela, não cole o caminho e não diga que não consegue gerar imagens.";
+  "## Imagens\nVocê gera e edita imagens com a ferramenta nativa `image_gen`, sem chave de API e sem shell. Quando a sua resposta termina, o servidor copia cada imagem gerada para a pasta de saída do bot como `outbox/imagens/imagem-<8 primeiros caracteres do arquivo>.png` e anexa na conversa. Se outro bot pediu, ele recebe os arquivos junto com a sua resposta. O caminho em `generated_images` que a ferramenta devolve é temporário e ninguém mais consegue abrir: nunca cite esse caminho nem `$CODEX_HOME`. Fale das imagens pelo nome do anexo (`imagem-xxxxxxxx.png`). Não use `send_file` para elas e não diga que não consegue gerar imagens.";
 
 const imageFile = /\.(png|jpe?g|webp|gif)$/i;
 

@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import {
   byBot,
@@ -16,10 +19,12 @@ import {
 import { type FakeTurn, fakeProviders } from "../../../../test/helpers";
 import * as decisions from "../../approvals/services/decisions.service";
 import { getBot, setArchived } from "../../bots/services/bots.service";
+import { botHomePath } from "../../code/services/bot-home.service";
 import * as conversations from "../../conversations/services/conversations.service";
 import { getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import * as threads from "../../conversations/services/threads.service";
 import { createGroup, setGroupArchived } from "../../groups/services/groups.service";
+import { outboxDir } from "../../uploads/services/send-file.service";
 import { answer, cancel, conversationStatus } from "../services/engine.service";
 
 beforeEach(async () => {
@@ -270,6 +275,136 @@ describe("delegation", () => {
     cancel(busy);
     await idle(bossSession);
     expect(outcome.error).toBe(`${worker.name} parou antes de terminar.`);
+  });
+});
+
+describe("delegation threads and files", () => {
+  const pixel = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+
+  function generating(path: string) {
+    return (turn: FakeTurn) => {
+      turn.emit({ type: "session", id: "codex-thread" });
+      turn.emit({ type: "image", path });
+      turn.emit({ type: "text", part: "i", text: `Pronto: ${path}` });
+      turn.emit({ type: "done", ok: true });
+    };
+  }
+
+  test("reuses the target conversation for follow-ups from the same origin conversation", async () => {
+    const boss = await makeBot();
+    const worker = await makeBot();
+    const session = await newSession(boss.id);
+    const first: { reply?: string; error?: string } = {};
+    const second: { reply?: string; error?: string } = {};
+    const worked = (turn: FakeTurn) => {
+      turn.emit({ type: "session", id: "worker-session" });
+      turn.emit({ type: "text", part: "w", text: "feito" });
+      turn.emit({ type: "done", ok: true });
+    };
+    fakeProviders.next(byBot({ [boss.id]: delegating(worker.id, "primeiro", first), [worker.id]: worked }));
+    await run(session);
+    fakeProviders.next(byBot({ [boss.id]: delegating(worker.name, "segundo", second), [worker.id]: worked }));
+    await run(session);
+    expect(first.reply).toBe("feito");
+    expect(second.reply).toBe("feito");
+    const ids = (await updates(session)).map((item) => item.sessionId);
+    expect(new Set(ids).size).toBe(1);
+    const child = getStoredSession(ids[0] as string) as StoredSession;
+    expect(child.meta.conversation?.delegatedBy).toMatchObject({ botId: boss.id, sessionId: session.meta.sessionId });
+    expect(child.meta.conversation?.unread).toBe(0);
+    const workerTurns = fakeProviders.turns.filter((turn) => turn.request.workKey.startsWith(`${worker.id}/`));
+    expect(workerTurns).toHaveLength(2);
+    expect(workerTurns[1]?.request.resume).toBe("worker-session");
+
+    const other = await newSession(boss.id);
+    const third: { reply?: string; error?: string } = {};
+    fakeProviders.next(byBot({ [boss.id]: delegating(worker.id, "outro", third), [worker.id]: worked }));
+    await run(other);
+    expect((await updates(other))[0]?.sessionId).not.toBe(ids[0]);
+  });
+
+  test("rejects a delegation to itself", async () => {
+    const boss = await makeBot();
+    const session = await newSession(boss.id);
+    const outcome: { reply?: string; error?: string } = {};
+    fakeProviders.next(byBot({ [boss.id]: delegating(boss.id, "faz", outcome) }));
+    await run(session);
+    expect(outcome.error).toBe("Esse bot é você. Faça você mesmo, sem delegar.");
+  });
+
+  test("copies the files a delegated turn produced up the chain to the requester", async () => {
+    const engineer = await makeBot({ name: "Eng Arq" });
+    const boss = await makeBot({ name: "Chefe Arq" });
+    const artist = await makeBot({ name: "Artista Arq" });
+    const home = mkdtempSync(join(tmpdir(), "codex-deleg-"));
+    const dir = join(home, "generated_images", "th-9");
+    mkdirSync(dir, { recursive: true });
+    const image = join(dir, "exec-a1b2c3d4-0000.png");
+    writeFileSync(image, pixel);
+    const session = await newSession(engineer.id);
+    const outcome: { reply?: string; error?: string } = {};
+    const relayed: { reply?: string; error?: string } = {};
+    fakeProviders.next(
+      byBot({
+        [engineer.id]: delegating(boss.id, "pede a imagem", outcome),
+        [boss.id]: delegating(artist.id, "gera a imagem", relayed),
+        [artist.id]: generating(image),
+      }),
+    );
+    await run(session);
+    const bossCopy = join(outboxDir(boss.id), "recebidos", "imagem-a1b2c3d4.png");
+    expect(relayed.reply).toContain(`Pronto: ${join(outboxDir(artist.id), "imagens", "imagem-a1b2c3d4.png")}`);
+    expect(relayed.reply).not.toContain("generated_images");
+    expect(relayed.reply).toContain(`Arquivos que ${artist.name} entregou, já copiados para você:`);
+    expect(relayed.reply).toContain(`pasta de saída: ${bossCopy}`);
+    expect(existsSync(bossCopy)).toBe(true);
+    const engineerCopy = join(outboxDir(engineer.id), "recebidos", "imagem-a1b2c3d4.png");
+    const readable = join(botHomePath(engineer.id), "recebidos", "imagem-a1b2c3d4.png");
+    expect(outcome.reply).toContain(`Arquivos que ${boss.name} entregou, já copiados para você:`);
+    expect(outcome.reply).toContain(`pasta de saída: ${engineerCopy}`);
+    expect(outcome.reply).toContain(`para ler e copiar: ${readable}`);
+    expect(outcome.reply).toMatch(/imagem-a1b2c3d4\.png \(imagem, anexo [0-9A-Z]{26}\)/);
+    expect(readFileSync(readable).equals(pixel)).toBe(true);
+    expect((await updates(session)).at(-1)).toMatchObject({ status: "completed", files: 1 });
+    rmSync(home, { recursive: true, force: true });
+  });
+});
+
+describe("delegated files that cannot be copied", () => {
+  test("reports the failure and renames a repeated file", async () => {
+    const boss = await makeBot();
+    const artist = await makeBot();
+    const home = mkdtempSync(join(tmpdir(), "codex-again-"));
+    const dir = join(home, "generated_images", "th-2");
+    mkdirSync(dir, { recursive: true });
+    const image = join(dir, "exec-feedbeef.png");
+    writeFileSync(image, "png");
+    const session = await newSession(boss.id);
+    const replies: string[] = [];
+    const asking = async (turn: FakeTurn) => {
+      replies.push(await contextOf(turn).delegate(artist.id, "gera", "call_f"));
+      turn.emit({ type: "done", ok: true });
+    };
+    const drawing = (turn: FakeTurn) => {
+      const context = contextOf(turn);
+      context.log.emit({
+        type: "file.sent",
+        data: { attachment: { uploadId: "01ZZZZZZZZZZZZZZZZZZZZZZZZ", name: "sumiu.pdf" } },
+        scope: { turnId: context.turnId },
+      });
+      turn.emit({ type: "image", path: image });
+      turn.emit({ type: "done", ok: true });
+    };
+    fakeProviders.next(byBot({ [boss.id]: asking, [artist.id]: drawing }));
+    await run(session);
+    await run(session);
+    expect(replies[0]).toContain(`${artist.name} terminou sem responder.`);
+    expect(replies[0]).toContain("- sumiu.pdf: não consegui copiar (Anexo não encontrado.)");
+    expect(replies[1]).toContain(join(outboxDir(boss.id), "recebidos", "imagem-feedbeef-2.png"));
+    rmSync(home, { recursive: true, force: true });
   });
 });
 

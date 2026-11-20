@@ -129,6 +129,15 @@ export function conversationSessions(botId: string, archived = false) {
   );
 }
 
+export function delegationConversation(botId: string, fromBotId: string, originSessionId: string) {
+  return conversationSessions(botId)
+    .filter((session) => {
+      const from = session.meta.conversation?.delegatedBy;
+      return from?.botId === fromBotId && from.sessionId === originSessionId;
+    })
+    .sort((a, b) => b.meta.startedAt.localeCompare(a.meta.startedAt))[0];
+}
+
 export async function listConversations(botId: string, archived = false) {
   const thread = archived ? null : await peekThread(botId);
   const main = thread ? getStoredSession(thread.sessionId) : undefined;

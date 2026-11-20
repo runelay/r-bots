@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { join } from "node:path";
 import type { LiveMessage, LivePush, Provider, ProviderEvent, Usage } from "@runelay-bots/protocol";
 import { emptyUsage } from "@runelay-bots/protocol";
 import { nowNote, userTimezone } from "../../../shared/clock";
@@ -43,13 +44,14 @@ import {
   isActive,
   listBots,
   memoryOf,
+  resolveBotRef,
   suggestedFallback,
 } from "../../bots/services/bots.service";
 import { startLiveView } from "../../browser/services/browser.service";
 import { canvasEditNote, canvasGuide } from "../../canvas/services/canvas.service";
 import { touchWorktree } from "../../code/repositories/code.repository";
 import { adoptWorkspaceAt, mentionedRepo, openTaskWorkspace } from "../../code/services/actions.service";
-import { ensureBotHome, shellSupported } from "../../code/services/bot-home.service";
+import { botHomePath, ensureBotHome, shellSupported } from "../../code/services/bot-home.service";
 import { codeModeSupported } from "../../code/services/code-tools.service";
 import { devServersOf } from "../../code/services/dev-server.service";
 import { homeHooks, nativeHooks, type WorkspaceRouter } from "../../code/services/hooks.service";
@@ -66,7 +68,11 @@ import {
 } from "../../code/services/workspace.service";
 import { watchComputerEvents } from "../../computer/services/computer.service";
 import { runelayEnabled } from "../../connectors/services/runelay.service";
-import { autoTitle, createConversation } from "../../conversations/services/conversations.service";
+import {
+  autoTitle,
+  createConversation,
+  delegationConversation,
+} from "../../conversations/services/conversations.service";
 import { handoffBlock, refreshSummary } from "../../conversations/services/handoff.service";
 import type { EventLog, Fact, StoredSession } from "../../conversations/services/sessions.service";
 import { titleFrom } from "../../conversations/services/sessions.service";
@@ -89,8 +95,11 @@ import {
   attachmentsTitle,
   importGeneratedImage,
   type PreparedImage,
+  type PublicUpload,
   prepareAttachments,
   publicUpload,
+  rewriteGeneratedPaths,
+  shareUpload,
   type UploadMeta,
   uploadGuide,
 } from "../../uploads/services/uploads.service";
@@ -100,10 +109,16 @@ import { type ApprovalDetails, toolsFor } from "./bot-tools.service";
 import { type ApprovalResult, newToken, registerContext, type ToolContext } from "./mcp-gateway.service";
 import { acquireTurnSlot, maxTurns, type SlotPriority, type TurnSlot } from "./turn-slots.service";
 
+export interface DelegatedFile {
+  botId: string;
+  attachment: PublicUpload;
+}
+
 export interface DelegationResult {
   outcome: "completed" | "failed" | "cancelled";
   reply: string;
   error?: string;
+  files?: DelegatedFile[];
 }
 
 export interface DelegationHooks {
@@ -218,6 +233,7 @@ interface Turn {
   provider?: Provider;
   slot?: TurnSlot;
   priority: SlotPriority;
+  received?: DelegatedFile[];
 }
 
 interface Steer {
@@ -341,7 +357,8 @@ function systemPromptFor(
     parts.push(
       "",
       "## Delegação",
-      "Use a ferramenta `delegate` do servidor MCP `bots` para passar tarefas ao time. O pedido entra na conversa do bot, ele trabalha lá e a resposta final volta para você. O bot só vê a mensagem que você mandar, então mande o pedido completo.",
+      "Use a ferramenta `delegate` do servidor MCP `bots` para passar tarefas ao time. O pedido entra na conversa do bot, ele trabalha lá e a resposta final volta para você, com os arquivos que ele gerar já copiados para você. O bot só vê a mensagem que você mandar, então mande o pedido completo.",
+      "Delegue direto ao bot que faz o trabalho, mesmo um bot criado agora (passe o id ou o nome). Não peça a um bot para repassar o pedido a outro. Pedidos seguintes desta conversa ao mesmo bot continuam na mesma conversa dele, então ele lembra do que já fez.",
       ...delegates.map((target) => `- \`${target.id}\`: ${target.name}, ${target.role}`),
     );
   }
@@ -1239,20 +1256,69 @@ function withdrawDelivery(session: StoredSession, hooks: DelegationHooks, reason
   void turnQueue?.withdraw(hooks);
 }
 
+const kindLabel: Record<string, string> = { image: "imagem", video: "vídeo", audio: "áudio", file: "arquivo" };
+
+async function receiveFiles(parent: ProviderRun, files: DelegatedFile[]) {
+  const readableDir = parent.account.runner === "vps" ? join(botHomePath(parent.bot.id), "recebidos") : null;
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const file of files) {
+    const key = `${file.botId}/${file.attachment.uploadId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    try {
+      const shared = await shareUpload(file.botId, file.attachment.uploadId, parent.bot.id, readableDir);
+      parent.turn.received = [...(parent.turn.received ?? []), { botId: parent.bot.id, attachment: shared.upload }];
+      const where = [
+        `pasta de saída: ${shared.path}`,
+        ...(shared.readable ? [`para ler e copiar: ${shared.readable}`] : []),
+      ];
+      lines.push(
+        `- ${shared.upload.name} (${kindLabel[shared.upload.kind] ?? "arquivo"}, anexo ${shared.upload.uploadId}) · ${where.join(" · ")}`,
+      );
+    } catch (error) {
+      lines.push(
+        `- ${file.attachment.name}: não consegui copiar (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+  }
+  return lines;
+}
+
+function filesBlock(targetName: string, lines: string[]) {
+  return [
+    `Arquivos que ${targetName} entregou, já copiados para você:`,
+    ...lines,
+    "Leia com `attachment_read` pelo id do anexo, mostre na conversa com `send_file` pelo caminho da pasta de saída (sai sem aprovação) e, para usar num repositório, copie do caminho de leitura.",
+  ].join("\n");
+}
+
+async function delegationSession(parent: ProviderRun, target: BotDefinition, message: string, callId: string) {
+  const delegatedBy = { botId: parent.bot.id, name: parent.bot.name, sessionId: parent.session.meta.sessionId, callId };
+  const existing = delegationConversation(target.id, parent.bot.id, parent.session.meta.sessionId);
+  if (!existing)
+    return createConversation(target.id, {
+      title: autoTitle(`${parent.bot.name} pediu: ${message}`),
+      permission: effectivePermission(parent.session.meta.permission, parent.bot.permission),
+      delegatedBy,
+    });
+  existing.meta.permission = effectivePermission(parent.session.meta.permission, parent.bot.permission);
+  if (existing.meta.conversation) existing.meta.conversation.delegatedBy = delegatedBy;
+  await existing.save();
+  return existing;
+}
+
 async function delegateTo(parent: ProviderRun, targetId: string, message: string, callId: string) {
-  const target = getBot(targetId);
-  if (!target || !isActive(target)) throw new Error(`O bot ${targetId} não está disponível.`);
+  const target = resolveBotRef(targetId);
+  if (!target) throw new Error(`O bot ${targetId} não está disponível.`);
+  if (target.id === parent.bot.id) throw new Error("Esse bot é você. Faça você mesmo, sem delegar.");
   if (waitsOn(target.id, parent.bot.id))
     throw new Error(`${target.name} está esperando uma resposta sua agora. Resolva você mesmo, sem delegar de volta.`);
   const engine = engineOf(target);
   const account = await findAccount(engine.account);
   if (account?.status !== "ready") throw new Error(unavailableMessage(engine.account, account));
   const deliveryId = randomUUID();
-  const session = await createConversation(target.id, {
-    title: autoTitle(`${parent.bot.name} pediu: ${message}`),
-    permission: effectivePermission(parent.session.meta.permission, parent.bot.permission),
-    delegatedBy: { botId: parent.bot.id, name: parent.bot.name, sessionId: parent.session.meta.sessionId, callId },
-  });
+  const session = await delegationSession(parent, target, message, callId);
   const scope = { runId: parent.runIdRef(), turnId: parent.turn.turnId };
   let turnId: string | null = null;
   const update = (status: string, extra: Record<string, unknown> = {}) =>
@@ -1307,9 +1373,10 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
       });
     });
     if (result.outcome === "completed") {
-      const reply = result.reply.trim() || `${target.name} terminou sem responder.`;
-      update("completed", { summary: clip(reply, 280) });
-      return reply;
+      const reply = rewriteGeneratedPaths(target.id, result.reply.trim()) || `${target.name} terminou sem responder.`;
+      const files = result.files?.length ? await receiveFiles(parent, result.files) : [];
+      update("completed", { summary: clip(reply, 280), ...(files.length ? { files: files.length } : {}) });
+      return files.length ? `${reply}\n\n${filesBlock(target.name, files)}` : reply;
     }
     if (result.outcome === "failed") {
       update("failed", { error: result.error ?? "Falha no bot delegado." });
@@ -1321,6 +1388,17 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
     detach();
     parent.turn.slot?.resume();
     waits.splice(waits.indexOf(edge), 1);
+  }
+}
+
+function collectSent(line: string, turnId: string, botId: string, sent: DelegatedFile[]) {
+  if (!line.includes('"file.sent"')) return;
+  const parsed = JSON.parse(line) as {
+    facts?: Array<{ type?: string; data?: { attachment?: PublicUpload; botId?: string }; scope?: { turnId?: string } }>;
+  };
+  for (const fact of parsed.facts ?? []) {
+    if (fact.type !== "file.sent" || fact.scope?.turnId !== turnId || !fact.data?.attachment) continue;
+    sent.push({ botId: fact.data.botId ?? botId, attachment: fact.data.attachment });
   }
 }
 
@@ -1360,6 +1438,8 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
   const isSchedule = delivery.source === "schedule";
   const now = () => new Date().toISOString();
   let stopLive: () => void = () => undefined;
+  const sent: DelegatedFile[] = [];
+  const stopSent = delivery.delegation ? log.subscribe((line) => collectSent(line, turnId, meta.botId, sent)) : null;
 
   if (showDelivery)
     session.log.emit({
@@ -2013,7 +2093,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
             at: now(),
             ...(group ? { botId: bot.id } : {}),
           },
-          quiet,
+          quiet || Boolean(from),
         );
       }
       if (isSchedule && replyText) {
@@ -2067,7 +2147,14 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     turn.slot?.release();
     stopLive();
     runtime.turn = null;
-    delivery.delegation?.finish(result);
+    stopSent?.();
+    const files = [...(turn.received ?? []), ...sent].filter(
+      (file, index, all) =>
+        all.findIndex(
+          (other) => other.attachment.name === file.attachment.name && other.attachment.size === file.attachment.size,
+        ) === index,
+    );
+    delivery.delegation?.finish(files.length ? { ...result, files } : result);
     await session.save();
   }
 }

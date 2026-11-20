@@ -930,6 +930,12 @@ describe("delegate and handoff", () => {
       delegation: { botId: mate.id },
     });
     expect(harness.settled[0]).toBe(`delegate(${mate.id}: faz o relatório) → relatório`);
+    const late = await makeBot({ name: "Bot Tardio Ção" });
+    await harness.call("delegate", { bot: "bot tardio cao", message: "gera" });
+    expect(harness.settled[1]).toBe(`delegate(${late.id}: gera) → relatório`);
+    expect((await factsOfType(session, "call.requested"))[1].data).toMatchObject({
+      capability: { name: late.id, label: `Delegar para ${late.name}` },
+    });
     const failing = await open({
       delegates: [mate],
       origin: "Bia",

@@ -133,6 +133,21 @@ export function isActive(bot: BotDefinition | undefined): bot is BotDefinition {
   return Boolean(bot && !bot.archivedAt && !bot.deletedAt);
 }
 
+function refKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase();
+}
+
+export function resolveBotRef(ref: string) {
+  const direct = bots.get(ref.trim());
+  if (isActive(direct)) return direct;
+  const key = refKey(ref);
+  return [...bots.values()].find((bot) => isActive(bot) && (refKey(bot.id) === key || refKey(bot.name) === key));
+}
+
 export interface BotDefinition {
   engine?: BotEngine;
   decisions?: DecisionSettings;

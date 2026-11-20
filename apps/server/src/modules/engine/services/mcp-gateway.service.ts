@@ -23,6 +23,7 @@ import {
   createBot,
   getBot,
   listBots,
+  resolveBotRef,
   updateBot,
 } from "../../bots/services/bots.service";
 import { type ApprovalTarget, elementText, readBrowserState } from "../../browser/services/browser.service";
@@ -341,10 +342,11 @@ async function runTool(context: ToolContext, tool: BotTool, input: Record<string
   }
 }
 
-async function runDelegate(context: ToolContext, target: string, message: string) {
+async function runDelegate(context: ToolContext, ref: string, message: string) {
   const callId = newCallId();
   const log = context.log;
-  const bot = context.delegates.find((item) => item.id === target);
+  const bot = context.delegates.find((item) => item.id === ref) ?? resolveBotRef(ref);
+  const target = bot?.id ?? ref;
   context.onCallStart();
   try {
     log.emit({
@@ -1666,13 +1668,12 @@ export function buildServer(context: ToolContext) {
     );
   }
   if (context.delegates.length > 0) {
-    const ids = context.delegates.map((item) => item.id) as [string, ...string[]];
     const roster = context.delegates.map((item) => `${item.id} (${item.name}, ${item.role})`).join("; ");
     server.registerTool(
       "delegate",
       {
-        description: `Passa uma tarefa para outro bot do time e devolve o relatório dele. O bot só vê a mensagem que você mandar, então mande o pedido completo. Bots: ${roster}.`,
-        inputSchema: { bot: z.enum(ids), message: z.string().min(1) },
+        description: `Passa uma tarefa direto para outro bot do time e devolve o relatório dele, com os arquivos que ele gerar já copiados para você. O bot só vê a mensagem que você mandar, então mande o pedido completo. Bots: ${roster}. Um bot criado depois também vale: passe o id ou o nome dele.`,
+        inputSchema: { bot: z.string().min(1).max(120), message: z.string().min(1) },
       },
       (args: Record<string, unknown>) => runDelegate(context, String(args.bot), String(args.message)),
     );
