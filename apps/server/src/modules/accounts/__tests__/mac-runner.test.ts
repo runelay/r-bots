@@ -12,6 +12,7 @@ import {
   macAccounts,
   macComputerCall,
   macComputerHealth,
+  macDeviceCall,
   macDeviceLastSeen,
   macReadFile,
   macRunnerAuthorized,
@@ -457,6 +458,26 @@ describe("requests", () => {
     const bare = macComputerCall("click", {});
     runner.answer(3, {});
     expect(await bare).toEqual({ status: 500, body: {} });
+  });
+
+  test("calls simulator operations on a Mac that supports them", async () => {
+    const runner = await connect();
+    await expect(macDeviceCall("sim.list", {})).rejects.toThrow("ainda não controla simuladores");
+    runner.say({ type: "hello", capabilities: ["simulators"] });
+    for (let i = 0; i < 100 && !macRunnerSupports("simulators"); i++) await Bun.sleep(2);
+    const list = macDeviceCall("sim.list", { a: 1 });
+    expect(runner.sent[0]).toMatchObject({ op: "sim.list", body: { a: 1 } } as never);
+    runner.answer(0, { ok: true, result: { devices: [] } });
+    expect(await list).toEqual({ devices: [] });
+    const bare = macDeviceCall("sim.boot", {});
+    runner.answer(1, {});
+    expect(await bare).toEqual({});
+    const failed = macDeviceCall("sim.boot", {});
+    runner.answer(2, { ok: false });
+    await expect(failed).rejects.toThrow("O Mac não conseguiu.");
+    const reason = macDeviceCall("sim.boot", {});
+    runner.answer(3, { ok: false, error: "sem xcode" });
+    await expect(reason).rejects.toThrow("sem xcode");
   });
 
   test("reads a file, transcribes and reads usage", async () => {

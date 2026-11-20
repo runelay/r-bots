@@ -8,6 +8,7 @@ import * as desktop from "../modules/browser/services/desktop.service";
 import * as live from "../modules/browser/services/live-view.service";
 import * as codeRoutes from "../modules/code/routes/code.routes";
 import * as botCode from "../modules/code/services/bot-code.service";
+import * as tunnel from "../modules/simulators/services/tunnel.service";
 import * as status from "../modules/status/routes/status.routes";
 import type { Res } from "../shared/http";
 import type { Socket } from "../shared/ws";
@@ -180,6 +181,22 @@ describe("websocket upgrades", () => {
     const broken = await fetch(`${server.url}/runner/connect`, { headers: { upgrade: "websocket" } });
     expect(broken.status).toBe(400);
     expect(await broken.text()).toBe("Upgrade failed");
+  });
+
+  test("opens the Metro tunnel only for an authorized device and a known port", async () => {
+    const refused = await fetch(`${server.url}/runner/tunnel?port=1`, {
+      headers: { upgrade: "websocket", connection: "Upgrade" },
+    });
+    expect(refused.status).toBe(401);
+    const events = recordSocket(tunnel.tunnelSocket);
+    const data = { kind: "tunnel", port: 5310, deviceKey: "d1" };
+    track(spyOn(tunnel, "tunnelUpgradeData").mockReturnValue({ status: 200, data }));
+    const pipe = connect("/runner/tunnel?port=5310");
+    await pipe.opened;
+    await until(() => events.open.length === 1);
+    expect(events.open[0].data).toEqual(data);
+    pipe.ws.close(1000);
+    await until(() => events.close.length === 1);
   });
 
   test("relays preview sockets with and without a subprotocol", async () => {

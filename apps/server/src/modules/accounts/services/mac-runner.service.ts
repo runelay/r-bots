@@ -380,6 +380,18 @@ function request(op: string, payload: Record<string, unknown>, timeoutMs: number
   });
 }
 
+export async function macDeviceCall(
+  op: string,
+  body: Record<string, unknown>,
+  timeoutMs = 60_000,
+  signal?: AbortSignal,
+) {
+  if (!macRunnerSupports("simulators")) throw new MacRunnerUnavailable("O app do Mac ainda não controla simuladores.");
+  const response = await request(op, { body }, timeoutMs, signal);
+  if (response.ok === false) throw new Error(String(response.error ?? "O Mac não conseguiu."));
+  return (response.result ?? {}) as Record<string, unknown>;
+}
+
 export async function macAccounts(key?: string) {
   const response = await request("accounts", {}, 90_000, undefined, key);
   if (response.ok === false) throw new Error(String(response.error ?? "O Mac não listou as contas."));

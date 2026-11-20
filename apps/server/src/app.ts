@@ -23,8 +23,11 @@ import { handleIntegrations } from "./modules/integrations/routes/integrations.r
 import { handleJobs } from "./modules/jobs/routes/jobs.routes";
 import { handleSections } from "./modules/sections/routes/sections.routes";
 import { handleServers } from "./modules/servers/routes/servers.routes";
+import { handleSimulators } from "./modules/simulators/routes/simulators.routes";
+import { isTunnelUpgrade, tunnelSocket, tunnelUpgradeData } from "./modules/simulators/services/tunnel.service";
 import { handleSkills } from "./modules/skills/routes/skills.routes";
 import { handleHealth, handleMeta, handleStatus, handleStatusStream } from "./modules/status/routes/status.routes";
+import { handleTests } from "./modules/tests/routes/tests.routes";
 import { handleUsageRoute } from "./modules/usage/routes/usage.routes";
 import { handleVaultRoute } from "./modules/vault/routes/vault.routes";
 import { handleVoices } from "./modules/voice/routes/voice.routes";
@@ -55,6 +58,8 @@ async function route(req: Req, res: Res) {
   if (parts[0] === "groups") return handleGroups(req, res, url, method, parts);
   if (parts[0] === "jobs") return handleJobs(req, res, url, method, parts);
   if (parts[0] === "servers") return handleServers(req, res, url, method, parts);
+  if (parts[0] === "tests") return handleTests(req, res, method, parts);
+  if (parts[0] === "simulators") return handleSimulators(req, res, method, parts);
   if (method === "GET" && url.pathname === "/status") return handleStatus(res);
   if (method === "GET" && url.pathname === "/status/stream") return handleStatusStream(req, res);
   if (method === "GET" && url.pathname === "/computer/health") return handleComputerHealth(res);
@@ -89,6 +94,7 @@ const sockets: Record<string, SocketHandler> = {
   live: liveSocket,
   desktop: desktopSocket,
   preview: previewSocket,
+  tunnel: tunnelSocket,
 };
 
 async function upgrade(request: Request, server: Server<SocketData>) {
@@ -102,6 +108,11 @@ async function upgrade(request: Request, server: Server<SocketData>) {
     const data = runnerUpgradeData(req);
     if (!data) return new Response(null, { status: 401 });
     return accept(data);
+  }
+  if (isTunnelUpgrade(url.pathname)) {
+    const tunnel = tunnelUpgradeData(req, url);
+    if (tunnel.status !== 200) return new Response(null, { status: tunnel.status });
+    return accept(tunnel.data);
   }
   const preview = previewUpgradeTarget(req);
   if (preview) {

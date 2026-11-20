@@ -4,6 +4,8 @@ import { listServers, type PublicDevServer, serverLogs } from "../../code/servic
 import { beginCall, endCall } from "../../code/services/hooks.service";
 import type { Gate } from "../../code/services/policy.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
+import { registerSimulatorTools } from "../../simulators/services/simulator-tools.service";
+import { registerTestTools } from "../../tests/services/test-tools.service";
 import { listProjects } from "./projects.service";
 import { listProfiles, requireServer, restart, startProjectServer, stopServer } from "./servers.service";
 
@@ -32,6 +34,8 @@ function messageOf(error: unknown) {
 }
 
 export function registerServerTools(server: McpServer, context: ToolContext) {
+  registerSimulatorTools(server, context);
+  registerTestTools(server, context);
   server.registerTool(
     "server_list",
     {
