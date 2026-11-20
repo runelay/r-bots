@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import {
+  bodyOf,
   hold,
   idle,
   lastRequest,
@@ -37,6 +38,7 @@ import {
   onStatus,
   type StatusEvent,
   sessionStatuses,
+  turnSummary,
 } from "../services/engine.service";
 
 let quiet: ReturnType<typeof quietEngine>;
@@ -304,14 +306,94 @@ describe("the system prompt", () => {
     track(spyOn(canvas, "canvasEditNote").mockResolvedValue("A pessoa editou o canvas X."));
     await run(session, { text: "como vão as metas?", voice: true });
     const request = lastRequest();
-    expect(request.systemPrompt).toContain("Metas do mês (memória `metas`)");
-    expect(request.systemPrompt).toContain("Ana: fechou o relatório");
-    expect(request.systemPrompt).toContain("A pessoa editou o canvas X.");
-    expect(request.systemPrompt).toContain("chamada de voz");
+    for (const text of [
+      "Metas do mês (memória `metas`)",
+      "Ana: fechou o relatório",
+      "A pessoa editou o canvas X.",
+      "chamada de voz",
+      "## Data e hora",
+    ]) {
+      expect(request.prompt).toContain(text);
+      expect(request.systemPrompt).not.toContain(text);
+    }
+    expect(request.prompt.indexOf("## Contexto desta mensagem")).toBe(0);
+    expect(request.prompt).toContain("como vão as metas?");
     expect((await factsOfType(session, "memory.recalled"))[0].data).toEqual({ slugs: ["metas"], titles: ["Metas"] });
     const reply = (await factsOfType(session, "content.completed")).find((fact) => fact.data.phase === "reply");
     expect(reply?.data.voice).toBe(true);
     expect((await factsOfType(session, "delivery.consumed"))[0].data.voice).toBe(true);
+  });
+
+  test("keeps the system prompt stable and recalls each memory once per provider session", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const logs = track(spyOn(console, "log").mockImplementation(() => undefined));
+    quiet.recall.mockResolvedValue([{ slug: "metas", name: "Metas", description: "Metas do mês" }]);
+    await run(session, { text: "metas?" });
+    const first = lastRequest();
+    quiet.recall.mockResolvedValue([
+      { slug: "metas", name: "Metas", description: "Metas do mês" },
+      { slug: "time", name: "Time", description: "Quem faz o quê" },
+    ]);
+    await run(session, { text: "e o time?" });
+    const second = lastRequest();
+    expect(second.resume).toBeTruthy();
+    expect(second.systemPrompt).toBe(first.systemPrompt);
+    expect(second.prompt).toContain("Quem faz o quê (memória `time`)");
+    expect(second.prompt).not.toContain("Metas do mês");
+    const recalled = await factsOfType(session, "memory.recalled");
+    expect(recalled.map((fact) => fact.data.slugs)).toEqual([["metas"], ["time"]]);
+    const [key] = Object.keys(session.meta.providerSessions ?? {});
+    expect(session.meta.recallSeen).toEqual({ [key]: ["metas", "time"] });
+    const summary = logs.mock.calls.map((call) => String(call[0])).find((line) => line.startsWith("turn.summary "));
+    expect(JSON.parse(String(summary).slice("turn.summary ".length))).toMatchObject({
+      botId: bot.id,
+      turnId: "turn_0",
+      resumed: false,
+      steps: 1,
+      calls: 0,
+      recalled: 1,
+      promptChars: { system: first.systemPrompt.length, prompt: first.prompt.length },
+    });
+    session.meta.providerSessions = {};
+    await run(session, { text: "metas de novo?" });
+    expect(lastRequest().resume).toBeFalsy();
+    expect(lastRequest().prompt).toContain("Metas do mês");
+    expect(session.meta.recallSeen?.[key]).toEqual(["metas", "time"]);
+  });
+
+  test("summarizes a turn's tools for the log", () => {
+    const usage = { inputTokens: 1, outputTokens: 2, cacheReadTokens: 3, cacheWriteTokens: 4 };
+    expect(
+      turnSummary({
+        botId: "b",
+        sessionId: "s",
+        turnId: "turn_1",
+        model: "m",
+        account: "vps:claude",
+        resumed: true,
+        steps: 4,
+        calls: ['Bash({"command":"ls"})', "Bash(x)", "ask_user → ok", "thread_read(1) → ok", ""],
+        usage,
+        contextTokens: 9,
+        promptChars: null,
+        recalled: 0,
+      }),
+    ).toEqual({
+      botId: "b",
+      sessionId: "s",
+      turnId: "turn_1",
+      model: "m",
+      account: "vps:claude",
+      resumed: true,
+      steps: 4,
+      calls: 5,
+      tools: { Bash: 2, ask_user: 1, thread_read: 1, "?": 1 },
+      usage,
+      contextTokens: 9,
+      promptChars: null,
+      recalled: 0,
+    });
   });
 
   test("ignores failing canvas and blocks notes and skips recall when memory is off", async () => {
@@ -359,7 +441,7 @@ describe("the user prompt", () => {
     expect(lastRequest().prompt).toContain("A pessoa pediu commit, push e PR");
     expect(lastRequest().prompt).toContain("gh pr list --head");
     await run(session, { text: "só responde" });
-    expect(lastRequest().prompt).toBe("só responde");
+    expect(bodyOf(lastRequest().prompt)).toBe("só responde");
   });
 
   test("prepares attachments and titles the turn by them", async () => {
@@ -406,7 +488,7 @@ describe("the user prompt", () => {
       from: "vps:codex",
       to: "vps:claude",
     });
-    expect(lastRequest().prompt).toBe("Contexto anterior: falamos de metas.\n\n---\n\ncontinua");
+    expect(bodyOf(lastRequest().prompt)).toBe("Contexto anterior: falamos de metas.\n\n---\n\ncontinua");
   });
 
   test("drops the provider session when the context overflows and logs summary and capture failures", async () => {
@@ -456,7 +538,7 @@ describe("schedules", () => {
 
     triage.mockResolvedValue(decision("notify"));
     await run(session, { source: "schedule", scheduleId: "diaria", text: "Resumo do dia." });
-    expect(lastRequest().prompt).toBe(
+    expect(bodyOf(lastRequest().prompt)).toBe(
       "Resumo da última rodada desta rotina, para continuidade:\nNada de novo hoje.\n\n---\n\nResumo do dia.",
     );
     expect(lastRequest().resume).toBeNull();

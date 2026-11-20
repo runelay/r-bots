@@ -6,6 +6,7 @@ import type { NativeToolHooks } from "@runelay-bots/protocol";
 import { factsOfType, makeBot, newSession } from "../../../../test/engine-helpers";
 import {
   aborted,
+  bodyOf,
   contextOf,
   lastRequest,
   quietEngine,
@@ -98,8 +99,12 @@ describe("an open workspace", () => {
     expect(checkpoint).toHaveBeenCalledWith(session, open, "turn_0");
     expect(scan.mock.calls.map((call) => call[1])).toEqual(["tool", "sweep"]);
     expect(request.systemPrompt).toContain(`Repositório ${open.repoName}. Worktree ${open.path}`);
-    expect(request.systemPrompt).toContain("instalando em segundo plano (bun install)");
-    expect(request.systemPrompt).toContain("Servidores no ar: http://127.0.0.1:5173 (bun dev).");
+    expect(request.systemPrompt).not.toContain("instalando em segundo plano");
+    expect(request.systemPrompt).not.toContain("Servidores no ar");
+    expect(request.systemPrompt).toContain("Conferir tem custo");
+    expect(request.prompt).toContain("## Contexto desta mensagem");
+    expect(request.prompt).toContain("instalando em segundo plano (bun install)");
+    expect(request.prompt).toContain("Servidores no ar: http://127.0.0.1:5173 (bun dev).");
     expect(request.systemPrompt).not.toContain("## Terminal na VPS");
     expect(await repliesOf(session)).toEqual(["Mudei o a.ts."]);
     expect(session.meta.providerSessions).toEqual({ [`vps:claude@${open.id}`]: "prov-code" });
@@ -110,15 +115,15 @@ describe("an open workspace", () => {
     const cases: Array<[Partial<InstallState>, string]> = [
       [{ status: "failed", error: "ERR! não achei o pacote" }, "a instalação falhou (ERR! não achei o pacote)"],
       [{ status: "failed" }, "a instalação falhou ()"],
-      [{ status: "done" }, "Dependências: instaladas."],
+      [{ status: "done" }, ": instaladas."],
       [{ status: "skipped" }, "sem lockfile ou já presentes"],
     ];
     for (const [install, text] of cases) {
       const session = await newSession(bot.id);
       session.meta.workspace = workspace(install);
       await run(session);
-      expect(lastRequest().systemPrompt).toContain(text);
-      expect(lastRequest().systemPrompt).not.toContain("Servidores no ar");
+      expect(lastRequest().prompt).toContain(text);
+      expect(lastRequest().prompt).not.toContain("Servidores no ar");
     }
   });
 
@@ -254,7 +259,7 @@ describe("switching workspaces mid-turn", () => {
     const next = fakeProviders.turns[1].request;
     expect(next.code).toEqual({ cwd: second.path });
     expect(next.resume).toBeNull();
-    expect(next.prompt).toBe(
+    expect(bodyOf(next.prompt)).toBe(
       `Até aqui: li o código.\n\n---\n\nO repositório ${second.repoName} está aberto na worktree ${second.path} (branch ${second.branch}), que é o seu diretório de trabalho. Continue agora o pedido da pessoa com as ferramentas de código:\ncorrige nos dois`,
     );
     expect(await repliesOf(session, "narration")).toEqual(["Vou abrir o outro repositório."]);
@@ -277,7 +282,9 @@ describe("switching workspaces mid-turn", () => {
       }, replyWith("Pronto.")),
     );
     await run(session, { text: "abre e muda" });
-    expect(fakeProviders.turns[1].request.prompt.startsWith(`O repositório ${opened.repoName} está aberto`)).toBe(true);
+    expect(
+      bodyOf(fakeProviders.turns[1].request.prompt).startsWith(`O repositório ${opened.repoName} está aberto`),
+    ).toBe(true);
     expect(fakeProviders.turns[1].request.systemPrompt).toContain("## Repositório aberto");
   });
 
@@ -324,7 +331,7 @@ describe("limits during a schedule", () => {
       ["claude", null],
       ["codex", null],
     ]);
-    expect(fakeProviders.turns[1].request.prompt).toBe("Rodar rotina.");
+    expect(bodyOf(fakeProviders.turns[1].request.prompt)).toBe("Rodar rotina.");
     expect(carry).not.toHaveBeenCalled();
     expect(await repliesOf(session)).toEqual(["Rotina feita."]);
   });

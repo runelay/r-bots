@@ -236,6 +236,7 @@ interface Turn {
   slot?: TurnSlot;
   priority: SlotPriority;
   received?: DelegatedFile[];
+  promptChars?: { system: number; prompt: number };
 }
 
 interface Steer {
@@ -249,7 +250,7 @@ interface Runtime {
 }
 
 const runtimes = new Map<string, Runtime>();
-const contextLimit = Number(process.env.BOTS_CONTEXT_LIMIT ?? 120_000);
+const contextLimit = Number(process.env.BOTS_CONTEXT_LIMIT ?? 150_000);
 const summaryChars = 600;
 const voiceNote =
   "A pessoa está falando com você por chamada de voz. Uma voz rápida já confirmou o pedido e vai resumir a sua resposta em fala. Responda curto, sem tabelas nem listas longas, com o resultado primeiro.";
@@ -293,12 +294,7 @@ function shellGuide(home: string) {
   ].join("\n");
 }
 
-function workspaceGuide(code: CodePrompt) {
-  const workspace = code.workspace;
-  if (!workspace) return "";
-  if (!code.supported) {
-    return `## Repositório aberto\nEsta conversa tem o repositório ${workspace.repoName} aberto (branch ${workspace.branch}), mas o modelo atual não edita código na VPS. Diga em uma linha para a pessoa escolher um modelo Claude ou Codex da VPS no seletor de modelo.`;
-  }
+function workspaceStatus(workspace: WorkspaceState) {
   const install =
     workspace.install.status === "running"
       ? `instalando em segundo plano (${workspace.install.command}); dev_server_start espera terminar`
@@ -308,20 +304,69 @@ function workspaceGuide(code: CodePrompt) {
           ? "instaladas"
           : "sem lockfile ou já presentes";
   const servers = devServersOf(workspace);
-  const others = code.others ?? [];
   return [
-    "## Repositório aberto",
-    `Repositório ${workspace.repoName}. Worktree ${workspace.path} (é o seu diretório de trabalho), branch ${workspace.branch}, a partir de ${workspace.base}. Dependências: ${install}.`,
-    others.length > 0
-      ? `Outros repositórios abertos nesta conversa (edite pelo caminho da worktree de cada um; cada um tem a própria branch, PR e servidores): ${others.map((item) => `${item.repoName} em ${item.path} (branch ${item.branch})`).join("; ")}. Para abrir mais um repositório sem fechar estes, use workspace_open. Para entregar um deles, passe repo no workspace_deliver.`
-      : "",
+    `Dependências de ${workspace.repoName}: ${install}.`,
     servers.length > 0
       ? `Servidores no ar: ${servers.map((server) => `${server.url} (${server.command})`).join("; ")}.`
       : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export interface TurnSummaryInput {
+  botId: string;
+  sessionId: string;
+  turnId: string;
+  model: string;
+  account: string;
+  resumed: boolean;
+  steps: number;
+  calls: string[];
+  usage: Usage;
+  contextTokens: number | null;
+  promptChars: { system: number; prompt: number } | null;
+  recalled: number;
+}
+
+export function turnSummary(input: TurnSummaryInput) {
+  const tools: Record<string, number> = {};
+  for (const call of input.calls) {
+    const name = call.split(/[\s(→]/)[0] || "?";
+    tools[name] = (tools[name] ?? 0) + 1;
+  }
+  const { calls, ...rest } = input;
+  return { ...rest, calls: calls.length, tools };
+}
+
+function turnContext(notes: string[]) {
+  const body = notes.filter(Boolean).join("\n\n");
+  return body ? `## Contexto desta mensagem\n\n${body}` : "";
+}
+
+function withContext(context: string, prompt: string) {
+  return context ? `${context}\n\n---\n\n${prompt}` : prompt;
+}
+
+function workspaceGuide(code: CodePrompt) {
+  const workspace = code.workspace;
+  if (!workspace) return "";
+  if (!code.supported) {
+    return `## Repositório aberto\nEsta conversa tem o repositório ${workspace.repoName} aberto (branch ${workspace.branch}), mas o modelo atual não edita código na VPS. Diga em uma linha para a pessoa escolher um modelo Claude ou Codex da VPS no seletor de modelo.`;
+  }
+  const others = code.others ?? [];
+  return [
+    "## Repositório aberto",
+    `Repositório ${workspace.repoName}. Worktree ${workspace.path} (é o seu diretório de trabalho), branch ${workspace.branch}, a partir de ${workspace.base}. Dependências e servidores no ar estão no contexto de cada mensagem.`,
+    others.length > 0
+      ? `Outros repositórios abertos nesta conversa (edite pelo caminho da worktree de cada um; cada um tem a própria branch, PR e servidores): ${others.map((item) => `${item.repoName} em ${item.path} (branch ${item.branch})`).join("; ")}. Para abrir mais um repositório sem fechar estes, use workspace_open. Para entregar um deles, passe repo no workspace_deliver.`
+      : "",
     "- Você tem autonomia: Read, Edit, Write, Bash, testes, build, dev server, instalar dependência, commit, push da branch da tarefa, abrir ou atualizar PR (gh pr create/edit/comment) e tarefas no Linear rodam direto, sem card. Não peça permissão para isso. Só a lista dura pede aprovação: push --force, push ou merge direto em main/master/develop, gh pr merge, deploy, migration ou escrita em banco de produção, apagar dados fora da worktree, dinheiro (pagamento, estorno) e mensagem para pessoas de fora (e-mail, Slack, WhatsApp).",
-    "- Para subir o app, use `dev_server_start` (nunca & no Bash) e teste no seu navegador com `browser_open` na url que ele devolver; confira com `browser_screenshot` e clique quando precisar.",
-    "- Antes de subir um projeto, veja o que já está no ar (`server_list` ou os servidores acima) e reuse; nunca suba o mesmo projeto duas vezes e, no fim da tarefa, pare os servidores de que não precisa mais.",
-    "- Rode só os testes, lint ou build da parte que mudou.",
+    "- Para subir o app, use `dev_server_start` (nunca & no Bash). Para olhar rápido, `browser_open` na url que ele devolver e um `browser_screenshot`.",
+    "- Conferir tem custo: cada print e cada log ficam no contexto até o fim do pedido. Junte as mudanças e confira uma vez por rodada, nunca depois de cada ajuste. Olhe só os prints que mudaram (no máximo 3 por rodada, recortados na área quando der) e não releia print antigo.",
+    "- `test_playwright`, ou Playwright pelo Bash, só quando a pessoa pedir teste ou prints, ou uma vez para fechar uma feature de UI. Não é ferramenta de print a cada edição.",
+    "- Antes de subir um projeto, veja o que já está no ar (`server_list` ou os servidores no contexto da mensagem) e reuse; nunca suba o mesmo projeto duas vezes e, no fim da tarefa, pare os servidores de que não precisa mais.",
+    "- Rode só os testes, lint ou build da parte que mudou, no fim da rodada e não a cada edição.",
     "- .git, .claude, .env* e a configuração dos bots são protegidos: não tente escrever neles.",
     '- Commits por módulo ou feature no Bash (`git add <arquivos>` + `git commit -m`), em conventional commits em inglês, curtos e sem assinatura de IA (nada de Co-Authored-By). `workspace_deliver` faz um commit só com tudo o que estiver pendente: use para um único módulo ou com action pr para push e PR depois dos commits. Base do PR: a que a pessoa pedir; se ela não disser, a base de onde a branch saiu de verdade (compare `git rev-list --left-right --count HEAD...origin/main` e `HEAD...origin/develop` e fique com a mais próxima), nunca develop por padrão. PR para a main é permitido; só o merge passa pela pessoa. Se a pessoa pedir push, dê push (`git push -u origin <branch da tarefa>` ou workspace_deliver action push); se a branch já tem PR, o push atualiza o PR e você nunca abre outro. "Só push" nunca vira PR novo. Nunca diga que não pode dar push. Uma negação antiga não vale para o próximo pedido.',
     "- No fim, diga em uma ou duas linhas o que mudou e como conferir.",
@@ -1038,6 +1083,26 @@ async function executeProvider(run: ProviderRun) {
     if (queued) log.emit({ type: "turn.dequeued", data: { turnId: turn.turnId }, scope });
   }
   const revoke = registerContext(context);
+  const systemPrompt = [
+    systemPromptFor(
+      bot,
+      delegates,
+      session.meta.turnCount <= 1 && session.meta.kind === "thread",
+      codeWorkspace
+        ? {
+            workspace: codeWorkspace,
+            supported: coding,
+            others: activeWorkspaces(session).filter((item) => item !== codeWorkspace),
+          }
+        : null,
+      permission,
+      home?.path ?? null,
+    ),
+    run.extraSystem,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  turn.promptChars = { system: systemPrompt.length, prompt: run.prompt.length };
   try {
     await runOnAccount(
       run.account,
@@ -1046,25 +1111,7 @@ async function executeProvider(run: ProviderRun) {
         provider: run.provider,
         model: run.model,
         effort: run.effort,
-        systemPrompt: [
-          systemPromptFor(
-            bot,
-            delegates,
-            session.meta.turnCount <= 1 && session.meta.kind === "thread",
-            codeWorkspace
-              ? {
-                  workspace: codeWorkspace,
-                  supported: coding,
-                  others: activeWorkspaces(session).filter((item) => item !== codeWorkspace),
-                }
-              : null,
-            permission,
-            home?.path ?? null,
-          ),
-          run.extraSystem,
-        ]
-          .filter(Boolean)
-          .join("\n\n"),
+        systemPrompt,
         prompt: run.prompt,
         ...(run.images?.length ? { images: run.images } : {}),
         resume: run.resume,
@@ -1738,28 +1785,34 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     const side = group || isSchedule ? null : await sideContext(session, !resume);
     const memorySettings = memoryOf(bot);
     let recalled: RecallItem[] = [];
-    let extraSystem = "";
+    const notes: string[] = [];
+    const seen = new Set(resume ? (meta.recallSeen?.[sessionKey] ?? []) : []);
     if (!isSchedule && memorySettings.recall) {
       const [items, team] = await Promise.all([recall(bot, delivery.text || shownText), teamLogBlock(bot.id)]);
       recalled = items;
-      extraSystem = [recallBlock(items), team].filter(Boolean).join("\n\n");
-      if (items.length > 0)
+      const fresh = items.filter((item) => !seen.has(item.slug));
+      notes.push(recallBlock(fresh), team);
+      if (fresh.length > 0)
         log.emit({
           type: "memory.recalled",
-          data: { slugs: items.map((item) => item.slug), titles: items.map((item) => item.name) },
+          data: { slugs: fresh.map((item) => item.slug), titles: fresh.map((item) => item.name) },
           scope: turnScope,
         });
     }
     if (!isSchedule && !group) {
-      const canvasNote = await canvasEditNote(bot.id).catch(() => "");
-      if (canvasNote) extraSystem = [extraSystem, canvasNote].filter(Boolean).join("\n\n");
-      const blocksNote = await blocksEditNote(bot.id).catch(() => "");
-      if (blocksNote) extraSystem = [extraSystem, blocksNote].filter(Boolean).join("\n\n");
+      notes.push(await canvasEditNote(bot.id).catch(() => ""));
+      notes.push(await blocksEditNote(bot.id).catch(() => ""));
     }
-    if (connectorsOf(bot).memory && runelayEnabled())
-      extraSystem = [await skillsIndex(), extraSystem].filter(Boolean).join("\n\n");
-    if (delivery.voice) extraSystem = [extraSystem, voiceNote].filter(Boolean).join("\n\n");
-    extraSystem = [extraSystem, side?.note ?? "", nowNote(await userTimezone())].filter(Boolean).join("\n\n");
+    if (delivery.voice) notes.push(voiceNote);
+    notes.push(nowNote(await userTimezone()));
+    const contextFor = (workspace: WorkspaceState | null) =>
+      turnContext([
+        workspace && codeModeSupported(account.provider, account.runner) ? workspaceStatus(workspace) : "",
+        ...notes,
+      ]);
+    const extraSystem = [connectorsOf(bot).memory && runelayEnabled() ? await skillsIndex() : "", side?.note ?? ""]
+      .filter(Boolean)
+      .join("\n\n");
     const liveBots = [bot, ...delegatesOf(bot)]
       .filter((item) => item.capabilities.browser || (item.id === bot.id && activeWorkspace(session)))
       .map((item) => item.id);
@@ -1778,6 +1831,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         stopWatch();
       };
     }
+    const runsBefore = meta.runCount;
     startRun();
     let attachmentText = "";
     let attachmentImages: PreparedImage[] = [];
@@ -1918,7 +1972,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     const basePrompt = group
       ? group.prompt
       : promptFor(session, delivery, [side?.carry ?? "", carry].filter(Boolean).join("\n\n"), connectorsOf(bot).memory);
-    await runProvider(withAttachments(basePrompt), resume, attachmentImages);
+    await runProvider(withContext(contextFor(codeWorkspace), withAttachments(basePrompt)), resume, attachmentImages);
     for (let hop = 0; hop < 3; hop++) {
       const limitText =
         failure ??
@@ -1964,7 +2018,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           });
       const retryPrompt = promptFor(session, delivery, handoff, connectorsOf(bot).memory);
       await runProvider(
-        withAttachments(retryPrompt),
+        withContext(contextFor(codeWorkspace), withAttachments(retryPrompt)),
         isSchedule ? null : (meta.providerSessions?.[sessionKey] ?? null),
         account.provider === "claude" ? attachmentImages : [],
       );
@@ -1988,7 +2042,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         full: true,
       });
       await runProvider(
-        `${carry ? `${carry}\n\n---\n\n` : ""}O repositório ${next.repoName} está aberto na worktree ${next.path} (branch ${next.branch}), que é o seu diretório de trabalho. Continue agora o pedido da pessoa com as ferramentas de código:\n${delivery.text}`,
+        `${withContext(contextFor(next), carry)}${carry ? "\n\n---\n\n" : ""}O repositório ${next.repoName} está aberto na worktree ${next.path} (branch ${next.branch}), que é o seu diretório de trabalho. Continue agora o pedido da pessoa com as ferramentas de código:\n${delivery.text}`,
         null,
       );
     }
@@ -2014,7 +2068,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           full: true,
         });
         await runProvider(
-          `${carry ? `${carry}\n\n---\n\n` : ""}${prompt}`,
+          withContext(contextFor(codeWorkspace), `${carry ? `${carry}\n\n---\n\n` : ""}${prompt}`),
           null,
           account.provider === "claude" ? images : [],
         );
@@ -2031,11 +2085,35 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         scope: { runId, turnId },
       });
     }
+    console.log(
+      `turn.summary ${JSON.stringify(
+        turnSummary({
+          botId: bot.id,
+          sessionId: meta.sessionId,
+          turnId,
+          model,
+          account: account.id,
+          resumed: Boolean(resume),
+          steps: meta.runCount - runsBefore,
+          calls: turn.calls,
+          usage,
+          contextTokens,
+          promptChars: turn.promptChars ?? null,
+          recalled: recalled.filter((item) => !seen.has(item.slug)).length,
+        }),
+      )}`,
+    );
     if (!isSchedule && !group && providerSession) {
       meta.providerSessions = { ...meta.providerSessions, [sessionKey]: providerSession };
       meta.providerSynced = { ...meta.providerSynced, [sessionKey]: turnId };
       dropFork(meta, sessionKey);
+      const injected = recalled.filter((item) => !seen.has(item.slug)).map((item) => item.slug);
+      meta.recallSeen = { ...meta.recallSeen, [sessionKey]: [...new Set([...seen, ...injected])].slice(-80) };
     }
+    if (meta.recallSeen)
+      meta.recallSeen = Object.fromEntries(
+        Object.entries(meta.recallSeen).filter(([key]) => Boolean(meta.providerSessions?.[key])),
+      );
     if (turn.guardStop && !turn.cancelled) {
       const tried = turn.calls
         .slice(-6)

@@ -40,6 +40,7 @@ export interface SessionMeta {
   usageTotals: UsageTotals | null;
   scheduleSummaries?: Record<string, string>;
   providerSessions?: Record<string, string>;
+  recallSeen?: Record<string, string[]>;
   pendingNotes?: string[];
   carryOver?: string | null;
   contextTokens?: number;

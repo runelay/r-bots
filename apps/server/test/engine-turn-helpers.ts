@@ -115,3 +115,9 @@ export function lastRequest() {
   if (!turn) throw new Error("no provider turn");
   return turn.request;
 }
+
+export function bodyOf(prompt: string) {
+  if (!prompt.startsWith("## Contexto desta mensagem")) return prompt;
+  const cut = prompt.indexOf("\n\n---\n\n");
+  return cut === -1 ? "" : prompt.slice(cut + 7);
+}
