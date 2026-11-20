@@ -157,30 +157,35 @@ struct TopStrip: View {
     @Environment(AppModel.self) private var model
     @AppStorage(PreferenceKeys.sidebarCollapsed) private var sidebarCollapsed = false
 
+    private var tabsLeading: CGFloat {
+        sidebarCollapsed
+            ? FrameMetrics.sidebarContentTrailing + Spacing.xs - ChromeTabShape.flare
+            : FrameMetrics.railWidth + FrameMetrics.sidebarWidth + 1
+    }
+
+    private var titleControls: some View {
+        HStack(spacing: Spacing.xs) {
+            ServerProfileSwitcher()
+                .padding(.leading, -Spacing.s)
+            Spacer(minLength: Spacing.s)
+            HeaderIconButton(
+                systemImage: "sidebar.left",
+                help: sidebarCollapsed ? "Mostrar as conversas (⌃⌘S)" : "Ocultar as conversas (⌃⌘S)",
+                isActive: !sidebarCollapsed
+            ) {
+                sidebarCollapsed.toggle()
+            }
+            FloatingMenuButton(id: .sidebarNew, systemImage: "plus", help: "Novo bot ou grupo", iconSize: 15, size: 28)
+        }
+        .padding(.leading, FrameMetrics.titleLeading)
+        .frame(width: FrameMetrics.sidebarContentTrailing, alignment: .leading)
+    }
+
     var body: some View {
         HStack(spacing: Spacing.s) {
             if model.section == .conversations && !model.settingsPresented {
-                let titleWidth = max((sidebarCollapsed ? FrameMetrics.railWidth + Spacing.l : FrameMetrics.railWidth + FrameMetrics.sidebarWidth + 1) - Spacing.s, 128)
-                HStack(spacing: Spacing.xs) {
-                    if !sidebarCollapsed {
-                        ServerProfileSwitcher()
-                            .padding(.leading, -Spacing.s)
-                        Spacer(minLength: Spacing.s)
-                    }
-                    HeaderIconButton(
-                        systemImage: "sidebar.left",
-                        help: sidebarCollapsed ? "Mostrar as conversas (⌃⌘S)" : "Ocultar as conversas (⌃⌘S)",
-                        isActive: !sidebarCollapsed
-                    ) {
-                        sidebarCollapsed.toggle()
-                    }
-                    if !sidebarCollapsed {
-                        FloatingMenuButton(id: .sidebarNew, systemImage: "plus", help: "Novo bot ou grupo", iconSize: 15, size: 28)
-                    }
-                }
-                .padding(.leading, FrameMetrics.titleLeading)
-                .padding(.trailing, sidebarCollapsed ? 0 : titleWidth - FrameMetrics.sidebarContentTrailing)
-                .frame(width: titleWidth, alignment: .leading)
+                Color.clear
+                    .frame(width: tabsLeading - Spacing.s)
                 BotTabStrip(leadingFlush: !sidebarCollapsed)
                     .frame(maxHeight: .infinity)
                 if let bot = model.selectedBot {
@@ -217,6 +222,11 @@ struct TopStrip: View {
         .padding(.trailing, FrameMetrics.panelInset + Spacing.xs)
         .frame(minWidth: 0, maxWidth: .infinity)
         .frame(height: FrameMetrics.stripHeight)
+        .overlay(alignment: .leading) {
+            if model.section == .conversations && !model.settingsPresented {
+                titleControls
+            }
+        }
         .background {
             Rectangle()
                 .fill(Theme.windowFrame)
