@@ -5,13 +5,18 @@ import { type Provider, providerLabels } from "@runelay-bots/protocol";
 const limitPattern =
   /spend(?:ing)? limit|usage limit|rate[ _-]?limit|limit reached|limit exceeded|hit your (?:[\w']+ ){0,3}limit|quota|too many requests|\b429\b|credit balance is too low|out of credits|resets? (?:at |in )?\d/i;
 
+const outagePattern =
+  /authentication_error|invalid (?:api key|bearer token|x-api-key)|oauth token (?:has )?(?:expired|revoked)|please run \/login|not logged in|\b401\b|unauthorized|permission_error|overloaded_error|\b529\b|api error: 5\d\d|internal server error|service unavailable|econnrefused|econnreset|etimedout|socket hang up|fetch failed/i;
+
 const unknownResetMs = 15 * 60_000;
+const outageMs = 5 * 60_000;
 const displayZone = "America/Sao_Paulo";
 
 export interface LimitState {
   until: Date;
   known: boolean;
   message: string;
+  kind?: "limit" | "down";
 }
 
 const limited = new Map<string, LimitState>();
@@ -25,6 +30,10 @@ export function isLimitReply(text: string) {
 
 export function isLimitError(text: string | null | undefined) {
   return Boolean(text && limitPattern.test(text));
+}
+
+export function isOutageError(text: string | null | undefined) {
+  return Boolean(text && !limitPattern.test(text) && outagePattern.test(text));
 }
 
 function zoneOffset(at: number, zone: string) {
@@ -102,6 +111,12 @@ export function markLimited(accountId: string, message: string, zone?: string) {
   const state: LimitState = resetAt
     ? { until: resetAt, known: true, message }
     : { until: new Date(Date.now() + unknownResetMs), known: false, message };
+  limited.set(accountId, state);
+  return state;
+}
+
+export function markUnavailable(accountId: string, message: string) {
+  const state: LimitState = { until: new Date(Date.now() + outageMs), known: false, message, kind: "down" };
   limited.set(accountId, state);
   return state;
 }

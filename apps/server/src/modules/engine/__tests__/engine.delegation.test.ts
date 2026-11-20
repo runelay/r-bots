@@ -147,7 +147,7 @@ describe("delegation", () => {
     const archived = await makeBot();
     await setArchived(archived.id, true);
     const offline = await makeBot();
-    offline.engine = { account: "mac:claude", model: "m", effort: null };
+    offline.engine = { account: "vps:nada", model: "m", effort: null };
     const session = await newSession(boss.id);
     const errors: string[] = [];
     const tryDelegate = async (turn: FakeTurn, target: string) => {
@@ -170,7 +170,7 @@ describe("delegation", () => {
     await run(session);
     expect(errors[0]).toBe("O bot bot-inexistente não está disponível.");
     expect(errors[1]).toBe(`O bot ${archived.id} não está disponível.`);
-    expect(errors[2]).toContain("está fora do ar");
+    expect(errors[2]).toBe("A conta vps:nada não existe.");
 
     const worker = await makeBot();
     const outcome: { reply?: string; error?: string } = {};

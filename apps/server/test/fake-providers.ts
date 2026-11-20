@@ -42,11 +42,15 @@ const defaultScript = replyWith("ok");
 export const fakeProviders = {
   turns: [] as FakeTurn[],
   probes: {} as Partial<Record<Provider, AccountProbe>>,
+  probed: [] as Array<{ provider: Provider; configDir: string | null }>,
   script: defaultScript,
   next(script: TurnScript) {
     fakeProviders.script = script;
   },
-  probe: async (provider: Provider) => fakeProviders.probes[provider] ?? readyProbe(provider),
+  probe: async (provider: Provider, configDir: string | null = null) => {
+    fakeProviders.probed.push({ provider, configDir });
+    return fakeProviders.probes[provider] ?? readyProbe(provider);
+  },
   runTurn: async (
     request: TurnRequest,
     baseDir: string,
@@ -61,6 +65,19 @@ export const fakeProviders = {
   reset() {
     fakeProviders.turns.length = 0;
     fakeProviders.probes = {};
+    fakeProviders.probed.length = 0;
     fakeProviders.script = defaultScript;
   },
 };
+
+export function accountFields(id: string, label: string) {
+  return {
+    name: label,
+    autoName: label,
+    email: null,
+    plan: null,
+    configDir: null,
+    isDefault: id.startsWith("vps:"),
+    added: false,
+  };
+}

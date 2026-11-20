@@ -5,18 +5,20 @@ import { nowNote, userTimezone } from "../../../shared/clock";
 import {
   type Account,
   findAccount,
+  listAccounts,
   mcpBaseFor,
-  runnerTarget,
-  runOnRunner,
+  runOnAccount,
+  siblingAccounts,
 } from "../../accounts/services/accounts.service";
 import {
   formatReset,
   isLimitError,
   isLimitReply,
+  isOutageError,
   type LimitState,
   limitOf,
   markLimited,
-  providerName,
+  markUnavailable,
 } from "../../accounts/services/limits.service";
 import {
   type DecisionRecord,
@@ -833,7 +835,7 @@ async function executeProvider(run: ProviderRun) {
       turn.abort.abort();
     },
   };
-  if (run.account.runner !== "mac" && !turn.slot) {
+  if (!turn.slot) {
     let queued = false;
     const scope = { turnId: turn.turnId };
     turn.slot = await acquireTurnSlot(turn.priority, turn.abort.signal, (position) => {
@@ -844,8 +846,8 @@ async function executeProvider(run: ProviderRun) {
   }
   const revoke = registerContext(context);
   try {
-    await runOnRunner(
-      runnerTarget(run.account),
+    await runOnAccount(
+      run.account,
       {
         turnId: `${turn.turnId}-${randomBytes(4).toString("hex")}`,
         provider: run.provider,
@@ -1195,40 +1197,39 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       return;
     }
     const engine = engineOf(bot);
-    const found = await findAccount(engine.account);
-    if (found?.status !== "ready") {
-      settle("failed", {
-        error: { code: "ACCOUNT_UNAVAILABLE", id: randomUUID(), message: unavailableMessage(engine.account, found) },
-      });
-      return;
-    }
-    let account: Account = found;
-    let model = engine.model;
-    let effort = engine.effort;
-    let limitFailure = null as { state: LimitState; from: Account } | null;
-    const backupFor = async (from: string) => {
-      const target = engine.fallback;
-      if (!target || target.account === from) return null;
-      const backup = await findAccount(target.account);
-      return backup && backup.status === "ready" && !limitOf(backup.id)
-        ? { account: backup, model: target.model }
-        : null;
+    const tried = new Set<string>([engine.account]);
+    const backupFor = async (from: string, currentModel: string) => {
+      const accounts = await listAccounts();
+      const provider = (accounts.find((item) => item.id === from)?.provider ?? from.split(":")[1]) as Provider;
+      const options = siblingAccounts(accounts, { id: from, provider }).map((item) => ({
+        account: item.id,
+        model: currentModel,
+      }));
+      if (engine.fallback) options.push({ account: engine.fallback.account, model: engine.fallback.model });
+      for (const option of options) {
+        if (tried.has(option.account)) continue;
+        const backup = accounts.find((item) => item.id === option.account);
+        if (backup && backup.status === "ready" && !limitOf(backup.id)) return { account: backup, model: option.model };
+      }
+      return null;
     };
-    const nameOf = (item: Account, other: Account) =>
-      item.provider === other.provider
-        ? `${providerName(item.provider)} (${item.runner === "mac" ? "Mac" : "VPS"})`
-        : providerName(item.provider);
-    const failOver = (from: Account, to: Account, state: LimitState) => {
-      const line = `Limite do ${nameOf(from, to)} acabou · continuei com ${nameOf(to, from)}`;
-      if (meta.failover?.from !== from.id || meta.failover?.to !== to.id) {
+    const failOver = (from: Account | string, to: Account, state: LimitState, kind: "limit" | "down") => {
+      const fromName = typeof from === "string" ? from : from.label;
+      const fromId = typeof from === "string" ? from : from.id;
+      tried.add(to.id);
+      const line =
+        kind === "limit"
+          ? `Limite do ${fromName} acabou · continuei com ${to.label}`
+          : `${fromName} fora do ar · continuei com ${to.label}`;
+      if (meta.failover?.from !== fromId || meta.failover?.to !== to.id) {
         log.emit({
           type: "account.failover",
           data: {
-            from: from.id,
+            from: fromId,
             to: to.id,
-            fromModel: from.id === engine.account ? engine.model : model,
+            fromModel: fromId === engine.account ? engine.model : model,
             toModel: to.id === engine.fallback?.account ? engine.fallback.model : model,
-            reason: `Limite do ${providerName(from.provider)}`,
+            reason: kind === "limit" ? `Limite do ${fromName}` : `${fromName} fora do ar`,
             until: state.known ? state.until.toISOString() : null,
             line,
           },
@@ -1236,20 +1237,42 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         });
       }
       meta.failover = {
-        from: from.id,
+        from: fromId,
         to: to.id,
-        since: meta.failover?.from === from.id ? meta.failover.since : now(),
+        since: meta.failover?.from === fromId ? meta.failover.since : now(),
         until: state.known ? state.until.toISOString() : null,
       };
     };
-    const earlyLimit = limitOf(account.id);
-    if (earlyLimit && !group) {
-      const backup = await backupFor(account.id);
+    const found = await findAccount(engine.account);
+    let model = engine.model;
+    let effort = engine.effort;
+    let limitFailure = null as { state: LimitState; from: Account } | null;
+    let start: Account | null = found?.status === "ready" ? found : null;
+    if (!start && !group) {
+      const backup = await backupFor(engine.account, engine.model);
       if (backup) {
-        failOver(account, backup.account, earlyLimit);
+        const reason = unavailableMessage(engine.account, found);
+        failOver(found ?? engine.account, backup.account, markUnavailable(engine.account, reason), "down");
+        start = backup.account;
+        model = backup.model;
+        effort = backup.account.provider === found?.provider ? effort : null;
+      }
+    }
+    if (!start) {
+      settle("failed", {
+        error: { code: "ACCOUNT_UNAVAILABLE", id: randomUUID(), message: unavailableMessage(engine.account, found) },
+      });
+      return;
+    }
+    let account: Account = start;
+    const earlyLimit = start.id === engine.account ? limitOf(account.id) : null;
+    if (earlyLimit && !group) {
+      const backup = await backupFor(account.id, model);
+      if (backup) {
+        failOver(account, backup.account, earlyLimit, earlyLimit.kind === "down" ? "down" : "limit");
         account = backup.account;
         model = backup.model;
-        effort = null;
+        effort = backup.account.provider === start.provider ? effort : null;
       }
     }
 
@@ -1396,11 +1419,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     let attachmentImages: PreparedImage[] = [];
     if (delivery.attachments?.length && !group) {
       log.emit({ type: "attachments.preparing", data: { count: delivery.attachments.length }, scope: turnScope });
-      const prepared = await prepareAttachments(
-        bot.id,
-        delivery.attachments,
-        account.provider === "claude" && account.runner !== "mac",
-      );
+      const prepared = await prepareAttachments(bot.id, delivery.attachments, account.provider === "claude");
       attachmentText = prepared.text;
       attachmentImages = prepared.images;
     }
@@ -1519,53 +1538,55 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     }
     const basePrompt = group ? group.prompt : promptFor(session, delivery, carry, connectorsOf(bot).memory);
     await runProvider(withAttachments(basePrompt), resume, attachmentImages);
-    const limitText =
-      failure ??
-      (replyTexts.length === 0 && turn.calls.length === 0
-        ? pendingTexts
-            .map((part) => part.value)
-            .join(" ")
-            .trim()
-        : "");
-    if (
-      !group &&
-      !turn.cancelled &&
-      !turn.abort.signal.aborted &&
-      limitText &&
-      (failure ? isLimitError(failure) : isLimitReply(limitText))
-    ) {
-      const state = markLimited(account.id, limitText, account.runner === "mac" ? "America/Sao_Paulo" : undefined);
-      const backup = await backupFor(account.id);
-      if (backup) {
-        const from = account;
-        pendingTexts = [];
-        failure = null;
-        failOver(from, backup.account, state);
-        account = backup.account;
-        model = backup.model;
-        effort = null;
-        sessionKey = keyFor(codeWorkspace);
-        providerSession = null;
-        needsRun = true;
-        const handoff = isSchedule
-          ? ""
-          : await handoffBlock(session, {
-              key: sessionKey,
-              currentTurnId: turnId,
-              skills: skillNames,
-              reason: `o limite do ${providerName(from.provider)} acabou no meio deste pedido; refaça o pedido em curso sem repetir o que já foi feito`,
-            });
-        const retryPrompt = promptFor(session, delivery, handoff, connectorsOf(bot).memory);
-        await runProvider(
-          withAttachments(retryPrompt),
-          isSchedule ? null : (meta.providerSessions?.[sessionKey] ?? null),
-          account.provider === "claude" && account.runner !== "mac" ? attachmentImages : [],
-        );
-      } else {
-        pendingTexts = [];
-        failure = limitText;
-        limitFailure = { state, from: account };
+    for (let hop = 0; hop < 3; hop++) {
+      const limitText =
+        failure ??
+        (replyTexts.length === 0 && turn.calls.length === 0
+          ? pendingTexts
+              .map((part) => part.value)
+              .join(" ")
+              .trim()
+          : "");
+      if (group || turn.cancelled || turn.abort.signal.aborted || !limitText) break;
+      const limitHit = failure ? isLimitError(failure) : isLimitReply(limitText);
+      const down = !limitHit && isOutageError(failure);
+      if (!limitHit && !down) break;
+      const state = limitHit ? markLimited(account.id, limitText) : markUnavailable(account.id, limitText);
+      const backup = await backupFor(account.id, model);
+      if (!backup) {
+        if (limitHit) {
+          pendingTexts = [];
+          failure = limitText;
+          limitFailure = { state, from: account };
+        }
+        break;
       }
+      const from = account;
+      pendingTexts = [];
+      failure = null;
+      failOver(from, backup.account, state, limitHit ? "limit" : "down");
+      account = backup.account;
+      model = backup.model;
+      effort = backup.account.provider === from.provider ? effort : null;
+      sessionKey = keyFor(codeWorkspace);
+      providerSession = null;
+      needsRun = true;
+      const handoff = isSchedule
+        ? ""
+        : await handoffBlock(session, {
+            key: sessionKey,
+            currentTurnId: turnId,
+            skills: skillNames,
+            reason: limitHit
+              ? `o limite do ${from.label} acabou no meio deste pedido; refaça o pedido em curso sem repetir o que já foi feito`
+              : `o ${from.label} caiu no meio deste pedido; refaça o pedido em curso sem repetir o que já foi feito`,
+          });
+      const retryPrompt = promptFor(session, delivery, handoff, connectorsOf(bot).memory);
+      await runProvider(
+        withAttachments(retryPrompt),
+        isSchedule ? null : (meta.providerSessions?.[sessionKey] ?? null),
+        account.provider === "claude" ? attachmentImages : [],
+      );
     }
     for (let switches = 0; switches < 2; switches++) {
       if (turn.cancelled || failure || turn.guardStop || turn.abort.signal.aborted) break;
@@ -1658,7 +1679,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       const suggestion = engine.fallback ?? suggestedFallback(from.id);
       const target = suggestion.account !== from.id ? await findAccount(suggestion.account) : undefined;
       const usable = target && target.status === "ready" && !limitOf(target.id) ? target : null;
-      const message = `O limite do ${providerName(from.provider)} acabou${state.known ? `, volta ${formatReset(state.until)}` : ""}.${usable ? ` Quer que eu continue com o ${nameOf(usable, from)}?` : ""}`;
+      const message = `O limite do ${from.label} acabou${state.known ? `, volta ${formatReset(state.until)}` : ""}.${usable ? ` Quer que eu continue com o ${usable.label}?` : ""}`;
       settle("failed", {
         error: {
           code: "ACCOUNT_LIMIT",
@@ -1666,7 +1687,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           message,
           detail: state.message.slice(0, 500),
           until: state.known ? state.until.toISOString() : null,
-          ...(usable ? { suggest: { account: usable.id, model: suggestion.model, label: nameOf(usable, from) } } : {}),
+          ...(usable ? { suggest: { account: usable.id, model: suggestion.model, label: usable.label } } : {}),
         },
       });
     } else if (failure) {
@@ -1746,7 +1767,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
               fromModel: meta.lastEngine?.account === meta.failover.to ? meta.lastEngine.model : null,
               toModel: model,
               reason: "Limite liberado",
-              line: `Voltei para o ${providerName(account.provider)}`,
+              line: `Voltei para o ${account.label}`,
             },
             scope: turnScope,
           });

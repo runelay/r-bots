@@ -1,30 +1,27 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  jest,
-  setSystemTime,
-  spyOn,
-  test,
-} from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, jest, setSystemTime, test } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { fakeProviders, request, startTestServer, type TestServer, testDataDir } from "../../../../test/helpers";
-import type { Socket } from "../../../shared/ws";
-import * as devices from "../../devices/services/devices.service";
+import { writeSetting } from "../../../db/settings";
 import {
+  type Account,
+  accountDir,
+  accountPath,
+  addAccountDir,
+  defaultAccount,
   findAccount,
   isAccountId,
+  isLegacyMacAccount,
   listAccounts,
+  loginGuide,
   mcpBaseFor,
+  preferredAccountId,
   refreshAccounts,
-  runnerIds,
-  runnerTarget,
-  runOnRunner,
+  removeAccountDir,
+  runOnAccount,
+  siblingAccounts,
+  updateAccount,
 } from "../services/accounts.service";
 import {
   clearLimit,
@@ -33,76 +30,41 @@ import {
   injectedFault,
   isLimitError,
   isLimitReply,
+  isOutageError,
   limitOf,
   markLimited,
+  markUnavailable,
   parseResetAt,
   providerName,
 } from "../services/limits.service";
-import {
-  disconnectMacDevice,
-  macRunnerConnected,
-  macRunnerConnections,
-  runnerSocket,
-} from "../services/mac-runner.service";
 
 let server: TestServer;
+let home = "";
+let previousHome: string | undefined;
+let counter = 0;
 
-const restores: Array<() => void> = [];
-
-function runnerSocketFake(key = "mac-a-device", name = "MacBook", rank = 1) {
-  const sent: Array<{ type: string; id: string; op?: string }> = [];
-  const ws = {
-    readyState: 1,
-    data: { kind: "runner", deviceKey: key, rank, deviceName: name, userId: "u1" },
-    send: (raw: string) => {
-      sent.push(JSON.parse(raw));
-    },
-    close() {},
-    ping() {},
-    terminate() {},
-  };
-  runnerSocket.open(ws as unknown as Socket);
-  const close = () => {
-    ws.readyState = 3;
-    runnerSocket.close(ws as unknown as Socket, 1000, "");
-  };
-  restores.push(close);
-  return {
-    sent,
-    say: (message: unknown) => runnerSocket.message(ws as unknown as Socket, JSON.stringify(message)),
-    close,
-  };
+function jwt(claims: Record<string, unknown>) {
+  return `h.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.s`;
 }
 
-async function until(check: () => boolean | Promise<boolean>) {
-  const deadline = performance.now() + 5000;
-  while (performance.now() < deadline) {
-    if (await check()) return;
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-  throw new Error("condition never became true");
+function put(path: string, value: unknown) {
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, typeof value === "string" ? value : JSON.stringify(value));
 }
 
-async function refreshWith(fakes: Array<[ReturnType<typeof runnerSocketFake>, unknown[] | string]>) {
-  let settled = false;
-  const running = refreshAccounts().finally(() => {
-    settled = true;
+function seedHome() {
+  put(join(home, ".claude", ".credentials.json"), { claudeAiOauth: { accessToken: "t", subscriptionType: "team" } });
+  put(join(home, ".claude.json"), {
+    oauthAccount: { displayName: "AppConty", emailAddress: "ferramentas@x.com", organizationName: "Conty" },
   });
-  const answered = new Set<string>();
-  while (!settled) {
-    for (const [fake, result] of fakes)
-      for (const message of fake.sent)
-        if (message.op === "accounts" && !answered.has(message.id)) {
-          answered.add(message.id);
-          fake.say(
-            typeof result === "string"
-              ? { type: "response", id: message.id, ok: false, error: result }
-              : { type: "response", id: message.id, ok: true, result },
-          );
-        }
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-  return running;
+  put(join(home, ".claude-2", ".credentials.json"), { claudeAiOauth: { accessToken: "t", subscriptionType: "max" } });
+  put(join(home, ".claude-2", ".claude.json"), {
+    oauthAccount: { displayName: "Anderson", emailAddress: "anderson@x.com" },
+  });
+  mkdirSync(join(home, ".claude-old"), { recursive: true });
+  put(join(home, ".codex", "auth.json"), {
+    tokens: { id_token: jwt({ email: "dev@x.com", "https://api.openai.com/auth": { chatgpt_plan_type: "plus" } }) },
+  });
 }
 
 function turnRequest(provider: TurnRequest["provider"] = "claude"): TurnRequest {
@@ -113,15 +75,21 @@ beforeAll(async () => {
   server = await startTestServer();
 });
 
-beforeEach(() => {
-  for (const live of macRunnerConnections()) disconnectMacDevice(live.key, 1000, "test");
+beforeEach(async () => {
+  previousHome = process.env.HOST_HOME;
+  home = join(testDataDir(), `home-${process.pid}-${counter++}`);
+  mkdirSync(home, { recursive: true });
+  process.env.HOST_HOME = home;
+  await writeSetting("accounts.settings", {});
 });
 
-afterEach(() => {
-  for (const restore of restores.splice(0).reverse()) restore();
+afterEach(async () => {
   jest.useRealTimers();
   setSystemTime();
   delete process.env.BOTS_FAULTS_FILE;
+  process.env.HOST_HOME = previousHome;
+  rmSync(home, { recursive: true, force: true });
+  await refreshAccounts();
 });
 
 afterAll(async () => {
@@ -178,6 +146,18 @@ describe("limits", () => {
     expect(formatReset(new Date())).toStartWith("às ");
   });
 
+  test("tells an outage from a limit and keeps it for a few minutes", () => {
+    expect(isOutageError("API Error: 401 authentication_error")).toBe(true);
+    expect(isOutageError("overloaded_error")).toBe(true);
+    expect(isOutageError("429 Too Many Requests")).toBe(false);
+    expect(isOutageError("boom")).toBe(false);
+    expect(isOutageError(null)).toBe(false);
+    const state = markUnavailable("vps:claude", "caiu");
+    expect(state).toMatchObject({ known: false, kind: "down", message: "caiu" });
+    expect(limitOf("vps:claude")?.kind).toBe("down");
+    clearLimit("vps:claude");
+  });
+
   test("names providers and injects faults from a file", () => {
     expect(providerName("codex")).toBe("Codex");
     expect(providerName("claude")).toBe("Claude");
@@ -200,138 +180,186 @@ describe("limits", () => {
 });
 
 describe("accounts", () => {
-  test("probes the VPS and shows the Mac slot offline when no Mac is on the account", async () => {
-    fakeProviders.probes.grok = { provider: "grok", status: "logged_out", detail: "entre", models: [] };
+  test("finds every Claude and Codex directory in the home and names each account", async () => {
+    seedHome();
+    fakeProviders.probes.grok = { provider: "grok", status: "missing", detail: "sem", models: [] };
     const first = refreshAccounts();
     expect(refreshAccounts()).toBe(first);
     const accounts = await first;
     expect(accounts.map((account) => account.id)).toEqual([
       "vps:claude",
+      "claude-2:claude",
       "vps:codex",
       "vps:grok",
       "vps:cursor",
-      "mac:claude",
-      "mac:codex",
-      "mac:grok",
-      "mac:cursor",
     ]);
-    expect(accounts.find((account) => account.id === "vps:grok")).toMatchObject({
-      status: "logged_out",
-      label: "Grok (VPS)",
-    });
-    expect(accounts.find((account) => account.id === "vps:grok")).not.toHaveProperty("device");
-    expect(accounts.find((account) => account.id === "mac:claude")).toMatchObject({
-      status: "offline",
-      label: "Claude · assinatura (Mac)",
-      detail: "Nenhum Mac na conta: entre no app runelay bots no Mac.",
-      device: null,
-    });
-  });
-
-  test("lists accounts per Mac and names each one", async () => {
-    const first = runnerSocketFake("aaaa1111-device", "MacBook");
-    const second = runnerSocketFake("BBBB2222-device", "Mac mini", 2);
-    const accounts = await refreshWith([
-      [first, [{ provider: "codex", status: "ready", detail: "app", models: [] }]],
-      [second, []],
-    ]);
-    expect(accounts.find((account) => account.id === "mac:codex")).toMatchObject({
+    expect(accounts[0]).toMatchObject({
+      runner: "vps",
+      label: "Claude AppConty",
+      name: "Claude AppConty",
+      email: "ferramentas@x.com",
+      plan: "team",
+      configDir: "~/.claude",
+      isDefault: true,
+      added: false,
       status: "ready",
-      label: "Codex · MacBook",
-      device: { id: "aaaa1111-device", name: "MacBook", connected: true },
     });
-    expect(accounts.find((account) => account.id === "mac:claude")).toMatchObject({
-      status: "missing",
-      detail: "CLI não instalada no Mac.",
+    expect(accounts[1]).toMatchObject({
+      label: "Claude Anderson",
+      email: "anderson@x.com",
+      plan: "max",
+      configDir: "~/.claude-2",
+      isDefault: false,
     });
-    expect(accounts.find((account) => account.id === "mac-bbbb2222:claude")).toMatchObject({
-      status: "missing",
-      label: "Claude · Mac mini",
-    });
-    first.close();
-    second.close();
+    expect(accounts[2]).toMatchObject({ label: "Codex", email: "dev@x.com", plan: "plus", isDefault: true });
+    expect(accounts[3]).toMatchObject({ label: "Grok", status: "missing", configDir: null });
+    expect(fakeProviders.probed).toContainEqual({ provider: "claude", configDir: null });
+    expect(fakeProviders.probed).toContainEqual({ provider: "claude", configDir: join(home, ".claude-2") });
+    expect(accountDir("vps:claude")).toBeNull();
+    expect(accountDir("claude-2:claude")).toBe(join(home, ".claude-2"));
+    expect(accountPath("vps:claude")).toBe(join(home, ".claude"));
+    expect(accountPath("nada:claude")).toBeNull();
+    expect(preferredAccountId("claude")).toBe("vps:claude");
   });
 
-  test("shows a registered Mac that is closed as disconnected and reports a failing probe", async () => {
-    const listed = spyOn(devices, "listRegisteredDevices").mockResolvedValue([
-      {
-        id: "off-device",
-        keyId: "k1",
-        userId: "u1",
-        name: "iMac",
-        model: null,
-        osVersion: null,
-        appVersion: null,
-        machineId: null,
-        registeredAt: "2026-01-01T00:00:00.000Z",
-      },
-      {
-        id: "on-device",
-        keyId: "k2",
-        userId: "u1",
-        name: "MacBook",
-        model: null,
-        osVersion: null,
-        appVersion: null,
-        machineId: null,
-        registeredAt: "2026-02-01T00:00:00.000Z",
-      },
+  test("keeps a default Claude and Codex slot when nothing is logged in", async () => {
+    const accounts = await refreshAccounts();
+    expect(accounts.map((account) => [account.id, account.label])).toEqual([
+      ["vps:claude", "Claude"],
+      ["vps:codex", "Codex"],
+      ["vps:grok", "Grok"],
+      ["vps:cursor", "Cursor"],
     ]);
-    restores.push(() => listed.mockRestore());
-    const runner = runnerSocketFake("on-device", "MacBook");
-    const accounts = await refreshWith([[runner, "quebrou"]]);
-    expect(accounts.find((account) => account.id === "mac:claude")).toMatchObject({
-      status: "offline",
-      label: "Claude · iMac",
-      detail: "Mac desconectado: abra o app runelay bots nele.",
-      device: { id: "off-device", name: "iMac", connected: false },
-    });
-    expect(accounts.find((account) => account.id === "mac-ondevice:claude")?.detail).toBe("Mac fora do ar: quebrou");
-    const events: ProviderEvent[] = [];
-    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => events.push(event));
-    expect(events).toEqual([{ type: "done", ok: false, message: "Mac desconectado." }]);
-    runner.close();
+    expect(accounts[0].email).toBeNull();
+    process.env.HOST_HOME = join(home, "nao-existe");
+    expect((await refreshAccounts()).map((account) => account.id)).toEqual(accounts.map((account) => account.id));
   });
 
-  test("gives colliding short ids distinct prefixes and a fallback for odd keys", async () => {
-    const a = runnerSocketFake("same0000-a", "A", 1);
-    const b = runnerSocketFake("same0000-b", "B", 2);
-    const c = runnerSocketFake("---", "C", 3);
-    const d = runnerSocketFake("same0000-d", "D", 4);
-    const ids = (
-      await refreshWith([
-        [a, []],
-        [b, []],
-        [c, []],
-        [d, []],
-      ])
-    )
-      .filter((item) => item.provider === "claude" && item.runner === "mac")
-      .map((x) => x.id);
-    expect(ids).toEqual(["mac:claude", "mac-same0000:claude", "mac-mac:claude", "mac-same0000x:claude"]);
-    for (const runner of [a, b, c, d]) runner.close();
+  test("names accounts from the organization, the e-mail or the folder and splits equal names", async () => {
+    put(join(home, ".claude", ".credentials.json"), {});
+    put(join(home, ".claude.json"), { oauthAccount: { organizationName: "Conty" } });
+    put(join(home, ".claude-b", ".credentials.json"), {});
+    put(join(home, ".claude-b", ".claude.json"), { oauthAccount: { organizationName: "Conty" } });
+    put(join(home, ".claude-c", ".credentials.json"), {});
+    put(join(home, ".claude-c", ".claude.json"), { oauthAccount: { emailAddress: "maria@x.com" } });
+    put(join(home, ".claude-d", ".credentials.json"), "{broken");
+    put(join(home, ".claude-d", ".claude.json"), "[]");
+    put(join(home, ".codex", "auth.json"), { tokens: { id_token: "sem-claims" } });
+    put(join(home, ".codex-work", "auth.json"), { tokens: { id_token: jwt({ email: "ana@x.com" }) } });
+    put(join(home, ".codex-x", "auth.json"), { tokens: { id_token: "a.bm90LWpzb24.c" } });
+    const accounts = await refreshAccounts();
+    const label = (id: string) => accounts.find((account) => account.id === id)?.label;
+    expect(label("vps:claude")).toBe("Claude Conty (claude)");
+    expect(label("claude-b:claude")).toBe("Claude Conty (claude-b)");
+    expect(label("claude-c:claude")).toBe("Claude maria");
+    expect(label("claude-d:claude")).toBe("Claude claude-d");
+    expect(label("vps:codex")).toBe("Codex");
+    expect(label("codex-work:codex")).toBe("Codex ana");
+    expect(label("codex-x:codex")).toBe("Codex codex-x");
   });
 
-  test("a Mac refresh that fails on connect does not break the runner", async () => {
-    const logs: string[] = [];
-    const log = spyOn(console, "log").mockImplementation((line: string) => {
-      logs.push(String(line));
-      if (String(line).startsWith("accounts:")) throw new Error("log sink down");
+  test("adds a directory outside the home, renames, picks the default and removes it", async () => {
+    seedHome();
+    const extra = join(home, "contas", "Claude Team");
+    put(join(extra, ".credentials.json"), { claudeAiOauth: { subscriptionType: "team" } });
+    let accounts = await addAccountDir({ path: extra });
+    expect(accounts.find((account) => account.id === "claude-team:claude")).toMatchObject({
+      added: true,
+      configDir: "~/contas/Claude Team",
+      label: "Claude Claude Team",
     });
-    restores.push(() => log.mockRestore());
-    const runner = runnerSocketFake();
-    const answered = new Set<string>();
-    await until(() => {
-      for (const message of runner.sent)
-        if (message.op === "accounts" && !answered.has(message.id)) {
-          answered.add(message.id);
-          runner.say({ type: "response", id: message.id, ok: true, result: [] });
-        }
-      return logs.some((line) => line.startsWith("accounts:"));
+    expect((await addAccountDir({ path: "~/contas/Claude Team" })).length).toBe(accounts.length);
+    accounts = (await updateAccount("claude-team:claude", { name: "  Time  ", isDefault: true })) as Account[];
+    expect(accounts.find((account) => account.id === "claude-team:claude")).toMatchObject({
+      name: "Time",
+      label: "Time",
+      autoName: "Claude Claude Team",
+      isDefault: true,
     });
-    expect(logs.find((line) => line.startsWith("accounts:"))).toContain("mac:claude=");
-    expect(macRunnerConnected()).toBe(true);
-    runner.close();
+    expect(accounts.find((account) => account.id === "vps:claude")?.isDefault).toBe(false);
+    expect(defaultAccount(accounts, "claude")?.id).toBe("claude-team:claude");
+    expect(defaultAccount([], "claude")).toBeNull();
+    expect(siblingAccounts(accounts, { id: "vps:claude", provider: "claude" }).map((item) => item.id)).toEqual([
+      "claude-team:claude",
+      "claude-2:claude",
+    ]);
+    accounts = (await updateAccount("claude-team:claude", { name: null })) as Account[];
+    expect(accounts.find((account) => account.id === "claude-team:claude")?.label).toBe("Claude Claude Team");
+    accounts = (await updateAccount("claude-team:claude", { name: "" })) as Account[];
+    expect(accounts.find((account) => account.id === "claude-team:claude")?.label).toBe("Claude Claude Team");
+    accounts = (await removeAccountDir("claude-team:claude")) as Account[];
+    expect(accounts.some((account) => account.id === "claude-team:claude")).toBe(false);
+    expect(defaultAccount(accounts, "claude")?.id).toBe("vps:claude");
+    expect(await removeAccountDir("nada:claude")).toBeNull();
+    expect(await updateAccount("nada:claude", {})).toBeNull();
+  });
+
+  test("dedupes a directory found twice and gives colliding folders distinct ids", async () => {
+    seedHome();
+    const twin = join(home, "outro", ".claude-2");
+    put(join(twin, ".credentials.json"), {});
+    await writeSetting("accounts.settings", {
+      dirs: ["~/.claude-2", twin, "~/sem-login", "relativo", 7],
+      names: "x",
+      defaults: "y",
+    });
+    mkdirSync(join(home, "sem-login"), { recursive: true });
+    const ids = (await refreshAccounts()).map((account) => account.id);
+    expect(ids.filter((id) => id.startsWith("claude-2"))).toHaveLength(2);
+    expect(ids.find((id) => id.startsWith("claude-2-"))).toMatch(/^claude-2-[0-9a-f]{6}:claude$/);
+  });
+
+  test("detects the provider of an added folder by its files or name", async () => {
+    const codex = join(home, "x", "conta-codex");
+    mkdirSync(codex, { recursive: true });
+    const named = join(home, "x", "minha-claude");
+    mkdirSync(named, { recursive: true });
+    const toml = join(home, "x", "cfg");
+    put(join(toml, "config.toml"), "");
+    const mac = join(home, "x", "macbook");
+    put(join(mac, ".claude.json"), {});
+    for (const path of [codex, named, toml, mac]) await addAccountDir({ path });
+    const ids = (await listAccounts()).map((account) => account.id);
+    expect(ids).toEqual(
+      expect.arrayContaining(["conta-codex:codex", "minha-claude:claude", "cfg:codex", "d-macbook:claude"]),
+    );
+  });
+
+  test("validates edits and new directories", async () => {
+    seedHome();
+    await refreshAccounts();
+    const fails = async (work: Promise<unknown>, field: string) => {
+      await expect(work).rejects.toMatchObject({ field });
+    };
+    await fails(updateAccount("vps:claude", null), "body");
+    await fails(updateAccount("vps:claude", []), "body");
+    await fails(updateAccount("vps:claude", { cor: "azul" }), "cor");
+    await fails(updateAccount("vps:claude", { name: 3 }), "name");
+    await fails(updateAccount("vps:claude", { name: "x".repeat(61) }), "name");
+    await fails(updateAccount("vps:claude", { isDefault: false }), "isDefault");
+    await fails(updateAccount("vps:grok", { isDefault: true }), "isDefault");
+    await fails(addAccountDir(null), "path");
+    await fails(addAccountDir({ path: "  " }), "path");
+    await fails(addAccountDir({ path: "relativo/.claude" }), "path");
+    await fails(addAccountDir({ path: join(home, "vazio") }), "path");
+    await fails(removeAccountDir("claude-2:claude"), "id");
+    expect(await addAccountDir({ path: "~" })).toBeDefined();
+  });
+
+  test("guides a login into the next free directory", async () => {
+    seedHome();
+    mkdirSync(join(home, ".claude-3"), { recursive: true });
+    expect(await loginGuide("claude")).toMatchObject({
+      provider: "claude",
+      dir: "~/.claude-4",
+      command: "CLAUDE_CONFIG_DIR=~/.claude-4 claude auth login",
+    });
+    const codex = await loginGuide("codex");
+    expect(codex.command).toBe("mkdir -p ~/.codex-2 && CODEX_HOME=~/.codex-2 codex login");
+    expect(codex.steps).toHaveLength(3);
+    await expect(loginGuide("grok")).rejects.toMatchObject({ field: "provider" });
+    process.env.HOST_HOME = join(home, "nao-existe");
+    expect((await loginGuide("claude")).dir).toBe("~/.claude-2");
   });
 
   test("serves the cache, refreshes it when stale and finds accounts", async () => {
@@ -342,72 +370,53 @@ describe("accounts", () => {
     expect(await listAccounts()).not.toBe(cached);
     expect((await findAccount("vps:claude"))?.status).toBe("ready");
     expect(await findAccount("vps:none")).toBeUndefined();
+    fakeProviders.probes.codex = { provider: "codex", status: "logged_out", detail: "saiu", models: [] };
+    await refreshAccounts();
+    fakeProviders.probes.codex = undefined;
     setSystemTime(new Date(Date.now() + 60_000));
-    const offline = await findAccount("mac:claude");
-    expect(offline?.status).toBe("offline");
+    expect((await findAccount("vps:codex"))?.status).toBe("ready");
   });
 
-  test("validates ids, picks the runner target and the MCP base", () => {
-    expect(runnerIds).toEqual(["vps", "mac"]);
+  test("validates ids and the MCP base", () => {
     expect(isAccountId("vps:claude")).toBe(true);
-    expect(isAccountId("mac:grok")).toBe(true);
-    expect(isAccountId("mac-ab12cd34:grok")).toBe(true);
-    expect(isAccountId("mac-AB:grok")).toBe(false);
-    expect(isAccountId("pc:claude")).toBe(false);
+    expect(isAccountId("claude-2:claude")).toBe(true);
+    expect(isAccountId("mac:grok")).toBe(false);
+    expect(isAccountId("mac-ab12cd34:grok")).toBe(false);
+    expect(isAccountId("Claude:claude")).toBe(false);
     expect(isAccountId("vps")).toBe(false);
-    expect(runnerTarget({ id: "mac-ab12:claude", runner: "mac" })).toBe("mac-ab12");
-    expect(runnerTarget({ id: "mac:claude", runner: "mac" })).toBe("mac");
-    expect(runnerTarget({ id: "weird:claude", runner: "mac" })).toBe("mac");
-    expect(runnerTarget({ id: "vps:claude", runner: "vps" })).toBe("vps");
+    expect(isAccountId("vps:gemini")).toBe(false);
+    expect(isLegacyMacAccount("mac-ab12:claude")).toBe(true);
+    expect(isLegacyMacAccount("vps:claude")).toBe(false);
     expect(mcpBaseFor()).toStartWith("http://127.0.0.1:");
   });
 });
 
-describe("runOnRunner", () => {
+describe("runOnAccount", () => {
   test("emits an injected fault instead of running", async () => {
     const file = join(testDataDir(), "faults-run.json");
     writeFileSync(file, JSON.stringify({ "vps:claude": "falha injetada" }));
     process.env.BOTS_FAULTS_FILE = file;
     const events: ProviderEvent[] = [];
-    await runOnRunner("vps", turnRequest(), new AbortController().signal, (event) => events.push(event));
+    await runOnAccount({ id: "vps:claude", provider: "claude" }, turnRequest(), new AbortController().signal, (event) =>
+      events.push(event),
+    );
     expect(events.at(-1)).toEqual({ type: "done", ok: false, message: "falha injetada" });
     expect(fakeProviders.turns).toHaveLength(0);
   });
 
-  test("runs on the VPS through the provider", async () => {
+  test("runs each account in its own directory", async () => {
+    seedHome();
+    await refreshAccounts();
     const events: ProviderEvent[] = [];
-    await runOnRunner("vps", turnRequest(), new AbortController().signal, (event) => events.push(event));
-    expect(fakeProviders.turns).toHaveLength(1);
+    await runOnAccount(
+      { id: "claude-2:claude", provider: "claude" },
+      turnRequest(),
+      new AbortController().signal,
+      (event) => events.push(event),
+    );
+    await runOnAccount({ id: "vps:claude", provider: "claude" }, turnRequest(), new AbortController().signal, () => {});
+    expect(fakeProviders.turns.map((turn) => turn.request.configDir)).toEqual([join(home, ".claude-2"), null]);
     expect(events.at(-1)).toEqual({ type: "done", ok: true });
-  });
-
-  test("runs on the right Mac without code", async () => {
-    const first = runnerSocketFake("first000-device", "A", 1);
-    const second = runnerSocketFake("second00-device", "B", 2);
-    const events: ProviderEvent[] = [];
-    const request = turnRequest("codex");
-    const running = runOnRunner("mac-second00", request, new AbortController().signal, (event) => events.push(event));
-    await until(() => second.sent.some((message) => message.type === "turn.start"));
-    expect(first.sent.some((message) => message.type === "turn.start")).toBe(false);
-    const start = second.sent.find((message) => message.type === "turn.start") as unknown as {
-      turn: TurnRequest & { code: unknown };
-    };
-    expect(start.turn.code).toBeNull();
-    second.say({ type: "turn.event", id: request.turnId, event: { type: "done", ok: true } });
-    second.say({ type: "turn.end", id: request.turnId });
-    await running;
-    expect(events).toEqual([{ type: "done", ok: true }]);
-    first.close();
-    second.close();
-  });
-
-  test("fails a turn for a Mac that is not on the account", async () => {
-    const events: ProviderEvent[] = [];
-    await runOnRunner("mac-nowhere", turnRequest(), new AbortController().signal, (event) => events.push(event));
-    expect(events).toEqual([{ type: "done", ok: false, message: "Mac desconectado." }]);
-    const none: ProviderEvent[] = [];
-    await runOnRunner("mac", turnRequest(), new AbortController().signal, (event) => none.push(event));
-    expect(none).toEqual([{ type: "done", ok: false, message: "Mac desconectado." }]);
   });
 });
 
@@ -426,5 +435,30 @@ describe("routes", () => {
     });
     expect(posted.status).toBe(200);
     expect(posted.body.find((account) => account.id === "vps:claude")?.detail).toBe("voltou");
+  });
+
+  test("renames, adds, removes and guides through the account routes", async () => {
+    seedHome();
+    await refreshAccounts();
+    const renamed = await request<Account[]>("/accounts/claude-2:claude", {
+      method: "PATCH",
+      body: { name: "Pessoal" },
+    });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.find((account) => account.id === "claude-2:claude")?.label).toBe("Pessoal");
+    expect((await request("/accounts/nada:claude", { method: "PATCH", body: {} })).status).toBe(404);
+    const bad = await request<{ field: string }>("/accounts/vps:claude", { method: "PATCH", body: { cor: 1 } });
+    expect(bad).toMatchObject({ status: 400, body: { field: "cor" } });
+    expect((await request("/accounts/vps:claude", { method: "PATCH", body: "{oops" })).status).toBe(400);
+    put(join(home, "extra", ".credentials.json"), {});
+    const added = await request<Account[]>("/accounts/dirs", { method: "POST", body: { path: "~/extra" } });
+    expect(added.body.some((account) => account.id === "extra:claude")).toBe(true);
+    const removed = await request<Account[]>("/accounts/extra:claude", { method: "DELETE" });
+    expect(removed.body.some((account) => account.id === "extra:claude")).toBe(false);
+    expect((await request("/accounts/nada:claude", { method: "DELETE" })).status).toBe(404);
+    const guide = await request<{ command: string }>("/accounts/login-guide?provider=codex");
+    expect(guide.body.command).toContain("CODEX_HOME=");
+    expect((await request<{ dir: string }>("/accounts/login-guide")).body.dir).toBe("~/.claude-3");
+    expect((await request("/accounts/x/y")).status).toBe(404);
   });
 });

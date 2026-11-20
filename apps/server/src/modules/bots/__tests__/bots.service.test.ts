@@ -63,7 +63,7 @@ describe("bot defaults", () => {
   test("engine, fallback and settings fill from defaults", async () => {
     expect(defaultEngine()).toEqual({ account: "vps:claude", model: defaultClaudeModel, effort: null });
     expect(suggestedFallback("vps:codex")).toEqual({ account: "vps:claude", model: defaultClaudeModel });
-    expect(suggestedFallback("mac:claude")).toEqual({ account: "vps:codex", model: defaultModels.codex });
+    expect(suggestedFallback("claude-2:claude")).toEqual({ account: "vps:codex", model: defaultModels.codex });
     const bare = { id: "bare", capabilities: {} } as BotDefinition;
     expect(engineOf(bare).fallback).toEqual({ account: "vps:codex", model: defaultModels.codex });
     expect(engineOf({ ...bare, engine: { ...defaultEngine(), fallback: null } }).fallback).toBeNull();
@@ -144,7 +144,7 @@ describe("createBot", () => {
         { cron: "0 9 * * *", prompt: "Bom dia" },
         { name: "tarde", cron: "0 15 * * 1-5", timezone: "UTC", prompt: "Boa tarde", description: "Resumo" },
       ],
-      engine: { account: "mac:codex", effort: "high", fallback: { account: "vps:grok" } },
+      engine: { account: "codex-2:codex", effort: "high", fallback: { account: "vps:grok" } },
       decisions: { threshold: 0.9 },
       connectors: { allowed: ["github", "github"] },
       memory: { recall: false },
@@ -158,7 +158,7 @@ describe("createBot", () => {
       { name: "tarde", cron: "0 15 * * 1-5", timezone: "UTC", prompt: "Boa tarde", description: "Resumo" },
     ]);
     expect(bot.engine).toEqual({
-      account: "mac:codex",
+      account: "codex-2:codex",
       model: defaultModels.codex,
       effort: "high",
       fallback: { account: "vps:grok", model: defaultModels.grok },
@@ -211,12 +211,14 @@ describe("createBot", () => {
       ],
       [{ name, engine: "x" }, "engine"],
       [{ name, engine: { speed: 1 } }, "engine.speed"],
-      [{ name, engine: { account: "cloud:claude" } }, "engine.account"],
+      [{ name, engine: { account: "mac:claude" } }, "engine.account"],
+      [{ name, engine: { account: "Cloud:claude" } }, "engine.account"],
       [{ name, engine: { account: 3 } }, "engine.account"],
       [{ name, engine: { effort: "max" } }, "engine.effort"],
       [{ name, engine: { model: "" } }, "engine.model"],
       [{ name, engine: { fallback: [] } }, "engine.fallback"],
       [{ name, engine: { fallback: { account: "x" } } }, "engine.fallback.account"],
+      [{ name, engine: { fallback: { account: "mac:codex" } } }, "engine.fallback.account"],
       [{ name, engine: { fallback: { account: 2 } } }, "engine.fallback.account"],
       [{ name, decisions: [] }, "decisions"],
       [{ name, decisions: { mode: 1 } }, "decisions.mode"],
@@ -296,8 +298,8 @@ describe("updateBot", () => {
     expect(changes).toBe(before + 1);
     const plain = await createBot({ name: uniqueName() });
     delete (plain as Partial<BotDefinition>).engine;
-    const engine = await updateBot(plain.id, { engine: { account: "mac:cursor" } });
-    expect(engine?.engine).toMatchObject({ account: "mac:cursor", model: defaultModels.cursor });
+    const engine = await updateBot(plain.id, { engine: { account: "vps:cursor" } });
+    expect(engine?.engine).toMatchObject({ account: "vps:cursor", model: defaultModels.cursor });
   });
 });
 

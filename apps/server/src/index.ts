@@ -5,6 +5,7 @@ import { startServer } from "./app";
 import { dataDir, host, model, port } from "./config/env";
 import { runnerToken, runnerTokenFile } from "./config/runtime-secrets";
 import { closeDb, initDb, rootDb } from "./db";
+import { migrateBotAccounts } from "./modules/accounts/services/account-migration.service";
 import { refreshAccounts } from "./modules/accounts/services/accounts.service";
 import { initAuth } from "./modules/auth/gate";
 import { loadBots } from "./modules/bots/services/bots.service";
@@ -68,9 +69,15 @@ async function main() {
       console.log(`killed orphans: ${orphans.map((proc) => `${proc.pid} ${proc.command.slice(0, 60)}`).join("; ")}`);
     closeIdleBrowsers((botId) => botStatuses()[botId] === "working" || hasLiveClients(botId));
   }, 60_000).unref();
-  void refreshAccounts().then((accounts) =>
-    console.log(`accounts: ${accounts.map((item) => `${item.id}=${item.status}`).join(", ")}`),
-  );
+  void refreshAccounts()
+    .then((accounts) => {
+      console.log(`accounts: ${accounts.map((item) => `${item.id}=${item.status}`).join(", ")}`);
+      return migrateBotAccounts();
+    })
+    .then((moved) => {
+      for (const item of moved) console.log(`accounts: bot ${item.botId} ${item.from} -> ${item.to}`);
+    })
+    .catch((error) => console.warn(`accounts: migração falhou: ${error instanceof Error ? error.message : error}`));
   for (const signal of ["SIGTERM", "SIGINT"] as const) {
     process.on(signal, () => {
       stopAllDesktops();

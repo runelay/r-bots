@@ -2,7 +2,15 @@ import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export { FakeChild, fakeProcesses, type ProcessCall, type ProcessReply } from "./fake-process";
-export { type FakeTurn, fakeModels, fakeProviders, readyProbe, replyWith, type TurnScript } from "./fake-providers";
+export {
+  accountFields,
+  type FakeTurn,
+  fakeModels,
+  fakeProviders,
+  readyProbe,
+  replyWith,
+  type TurnScript,
+} from "./fake-providers";
 export { type ApiCall, type ApiReply, fakeRunelay } from "./fake-runelay";
 
 export function testDataDir() {

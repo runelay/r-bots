@@ -16,7 +16,7 @@ import {
 } from "../../../../test/engine-turn-helpers";
 import { fakeProviders, replyWith } from "../../../../test/helpers";
 import * as accounts from "../../accounts/services/accounts.service";
-import { clearLimit, markLimited } from "../../accounts/services/limits.service";
+import { clearLimit, limitOf, markLimited } from "../../accounts/services/limits.service";
 import * as decisions from "../../approvals/services/decisions.service";
 import * as blockTools from "../../blocks/services/block-tools.service";
 import { setKnownConnectors } from "../../bots/services/bots.service";
@@ -43,8 +43,24 @@ beforeEach(() => {
 
 afterEach(() => {
   restoreTracked();
-  for (const id of ["vps:claude", "vps:codex", "vps:grok", "vps:cursor", "mac:claude"]) clearLimit(id);
+  for (const id of ["vps:claude", "vps:codex", "vps:grok", "vps:cursor", "claude-2:claude"]) clearLimit(id);
 });
+
+function withSecondClaude() {
+  const real = accounts.listAccounts;
+  track(
+    spyOn(accounts, "listAccounts").mockImplementation(async () => {
+      const list = await real();
+      const main = list.find((item) => item.id === "vps:claude");
+      return main
+        ? [
+            ...list,
+            { ...main, id: "claude-2:claude", label: "Claude Anderson", name: "Claude Anderson", isDefault: false },
+          ]
+        : list;
+    }),
+  );
+}
 
 function decision(outcome: string): decisions.DecisionRecord {
   return { kind: "triage", answer: null, outcome } as unknown as decisions.DecisionRecord;
@@ -165,18 +181,26 @@ describe("a chat turn", () => {
     expect(fakeProviders.turns).toHaveLength(0);
   });
 
-  test("fails when the account is missing or offline", async () => {
+  test("fails when the account is missing or down and nothing can take over", async () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);
-    bot.engine = { account: "vps:nada", model: "x", effort: null };
+    bot.engine = { account: "vps:nada", model: "x", effort: null, fallback: null };
     await run(session);
     expect(await settledOf(session)).toMatchObject({
       outcome: "failed",
       error: { code: "ACCOUNT_UNAVAILABLE", message: "A conta vps:nada não existe." },
     });
-    bot.engine = { account: "mac:claude", model: "x", effort: null };
+    track(
+      spyOn(accounts, "findAccount").mockImplementation(async (id: string) => ({
+        ...(await accounts.listAccounts()).find((item) => item.id === "vps:claude")!,
+        id,
+        status: "offline",
+        detail: "caiu",
+      })),
+    );
+    bot.engine = { account: "vps:claude", model: "x", effort: null, fallback: null };
     await run(session);
-    expect((await settledOf(session))?.error?.message).toContain("está fora do ar");
+    expect((await settledOf(session))?.error?.message).toBe("A conta Claude está fora do ar. caiu");
     expect(fakeProviders.turns).toHaveLength(0);
   });
 
@@ -457,29 +481,90 @@ describe("usage limits", () => {
     expect((await settledOf(session))?.outcome).toBe("completed");
   });
 
-  test("names the runner when the fallback is the same provider elsewhere", async () => {
+  test("goes to the other Claude first and keeps the model and effort", async () => {
     const bot = await makeBot();
-    bot.engine = {
-      account: "vps:claude",
-      model: "m",
-      effort: "high",
-      fallback: { account: "mac:claude", model: "m2" },
-    };
+    bot.engine = { account: "vps:claude", model: "m", effort: "high", fallback: { account: "vps:codex", model: "g" } };
     const session = await newSession(bot.id);
+    withSecondClaude();
+    markLimited("vps:claude", "usage limit reached");
+    await run(session);
+    const failover = (await factsOfType(session, "account.failover"))[0].data;
+    expect(failover).toMatchObject({ from: "vps:claude", to: "claude-2:claude", toModel: "m" });
+    expect(failover.line).toBe("Limite do Claude acabou · continuei com Claude Anderson");
+    expect(failover.until).toBeNull();
+    expect(lastRequest()).toMatchObject({ provider: "claude", model: "m", effort: "high" });
+    expect((await settledOf(session))?.outcome).toBe("completed");
+  });
+
+  test("walks the chain Claude, other Claude, Codex when both Claudes hit the limit", async () => {
+    const bot = await makeBot();
+    bot.engine = { account: "vps:claude", model: "m", effort: null, fallback: { account: "vps:codex", model: "g" } };
+    const session = await newSession(bot.id);
+    withSecondClaude();
+    fakeProviders.next(
+      sequence(
+        ({ emit }) => emit({ type: "done", ok: false, message: "usage limit reached" }),
+        ({ emit }) => emit({ type: "done", ok: false, message: "usage limit reached" }),
+        replyWith("Fechei no Codex."),
+      ),
+    );
+    await run(session, { text: "faz" });
+    expect(fakeProviders.turns.map((turn) => turn.request.provider)).toEqual(["claude", "claude", "codex"]);
+    const hops = (await factsOfType(session, "account.failover")).map((fact) => [fact.data.from, fact.data.to]);
+    expect(hops).toEqual([
+      ["vps:claude", "claude-2:claude"],
+      ["claude-2:claude", "vps:codex"],
+    ]);
+    expect(await repliesOf(session)).toEqual(["Fechei no Codex."]);
+  });
+
+  test("moves to the other Claude when the account goes down mid-turn", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    withSecondClaude();
+    const carry = track(spyOn(handoff, "handoffBlock"));
+    fakeProviders.next(
+      sequence(
+        ({ emit }) => emit({ type: "done", ok: false, message: "API Error: 401 authentication_error" }),
+        replyWith("Segui na outra conta."),
+      ),
+    );
+    await run(session, { text: "faz" });
+    const failover = (await factsOfType(session, "account.failover"))[0].data;
+    expect(failover.line).toBe("Claude fora do ar · continuei com Claude Anderson");
+    expect(failover.reason).toBe("Claude fora do ar");
+    expect(carry.mock.calls.at(-1)?.[1].reason).toContain("o Claude caiu");
+    expect(await repliesOf(session)).toEqual(["Segui na outra conta."]);
+    expect(limitOf("vps:claude")?.kind).toBe("down");
+  });
+
+  test("starts on the other Claude when the main one is logged out", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    withSecondClaude();
     const real = accounts.findAccount;
     track(
       spyOn(accounts, "findAccount").mockImplementation(async (id: string) => {
         const found = await real(id);
-        return found && id === "mac:claude" ? { ...found, status: "ready" } : found;
+        return found && id === "vps:claude" ? { ...found, status: "logged_out", detail: "saiu" } : found;
       }),
     );
-    markLimited("vps:claude", "usage limit reached");
     await run(session);
     const failover = (await factsOfType(session, "account.failover"))[0].data;
-    expect(failover.line).toBe("Limite do Claude (VPS) acabou · continuei com Claude (Mac)");
-    expect(failover.until).toBeNull();
-    expect(await settledOf(session)).toMatchObject({ outcome: "failed", error: { code: "MODEL_CALL_FAILED" } });
-    expect((await settledOf(session))?.error?.message).toContain("Mac desconectado");
+    expect(failover).toMatchObject({ from: "vps:claude", to: "claude-2:claude" });
+    expect(failover.line).toBe("Claude fora do ar · continuei com Claude Anderson");
+    expect((await settledOf(session))?.outcome).toBe("completed");
+  });
+
+  test("fails over from a missing account to the reserve", async () => {
+    const bot = await makeBot();
+    bot.engine = { account: "vps:nada", model: "x", effort: "low", fallback: { account: "vps:codex", model: "g" } };
+    const session = await newSession(bot.id);
+    await run(session);
+    expect((await factsOfType(session, "account.failover"))[0].data.line).toBe(
+      "vps:nada fora do ar · continuei com Codex",
+    );
+    expect(lastRequest()).toMatchObject({ provider: "codex", model: "g", effort: null });
   });
 
   test("retries on the fallback when the limit hits mid-turn", async () => {

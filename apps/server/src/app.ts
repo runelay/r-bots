@@ -1,5 +1,5 @@
 import type { Server } from "bun";
-import { handleAccounts, handleAccountsRefresh } from "./modules/accounts/routes/accounts.routes";
+import { handleAccountRoutes, handleAccounts, handleAccountsRefresh } from "./modules/accounts/routes/accounts.routes";
 import { isRunnerUpgrade, runnerSocket, runnerUpgradeData } from "./modules/accounts/services/mac-runner.service";
 import { gate } from "./modules/auth/gate";
 import { handleBots } from "./modules/bots/routes/bots.routes";
@@ -45,6 +45,7 @@ async function route(req: Req, res: Res) {
   if (parts[0] === "integrations") return handleIntegrations(req, res, method, parts);
   if (method === "GET" && url.pathname === "/accounts") return handleAccounts(res, url);
   if (method === "POST" && url.pathname === "/accounts/refresh") return handleAccountsRefresh(req, res);
+  if (parts[0] === "accounts") return handleAccountRoutes(req, res, url, method, parts);
   if (parts[0] === "devices") return handleDevices(req, res, method, parts);
   if (method === "GET" && parts[0] === "usage") return handleUsageRoute(res, url);
   if (method === "GET" && url.pathname === "/voice/voices") return handleVoices(res, url);

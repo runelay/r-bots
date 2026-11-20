@@ -3,6 +3,7 @@ import { defaultModels } from "@runelay-bots/providers";
 import { Cron } from "croner";
 import { model as defaultClaudeModel } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
+import { isAccountId, preferredAccountId } from "../../accounts/services/accounts.service";
 import { type DecisionSettings, defaultDecisions } from "../../approvals/services/decisions.service";
 import { isPermissionMode, type PermissionMode } from "../../approvals/services/permissions.service";
 import { defaultMemory } from "../../memory/constants/memory.constants";
@@ -73,12 +74,13 @@ export interface BotEngine {
 export const efforts = ["low", "medium", "high"] as const;
 
 export function defaultEngine(): BotEngine {
-  return { account: "vps:claude", model: defaultClaudeModel, effort: null };
+  return { account: preferredAccountId("claude"), model: defaultClaudeModel, effort: null };
 }
 
 export function suggestedFallback(account: string): EngineFallback {
-  const target = account.endsWith(":codex") ? "vps:claude" : "vps:codex";
-  return { account: target, model: target === "vps:claude" ? defaultClaudeModel : defaultModels.codex };
+  return account.endsWith(":codex")
+    ? { account: preferredAccountId("claude"), model: defaultClaudeModel }
+    : { account: preferredAccountId("codex"), model: defaultModels.codex };
 }
 
 export function engineOf(bot: BotDefinition): BotEngine {
@@ -430,10 +432,9 @@ function validateEngine(value: unknown, current: BotEngine): BotEngine {
       throw new ValidationError(`Campo desconhecido: engine.${key}.`, `engine.${key}`);
   }
   const account = raw.account === undefined ? current.account : raw.account;
-  const match = typeof account === "string" ? account.match(/^(vps|mac):(claude|codex|grok|cursor)$/) : null;
-  if (!match)
-    throw new ValidationError("Conta inválida. Use runner:provedor, por exemplo mac:codex.", "engine.account");
-  const provider = match[2] as Provider;
+  if (typeof account !== "string" || !isAccountId(account))
+    throw new ValidationError("Conta inválida. Escolha uma das contas em Ajustes › Contas de IA.", "engine.account");
+  const provider = account.split(":")[1] as Provider;
   const accountChanged = account !== current.account;
   const modelRaw = raw.model ?? (accountChanged ? defaultModels[provider] : current.model);
   const model = asString(modelRaw, "engine.model", 1, 100, "O modelo");
@@ -459,14 +460,13 @@ function validateFallback(
     throw new ValidationError("Conta reserva inválida.", "engine.fallback");
   const raw = value as Record<string, unknown>;
   const account = raw.account;
-  const match = typeof account === "string" ? account.match(/^(vps|mac):(claude|codex|grok|cursor)$/) : null;
-  if (!match)
+  if (typeof account !== "string" || !isAccountId(account))
     throw new ValidationError(
-      "Conta reserva inválida. Use runner:provedor, por exemplo vps:codex.",
+      "Conta reserva inválida. Escolha uma das contas em Ajustes › Contas de IA.",
       "engine.fallback.account",
     );
   const model = asString(
-    raw.model ?? defaultModels[match[2] as Provider],
+    raw.model ?? defaultModels[account.split(":")[1] as Provider],
     "engine.fallback.model",
     1,
     100,

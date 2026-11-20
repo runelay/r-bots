@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { makeBot, waitFor } from "../../../../test/engine-helpers";
-import { fakeProviders, readyProbe, resetData } from "../../../../test/helpers";
+import { accountFields, fakeProviders, readyProbe, resetData } from "../../../../test/helpers";
 import type { Account } from "../../accounts/services/accounts.service";
 import type { WorkspaceState } from "../../code/services/workspace.service";
 import * as workspace from "../../code/services/workspace.service";
@@ -19,6 +19,7 @@ const account: Account = {
   runner: "vps",
   provider: "claude",
   label: "Claude",
+  ...accountFields("vps:claude", "Claude"),
   status: "ready",
   models: readyProbe("claude").models,
   detail: "",

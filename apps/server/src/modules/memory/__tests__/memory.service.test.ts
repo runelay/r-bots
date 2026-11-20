@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, spyOn, test } from "bun:test";
 import { factsOfType, fakeJev, makeBot, stopJev } from "../../../../test/engine-helpers";
-import { fakeProviders, fakeRunelay, readyProbe, resetData } from "../../../../test/helpers";
+import { accountFields, fakeProviders, fakeRunelay, readyProbe, resetData } from "../../../../test/helpers";
 import { getDb, tables } from "../../../db";
 import type { Account } from "../../accounts/services/accounts.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
@@ -25,6 +25,7 @@ const account = (provider: Account["provider"], runner: Account["runner"] = "vps
   runner,
   provider,
   label: provider,
+  ...accountFields(`${runner}:${provider}`, provider),
   status: "ready",
   models: readyProbe(provider).models,
   detail: "",

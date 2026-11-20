@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { factsOfType, fakeJev, makeBot, newSession, stopJev } from "../../../../test/engine-helpers";
-import { fakeProviders, fakeRunelay, readyProbe, resetData } from "../../../../test/helpers";
+import { accountFields, fakeProviders, fakeRunelay, readyProbe, resetData } from "../../../../test/helpers";
 import { getDb } from "../../../db";
 import { teamMemory } from "../../../db/tables";
 import type { Account } from "../../accounts/services/accounts.service";
@@ -15,6 +15,7 @@ const account: Account = {
   runner: "vps",
   provider: "claude",
   label: "claude",
+  ...accountFields("vps:claude", "claude"),
   status: "ready",
   models: readyProbe("claude").models,
   detail: "",
