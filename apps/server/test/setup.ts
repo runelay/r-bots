@@ -22,7 +22,6 @@ const testEnv: Record<string, string> = {
   BLOB_DRIVER: "fs",
   BLOB_FS_DIR: join(root, "blobs"),
   BETTER_AUTH_SECRET: "test-secret-0123456789abcdef0123456789abcdef",
-  BETTER_AUTH_URL: "http://127.0.0.1:2999",
   GATEWAY_HOST: "127.0.0.1",
   GATEWAY_PORT: String(40_000 + (process.pid % 20_000)),
   BOTS_SCHEDULES: "off",

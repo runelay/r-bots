@@ -307,6 +307,14 @@ describe("runtime secrets", () => {
     expect(runnerToken()).toBe(token);
   });
 
+  test("writes a cached secret back when its file was removed", async () => {
+    const dir = join(testDataDir(), "secrets-restored");
+    const value = readOrCreateSecret("restored", 32, dir);
+    rmSync(dir, { recursive: true, force: true });
+    expect(readOrCreateSecret("restored", 32, dir)).toBe(value);
+    expect(readFileSync(join(dir, "restored"), "utf8").trim()).toBe(value);
+  });
+
   test("reuses a stored secret and replaces one that is too short", async () => {
     const dir = join(testDataDir(), "secrets");
     rmSync(dir, { recursive: true, force: true });

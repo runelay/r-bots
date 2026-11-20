@@ -560,6 +560,10 @@ const sttWaiting: Array<() => void> = [];
 const transcribing = new Map<string, Promise<string>>();
 const labels = new Map<string, string>();
 
+export function scribeSlots() {
+  return { active: sttActive, waiting: sttWaiting.length };
+}
+
 async function withSttSlot<T>(work: () => Promise<T>) {
   if (sttActive >= sttConcurrency) await new Promise<void>((resolveSlot) => sttWaiting.push(resolveSlot));
   sttActive++;

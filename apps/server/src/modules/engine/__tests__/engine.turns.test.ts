@@ -18,6 +18,7 @@ import { fakeProviders, replyWith } from "../../../../test/helpers";
 import * as accounts from "../../accounts/services/accounts.service";
 import { clearLimit, markLimited } from "../../accounts/services/limits.service";
 import * as decisions from "../../approvals/services/decisions.service";
+import * as blockTools from "../../blocks/services/block-tools.service";
 import { setKnownConnectors } from "../../bots/services/bots.service";
 import * as canvas from "../../canvas/services/canvas.service";
 import * as computer from "../../computer/services/computer.service";
@@ -179,21 +180,30 @@ describe("a chat turn", () => {
     expect(fakeProviders.turns).toHaveLength(0);
   });
 
-  test("crashes the drain when recording the user message fails", async () => {
+  test("fails the turn and frees the session when recording the user message fails", async () => {
     const bot = await makeBot();
-    const errors = track(spyOn(console, "error").mockImplementation(() => undefined));
     const record = track(spyOn(threads, "recordThreadMessage"));
     const hooks = { onStart: () => undefined, onAwaiting: () => undefined, finish: (_: unknown) => undefined };
     const finished = track(spyOn(hooks, "finish"));
     record.mockRejectedValueOnce(new Error("disco cheio"));
-    send(await newSession(bot.id), { delegation: hooks });
+    const session = await newSession(bot.id);
+    send(session, { delegation: hooks });
     await waitFor(() => finished.mock.calls.length === 1);
-    expect(errors.mock.calls[0][0]).toBe("turn crashed");
     expect(finished.mock.calls[0][0]).toEqual({ outcome: "failed", reply: "", error: "disco cheio" });
+    await idle(session);
+    expect(isRunning(session.meta.sessionId)).toBe(false);
+    expect(conversationStatus(session.meta.sessionId)).toBe("idle");
+    fakeProviders.next(replyWith("voltei"));
+    await run(session, { text: "de novo" });
+    expect((await settledOf(session))?.outcome).toBe("completed");
+    expect((await repliesOf(session)).at(-1)).toBe("voltei");
     record.mockRejectedValueOnce("cru");
-    send(await newSession(bot.id), { delegation: hooks });
+    const other = await newSession(bot.id);
+    send(other, { delegation: hooks });
     await waitFor(() => finished.mock.calls.length === 2);
     expect(finished.mock.calls[1][0]).toEqual({ outcome: "failed", reply: "", error: "cru" });
+    await idle(other);
+    expect(isRunning(other.meta.sessionId)).toBe(false);
   });
 });
 
@@ -239,13 +249,15 @@ describe("the system prompt", () => {
     expect((await factsOfType(session, "delivery.consumed"))[0].data.voice).toBe(true);
   });
 
-  test("ignores a failing canvas note and skips recall when memory is off", async () => {
+  test("ignores failing canvas and blocks notes and skips recall when memory is off", async () => {
     const bot = await makeBot({ memory: { recall: false, capture: false } });
     const session = await newSession(bot.id);
     track(spyOn(canvas, "canvasEditNote").mockRejectedValue(new Error("sem canvas")));
+    const blocks = track(spyOn(blockTools, "blocksEditNote").mockRejectedValue(new Error("sem blocos")));
     await run(session);
     expect(quiet.recall).not.toHaveBeenCalled();
     expect(quiet.capture).not.toHaveBeenCalled();
+    expect(blocks).toHaveBeenCalledWith(bot.id);
     expect((await settledOf(session))?.outcome).toBe("completed");
   });
 });

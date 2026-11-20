@@ -245,6 +245,12 @@ describe("formula functions", () => {
     I3: '=SEERRO(1/0;"ok")',
     I4: "=MIN(C1:C3;FALSO)",
     I5: "=PROCX(2;A1:A3;B1:B3)",
+    I6: '=CONT.SES(B1:B4;">a")',
+    I7: '=CONT.SES(B1:B4;"<=AB")',
+    I8: '=SOMASES(A1:A3;B1:B3;"<b")',
+    I9: '=MEDIASES(A1:A3;B1:B3;">=B")',
+    J1: '=CONT.SES(A1:A6;">a")',
+    J2: '=CONT.SES(B1:B4;"<c")',
   };
   const at = compute(cells);
   const value = (a: string) => at("t1", a)?.v;
@@ -275,6 +281,15 @@ describe("formula functions", () => {
     expect(value("F2")).toBe(1);
     expect(value("F3")).toBe(4);
     expect(value("F4")).toBe(0);
+  });
+
+  test("text criteria with comparison operators compare text, ignoring case", () => {
+    expect(value("I6")).toBe(3);
+    expect(value("I7")).toBe(2);
+    expect(value("I8")).toBe(4);
+    expect(value("I9")).toBe(2);
+    expect(value("J1")).toBe(1);
+    expect(value("J2")).toBe(3);
   });
 
   test("match, lookup, upper and value", () => {

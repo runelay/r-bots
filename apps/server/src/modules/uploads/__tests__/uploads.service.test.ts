@@ -25,6 +25,7 @@ import {
   readUpload,
   resolveUploads,
   runPrepareJob,
+  scribeSlots,
   serveUpload,
   type UploadMeta,
   uploadGuide,
@@ -337,7 +338,8 @@ describe("audio", () => {
       tool.run({ uploadId: two.uploadId }, {} as never),
     ];
     await firstCalled;
-    for (let turn = 0; turn < 20; turn++) await new Promise((resolve) => setImmediate(resolve));
+    await waitFor(() => scribeSlots().waiting === 1);
+    expect(scribeSlots().active).toBe(1);
     expect(releases).toHaveLength(1);
     releases[0]();
     while (releases.length < 2) await new Promise((resolve) => setImmediate(resolve));

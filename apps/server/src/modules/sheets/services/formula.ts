@@ -389,7 +389,14 @@ function criteriaOf(raw: unknown) {
       if (op === "<=") return item <= numeric;
       return item >= numeric;
     }
-    if (op === "<" || op === ">" || op === "<=" || op === ">=") return false;
+    if (op === "<" || op === ">" || op === "<=" || op === ">=") {
+      if (numeric !== null || typeof item !== "string" || item === "") return false;
+      const order = item.toLowerCase().localeCompare(operand.toLowerCase(), "pt-BR");
+      if (op === "<") return order < 0;
+      if (op === ">") return order > 0;
+      if (op === "<=") return order <= 0;
+      return order >= 0;
+    }
     const hit = operand === "" ? item === null || item === "" : pattern.test(String(item ?? "").toLowerCase());
     return op === "<>" ? !hit : hit;
   };

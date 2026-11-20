@@ -541,7 +541,6 @@ function taggedLog(log: EventLog, botId: string): EventLog {
     progress: (fact: Fact) => log.progress(tag(fact)),
     subscribe: (listener: (line: string) => void) => log.subscribe(listener),
     load: () => log.load(),
-    flush: () => log.flush(),
   } as unknown as EventLog;
 }
 
@@ -741,7 +740,6 @@ interface ProviderRun {
   images?: PreparedImage[];
   resume: string | null;
   origin: string | null;
-  ownerCallId: string | null;
   isSchedule: boolean;
   onEvent: (event: ProviderEvent) => void;
   runIdRef: () => string;
@@ -750,7 +748,7 @@ interface ProviderRun {
   usage: Usage;
   request: string;
   codeRun?: { workspace: WorkspaceState; live: CodeLive } | null;
-  onEndRun?: () => void;
+  onEndRun: () => void;
 }
 
 function emitDecision(log: EventLog, turn: Turn, record: DecisionRecord) {
@@ -777,7 +775,7 @@ function onToolSettled(log: EventLog, turn: Turn, summary: string) {
 async function executeProvider(run: ProviderRun) {
   const { session, turn } = run;
   const log = run.log;
-  const codeWorkspace = run.codeRun && run.ownerCallId === null ? run.codeRun.workspace : null;
+  const codeWorkspace = run.codeRun ? run.codeRun.workspace : null;
   const coding = Boolean(codeWorkspace && codeModeSupported(run.provider, run.account.runner));
   const bot =
     coding && !run.bot.capabilities.browser
@@ -787,18 +785,14 @@ async function executeProvider(run: ProviderRun) {
   const tools = toolsFor(bot);
   const token = newToken();
   const permission = effectivePermission(session.meta.permission, run.bot.permission);
-  const needsMcp = true;
   const runAbort = new AbortController();
   const forwardAbort = () => runAbort.abort();
   turn.abort.signal.addEventListener("abort", forwardAbort, { once: true });
-  const stopRun =
-    run.ownerCallId === null && run.onEndRun
-      ? () => {
-          run.onEndRun?.();
-          runAbort.abort();
-        }
-      : undefined;
-  if (stopRun) turn.stopRun = stopRun;
+  const stopRun = () => {
+    run.onEndRun();
+    runAbort.abort();
+  };
+  turn.stopRun = stopRun;
   const context: ToolContext = {
     token,
     botId: bot.id,
@@ -809,7 +803,7 @@ async function executeProvider(run: ProviderRun) {
     tools,
     delegates,
     origin: run.origin,
-    ownerCallId: run.ownerCallId,
+    ownerCallId: null,
     isSchedule: run.isSchedule,
     signal: turn.abort.signal,
     onCallStart: run.onCallStart,
@@ -822,20 +816,15 @@ async function executeProvider(run: ProviderRun) {
     decisions: decisionsOf(bot),
     emitDecision: (record) => emitDecision(log, turn, record),
     onCallSettled: (summary) => onToolSettled(log, turn, summary),
-    groupMembers:
-      run.group && run.ownerCallId === null ? run.group.members.filter((member) => member.id !== bot.id) : [],
+    groupMembers: run.group ? run.group.members.filter((member) => member.id !== bot.id) : [],
     onHandoff: (botId, note) => run.group?.onHandoff(botId, note),
     provider: run.provider,
     runner: run.account.runner,
     permission,
-    ...(run.onEndRun && run.ownerCallId === null
-      ? {
-          endRun: () => {
-            run.onEndRun?.();
-            setTimeout(() => runAbort.abort(), 300);
-          },
-        }
-      : {}),
+    endRun: () => {
+      run.onEndRun();
+      setTimeout(() => runAbort.abort(), 300);
+    },
     cancelTurn: (reason) => {
       if (turn.abort.signal.aborted) return;
       turn.cancelled = true;
@@ -843,7 +832,7 @@ async function executeProvider(run: ProviderRun) {
       turn.abort.abort();
     },
   };
-  if (run.ownerCallId === null && run.account.runner !== "mac" && !turn.slot) {
+  if (run.account.runner !== "mac" && !turn.slot) {
     let queued = false;
     const scope = { turnId: turn.turnId };
     turn.slot = await acquireTurnSlot(turn.priority, turn.abort.signal, (position) => {
@@ -852,7 +841,7 @@ async function executeProvider(run: ProviderRun) {
     });
     if (queued) log.emit({ type: "turn.dequeued", data: { turnId: turn.turnId }, scope });
   }
-  const revoke = needsMcp ? registerContext(context) : () => false;
+  const revoke = registerContext(context);
   try {
     await runOnRunner(
       runnerTarget(run.account),
@@ -865,7 +854,7 @@ async function executeProvider(run: ProviderRun) {
           systemPromptFor(
             bot,
             delegates,
-            run.ownerCallId === null && session.meta.turnCount <= 1 && session.meta.kind === "thread",
+            session.meta.turnCount <= 1 && session.meta.kind === "thread",
             codeWorkspace ? { workspace: codeWorkspace, supported: coding } : null,
             permission,
           ),
@@ -876,8 +865,8 @@ async function executeProvider(run: ProviderRun) {
         prompt: run.prompt,
         ...(run.images?.length ? { images: run.images } : {}),
         resume: run.resume,
-        mcp: needsMcp ? { url: `${mcpBaseFor()}/mcp/${bot.id}/${session.meta.sessionId}`, token } : null,
-        workKey: `${bot.id}/${run.ownerCallId ? "delegate" : session.meta.sessionId}`,
+        mcp: { url: `${mcpBaseFor()}/mcp/${bot.id}/${session.meta.sessionId}`, token },
+        workKey: `${bot.id}/${session.meta.sessionId}`,
         code:
           coding && codeWorkspace
             ? { cwd: codeWorkspace.path, ...(permission === "readonly" ? { readOnly: true } : {}) }
@@ -891,7 +880,7 @@ async function executeProvider(run: ProviderRun) {
     );
   } finally {
     turn.abort.signal.removeEventListener("abort", forwardAbort);
-    if (stopRun && turn.stopRun === stopRun) turn.stopRun = undefined;
+    if (turn.stopRun === stopRun) turn.stopRun = undefined;
     revoke();
   }
 }
@@ -1173,20 +1162,6 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     });
   const shownText = delivery.text.trim() || attachmentsTitle(delivery.attachments ?? []);
   if (!meta.title) meta.title = titleFrom(shownText);
-  if (from && (meta.kind === "thread" || meta.kind === "conversation")) {
-    await recordThreadMessage(
-      meta.botId,
-      meta.sessionId,
-      { role: "bot", text: titleFrom(`${from.name} pediu: ${shownText}`), at: now(), botId: from.botId },
-      true,
-    );
-  } else if (
-    !isSchedule &&
-    (meta.kind === "thread" || meta.kind === "group" || meta.kind === "conversation") &&
-    showDelivery
-  ) {
-    await recordThreadMessage(meta.botId, meta.sessionId, { role: "user", text: titleFrom(shownText), at: now() });
-  }
 
   const settle = (outcome: string, extra: Record<string, unknown> = {}) => {
     const error = (extra.error as { message?: string } | undefined)?.message;
@@ -1200,6 +1175,20 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
   };
 
   try {
+    if (from && (meta.kind === "thread" || meta.kind === "conversation")) {
+      await recordThreadMessage(
+        meta.botId,
+        meta.sessionId,
+        { role: "bot", text: titleFrom(`${from.name} pediu: ${shownText}`), at: now(), botId: from.botId },
+        true,
+      );
+    } else if (
+      !isSchedule &&
+      (meta.kind === "thread" || meta.kind === "group" || meta.kind === "conversation") &&
+      showDelivery
+    ) {
+      await recordThreadMessage(meta.botId, meta.sessionId, { role: "user", text: titleFrom(shownText), at: now() });
+    }
     if (!bot) {
       settle("failed", { error: { code: "BOT_NOT_FOUND", message: "Esse bot não existe mais." } });
       return;
@@ -1433,7 +1422,6 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           switching = true;
         },
         origin: null,
-        ownerCallId: null,
         isSchedule,
         usage,
         request: delivery.text,
