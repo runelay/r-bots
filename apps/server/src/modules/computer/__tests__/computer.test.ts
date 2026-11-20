@@ -62,22 +62,22 @@ describe("computerHealth", () => {
     expect(await computerHealth()).toEqual({
       ok: false,
       code: "COMPUTER_UNAVAILABLE",
-      error: "O app runelay bots não respondeu: travou",
+      error: "O app r/bots não respondeu: travou",
     });
     failing.mockRejectedValue("texto");
-    expect((await computerHealth()).error).toBe("O app runelay bots não respondeu: texto");
+    expect((await computerHealth()).error).toBe("O app r/bots não respondeu: texto");
   });
 
   test("says the Mac is disconnected when no app is connected", async () => {
     expect(await computerHealth()).toEqual({
       ok: false,
       code: "COMPUTER_UNAVAILABLE",
-      error: "Mac desconectado: abra o app runelay bots nele.",
+      error: "Mac desconectado: abra o app r/bots nele.",
     });
     const error = await caught(callComputer("computer_apps", {}, context));
     expect([error.code, error.message]).toEqual([
       "COMPUTER_UNAVAILABLE",
-      "Mac desconectado: abra o app runelay bots nele.",
+      "Mac desconectado: abra o app r/bots nele.",
     ]);
   });
 

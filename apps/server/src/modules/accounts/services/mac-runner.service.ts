@@ -180,7 +180,7 @@ function notifyChange(connected: boolean, key: string) {
 
 function send(message: Record<string, unknown>, key?: string) {
   const connection = connectionFor(key);
-  if (!connection) throw new MacRunnerUnavailable("O app runelay bots não está conectado.");
+  if (!connection) throw new MacRunnerUnavailable("O app r/bots não está conectado.");
   connection.socket.send(JSON.stringify(message));
   return connection.key;
 }
@@ -212,12 +212,12 @@ function dropConnection(socket: Socket) {
   for (const [id, entry] of pending) {
     if (entry.key !== connection.key) continue;
     clearTimeout(entry.timer);
-    entry.reject(new MacRunnerUnavailable("O app runelay bots desconectou."));
+    entry.reject(new MacRunnerUnavailable("O app r/bots desconectou."));
     pending.delete(id);
   }
   for (const [id, stream] of turns) {
     if (stream.key !== connection.key) continue;
-    stream.emit({ type: "done", ok: false, message: "O app runelay bots fechou no meio do turno." });
+    stream.emit({ type: "done", ok: false, message: "O app r/bots fechou no meio do turno." });
     stream.finish();
     turns.delete(id);
   }
@@ -397,7 +397,7 @@ function request(op: string, payload: Record<string, unknown>, timeoutMs: number
     );
     try {
       const target = connectionFor(key);
-      if (!target) throw new MacRunnerUnavailable("O app runelay bots não está conectado.");
+      if (!target) throw new MacRunnerUnavailable("O app r/bots não está conectado.");
       pending.set(id, { key: target.key, resolve, reject, timer });
       send({ type: "request", id, op, ...payload }, target.key);
     } catch (error) {
@@ -524,7 +524,7 @@ export function runMacTurn(turn: TurnRequest, signal: AbortSignal, emit: (event:
       emit({
         type: "done",
         ok: false,
-        message: key ? "Mac desconectado." : "O app runelay bots não está conectado.",
+        message: key ? "Mac desconectado." : "O app r/bots não está conectado.",
       });
       done = true;
       finish();

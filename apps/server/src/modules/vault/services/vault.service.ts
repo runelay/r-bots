@@ -420,14 +420,14 @@ export async function resolveSecret(request: ResolveRequest): Promise<string> {
       macFailure = new VaultError("mac_offline", error.message);
     }
   } else {
-    macFailure = new VaultError("mac_offline", "O app runelay bots não está aberto no Mac.");
+    macFailure = new VaultError("mac_offline", "O app r/bots não está aberto no Mac.");
   }
   if (value === null) {
     if (meta.storage !== "mac+server") {
       await audit({ ...base, outcome: "denied", reason: "mac_offline" });
       throw new VaultError(
         "mac_offline",
-        `O segredo:${request.name} fica só no Mac da pessoa, e o Mac está offline (${macFailure?.message ?? "app fechado"}). Diga isso à pessoa: ela pode abrir o app runelay bots ou ligar “usar com o Mac fechado” nesse segredo no Cofre.`,
+        `O segredo:${request.name} fica só no Mac da pessoa, e o Mac está offline (${macFailure?.message ?? "app fechado"}). Diga isso à pessoa: ela pode abrir o app r/bots ou ligar “usar com o Mac fechado” nesse segredo no Cofre.`,
       );
     }
     value = await readServerCopy(request.name, meta);

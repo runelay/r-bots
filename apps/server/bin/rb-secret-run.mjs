@@ -31,7 +31,7 @@ try {
   if (!response.ok) fail("O cofre não liberou o segredo (o tíquete venceu ou já foi usado). Rode o comando de novo.");
   grant = await response.json();
 } catch {
-  fail("Não consegui falar com o cofre do runelay bots.");
+  fail("Não consegui falar com o cofre do r/bots.");
 }
 ticket = "";
 

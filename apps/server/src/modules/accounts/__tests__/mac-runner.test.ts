@@ -312,7 +312,7 @@ describe("several Macs", () => {
     expect(disconnectMacDevice("dev-x")).toBe(true);
     await finished;
     expect(runner.closed).toEqual([[revokedCloseCode, "revoked"]]);
-    expect(events).toEqual([{ type: "done", ok: false, message: "O app runelay bots fechou no meio do turno." }]);
+    expect(events).toEqual([{ type: "done", ok: false, message: "O app r/bots fechou no meio do turno." }]);
     expect(disconnectMacDevice("dev-x")).toBe(false);
     const broken = await connect(device("dev-y", 2));
     broken.ws.close = () => {
@@ -329,7 +329,7 @@ describe("several Macs", () => {
     await expect(macComputerHealth()).rejects.toThrow("não está conectado");
     const events: ProviderEvent[] = [];
     await runMacTurn(turn("m0"), new AbortController().signal, (event) => events.push(event));
-    expect(events).toEqual([{ type: "done", ok: false, message: "O app runelay bots não está conectado." }]);
+    expect(events).toEqual([{ type: "done", ok: false, message: "O app r/bots não está conectado." }]);
     expect(macRunnerConnected("member-mac")).toBe(true);
     const listed = macAccounts("member-mac");
     const asked = member.sent.find((item) => item.op === "accounts");
@@ -628,7 +628,7 @@ describe("requests", () => {
 
     const dropped = macUsageLimits();
     runner.drop();
-    await expect(dropped).rejects.toThrow("O app runelay bots desconectou.");
+    await expect(dropped).rejects.toThrow("O app r/bots desconectou.");
   });
 });
 
@@ -708,13 +708,13 @@ describe("runMacTurn", () => {
     const finished = runMacTurn(turn("t5"), new AbortController().signal, (event) => events.push(event));
     runner.drop();
     await finished;
-    expect(events[0]).toEqual({ type: "done", ok: false, message: "O app runelay bots fechou no meio do turno." });
+    expect(events[0]).toEqual({ type: "done", ok: false, message: "O app r/bots fechou no meio do turno." });
 
     const offline: ProviderEvent[] = [];
     const controller = new AbortController();
     const turnPromise = runMacTurn(turn("t6"), controller.signal, (event) => offline.push(event));
     await turnPromise;
-    expect(offline).toEqual([{ type: "done", ok: false, message: "O app runelay bots não está conectado." }]);
+    expect(offline).toEqual([{ type: "done", ok: false, message: "O app r/bots não está conectado." }]);
   });
 
   test("still cancels quietly when the runner is gone", async () => {

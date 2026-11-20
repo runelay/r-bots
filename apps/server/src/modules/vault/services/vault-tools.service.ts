@@ -301,7 +301,7 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
         }
         if (!macRunnerSupports("vault")) {
           const message =
-            "O app runelay bots não está aberto no Mac, e o formulário seguro precisa dele. Diga isso à pessoa e peça para abrir o app.";
+            "O app r/bots não está aberto no Mac, e o formulário seguro precisa dele. Diga isso à pessoa e peça para abrir o app.";
           settledFail(context, callId, message);
           return textResult(message, true);
         }

@@ -240,7 +240,7 @@ async function requestInfo() {
   }
 }
 async function enter() {
-  if (!userCode) return result("no", "Abra este link pelo app", "Este endereço só funciona a partir do botão Entrar no runelay bots.");
+  if (!userCode) return result("no", "Abra este link pelo app", "Este endereço só funciona a partir do botão Entrar no r/bots.");
   const signedIn = await session();
   if ((await check()) !== true) return;
   if (!signedIn && (await needsOwner())) return show("setup");
@@ -350,7 +350,7 @@ $("allow").addEventListener("click", () => {
   busy($("allow"), async () => {
     try {
       await call("/device/approve", { method: "POST", body: JSON.stringify({ userCode }) });
-      result("ok", "Pronto, pode voltar ao app", "O runelay bots já está liberado neste Mac. Você pode fechar esta aba.");
+      result("ok", "Pronto, pode voltar ao app", "O r/bots já está liberado neste Mac. Você pode fechar esta aba.");
       location.href = callback;
     } catch (error) {
       fail(error.message);
@@ -381,7 +381,7 @@ export function devicePage(basePath: string, nonce: string) {
 <meta name="color-scheme" content="light dark" />
 <meta name="theme-color" content="#F6F7F7" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)" />
-<title>Entrar · runelay bots</title>
+<title>Entrar · r/bots</title>
 <link rel="icon" type="image/svg+xml" href="${favicon}" />
 <link rel="apple-touch-icon" href="${favicon}" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -407,7 +407,7 @@ export function devicePage(basePath: string, nonce: string) {
 </form>
 </section>
 <section id="login" class="view" hidden>
-<header><h1 tabindex="-1">Entrar no runelay bots</h1><p class="lede">Para liberar o app no seu Mac.</p></header>
+<header><h1 tabindex="-1">Entrar no r/bots</h1><p class="lede">Para liberar o app no seu Mac.</p></header>
 <div id="passkey-area">
 <button class="btn primary" id="passkey" type="button">${icons.touch}<span class="label">Entrar com Touch ID</span></button>
 <div class="divider" role="separator">OU</div>
@@ -442,7 +442,7 @@ export function devicePage(basePath: string, nonce: string) {
 </section>
 <p class="error" id="error" role="alert"></p>
 </main>
-<footer>runelay bots</footer>
+<footer>r/bots</footer>
 <script nonce="${nonce}">${script(basePath)}</script>
 </body>
 </html>`;

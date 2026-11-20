@@ -325,7 +325,7 @@ export function reachesNetwork(formula: string) {
 export async function sheetXlsx(botId: string, sheetId: string) {
   const { sheet, tabs, rows } = await bookFor(botId, sheetId);
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "runelay bots";
+  workbook.creator = "r/bots";
   workbook.title = sheet.title;
   workbook.calcProperties.fullCalcOnLoad = true;
   for (const tab of tabs) {

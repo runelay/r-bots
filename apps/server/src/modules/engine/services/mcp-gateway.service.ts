@@ -1343,7 +1343,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
     "create_group",
     {
       description:
-        "Cria um grupo de conversa no próprio runelay bots com outros bots (pelo nome ou id). Use isto quando a pessoa pedir um grupo; nunca use o computador para isso. Não pede aprovação.",
+        "Cria um grupo de conversa no próprio r/bots com outros bots (pelo nome ou id). Use isto quando a pessoa pedir um grupo; nunca use o computador para isso. Não pede aprovação.",
       inputSchema: {
         name: z.string().min(1).max(60),
         members: z.array(z.string().min(1)).min(1).describe("Nomes ou ids dos bots do grupo"),

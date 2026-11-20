@@ -237,7 +237,7 @@ describe("auth routes", () => {
     expect(expiresIn).toBeLessThanOrEqual(600);
     const principal = { userId: ownerId, role: "owner", method: "session" } as Principal;
     const info = (await mod.handle(req(`/auth/device/info?user_code=${userCode}`), principal)) as Response;
-    expect(await info.json()).toMatchObject({ ok: true, clientName: "app runelay bots para Mac", ip: "100.64.1.2" });
+    expect(await info.json()).toMatchObject({ ok: true, clientName: "app r/bots para Mac", ip: "100.64.1.2" });
     const missing = (await mod.handle(req("/auth/device/info?user_code=NOPE"), principal)) as Response;
     expect(missing.status).toBe(404);
     expect(((await mod.handle(req("/auth/device/info"), principal)) as Response).status).toBe(404);

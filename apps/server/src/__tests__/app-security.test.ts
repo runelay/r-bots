@@ -46,7 +46,7 @@ describe("router table", () => {
 describe("routing through the table", () => {
   test("every root reaches its module", async () => {
     const vault = await request<{ error: string }>("/vault/secrets");
-    expect([vault.status, vault.body.error]).toEqual([401, "O cofre só responde ao app runelay bots."]);
+    expect([vault.status, vault.body.error]).toEqual([401, "O cofre só responde ao app r/bots."]);
     const integrations = await request<{ integrations: unknown[] }>("/integrations");
     expect(Array.isArray(integrations.body.integrations)).toBe(true);
     const devices = await request<{ code: string }>("/devices");

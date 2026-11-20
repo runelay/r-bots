@@ -66,7 +66,7 @@ export function createAuth(config: AuthConfig) {
   );
   const socialOrigins = social.apple ? [appleOrigin] : [];
   return betterAuth({
-    appName: config.appName ?? "runelay bots",
+    appName: config.appName ?? "r/bots",
     baseURL: config.baseURL,
     basePath: authBasePath,
     secret: config.secret,
@@ -137,7 +137,7 @@ export function createAuth(config: AuthConfig) {
       }),
       passkey({
         rpID: base.hostname,
-        rpName: config.appName ?? "runelay bots",
+        rpName: config.appName ?? "r/bots",
         origin,
       }),
       apiKey({

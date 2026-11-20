@@ -195,7 +195,7 @@ describe("internal token", () => {
     expect(outcome.principal).toEqual({
       userId: "internal",
       email: "",
-      name: "runelay bots",
+      name: "r/bots",
       role: "owner",
       method: "internal",
     });

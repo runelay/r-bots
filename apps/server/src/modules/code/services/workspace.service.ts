@@ -819,9 +819,9 @@ export async function createCheckpoint(session: StoredSession, workspace: Worksp
     ["commit-tree", tree, "-p", head, "-m", `runelay checkpoint ${session.meta.sessionId} ${turnId}`],
     60_000,
     {
-      GIT_AUTHOR_NAME: "runelay bots",
+      GIT_AUTHOR_NAME: "r/bots",
       GIT_AUTHOR_EMAIL: "bots@runelay.local",
-      GIT_COMMITTER_NAME: "runelay bots",
+      GIT_COMMITTER_NAME: "r/bots",
       GIT_COMMITTER_EMAIL: "bots@runelay.local",
     },
   );

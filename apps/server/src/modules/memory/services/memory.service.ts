@@ -278,7 +278,7 @@ export async function capture(input: CaptureInput) {
       name: fact.title,
       description: `${fact.body.slice(0, 300)}`,
       type: "user",
-      body: `${fact.body}\n\nOrigem: ${bot.name} (runelay bots), ${new Date().toISOString().slice(0, 10)}. Tags: ${tags.join(", ")}`,
+      body: `${fact.body}\n\nOrigem: ${bot.name} (r/bots), ${new Date().toISOString().slice(0, 10)}. Tags: ${tags.join(", ")}`,
     });
     saved.push({ title: fact.title, slug, updated: Boolean(match) });
   }

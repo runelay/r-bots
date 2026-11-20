@@ -6,7 +6,7 @@ import {
   watchMacComputerEvents,
 } from "../../accounts/services/mac-runner.service";
 
-const macOffline = "Mac desconectado: abra o app runelay bots nele.";
+const macOffline = "Mac desconectado: abra o app r/bots nele.";
 export class ComputerError extends Error {
   constructor(
     readonly code: string,
@@ -33,7 +33,7 @@ export async function computerHealth() {
     return {
       ok: false,
       code: "COMPUTER_UNAVAILABLE",
-      error: `O app runelay bots não respondeu: ${error instanceof Error ? error.message : String(error)}`,
+      error: `O app r/bots não respondeu: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }

@@ -94,7 +94,7 @@ async function main() {
   }
   await initAuth();
   startServer(host, port);
-  console.log(`runelay bots (claude-agent-sdk, ${model}) on http://${host}:${port}`);
+  console.log(`r/bots (claude-agent-sdk, ${model}) on http://${host}:${port}`);
 }
 
 void main();

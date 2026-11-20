@@ -414,7 +414,7 @@ async function guardExposure(server: DevServer) {
   if (server.target.kind !== "project" || !(await listensEverywhere(server.port))) return;
   pushLines(
     server,
-    `runelay bots: parei o servidor porque ele abriu a porta ${server.port} para todas as redes. Rode com --host 127.0.0.1 (ou o equivalente da ferramenta).`,
+    `r/bots: parei o servidor porque ele abriu a porta ${server.port} para todas as redes. Rode com --host 127.0.0.1 (ou o equivalente da ferramenta).`,
   );
   await stopDevServer(server);
   server.status = "exited";

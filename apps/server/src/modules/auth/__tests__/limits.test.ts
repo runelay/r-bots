@@ -86,7 +86,7 @@ describe("device requests", () => {
     requests.record("ZZZZ", "other-client", "1.1.1.1");
     expect(normalizeUserCode("ab-cd ef")).toBe("ABCDEF");
     expect(requests.lookup("ABCDEFGH")).toEqual({
-      clientName: "app runelay bots para Mac",
+      clientName: "app r/bots para Mac",
       ip: "100.64.0.7",
       requestedAt: "2026-11-20T12:00:00.000Z",
     });

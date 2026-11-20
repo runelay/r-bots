@@ -7,7 +7,7 @@ export interface DeviceRequestInfo {
 const ttlMs = 10 * 60_000;
 const maxEntries = 2000;
 
-export const clientNames: Record<string, string> = { "runelay-bots-mac": "app runelay bots para Mac" };
+export const clientNames: Record<string, string> = { "runelay-bots-mac": "app r/bots para Mac" };
 
 export function normalizeUserCode(value: string) {
   return value.replace(/[^a-z0-9]/gi, "").toUpperCase();

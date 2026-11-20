@@ -94,7 +94,7 @@ export function createAuthModule(options: AuthModuleOptions) {
           return {
             userId: owner?.id ?? "internal",
             email: owner?.email ?? "",
-            name: owner?.name ?? "runelay bots",
+            name: owner?.name ?? "r/bots",
             role: ownerRole,
             method: "internal",
           };

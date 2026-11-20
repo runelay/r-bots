@@ -278,7 +278,7 @@ describe("sessions", () => {
     const response = await call("/device?user_code=ABCD");
     expect(response.headers.get("content-type")).toContain("text/html");
     const html = await response.text();
-    expect(html).toContain("<title>Entrar · runelay bots</title>");
+    expect(html).toContain("<title>Entrar · r/bots</title>");
     expect(html).toContain('rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,');
     expect(html).toContain('autocomplete="current-password"');
     expect(html).not.toMatch(/\son[a-z]+="/);

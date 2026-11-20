@@ -309,7 +309,7 @@ export function readCodexRateLimits(binary = "codex", timeoutMs = 20_000, codexH
       jsonrpc: "2.0",
       id: 1,
       method: "initialize",
-      params: { clientInfo: { name: "runelay_bots", title: "runelay bots", version: "1.0.0" } },
+      params: { clientInfo: { name: "runelay_bots", title: "r/bots", version: "1.0.0" } },
     });
   });
 }

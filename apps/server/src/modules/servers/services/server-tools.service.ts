@@ -40,7 +40,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
     "server_list",
     {
       description:
-        "Lista os servidores de desenvolvimento que o runelay bots subiu (no ar, subindo, caiu), os projetos liberados com as worktrees e os perfis salvos.",
+        "Lista os servidores de desenvolvimento que o r/bots subiu (no ar, subindo, caiu), os projetos liberados com as worktrees e os perfis salvos.",
       inputSchema: {},
     },
     async () => {

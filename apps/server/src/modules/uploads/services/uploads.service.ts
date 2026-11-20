@@ -500,7 +500,7 @@ export async function importBotFile(botId: string, rawPath: string, name?: strin
     if (macRunnerSupports("files")) return importMacFile(botId, rawPath, name);
     throw new Error(
       macRunnerConnected()
-        ? `Não achei ${rawPath} no servidor, e o app do Mac ainda não sabe enviar arquivos (atualize o runelay bots).`
+        ? `Não achei ${rawPath} no servidor, e o app do Mac ainda não sabe enviar arquivos (atualize o r/bots).`
         : `Não achei ${rawPath} no servidor, e o Mac está desconectado.`,
     );
   }

@@ -463,7 +463,7 @@ describe("resolveSecret", () => {
     const error = await resolveOk("a").catch((caught: VaultError) => caught);
     expect(error).toBeInstanceOf(VaultError);
     expect((error as VaultError).code).toBe("mac_offline");
-    expect((error as VaultError).message).toContain("O app runelay bots não está aberto no Mac");
+    expect((error as VaultError).message).toContain("O app r/bots não está aberto no Mac");
   });
 
   test("server copies are decrypted when the Mac is offline", async () => {
@@ -560,7 +560,7 @@ describe("resolveSecret", () => {
     });
     const error = await resolveOk("a").catch((caught: VaultError) => caught);
     expect((error as VaultError).code).toBe("mac_offline");
-    expect((error as VaultError).message).toContain("O app runelay bots desconectou");
+    expect((error as VaultError).message).toContain("O app r/bots desconectou");
   });
 
   test("unexpected Mac errors propagate", async () => {
