@@ -76,6 +76,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v44 | `agenda_list` mostra o bloco de Agenda (`silent`), `calendarUrl` e link de vídeo do texto no evento, prompt manda agenda/nota/planilha para o bloco nativo | [blocks](blocks.md) |
 | v45 | desligar a chamada por voz (`call.hangup`, `action:"hangup"`), agradecimento sem ack duplicado, fuso da pessoa no prompt (`X-Timezone`) | [voice](voice.md) |
 | v46 | agenda no fuso da pessoa (`user.timezone`), sem `-03:00` fixo | [blocks](blocks.md) |
+| v47 | contas de IA por diretório no servidor (`~/.claude*`, `~/.codex*`), sem contas de modelo do Mac, `PATCH/DELETE /accounts/:id`, `POST /accounts/dirs`, `GET /accounts/login-guide`, uso e limites por conta (`account`), failover outra Claude → reserva também com a conta fora do ar | [accounts](accounts.md), [usage-status-limits](usage-status-limits.md) |
 
 ## Contrato
 

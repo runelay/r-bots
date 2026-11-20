@@ -121,3 +121,30 @@ Instância separada (`:2100`, Postgres e Redis do compose em portas altas e volu
 ```
 
 O mesmo retry de novo: `400 {"ok":false,"error":"Só um job falho pode ser tentado de novo.","field":"id"}`. `GET /jobs?status=sumido`: `400 {"ok":false,"error":"status precisa ser active, waiting, delayed, failed, completed.","field":"status"}`.
+
+## v47 (20/11): uso e limites por conta, sem Mac
+
+### `GET /usage/limits` → 200
+
+Uma entrada por conta Claude/Codex do servidor (as `missing` ficam de fora), lida com o login **daquela** pasta: Claude pelo `accessToken` do `.credentials.json` da pasta (`GET https://api.anthropic.com/api/oauth/usage`), Codex por `codex app-server` com `CODEX_HOME` da pasta. Saem `environment` e as contas `mac:*`.
+
+```json
+{"checkedAt":"2026-11-20T03:4…Z","accounts":[
+  {"id":"vps:claude","provider":"claude","label":"Claude AppConty","email":"fer…","plan":"team","isDefault":true,"ok":true,"error":null,"windows":[{"kind":"session","usedPercent":95,…},{"kind":"weekly","usedPercent":100,…},{"kind":"weekly_model","label":"Semanal · Fable",…}],"failover":[{"botId":"boss","botName":"Boss","to":"claude-2:claude","toLabel":"Claude Anderson"}]},
+  {"id":"claude-2:claude","provider":"claude","label":"Claude Anderson","email":"and…","plan":"team","isDefault":false,"ok":true,"error":null,"windows":[{"kind":"session","usedPercent":77,…},{"kind":"weekly","usedPercent":41,…}],"failover":[…]},
+  {"id":"vps:codex","provider":"codex","label":"Codex","plan":"plus","isDefault":true,"ok":true,"windows":[…],"failover":[]}
+]}
+```
+
+`failover[].to` é o primeiro destino da fila da v47 ([accounts](accounts.md)): a outra conta pronta do mesmo provedor, senão a reserva do bot. Erros por conta: `"<conta> não está logado."`, `"O login do <conta> expirou. Ele renova no próximo turno."`, `"A Anthropic respondeu <status> ao ler os limites."`.
+
+### `GET /usage/summary?range=&provider=&account=` → 200
+
+- `environment` saiu; `account=<id>` filtra por conta.
+- Novo `accounts: [{id, provider, label, processed, requests, sessions, costUsd}]` (sem filtro, inclui as contas sem uso com zero); `detail[].account` no lugar de `detail[].environment`; `environments` virou `scannedAt`.
+- O scanner lê `<pasta>/projects` (Claude) e `<pasta>/sessions` (Codex) de cada conta. Banco: `usage_buckets.account` (entra na chave) e `usage_sessions.account` (migração `0002_usage_accounts`, linhas antigas = `vps:<provedor>`).
+- Duas contas que apontam para a mesma pasta física de transcrições (ex.: `~/.claude-2/projects` → symlink de `~/.claude/projects`) são lidas uma vez e o uso de fora dos bots cai em `vps:claude+claude-2:claude`, `label` "Claude AppConty + Claude Anderson". Turnos dos bots vão sempre para a conta exata: o engine anota a conta de cada sessão de provider (`session` do SDK/Codex) e o scanner usa esse dono.
+
+### Verificado 20/11 (produção)
+
+Antes/depois de um turno Haiku em cada conta (`usage_buckets`, últimas 2 h, modelo `claude-haiku-*`): `vps:claude` 10 → 11 chamadas; `claude-2:claude` 0 → 1 chamada (28.148 tokens). Nesta VPS `~/.claude-2/projects` é symlink de `~/.claude/projects`, por isso o resto do uso de terminal/T3 aparece no par.

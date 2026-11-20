@@ -161,3 +161,80 @@ GET /devices sem credencial -> 401 {"ok":false,"error":"Entre de novo para conti
 WS /runner/connect: sessão 401 · token do dispositivo 101
 DELETE /devices/60f5b9fb-… -> {"ok":true,"id":"60f5b9fb-…","revoked":true,"disconnected":false}; de novo -> 404 {"ok":false,"code":"not_found","error":"Dispositivo não encontrado."}
 ```
+
+## v47 (20/11): contas de IA por diretório no servidor, sem contas de modelo do Mac
+
+Modelo agora só roda no servidor. Cada login do Claude Code ou do Codex vira uma conta própria, achada pelo diretório de configuração. O runner do Mac (v21/v38) continua para computer use, arquivos do Mac, notificações e cofre, mas não lista mais contas nem roda turno de modelo: as contas `mac:*`/`mac-<id>:*` saíram de `GET /accounts`.
+
+### Descoberta
+
+- Pasta pessoal = `HOST_HOME` (no compose, o `$HOME` do host montado no mesmo caminho) ou o home do processo.
+- Claude: `~/.claude` (padrão do CLI) e toda pasta `~/.claude-*` que tenha `.credentials.json`. Codex: `~/.codex` e toda `~/.codex-*` com `auth.json`.
+- Pastas extras ficam em `settings["accounts.settings"].dirs` (adicionadas pelo app, ver abaixo). O provedor de uma pasta extra sai dos arquivos (`.credentials.json`/`.claude.json` = Claude, `auth.json`/`config.toml` = Codex) ou do nome.
+- A mesma pasta achada duas vezes (mesmo `dev:ino`, ex.: bind mount) conta uma vez só.
+- Id estável: a pasta padrão do CLI é `vps:<provedor>` (mantém bots e históricos antigos); as outras são `<nome da pasta sem o ponto>:<provedor>`, ex.: `claude-2:claude`. Colisão de nome ganha `-<6 hex>` do caminho. Nome que começaria com `mac` vira `d-mac…`.
+- Sem nenhuma pasta de um provedor, aparece o slot `vps:claude`/`vps:codex` com o status do CLI (ex.: sem login).
+- Nome automático: `Claude <displayName>`, ou a organização, ou a parte local do e-mail, lidos de `.claude.json` (`oauthAccount`; na pasta padrão, o `~/.claude.json` ao lado). Plano em `.credentials.json` (`claudeAiOauth.subscriptionType`). No Codex, e-mail e plano saem das claims do `id_token` de `auth.json`; com uma conta só o nome é `Codex`. Nenhum token sai do servidor.
+- Rodar numa conta: o servidor passa `CLAUDE_CONFIG_DIR=<pasta>` (Claude Code/Agent SDK) ou `CODEX_HOME=<pasta>` (Codex) para o processo. Na pasta padrão nada é passado, e o servidor nunca herda essas variáveis do próprio ambiente. `TurnRequest.configDir` carrega a pasta até o provider.
+
+### `GET /accounts` → 200
+
+```json
+[
+  {"id":"vps:claude","runner":"vps","provider":"claude","label":"Claude AppConty","name":"Claude AppConty","autoName":"Claude AppConty","email":"fer…","plan":"team","configDir":"~/.claude","isDefault":true,"added":false,"status":"ready","models":[{"id":"claude-sonnet-5-5","label":"Sonnet 5.5"}],"detail":"fer… · team","checkedAt":"2026-11-20T03:36:33.779Z"},
+  {"id":"claude-2:claude","runner":"vps","provider":"claude","label":"Claude Anderson","name":"Claude Anderson","autoName":"Claude Anderson","email":"and…","plan":"team","configDir":"~/.claude-2","isDefault":false,"added":false,"status":"ready","models":[…],"detail":"and… · team","checkedAt":"…"},
+  {"id":"vps:codex","runner":"vps","provider":"codex","label":"Codex","name":"Codex","autoName":"Codex","email":"and…","plan":"plus","configDir":"~/.codex","isDefault":true,"added":false,"status":"ready","models":[…],"detail":"Logged in using ChatGPT","checkedAt":"…"},
+  {"id":"vps:grok","runner":"vps","provider":"grok","label":"Grok","name":"Grok","autoName":"Grok","email":null,"plan":null,"configDir":null,"isDefault":true,"added":false,"status":"missing","models":[],"detail":"CLI não instalada nesta máquina.","checkedAt":"…"}
+]
+```
+
+- `runner` é sempre `"vps"` (legado). `device` saiu. `label` = `name` (o nome editado ou o automático). `isDefault`: a conta que bots novos usam e a primeira da fila de failover entre contas do mesmo provedor. `added`: veio de uma pasta extra (só essas podem sair da lista).
+- `status` continua `ready | logged_out | missing` (`offline` não aparece mais).
+
+### `PATCH /accounts/:id` → 200 (lista inteira)
+
+Corpo `{"name"?: string|null, "isDefault"?: true}`. `name` vazio ou `null` volta ao automático; até 60 caracteres. Erros: 404 `{"ok":false,"error":"Essa conta não existe."}`; 400 com `field` (`name`, `isDefault`, campo desconhecido). Só Claude e Codex têm padrão.
+
+### `POST /accounts/dirs {"path":"~/.claude-trabalho"}` → 200 (lista inteira)
+
+Aceita caminho absoluto ou começando com `~/`. Sem login de Claude nem de Codex → 400 `{"field":"path"}`.
+
+### `DELETE /accounts/:id` → 200 (lista inteira)
+
+Só para contas `added`. Conta achada sozinha → 400 `{"field":"id"}`. Também apaga o nome e o padrão guardados dela.
+
+### `GET /accounts/login-guide?provider=claude|codex` → 200
+
+Próxima pasta livre e o comando de login; o app mostra os passos e um botão de copiar. Não há login guiado pelo app: o `claude auth login` precisa de navegador e do código colado no terminal.
+
+```json
+{"provider":"claude","dir":"~/.claude-3","command":"CLAUDE_CONFIG_DIR=~/.claude-3 claude auth login","steps":["Abra um terminal no servidor onde o runelay bots roda, com o mesmo usuário dele.","Rode o comando abaixo e entre com a outra conta do Claude Code no navegador.","O diretório fica dentro da sua pasta pessoal, então o servidor já enxerga. Volte aqui e toque em Procurar de novo."]}
+```
+
+Codex: `mkdir -p ~/.codex-2 && CODEX_HOME=~/.codex-2 codex login`.
+
+### Bots
+
+- `engine.account` e `engine.fallback.account` aceitam qualquer id `<prefixo>:<provedor>` válido e recusam `mac:*`/`mac-<id>:*` (400 `engine.account` / `engine.fallback.account`).
+- Migração no boot: bot que ainda aponta para uma conta do Mac vai para a conta do servidor com o mesmo e-mail (o servidor pergunta ao Mac conectado, se houver), senão a padrão do provedor; se o provedor não existe no servidor (ex.: Cursor sem CLI), vai para a Claude padrão com o modelo padrão. O mesmo vale para a reserva; reserva igual à principal vira `null`.
+- `defaultEngine` e a reserva sugerida usam a conta padrão de cada provedor.
+
+### Failover (substitui a conta reserva da v26)
+
+Ordem quando a conta do turno bate o limite **ou está fora do ar** (sem login, sumiu, erro de autenticação, 401, 5xx/`overloaded_error`, conexão):
+
+1. as outras contas do mesmo provedor, prontas e sem limite, a padrão primeiro, com o mesmo modelo e o mesmo esforço;
+2. `engine.fallback` (ex.: Codex), com o modelo dela e esforço `null`.
+
+- Antes do turno: conta principal que não está `ready` (ou não existe) já começa na próxima da fila; se não houver ninguém, segue `ACCOUNT_UNAVAILABLE`.
+- No meio do turno: até 3 saltos (Claude → outra Claude → Codex), cada um com o handoff da conversa.
+- Conta caída fica fora da fila por 5 min (`kind: "down"`); limite segue o reset lido da mensagem (ou 15 min).
+- `account.failover`: `line` = `Limite do <conta> acabou · continuei com <conta>` ou `<conta> fora do ar · continuei com <conta>`; `reason` = `Limite do <conta>` ou `<conta> fora do ar`. `account.restored.line` = `Voltei para o <conta>`. Os nomes são os `label` das contas.
+- `ACCOUNT_LIMIT` sem ninguém para assumir: `O limite do <conta> acabou…`, `suggest.label` = `label` da conta sugerida.
+
+### Verificado 20/11 (produção, depois do rebuild)
+
+- `GET /accounts` → `vps:claude` "Claude AppConty" (`~/.claude`, team, padrão) e `claude-2:claude` "Claude Anderson" (`~/.claude-2`, team), `vps:codex` "Codex"; nenhuma conta `mac:*`. Os bots `proxy-codex` (`mac:codex`) e `proxy-cursor` (`mac:cursor`) migraram para `vps:codex` e `vps:claude` (Cursor não está no servidor).
+- Bot de teste em Haiku: turno em `vps:claude` → `model.started.account.label` "Claude AppConty", resposta `APPCONTY`; turno em `claude-2:claude` → "Claude Anderson", resposta `ANDERSON`.
+- Failover real: pasta `~/.claude-falha` sem login adicionada por `POST /accounts/dirs` (`status:"logged_out"`), bot apontando para ela com reserva `vps:codex` → `account.failover` `{"from":"claude-falha:claude","to":"vps:claude","line":"Claude claude-falha fora do ar · continuei com Claude AppConty"}` e resposta `FAILOVER` (foi para a outra Claude, não para o Codex). Pasta e conta removidas depois.
+- `PATCH /accounts/claude-2:claude {"name":"Pessoal"}` → `label:"Pessoal"`, `autoName:"Claude Anderson"`; `{"name":null}` volta. `PATCH /accounts/vps:grok {"isDefault":true}` → 400 `Só contas do Claude e do Codex têm padrão.`; `POST /accounts/dirs {"path":"~/nao-existe"}` → 400; `DELETE /accounts/claude-2:claude` → 400 (achada sozinha).
