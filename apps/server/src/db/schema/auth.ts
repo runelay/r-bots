@@ -160,6 +160,25 @@ export const invite = pgTable(
   (table) => [uniqueIndex("invite_code_hash_idx").on(table.codeHash)],
 );
 
+export const device = pgTable(
+  "device",
+  {
+    id: text("id").primaryKey(),
+    apiKeyId: text("api_key_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    model: text("model"),
+    osVersion: text("os_version"),
+    appVersion: text("app_version"),
+    machineId: text("machine_id"),
+    registeredAt: timestamp("registered_at").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [uniqueIndex("device_api_key_id_idx").on(table.apiKeyId), index("device_user_id_idx").on(table.userId)],
+);
+
 export const ownerId = () =>
   text("owner_id")
     .notNull()

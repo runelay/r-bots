@@ -9,6 +9,7 @@ import {
   defaultDecisions,
   hardHumanReason,
   jevModel,
+  unchangedRoutine,
 } from "../services/decisions.service";
 import { askedDelivery, askedReason, noDeliveryAsk } from "../services/delivery-intent.service";
 
@@ -55,6 +56,8 @@ describe("hardHumanReason", () => {
     );
     expect(hardHumanReason("browser_click", {}, 'link "Docs"')).toBeNull();
     expect(hardHumanReason("browser_open", {}, "Delete")).toBeNull();
+    expect(hardHumanReason("add_schedule", { cron: "* * * * *" }, "")).toContain("rotina");
+    expect(hardHumanReason("update_schedule", {}, "")).toContain("rotina");
   });
 });
 
@@ -174,6 +177,45 @@ describe("decideTriage", () => {
       outcome: "fallback",
       reason: "Jev respondeu 500.",
     });
+  });
+
+  test("quiets an unchanged routine without asking Jev and sends the previous result", async () => {
+    const seen: unknown[] = [];
+    fakeJev((body) => {
+      seen.push(body);
+      return { answers: { attention: { type: "noul", noul: 0.9 } } };
+    });
+    expect(await decideTriage("r", "s", "p", "Tudo normal.")).toMatchObject({ outcome: "quiet", model: null });
+    expect(seen).toHaveLength(0);
+    expect(await decideTriage("r", "s", "p", "Um job preso.", "Tudo normal.")).toMatchObject({ outcome: "notify" });
+    expect(JSON.stringify(seen[0])).toContain("previous_result");
+  });
+});
+
+describe("unchangedRoutine", () => {
+  test("quiets routines that say nothing changed or repeat the previous result", () => {
+    for (const reply of [
+      "Tudo normal. - `email_sends` (24h): 8.215 enviados e 4 com falha, igual à ronda anterior.",
+      "Nada novo desde a ronda anterior:\n- `email_sends` (24h): 8.256 enviados",
+      "Tudo igual à ronda anterior, sem nada novo.\n| Tabela | Resultado |",
+      "**Nada novo** nem claramente quebrado. Os números são os mesmos da última rodada.",
+      "Os números estão iguais aos da ronda anterior, sem novidade.",
+      "  ",
+    ])
+      expect(unchangedRoutine(reply)).toBe(true);
+    expect(unchangedRoutine("Um job preso em `integration_sync_jobs`.", "Um job preso em integration_sync_jobs.")).toBe(
+      true,
+    );
+  });
+
+  test("keeps routines that point to something", () => {
+    for (const reply of [
+      "Um job preso: em `integration_sync_jobs` há 1 job com status `running`.",
+      "| Alerta novo | Número | Tabela |",
+      "Tudo normal, exceto o spark-prod: 3 jobs falharam.",
+      "Não consegui rodar a ronda.",
+    ])
+      expect(unchangedRoutine(reply)).toBe(false);
   });
 });
 

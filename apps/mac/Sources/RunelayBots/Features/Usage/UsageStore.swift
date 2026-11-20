@@ -31,12 +31,10 @@ final class UsageStore {
     @ObservationIgnored private var activation: NSObjectProtocol?
     @ObservationIgnored private var lastLimitsAt = Date.distantPast
     @ObservationIgnored private var notified: Set<String> = []
-
-    private static let notifiedKey = "usage.notified"
+    @ObservationIgnored private var notifiedStore = ""
 
     func start() {
         guard loop == nil else { return }
-        notified = Set(UserDefaults.standard.stringArray(forKey: Self.notifiedKey) ?? [])
         loop = Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 await self?.refreshLimits()
@@ -156,26 +154,42 @@ final class UsageStore {
         ["codex", "claude"].filter { provider in accounts.contains { $0.provider == provider } }
     }
 
+    static func warningKey(account: UsageLimitAccount, window: UsageLimitWindow, now: Date = Date()) -> String {
+        let cycle: Int
+        if let reset = window.resetDate {
+            cycle = Int((reset.timeIntervalSince1970 / 3600).rounded()) * 3600
+        } else {
+            cycle = Int(now.timeIntervalSince1970 / 86_400) * 86_400
+        }
+        return "\(account.id)|\(window.kind)|\(window.label)|\(cycle)"
+    }
+
+    private func loadNotified() {
+        let store = "usage.notified.\(ServerConfig.currentURL().absoluteString)"
+        guard store != notifiedStore else { return }
+        notifiedStore = store
+        notified = Set(UserDefaults.standard.stringArray(forKey: store) ?? [])
+    }
+
     private func checkWarnings() {
+        loadNotified()
         var changed = false
         for account in accounts where account.ok {
             for window in account.windows where window.remainingPercent < 10 {
-                let key = "\(account.id)|\(window.label)|\(window.resetsAt ?? "")"
+                let key = Self.warningKey(account: account, window: window)
                 guard !notified.contains(key) else { continue }
                 notified.insert(key)
                 changed = true
-                postWarning(account: account, window: window)
+                postWarning(account: account, window: window, key: key)
             }
         }
-        if changed {
-            let floor = Date().addingTimeInterval(-8 * 86_400)
-            let kept = notified.filter { key in
-                guard let stamp = key.split(separator: "|").last, let date = UsageFormat.date(String(stamp)) else { return true }
-                return date > floor
-            }
-            notified = kept
-            UserDefaults.standard.set(Array(kept), forKey: Self.notifiedKey)
+        guard changed else { return }
+        let floor = Date().addingTimeInterval(-8 * 86_400).timeIntervalSince1970
+        notified = notified.filter { key in
+            guard let stamp = key.split(separator: "|").last, let cycle = TimeInterval(stamp) else { return false }
+            return cycle > floor
         }
+        UserDefaults.standard.set(Array(notified), forKey: notifiedStore)
     }
 
     static func failoverLine(_ account: UsageLimitAccount) -> String? {
@@ -188,7 +202,7 @@ final class UsageStore {
         return "\(who) \(verb) trocar para \(destination)."
     }
 
-    private func postWarning(account: UsageLimitAccount, window: UsageLimitWindow) {
+    private func postWarning(account: UsageLimitAccount, window: UsageLimitWindow, key: String) {
         guard Notifier.shared.isAvailable else { return }
         let content = UNMutableNotificationContent()
         content.title = "\(account.label) (\(account.environmentLabel)) quase no limite"
@@ -202,7 +216,7 @@ final class UsageStore {
         }
         content.body = body
         content.userInfo = ["usage": "1"]
-        let request = UNNotificationRequest(identifier: "usage-\(account.id)-\(window.kind)-\(window.label)", content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: "usage-\(key)", content: content, trigger: nil)
         Task {
             try? await UNUserNotificationCenter.current().add(request)
         }

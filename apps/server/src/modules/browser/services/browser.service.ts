@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { runBytes, run as runProcess } from "@runelay-bots/providers/proc";
 import { botDir, env } from "../../../config/env";
 import { readJson, writeJson } from "../../../shared/json-file";
+import { assertBrowsable, browserLaunchArgs } from "./browser-guard.service";
 import { waitForBotControl } from "./control.service";
 
 export interface BrowserState {
@@ -140,11 +141,36 @@ export function closeIdleBrowsers(keep: (botId: string) => boolean) {
   }
 }
 
+const guarded = new Set<string>();
+
+async function sessionNames() {
+  const { stdout } = await runProcess("agent-browser", ["session", "list", "--json"], { timeoutMs: 5000 });
+  try {
+    const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
+    return (JSON.parse(line) as { data?: { sessions?: string[] } }).data?.sessions ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function guardedArgs(botId: string) {
+  const args = await browserLaunchArgs(botId);
+  if (!guarded.has(botId)) {
+    guarded.add(botId);
+    if ((await sessionNames()).includes(`runelay-${botId}`)) {
+      viewportReady.delete(botId);
+      await runProcess("agent-browser", ["--session", `runelay-${botId}`, "close"], { timeoutMs: 15_000 });
+    }
+  }
+  return args;
+}
+
 async function run(botId: string, args: string[], signal?: AbortSignal, timeoutMs = 60_000) {
   lastUsed.set(botId, Date.now());
+  const launch = await guardedArgs(botId);
   const { code, stdout, stderr } = await runProcess(
     "agent-browser",
-    ["--session", `runelay-${botId}`, "--args", "--no-sandbox", "--json", ...args],
+    ["--session", `runelay-${botId}`, "--args", launch, "--json", ...args],
     { timeoutMs, signal },
   );
   const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
@@ -224,7 +250,8 @@ async function action<T>(botId: string, work: () => Promise<T>, byUser = false, 
   }
 }
 
-export function browserOpen(botId: string, url: string, signal?: AbortSignal, byUser = false) {
+export async function browserOpen(botId: string, url: string, signal?: AbortSignal, byUser = false) {
+  if (!byUser) await assertBrowsable(botId, url);
   return action(
     botId,
     async () => {
@@ -307,7 +334,7 @@ async function runFillStdin(botId: string, ref: string, text: string, signal?: A
     "(() => { const el = document.activeElement; if (el && 'value' in el) { el.style.setProperty('-webkit-text-security', 'disc'); el.setAttribute('autocomplete', 'off'); } return true; })()";
   const { code, stdout } = await runProcess(
     "agent-browser",
-    ["--session", `runelay-${botId}`, "--args", "--no-sandbox", "--json", "batch", "--bail"],
+    ["--session", `runelay-${botId}`, "--args", await guardedArgs(botId), "--json", "batch", "--bail"],
     {
       timeoutMs: 60_000,
       signal,

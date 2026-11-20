@@ -141,6 +141,13 @@ describe("artifacts service", () => {
     expect(artifactEventOf({ other: 1 })).toBeNull();
     expect(artifactGuide).toContain("artifact_create");
     expect(artifactCsp).toContain("connect-src 'none'");
+    const directives = artifactCsp.split("; ");
+    expect(directives).toContain("sandbox allow-scripts allow-downloads");
+    expect(directives).toContain("frame-ancestors 'self'");
+    expect(artifactCsp).not.toContain("allow-same-origin");
+    expect(artifactCsp).not.toContain("allow-popups");
+    expect(artifactCsp).not.toContain("allow-top-navigation");
+    expect(artifactGuide).toContain("nada de localStorage");
   });
 
   test("tools create and update artifacts", async () => {
@@ -294,13 +301,13 @@ describe("artifacts routes", () => {
       body: { doc: {} },
     });
     expect(put.status).toBe(500);
-    expect(put.body.error).toBe("disk gone");
+    expect(put.body.error).toBe("Algo deu errado no servidor. Tente de novo.");
     const layout = await request<{ error: string }>(`/bots/${bot.id}/artifacts/art_whatever0/layout`, {
       method: "POST",
       body: { doc: {} },
     });
     expect(layout.status).toBe(500);
-    expect(layout.body.error).toBe("layout crashed");
+    expect(layout.body.error).toBe("Algo deu errado no servidor. Tente de novo.");
     expect(logged).toHaveBeenCalledTimes(2);
   });
 

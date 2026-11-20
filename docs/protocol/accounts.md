@@ -161,3 +161,23 @@ GET /devices sem credencial -> 401 {"ok":false,"error":"Entre de novo para conti
 WS /runner/connect: sessão 401 · token do dispositivo 101
 DELETE /devices/60f5b9fb-… -> {"ok":true,"id":"60f5b9fb-…","revoked":true,"disconnected":false}; de novo -> 404 {"ok":false,"code":"not_found","error":"Dispositivo não encontrado."}
 ```
+
+## v44 (20/11): Mac de membro e identidade do dispositivo
+
+- Sem chave explícita (`connectionFor()` sem `key`), o servidor só escolhe um Mac de conta com papel `owner`; o mais antigo entre eles. Mac de membro só recebe pedido quando é endereçado pela conta dele (`mac-<id>:<provedor>`).
+- Em `GET /accounts`, os Macs do dono vêm primeiro e ficam com o prefixo `mac`. Se só membros têm Mac, o slot `mac` fica vazio (`status: "offline"`, `device: null`) e cada Mac de membro aparece com o próprio prefixo.
+- `/runner/connect` com um dispositivo já conectado por outra conta fecha a conexão nova com `4003 device conflict`; a antiga fica.
+- A identidade do Mac vem da tabela `device` (ver [auth](auth.md), v44), achada pelo id da chave; o `metadata` da chave não é mais lido.
+- Cada conexão renova o vencimento da chave do dispositivo (180 dias).
+- Banir, rebaixar ou apagar a conta derruba os Macs dela.
+
+### Verificado
+
+`mac-runner.test.ts` e `accounts.test.ts`:
+
+```
+só Mac de membro conectado -> macRunnerConnected() = false, turno sem chave -> {"type":"done","ok":false,"message":"O app runelay bots não está conectado."}
+macAccounts("member-mac") -> responde pelo Mac do membro
+mesmo deviceKey com outro userId -> close 4003 "device conflict"
+GET /accounts com só Mac de membro -> "mac:claude" {"status":"offline","device":null}, "mac-memberon:claude" com o Mac do membro
+```

@@ -1,4 +1,7 @@
+import { randomBytes } from "node:crypto";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   type HookCallback,
   type HookJSONOutput,
@@ -14,15 +17,24 @@ import { spawnMarked } from "./proc-tree";
 
 export const nativeTools = ["Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "Bash", "TodoWrite"];
 
-function codeHooks(hooks: NativeToolHooks) {
+export const hookFailureMessage = "A checagem de segurança desta ferramenta falhou; a chamada foi negada.";
+export const unclearedMessage = "Esta chamada não passou pela checagem de segurança e foi negada.";
+
+type Cleared = Map<string, Record<string, unknown>>;
+
+function codeHooks(hooks: NativeToolHooks, cleared: Cleared) {
   const matcher = `^(${nativeTools.join("|")}|NotebookEdit)$`;
   const pre: HookCallback = async (input, toolUseId) => {
     if (input.hook_event_name !== "PreToolUse") return {};
-    const gate = await hooks.before(
-      input.tool_name,
-      (input.tool_input ?? {}) as Record<string, unknown>,
-      input.tool_use_id ?? toolUseId ?? "",
-    );
+    const id = input.tool_use_id ?? toolUseId ?? "";
+    const original = (input.tool_input ?? {}) as Record<string, unknown>;
+    let gate: Awaited<ReturnType<NativeToolHooks["before"]>>;
+    try {
+      gate = await hooks.before(input.tool_name, original, id);
+    } catch {
+      gate = { allow: false, message: hookFailureMessage };
+    }
+    if (gate.allow && id) cleared.set(id, gate.input ?? original);
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
@@ -57,6 +69,30 @@ function codeHooks(hooks: NativeToolHooks) {
     PostToolUse: [{ matcher, timeout: 120, hooks: [post] }],
     PostToolUseFailure: [{ matcher, timeout: 120, hooks: [post] }],
   };
+}
+
+export function canUseFrom(cleared: Cleared) {
+  return async (_name: string, _input: Record<string, unknown>, options: { toolUseID?: string }) => {
+    const id = options.toolUseID ?? "";
+    const recorded = id ? cleared.get(id) : undefined;
+    if (!recorded) return { behavior: "deny" as const, message: unclearedMessage };
+    cleared.delete(id);
+    return { behavior: "allow" as const, updatedInput: recorded };
+  };
+}
+
+export function privateMcpArgs(args: string[], workDir: string) {
+  const at = args.indexOf("--mcp-config");
+  if (at === -1 || at + 1 >= args.length) return { args, file: null };
+  const value = args[at + 1];
+  if (!value.trimStart().startsWith("{")) return { args, file: null };
+  const dir = join(workDir, ".private");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = join(dir, `mcp-${randomBytes(9).toString("hex")}.json`);
+  writeFileSync(file, value, { mode: 0o600 });
+  const next = [...args];
+  next[at + 1] = file;
+  return { args: next, file };
 }
 
 async function promptWithImages(request: TurnRequest): Promise<string | AsyncIterable<SDKUserMessage>> {
@@ -95,6 +131,7 @@ export async function runClaude(
   let currentMessage = "";
   let contextTokens: number | null = null;
   let result: Extract<SDKMessage, { type: "result" }> | null = null;
+  const cleared: Cleared = new Map();
   const env = childEnv({ CLAUDE_AGENT_SDK_CLIENT_APP: "runelay-bots/3.0.0", MCP_TOOL_TIMEOUT: "900000" });
 
   const stream = query({
@@ -107,11 +144,8 @@ export async function runClaude(
       allowedTools: request.mcp ? ["mcp__bots"] : [],
       ...(code && hooks
         ? {
-            hooks: codeHooks(hooks),
-            canUseTool: async (_name: string, input: Record<string, unknown>) => ({
-              behavior: "allow" as const,
-              updatedInput: input,
-            }),
+            hooks: codeHooks(hooks, cleared),
+            canUseTool: canUseFrom(cleared),
           }
         : {}),
       mcpServers: request.mcp
@@ -135,13 +169,26 @@ export async function runClaude(
       ...(Bun.env.CLAUDE_CODE_EXECUTABLE ? { pathToClaudeCodeExecutable: Bun.env.CLAUDE_CODE_EXECUTABLE } : {}),
       ...(process.platform === "linux"
         ? {
-            spawnClaudeCodeProcess: (spawnOptions: SpawnOptions) =>
-              spawnMarked(spawnOptions.command, spawnOptions.args, {
-                cwd: spawnOptions.cwd,
-                env: spawnOptions.env,
-                marker: request.turnId,
-                signal: spawnOptions.signal,
-              }) as unknown as SpawnedProcess,
+            spawnClaudeCodeProcess: (spawnOptions: SpawnOptions) => {
+              const { args, file } = privateMcpArgs(spawnOptions.args, workDir);
+              const forget = () => {
+                if (file) rmSync(file, { force: true });
+              };
+              try {
+                const child = spawnMarked(spawnOptions.command, args, {
+                  cwd: spawnOptions.cwd,
+                  env: spawnOptions.env,
+                  marker: request.turnId,
+                  signal: spawnOptions.signal,
+                });
+                child.once("exit", forget);
+                child.once("error", forget);
+                return child as unknown as SpawnedProcess;
+              } catch (error) {
+                forget();
+                throw error;
+              }
+            },
           }
         : {}),
       ...(request.resume ? { resume: request.resume } : {}),

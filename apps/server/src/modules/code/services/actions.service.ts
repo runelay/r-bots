@@ -1,16 +1,20 @@
-import { run } from "@runelay-bots/providers/proc";
+import { join } from "node:path";
+import { childEnv, run } from "@runelay-bots/providers/proc";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import { recordWorktree, touchWorktree } from "../repositories/code.repository";
 import { stopDevServers } from "./dev-server.service";
 import {
   activeWorkspace,
+  baseContent,
   CodeError,
   changedFiles,
   closeWorkspace,
   git,
+  gitSafeEnv,
   invalidateStatus,
   listRepos,
   openWorkspace,
+  readMaybe,
   type WorkspaceState,
 } from "./workspace.service";
 
@@ -97,6 +101,32 @@ export function deliverProblem(input: DeliverInput, pending = true) {
   return null;
 }
 
+const hookPaths =
+  /^(\.husky|\.githooks|\.git-hooks|\.lefthook|\.github\/workflows)\/|(^|\/)(lefthook\.ya?ml|\.pre-commit-config\.ya?ml|\.huskyrc(\.\w+)?|\.npmrc|\.yarnrc(\.yml)?|bunfig\.toml)$/;
+function scriptsOf(text: string | null) {
+  if (text === null) return "";
+  try {
+    const parsed = JSON.parse(text) as { scripts?: unknown; husky?: unknown; "simple-git-hooks"?: unknown };
+    return JSON.stringify([parsed.scripts ?? null, parsed.husky ?? null, parsed["simple-git-hooks"] ?? null]);
+  } catch {
+    return null;
+  }
+}
+
+export async function deliverRisk(workspace: WorkspaceState) {
+  const files = await changedFiles(workspace, true);
+  const risky: string[] = [];
+  for (const file of files) {
+    if (hookPaths.test(file.path)) risky.push(file.path);
+    else if (/(^|\/)package\.json$/.test(file.path)) {
+      const before = scriptsOf(await baseContent(workspace, file.path));
+      const after = scriptsOf(await readMaybe(join(workspace.path, file.path)));
+      if (before === null || after === null || before !== after) risky.push(file.path);
+    }
+  }
+  return risky;
+}
+
 export async function deliverWorkspace(workspace: WorkspaceState, input: DeliverInput) {
   const message = input.message.trim();
   const pending = (await git(workspace.path, ["status", "--porcelain"])).stdout.trim();
@@ -107,7 +137,7 @@ export async function deliverWorkspace(workspace: WorkspaceState, input: Deliver
   if (pending) {
     const added = await git(workspace.path, ["add", "-A"]);
     if (added.code !== 0) throw new CodeError(`git add falhou: ${added.stderr.trim().slice(0, 300)}`, 500);
-    const committed = await git(workspace.path, ["commit", "-m", message], 300_000);
+    const committed = await git(workspace.path, ["commit", "--no-verify", "-m", message], 300_000);
     if (committed.code !== 0)
       throw new CodeError(`O commit falhou: ${(committed.stderr || committed.stdout).trim().slice(-600)}`, 500);
     commit = (await git(workspace.path, ["rev-parse", "--short", "HEAD"])).stdout.trim();
@@ -120,7 +150,7 @@ export async function deliverWorkspace(workspace: WorkspaceState, input: Deliver
   if (input.action === "pr" || input.action === "push") {
     if (protectedBranches.has(workspace.branch))
       throw new CodeError(`A branch ${workspace.branch} é protegida: push direto só pela pessoa.`);
-    const pushed = await git(workspace.path, ["push", "-u", "origin", workspace.branch], 300_000);
+    const pushed = await git(workspace.path, ["push", "--no-verify", "-u", "origin", workspace.branch], 300_000);
     if (pushed.code !== 0)
       throw new CodeError(`O push falhou: ${(pushed.stderr || pushed.stdout).trim().slice(-600)}`, 500);
     const pulls = await branchPullRequests(workspace);
@@ -145,7 +175,11 @@ export async function deliverWorkspace(workspace: WorkspaceState, input: Deliver
         "--body",
         input.body?.trim() || message,
       ],
-      { cwd: workspace.path, timeoutMs: 120_000 },
+      {
+        cwd: workspace.path,
+        timeoutMs: 120_000,
+        env: childEnv({ GH_PROMPT_DISABLED: "1", ...gitSafeEnv(workspace.path) }),
+      },
     );
     if (created.code !== 0)
       throw new CodeError(
@@ -193,7 +227,11 @@ async function branchPullRequests(workspace: WorkspaceState) {
       "--limit",
       "10",
     ],
-    { cwd: workspace.path, timeoutMs: 60_000 },
+    {
+      cwd: workspace.path,
+      timeoutMs: 60_000,
+      env: childEnv({ GH_PROMPT_DISABLED: "1", ...gitSafeEnv(workspace.path) }),
+    },
   );
   if (code !== 0) return [];
   try {

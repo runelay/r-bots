@@ -3,9 +3,9 @@ import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
 export function searchPath() {
-  const extra = [join(homedir(), ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
+  const system = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"];
   const current = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
-  return [...new Set([...extra, ...current])].join(delimiter);
+  return [...new Set([...system, ...current, join(homedir(), ".local", "bin")])].join(delimiter);
 }
 
 export function findBinary(names: string[]) {
@@ -18,20 +18,49 @@ export function findBinary(names: string[]) {
   return null;
 }
 
+const allowedEnv = new Set([
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "LANG",
+  "TZ",
+  "TERM",
+  "TMPDIR",
+  "COLORTERM",
+  "NO_COLOR",
+  "CLAUDE_CONFIG_DIR",
+  "CODEX_HOME",
+  "GH_CONFIG_DIR",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+  "XDG_DATA_HOME",
+  "XDG_RUNTIME_DIR",
+  "DISABLE_AUTOUPDATER",
+  "CLAUDE_CODE_EXECUTABLE",
+  "NODE_EXTRA_CA_CERTS",
+  "SSL_CERT_FILE",
+  "SSL_CERT_DIR",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "NO_PROXY",
+  "http_proxy",
+  "https_proxy",
+  "no_proxy",
+  "DISPLAY",
+  "DESKTOP_CHROME",
+  "GIT_TERMINAL_PROMPT",
+]);
+
+export function allowedEnvKey(key: string) {
+  return allowedEnv.has(key) || key.startsWith("LC_") || key.startsWith("AGENT_BROWSER_");
+}
+
 export function childEnv(extra: Record<string, string> = {}) {
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
-    if (value !== undefined) env[key] = value;
+    if (value !== undefined && allowedEnvKey(key)) env[key] = value;
   }
-  delete env.ANTHROPIC_API_KEY;
-  delete env.ANTHROPIC_AUTH_TOKEN;
-  delete env.OPENAI_API_KEY;
-  delete env.CURSOR_API_KEY;
-  delete env.XAI_API_KEY;
-  delete env.RUNNER_TOKEN;
-  delete env.JEV_API_KEY;
-  delete env.RUNELAY_MCP_TOKEN;
-  delete env.ELEVENLABS_API_KEY;
   env.PATH = searchPath();
   return { ...env, ...extra };
 }
@@ -42,6 +71,28 @@ export interface RunOptions {
   timeoutMs?: number;
   stdin?: string | Uint8Array;
   signal?: AbortSignal;
+  maxBytes?: number;
+}
+
+export const defaultMaxBytes = 64 * 1024 * 1024;
+export const maxLineBytes = 8 * 1024 * 1024;
+
+async function readCapped(stream: ReadableStream<Uint8Array>, limit: number) {
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for await (const chunk of stream) {
+    if (size >= limit) continue;
+    const piece = chunk.byteLength > limit - size ? chunk.subarray(0, limit - size) : chunk;
+    chunks.push(piece);
+    size += piece.byteLength;
+  }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
 }
 
 export interface RunResult {
@@ -55,7 +106,7 @@ export async function runBytes(bin: string, args: string[], options: RunOptions 
   try {
     child = Bun.spawn([bin, ...args], {
       cwd: options.cwd,
-      env: options.env,
+      env: options.env ?? childEnv(),
       stdin: options.stdin === undefined ? "ignore" : Buffer.from(options.stdin),
       stdout: "pipe",
       stderr: "pipe",
@@ -67,8 +118,8 @@ export async function runBytes(bin: string, args: string[], options: RunOptions 
     return { code: 1, stdout: new Uint8Array(), stderr: error instanceof Error ? error.message : String(error) };
   }
   const [stdout, stderr, exit] = await Promise.all([
-    new Response(child.stdout).bytes(),
-    new Response(child.stderr).text(),
+    readCapped(child.stdout, options.maxBytes ?? defaultMaxBytes),
+    new Response(child.stderr).text().then((text) => text.slice(-1_000_000)),
     child.exited,
   ]);
   return { code: child.signalCode ? 1 : exit, stdout, stderr };
@@ -116,9 +167,10 @@ export async function runLines(
   let buffer = "";
   for await (const chunk of child.stdout) {
     buffer += decoder.decode(chunk, { stream: true });
+    if (buffer.length > maxLineBytes && !buffer.includes("\n")) buffer = "";
     let index = buffer.indexOf("\n");
     while (index !== -1) {
-      const line = buffer.slice(0, index).trim();
+      const line = buffer.slice(0, Math.min(index, maxLineBytes)).trim();
       buffer = buffer.slice(index + 1);
       if (line) onLine(line);
       index = buffer.indexOf("\n");

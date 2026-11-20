@@ -215,16 +215,17 @@ final class BlockCenter {
                     job = try await client.exportJob(botID: route.botID, id: job.id)
                 }
                 guard job.status == "ready" else {
-                    flash(job.error ?? "Não consegui gerar o arquivo")
+                    BlocksLog.logger.error("export \(job.id, privacy: .public) ended as \(job.status, privacy: .public)")
+                    flash("Não consegui gerar o arquivo")
                     return
                 }
                 let file = try await client.download(botID: route.botID, job: job)
-                let url = try Self.downloadsFile(file.fileName)
-                try file.data.write(to: url)
-                NSWorkspace.shared.activateFileViewerSelecting([url])
+                let url = try DownloadsFolder.save(file.data, as: file.fileName)
+                DownloadsFolder.reveal(url)
                 flash("Salvo em Downloads")
             } catch {
-                flash(error.localizedDescription)
+                BlocksLog.failure("export \(format.rawValue)", error)
+                flash("Não consegui baixar o arquivo")
             }
         }
     }
@@ -276,15 +277,6 @@ final class BlockCenter {
 
     private func key(_ botID: String, _ id: String) -> String {
         "\(botID)/\(id)"
-    }
-
-    private static func downloadsFile(_ name: String) throws -> URL {
-        let folder = try FileManager.default.url(for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        let cleaned = name
-            .components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>\n\r\t"))
-            .joined(separator: "-")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return folder.appendingPathComponent(cleaned.isEmpty ? "arquivo" : String(cleaned.prefix(140)))
     }
 }
 

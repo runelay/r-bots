@@ -3,7 +3,8 @@ import type { AccountProbe, ProviderEvent, TurnRequest } from "@runelay-bots/pro
 import { host, port } from "../../../config/env";
 import type { Req } from "../../../shared/http";
 import { type Socket, type SocketData, type SocketHandler, socketOpen } from "../../../shared/ws";
-import { authActive, principalOf } from "../../auth/gate";
+import { authActive, currentAuthModule, onUserRevoked, principalOf } from "../../auth/gate";
+import { ownerRole } from "../../auth/services/auth.service";
 
 export const runnerConnectPath = "/runner/connect";
 export const revokedCloseCode = 4001;
@@ -27,6 +28,7 @@ export type RunnerSocketData = SocketData & {
   rank: number;
   deviceName: string | null;
   userId: string | null;
+  owner: boolean;
 };
 
 type Connection = {
@@ -37,6 +39,7 @@ type Connection = {
   rank: number;
   name: string | null;
   userId: string | null;
+  owner: boolean;
   beat: { alive: boolean; timer: ReturnType<typeof setInterval> };
 };
 
@@ -61,17 +64,25 @@ export function macRunnerAuthorized(req: Req) {
   return authActive() && principalOf(req.raw) !== null;
 }
 
+async function refreshDeviceKey(apiKeyId: string) {
+  try {
+    await currentAuthModule()?.devices?.touchKey(apiKeyId);
+  } catch {}
+}
+
 export function runnerUpgradeData(req: Req): RunnerSocketData | null {
   if (!authActive()) return null;
   const principal = principalOf(req.raw);
   if (!principal?.device) return null;
   const registered = Date.parse(principal.device.registeredAt);
+  if (principal.apiKeyId) void refreshDeviceKey(principal.apiKeyId);
   return {
     kind: "runner",
     deviceKey: principal.device.id,
     rank: Number.isFinite(registered) ? registered : 0,
     deviceName: principal.device.name || null,
     userId: principal.userId,
+    owner: principal.role === ownerRole,
   };
 }
 
@@ -86,7 +97,7 @@ function connectionFor(key?: string) {
   }
   let best: Connection | null = null;
   for (const connection of connections.values()) {
-    if (!isOpen(connection)) continue;
+    if (!isOpen(connection) || !connection.owner) continue;
     if (!best || connection.rank < best.rank) best = connection;
   }
   return best;
@@ -139,6 +150,17 @@ export function disconnectMacDevice(key: string, code = revokedCloseCode, reason
   return true;
 }
 
+export function disconnectMacUser(userId: string) {
+  let count = 0;
+  for (const connection of [...connections.values()])
+    if (connection.userId === userId && disconnectMacDevice(connection.key)) count++;
+  return count;
+}
+
+onUserRevoked((userId) => {
+  disconnectMacUser(userId);
+});
+
 export function onMacRunnerChange(listener: (connected: boolean, key: string) => void) {
   changeListeners.add(listener);
   return () => changeListeners.delete(listener);
@@ -172,6 +194,7 @@ function dataOf(ws: Socket): RunnerSocketData | null {
     rank: typeof data.rank === "number" ? data.rank : Number.MAX_SAFE_INTEGER,
     deviceName: typeof data.deviceName === "string" ? data.deviceName : null,
     userId: typeof data.userId === "string" ? data.userId : null,
+    owner: data.owner === true,
   };
 }
 
@@ -237,11 +260,11 @@ async function forwardMcp(connection: Connection, message: Record<string, unknow
       if (value) headers[name] = value;
     }
     reply(response.status, headers, await response.text());
-  } catch (error) {
+  } catch {
     reply(
       502,
       { "content-type": "application/json" },
-      JSON.stringify({ ok: false, error: `O servidor não respondeu ao MCP: ${(error as Error).message}` }),
+      JSON.stringify({ ok: false, error: "O servidor não respondeu ao MCP." }),
     );
   }
 }
@@ -302,6 +325,10 @@ export const runnerSocket: SocketHandler = {
       return;
     }
     const previous = connections.get(data.deviceKey);
+    if (previous && previous.socket !== ws && previous.userId !== data.userId) {
+      ws.close(4003, "device conflict");
+      return;
+    }
     if (previous && previous.socket !== ws) {
       try {
         previous.socket.close(4000, "replaced");
@@ -329,6 +356,7 @@ export const runnerSocket: SocketHandler = {
       rank: data.rank,
       name: data.deviceName,
       userId: data.userId,
+      owner: data.owner,
       beat,
     });
     console.log(`${new Date().toISOString()} mac runner connected (${data.deviceKey})`);

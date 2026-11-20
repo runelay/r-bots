@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
-import { claudeModels, defaultModels, probe, runTurn } from "../index";
+import { claudeModels, defaultModels, probe, runTurn, timeoutMessage, turnTimeoutMinutes } from "../index";
 import { fakeCli, fakeSdk, recorder, turnRequest } from "./fakes";
 
 describe("probe", () => {
@@ -231,5 +231,43 @@ describe("runTurn", () => {
     const cancelled = recorder();
     await runTurn(turnRequest(), fakeCli.home, controller.signal, cancelled.emit);
     expect(cancelled.events).toEqual([{ type: "done", ok: false, message: "cancelled" }]);
+  });
+
+  test("a turn past the wall clock is aborted and reported", async () => {
+    process.env.BOTS_TURN_TIMEOUT_MIN = "0.0005";
+    fakeSdk.next(async function* (params) {
+      const aborted = params.options?.abortController?.signal as AbortSignal;
+      await new Promise((resolve) => aborted.addEventListener("abort", resolve, { once: true }));
+      yield { type: "result", is_error: false, session_id: "s" } as SDKMessage;
+    });
+    const { events, emit } = recorder();
+    await runTurn(turnRequest(), fakeCli.home, new AbortController().signal, emit);
+    delete process.env.BOTS_TURN_TIMEOUT_MIN;
+    expect(events.filter((event) => event.type === "done")).toEqual([
+      { type: "done", ok: false, message: timeoutMessage(0.0005) },
+    ]);
+  });
+
+  test("the timeout setting falls back to two hours", () => {
+    process.env.BOTS_TURN_TIMEOUT_MIN = "nope";
+    expect(turnTimeoutMinutes()).toBe(120);
+    process.env.BOTS_TURN_TIMEOUT_MIN = "-3";
+    expect(turnTimeoutMinutes()).toBe(120);
+    delete process.env.BOTS_TURN_TIMEOUT_MIN;
+    expect(turnTimeoutMinutes()).toBe(120);
+  });
+
+  test("a parent abort mid-turn is forwarded", async () => {
+    const controller = new AbortController();
+    let forwarded = false;
+    fakeSdk.next(async function* (params) {
+      const aborted = params.options?.abortController?.signal as AbortSignal;
+      controller.abort();
+      forwarded = aborted.aborted;
+    });
+    const { events, emit } = recorder();
+    await runTurn(turnRequest(), fakeCli.home, controller.signal, emit);
+    expect(forwarded).toBe(true);
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, message: "cancelled" });
   });
 });

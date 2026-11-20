@@ -49,6 +49,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     private weak var model: AppModel?
     private var configured = false
+    private var delivered: [String: Date] = [:]
 
     var isAvailable: Bool {
         Bundle.main.bundleIdentifier != nil && Bundle.main.bundleURL.pathExtension == "app"
@@ -103,10 +104,36 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         if let attachment = Self.avatarAttachment(for: bot) {
             content.attachments = [attachment]
         }
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        let identifier = Self.identifier(for: event, botID: bot.id)
+        let now = Date()
+        delivered = delivered.filter { now.timeIntervalSince($0.value) < 86_400 }
+        guard delivered[identifier] == nil else { return }
+        delivered[identifier] = now
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         Task {
             try? await UNUserNotificationCenter.current().add(request)
         }
+    }
+
+    static func identifier(for event: StoreNotification, botID: String) -> String {
+        switch event {
+        case .reply(let text, let speakerID, _):
+            "reply-\(botID)-\(speakerID ?? "")-\(fingerprint(text))"
+        case .approval(let id, _):
+            "approval-\(botID)-\(id)"
+        case .failed(let message):
+            "failed-\(botID)-\(fingerprint(message))"
+        case .ciFailed(let number, let check):
+            "ci-\(botID)-\(number)-\(fingerprint(check))"
+        }
+    }
+
+    private static func fingerprint(_ text: String) -> String {
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
+        for byte in text.utf8 {
+            hash = (hash ^ UInt64(byte)) &* 0x100_0000_01b3
+        }
+        return String(hash, radix: 16)
     }
 
     private static func avatarAttachment(for bot: Bot) -> UNNotificationAttachment? {

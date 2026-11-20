@@ -14,6 +14,7 @@ import { hasLiveClients } from "./modules/browser/services/live-view.service";
 import { stopAllDevServers } from "./modules/code/services/dev-server.service";
 import { startCodeHousekeeping } from "./modules/code/services/housekeeping.service";
 import { seedAllowedRepos } from "./modules/code/services/repos.service";
+import { sandboxBootReport } from "./modules/code/services/sandbox.service";
 import { startConnectionsRefresh } from "./modules/connectors/services/connections-jobs.service";
 import { listConnections } from "./modules/connectors/services/runelay.service";
 import { loadSessions } from "./modules/conversations/services/sessions.service";
@@ -44,6 +45,7 @@ async function main() {
   runnerToken();
   console.log(`runner token in ${runnerTokenFile()}`);
   console.log(`allowed repos: ${await seedAllowedRepos()}`);
+  void sandboxBootReport().then(({ ok, line }) => (ok ? console.log(line) : console.error(line)));
   await loadVault();
   await loadBots();
   void listConnections(true).catch(() => undefined);

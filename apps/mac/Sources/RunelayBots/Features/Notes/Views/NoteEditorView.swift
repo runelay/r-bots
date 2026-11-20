@@ -4,59 +4,39 @@ struct NoteEditorView: View {
     @Bindable var store: NoteEditorStore
     @Environment(\.appReduceMotion) private var reduceMotion
 
+    private var presentation: BlockPresentation { .shared }
+
     var body: some View {
         HStack(spacing: 0) {
-            if store.showsSidebar {
+            if presentation.treeVisible {
                 NoteSidebar(store: store.sidebar, currentID: store.noteID)
-                    .frame(width: 210)
+                    .frame(width: presentation.fullScreen ? BlockPresentation.fullScreenTreeWidth : BlockPresentation.treeWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(Theme.sidebarBackground)
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
-            VStack(spacing: 0) {
-                HStack(spacing: Spacing.s) {
-                    HeaderIconButton(systemImage: "sidebar.left", help: store.showsSidebar ? "Esconder pastas" : "Mostrar pastas", isActive: store.showsSidebar) {
-                        store.showsSidebar.toggle()
+            ZStack(alignment: .topLeading) {
+                if store.note == nil, store.failed == nil {
+                    VStack(alignment: .leading, spacing: Spacing.m) {
+                        SkeletonRow(width: 260)
+                        SkeletonRow(width: 200)
                     }
-                    Text(breadcrumb)
-                        .font(TypeScale.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
+                    .padding(Spacing.xxl)
+                    .frame(maxWidth: NoteTextNSView.readingWidth)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                } else {
+                    NoteTextView(store: store)
                 }
-                .padding(.horizontal, Spacing.m)
-                .frame(height: 32)
-                ZStack(alignment: .topLeading) {
-                    if store.note == nil, store.failed == nil {
-                        VStack(alignment: .leading, spacing: Spacing.m) {
-                            SkeletonRow(width: 260)
-                            SkeletonRow(width: 200)
-                        }
-                        .padding(Spacing.xl)
-                    } else {
-                        NoteTextView(store: store)
-                    }
-                    if let context = store.linkContext, !store.suggestions.isEmpty {
-                        NoteLinkSuggestions(store: store)
-                            .offset(x: max(Spacing.s, context.anchor.minX - 12), y: context.anchor.maxY + Spacing.xs)
-                            .transition(.opacity)
-                    }
+                if let context = store.linkContext, !store.suggestions.isEmpty {
+                    NoteLinkSuggestions(store: store)
+                        .offset(x: max(Spacing.s, context.anchor.minX - 12), y: context.anchor.maxY + Spacing.xs)
+                        .transition(.opacity)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Theme.background, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-                .clipShape(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-                NoteBacklinksFooter(store: store)
             }
-            .padding(.trailing, Spacing.l)
-            .padding(.leading, store.showsSidebar ? 0 : Spacing.l)
-            .padding(.bottom, Spacing.l)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .animation(Motion.animation(reduceMotion: reduceMotion), value: store.showsSidebar)
+        .animation(Motion.animation(reduceMotion: reduceMotion), value: presentation.treeVisible)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: store.suggestions.isEmpty)
-    }
-
-    private var breadcrumb: String {
-        guard let note = store.note else { return "" }
-        let parts = note.folder.split(separator: "/").map(String.init) + [note.title]
-        return parts.joined(separator: " › ")
     }
 }
 
@@ -103,60 +83,40 @@ struct NoteLinkSuggestions: View {
 }
 
 struct NoteBacklinksFooter: View {
-    @Bindable var store: NoteEditorStore
-    @Environment(\.appReduceMotion) private var reduceMotion
+    let store: NoteEditorStore
 
     var body: some View {
         let count = max(store.note?.backlinkCount ?? 0, store.backlinks.count)
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            Button {
-                store.showsBacklinks.toggle()
-            } label: {
-                HStack(spacing: Spacing.s) {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 11, weight: .medium))
-                    Text(count == 0 ? "Nenhuma nota aponta para esta" : count == 1 ? "1 nota aponta para esta" : "\(count) notas apontam para esta")
-                        .font(TypeScale.captionStrong)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    if count > 0 {
-                        Image(systemName: "chevron.up")
-                            .font(.system(size: 10, weight: .semibold))
-                            .rotationEffect(.degrees(store.showsBacklinks ? 0 : 180))
-                    }
-                }
-                .foregroundStyle(Theme.textSecondary)
+            Text(count == 0 ? "Nenhuma nota aponta para esta" : count == 1 ? "1 nota aponta para esta" : "\(count) notas apontam para esta")
+                .font(TypeScale.caption)
+                .foregroundStyle(Theme.textTertiary)
+                .lineLimit(1)
                 .padding(.horizontal, Spacing.s)
-                .frame(height: 30)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .clickable()
-            .disabled(count == 0)
-            if store.showsBacklinks, count > 0 {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: Spacing.xxs) {
-                        ForEach(store.backlinks) { link in
-                            BacklinkRow(link: link) {
-                                BlockCenter.shared.noteTitleChanged(botID: store.botID, id: link.id, title: link.title)
-                                BlockCenter.shared.navigate(to: .note(botID: store.botID, id: link.id))
-                            }
-                        }
-                        if store.backlinksNext != nil {
-                            ProgressView()
-                                .controlSize(.small)
-                                .frame(maxWidth: .infinity)
-                                .task { await store.loadMoreBacklinks() }
-                        }
-                    }
+            ForEach(store.backlinks) { link in
+                BacklinkRow(link: link) {
+                    BlockCenter.shared.noteTitleChanged(botID: store.botID, id: link.id, title: link.title)
+                    BlockCenter.shared.navigate(to: .note(botID: store.botID, id: link.id))
                 }
-                .frame(maxHeight: 160)
-                .scrollEdgesHidden()
-                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            if store.backlinksNext != nil {
+                Button {
+                    Task { await store.loadMoreBacklinks() }
+                } label: {
+                    Text("Mostrar mais")
+                        .font(TypeScale.captionStrong)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, Spacing.s)
+                        .frame(height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .clickable()
             }
         }
-        .padding(.top, Spacing.s)
-        .animation(Motion.animation(reduceMotion: reduceMotion), value: store.showsBacklinks)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -194,34 +154,48 @@ struct NoteSidebar: View {
     @Bindable var store: NoteSidebarStore
     let currentID: String
 
+    @State private var hovered: String?
+    @Environment(\.appReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             BlockSearchField(text: $store.query, prompt: "Buscar")
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    if store.query.trimmingCharacters(in: .whitespaces).isEmpty {
-                        NoteTreeLevelView(store: store, folder: "", depth: 0, currentID: currentID)
-                    } else {
-                        ForEach(store.results) { hit in
-                            NoteSearchRow(hit: hit, isCurrent: hit.id == currentID) {
-                                BlockCenter.shared.noteTitleChanged(botID: store.botID, id: hit.id, title: hit.title)
-                                BlockCenter.shared.navigate(to: .note(botID: store.botID, id: hit.id))
+                .padding(.horizontal, Spacing.s)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Spacing.xxs) {
+                        if store.query.trimmingCharacters(in: .whitespaces).isEmpty {
+                            NoteTreeLevelView(store: store, folder: "", depth: 0, currentID: currentID, hovered: $hovered)
+                        } else {
+                            ForEach(store.results) { hit in
+                                NoteSearchRow(hit: hit, isCurrent: hit.id == currentID) {
+                                    BlockCenter.shared.noteTitleChanged(botID: store.botID, id: hit.id, title: hit.title)
+                                    BlockCenter.shared.navigate(to: .note(botID: store.botID, id: hit.id))
+                                }
+                            }
+                            if store.results.isEmpty, !store.searching {
+                                Text("Nada encontrado")
+                                    .font(TypeScale.caption)
+                                    .foregroundStyle(Theme.textTertiary)
+                                    .padding(Spacing.s)
                             }
                         }
-                        if store.results.isEmpty, !store.searching {
-                            Text("Nada encontrado")
-                                .font(TypeScale.caption)
-                                .foregroundStyle(Theme.textTertiary)
-                                .padding(Spacing.s)
-                        }
+                    }
+                    .padding(.horizontal, Spacing.s)
+                    .padding(.bottom, Spacing.l)
+                }
+                .scrollEdgesHidden()
+                .onAppear {
+                    proxy.scrollTo(currentID, anchor: .center)
+                }
+                .onChange(of: store.revealRevision) {
+                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                        proxy.scrollTo(currentID, anchor: .center)
                     }
                 }
             }
-            .scrollEdgesHidden()
         }
-        .padding(.leading, Spacing.l)
-        .padding(.trailing, Spacing.s)
-        .padding(.bottom, Spacing.l)
+        .padding(.top, Spacing.s)
     }
 }
 
@@ -230,23 +204,41 @@ struct NoteTreeLevelView: View {
     let folder: String
     let depth: Int
     let currentID: String
+    @Binding var hovered: String?
 
     var body: some View {
         if let level = store.levels[folder] {
             ForEach(level.folders) { child in
                 let open = store.expanded.contains(child.path)
-                TreeRow(title: child.name, symbol: open ? "folder.fill" : "folder", depth: depth, isCurrent: false, chevron: open ? .down : .right) {
+                TreeRow(
+                    id: "folder:" + child.path,
+                    title: child.name,
+                    symbol: open ? "folder.fill" : "folder",
+                    depth: depth,
+                    isCurrent: false,
+                    chevron: open ? .down : .right,
+                    hovered: $hovered
+                ) {
                     store.toggle(child.path)
                 }
                 if open {
-                    NoteTreeLevelView(store: store, folder: child.path, depth: depth + 1, currentID: currentID)
+                    NoteTreeLevelView(store: store, folder: child.path, depth: depth + 1, currentID: currentID, hovered: $hovered)
                 }
             }
             ForEach(level.notes.items) { note in
-                TreeRow(title: note.title, symbol: "doc.text", depth: depth, isCurrent: note.id == currentID, chevron: nil) {
+                TreeRow(
+                    id: note.id,
+                    title: note.title,
+                    symbol: "doc.text",
+                    depth: depth,
+                    isCurrent: note.id == currentID,
+                    chevron: nil,
+                    hovered: $hovered
+                ) {
                     BlockCenter.shared.noteTitleChanged(botID: store.botID, id: note.id, title: note.title)
                     BlockCenter.shared.navigate(to: .note(botID: store.botID, id: note.id))
                 }
+                .id(note.id)
             }
         }
     }
@@ -258,48 +250,65 @@ struct TreeRow: View {
         case down
     }
 
+    static let height: CGFloat = 28
+    static let indent: CGFloat = 14
+
+    let id: String
     let title: String
     let symbol: String
     let depth: Int
     let isCurrent: Bool
     let chevron: Chevron?
+    @Binding var hovered: String?
     let action: () -> Void
 
-    @State private var hovering = false
-
     var body: some View {
+        let isHovered = hovered == id
         Button(action: action) {
-            HStack(spacing: Spacing.xs + 2) {
-                Group {
+            HStack(spacing: Spacing.xs) {
+                ZStack {
                     if let chevron {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 9, weight: .semibold))
                             .rotationEffect(.degrees(chevron == .down ? 90 : 0))
-                    } else {
-                        Color.clear
+                            .springAnimation(value: chevron == .down)
                     }
                 }
-                .frame(width: 10)
+                .frame(width: 12, height: 12)
                 .foregroundStyle(Theme.textTertiary)
                 Image(systemName: symbol)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isCurrent ? Theme.textPrimary : Theme.textTertiary)
-                    .frame(width: 14)
-                Text(title)
-                    .font(TypeScale.rowSubtitle)
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(isCurrent ? Theme.textPrimary : Theme.textSecondary)
+                    .frame(width: 16, height: 16)
+                Text(title)
+                    .font(TypeScale.rowSubtitle.weight(isCurrent ? .medium : .regular))
+                    .foregroundStyle(isCurrent || isHovered ? Theme.textPrimary : Theme.textSecondary)
                     .lineLimit(1)
+                    .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
-            .padding(.leading, CGFloat(depth) * 14 + Spacing.xs)
-            .padding(.trailing, Spacing.xs)
-            .frame(height: 28)
-            .background(isCurrent ? Theme.selection : hovering ? Theme.hover : Color.clear, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
-            .contentShape(Rectangle())
+            .padding(.leading, CGFloat(depth) * Self.indent + Spacing.xs)
+            .padding(.trailing, Spacing.s)
+            .frame(height: Self.height)
+            .background {
+                if isCurrent || isHovered {
+                    RoundedRectangle(cornerRadius: Radius.small, style: .continuous)
+                        .fill(isCurrent ? Theme.selection : Theme.hover)
+                }
+            }
+            .contentShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
         }
         .buttonStyle(.plain)
         .clickable()
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            if inside {
+                hovered = id
+            } else if hovered == id {
+                hovered = nil
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: isHovered)
+        .help(title)
     }
 }
 

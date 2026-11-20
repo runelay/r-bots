@@ -1,5 +1,6 @@
 import type { Req, Res } from "../../../shared/http";
 import { macRunnerAuthorized } from "../../accounts/services/mac-runner.service";
+import { principalOf } from "../../auth/gate";
 import {
   audit,
   deleteSecret,
@@ -49,9 +50,9 @@ export async function handleVaultRoute(req: Req, res: Res, url: URL, method: str
   if (parts[1] === "exec" && parts.length === 3 && method === "POST") {
     if (req.headers["x-forwarded-for"] || req.headers["tailscale-user-login"])
       return json(res, 404, { ok: false, error: "Rota não encontrada." });
-    const entry = takeExecTicket(parts[2]);
-    if (!entry) return json(res, 410, { ok: false, error: "Esse tíquete já foi usado ou venceu." });
-    return json(res, 200, { env: entry.env, redact: entry.redact });
+    const grant = takeExecTicket(parts[2]);
+    if (!grant) return json(res, 410, { ok: false, error: "Esse tíquete já foi usado ou venceu." });
+    return json(res, 200, grant);
   }
   if (!macRunnerAuthorized(req))
     return json(res, 401, { ok: false, error: "O cofre só responde ao app runelay bots." });
@@ -64,6 +65,8 @@ export async function handleVaultRoute(req: Req, res: Res, url: URL, method: str
       return json(res, 200, await readAudit(url.searchParams.get("name"), limit));
     }
     if (parts.length === 2 && parts[1] === "audit" && method === "POST") {
+      if (!principalOf(req.raw)?.device)
+        return json(res, 403, { ok: false, error: "Só o app do Mac registrado pode gravar no histórico do cofre." });
       const body = await readJsonBody(req);
       const name = String(body.name ?? "");
       if (!secretNamePattern.test(name)) throw new VaultError("bad_name", "Nome inválido.");

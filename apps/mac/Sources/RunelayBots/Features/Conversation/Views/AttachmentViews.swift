@@ -219,6 +219,7 @@ struct MessageAttachments: View {
     @State private var previewURL: URL?
     @State private var previewItems: [URL] = []
     @State private var opening: String?
+    @State private var saving: String?
 
     var body: some View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: Spacing.s) {
@@ -235,9 +236,11 @@ struct MessageAttachments: View {
                 AudioAttachmentPlayer(ref: ref)
             }
             ForEach(attachments.filter { $0.kind == .file }) { ref in
-                FileAttachmentCard(ref: ref, loading: opening == ref.id) {
+                FileAttachmentCard(ref: ref, loading: opening == ref.id || saving == ref.id, open: {
                     open(ref, among: [ref])
-                }
+                }, save: {
+                    save(ref)
+                })
             }
         }
         .frame(maxWidth: BubbleShape.maxWidth, alignment: trailing ? .trailing : .leading)
@@ -251,8 +254,7 @@ struct MessageAttachments: View {
             var urls: [URL] = []
             var selected: URL?
             for item in group {
-                guard let remote = client.absoluteURL(item.url),
-                      let local = try? await AttachmentFileCache.shared.localFile(for: item, remote: remote) else { continue }
+                guard let local = await localFile(item, client: client) else { continue }
                 urls.append(local)
                 if item.id == ref.id {
                     selected = local
@@ -265,6 +267,39 @@ struct MessageAttachments: View {
             }
             previewItems = urls
             previewURL = selected
+        }
+    }
+
+    private func save(_ ref: AttachmentRef) {
+        guard saving == nil else { return }
+        let client = model.client
+        saving = ref.id
+        Task {
+            defer { saving = nil }
+            guard let local = await localFile(ref, client: client) else {
+                model.showNotice("Não consegui baixar \(ref.name).")
+                return
+            }
+            do {
+                let saved = try DownloadsFolder.copy(local, as: ref.name)
+                DownloadsFolder.reveal(saved)
+            } catch {
+                BlocksLog.failure("save attachment to Downloads", error)
+                model.showNotice("Não consegui salvar \(ref.name) em Downloads.")
+            }
+        }
+    }
+
+    private func localFile(_ ref: AttachmentRef, client: BotsClient) async -> URL? {
+        guard let remote = client.absoluteURL(ref.url) else {
+            BlocksLog.logger.error("attachment \(ref.id, privacy: .public) has no usable URL")
+            return nil
+        }
+        do {
+            return try await AttachmentFileCache.shared.localFile(for: ref, remote: remote)
+        } catch {
+            BlocksLog.failure("attachment download \(remote.path)", error)
+            return nil
         }
     }
 }
@@ -516,6 +551,7 @@ struct FileAttachmentCard: View {
     let ref: AttachmentRef
     let loading: Bool
     let open: () -> Void
+    var save: (() -> Void)?
     @State private var hovering = false
 
     var body: some View {
@@ -538,6 +574,17 @@ struct FileAttachmentCard: View {
                 if loading {
                     ProgressView()
                         .controlSize(.small)
+                } else if let save {
+                    Button(action: save) {
+                        Image(systemName: "arrow.down.to.line")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(hovering ? Theme.textPrimary : Theme.textTertiary)
+                            .frame(width: 26, height: 26)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .clickable()
+                    .help("Salvar em Downloads")
                 }
             }
             .padding(.horizontal, Spacing.m)

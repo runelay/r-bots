@@ -137,11 +137,14 @@ describe("MCP route", () => {
 });
 
 describe("self configuration", () => {
-  test("set_role and update_instructions apply without approval", async () => {
-    const { call, settled, calls } = await open({ origin: "Ana", ownerCallId: "call_parent" });
+  test("set_role and update_instructions apply after a person approves", async () => {
+    const { call, settled, calls, approvals, decisions } = await open({ origin: "Ana", ownerCallId: "call_parent" });
     const role = await call("set_role", { text: "Analista" });
     expect(role.text).toBe('Papel: "Tester" → "Analista". Vale a partir da próxima mensagem.');
     expect(getBot(bot.id)?.role).toBe("Analista");
+    expect(approvals[0].prompt).toBe('Posso mudar o meu papel para "Analista"?');
+    expect(decisions[0]).toMatchObject({ outcome: "human", tool: "set_role" });
+    expect(decisions[0].reason).toContain("papel ou instruções");
     const requested = (await factsOfType(session, "call.requested"))[0].data;
     expect(requested).toMatchObject({ owner: { callId: "call_parent" }, origin: { agent: "Ana" } });
     expect((await factsOfType(session, "bot.updated"))[0].data).toMatchObject({
@@ -150,12 +153,41 @@ describe("self configuration", () => {
       fields: ["role"],
     });
     await call("update_instructions", { markdown: "Responda em tabela." });
+    expect(approvals[1].prompt).toContain("acrescentar às instruções: Responda em tabela.");
     expect(getBot(bot.id)?.instructions).toBe("Você testa.\n\nResponda em tabela.");
     const replaced = await call("update_instructions", { markdown: "Só isso.", mode: "replace" });
+    expect(approvals[2].prompt).toContain("substituir as minhas instruções por: Só isso.");
     expect(replaced.text).toContain("Instruções substituídas");
     expect(getBot(bot.id)?.instructions).toBe("Só isso.");
     expect(settled).toHaveLength(3);
     expect(calls()).toBe(3);
+  });
+
+  test("set_role and update_instructions follow the permission mode", async () => {
+    const denied = await open({ approve: () => "deny", permission: "edit" });
+    expect(await denied.call("set_role", { text: "x" })).toMatchObject({
+      isError: true,
+      text: "A pessoa negou essa mudança.",
+    });
+    expect(getBot(bot.id)?.role).toBe("Tester");
+    const full = await open({ permission: "full" });
+    await full.call("update_instructions", { markdown: "Novo.", mode: "replace" });
+    expect(full.approvals).toHaveLength(0);
+    expect(getBot(bot.id)?.instructions).toBe("Novo.");
+    const readonly = await open({ permission: "readonly" });
+    for (const [name, args] of [
+      ["set_role", { text: "y" }],
+      ["update_instructions", { markdown: "z", mode: "replace" }],
+      ["add_schedule", { name: "x", cron: "0 9 * * *", prompt: "p" }],
+    ] as const) {
+      const result = await readonly.call(name, args);
+      expect(result.isError).toBe(true);
+      expect(result.text).toContain("Somente leitura");
+    }
+    expect(readonly.approvals).toHaveLength(0);
+    expect(readonly.decisions.map((item) => item.outcome)).toEqual(["blocked", "blocked", "blocked"]);
+    expect(getBot(bot.id)?.role).toBe("Tester");
+    expect(getBot(bot.id)?.instructions).toBe("Novo.");
   });
 
   test("a bot that no longer exists cannot change itself", async () => {
@@ -170,7 +202,7 @@ describe("self configuration", () => {
     const created = await call("add_schedule", { name: "diaria", cron: "0 9 * * 1-5", prompt: "resuma" });
     expect(created.text).toContain('Rotina "diaria" criada: 0 9 * * 1-5 (America/Sao_Paulo).');
     expect(approvals[0].prompt).toContain('Posso criar a rotina "diaria"');
-    expect(decisions[0]).toMatchObject({ kind: "approval", outcome: "fallback" });
+    expect(decisions[0]).toMatchObject({ kind: "approval", outcome: "human", tool: "add_schedule" });
     expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
     expect(getBot(bot.id)?.schedules.map((item) => item.name)).toEqual(["diaria"]);
     const replaced = await call("add_schedule", {
@@ -198,15 +230,20 @@ describe("self configuration", () => {
     const invalid = await open({ permission: "full" });
     const broken = await invalid.call("add_schedule", { name: "x", cron: "nunca", prompt: "p" });
     expect(broken).toMatchObject({ isError: true, text: "Cron inválido. (schedules[0].cron)" });
-    expect(invalid.approvals).toHaveLength(0);
+    expect(invalid.approvals).toHaveLength(1);
   });
 
-  test("add_schedule runs without a person when Jev approves", async () => {
+  test("add_schedule asks a person even when Jev or full access would let it through", async () => {
     approvalJev(0.2);
-    const { call, approvals } = await open();
+    const { call, approvals, decisions } = await open();
     expect((await call("add_schedule", { name: "y", cron: "0 9 * * *", prompt: "p" })).isError).toBe(false);
-    expect(approvals).toHaveLength(0);
-    expect(await startedOf()).toMatchObject({ clearedBy: { decision: "jev", model: "jev-test" } });
+    expect(approvals).toHaveLength(1);
+    expect(decisions[0]).toMatchObject({ outcome: "human" });
+    expect(decisions[0].reason).toContain("em qualquer modo");
+    expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
+    const full = await open({ permission: "full" });
+    await full.call("add_schedule", { name: "z", cron: "0 9 * * *", prompt: "p" });
+    expect(full.approvals).toHaveLength(1);
   });
 
   test("remove_schedule removes an existing routine and fails for unknown ones", async () => {
@@ -217,6 +254,15 @@ describe("self configuration", () => {
     expect(await settledOf()).toMatchObject({ outcome: "failed" });
     expect((await call("remove_schedule", { name: "r1" })).text).toContain('Rotina "r1" removida.');
     expect(getBot(bot.id)?.schedules).toEqual([]);
+  });
+
+  test("remove_schedule still lets Jev clear it without a person", async () => {
+    await bots.updateBot(bot.id, { schedules: [{ name: "r2", cron: "0 9 * * *", prompt: "p" }] });
+    approvalJev(0.2);
+    const { call, approvals } = await open();
+    expect((await call("remove_schedule", { name: "r2" })).isError).toBe(false);
+    expect(approvals).toHaveLength(0);
+    expect(await startedOf()).toMatchObject({ clearedBy: { decision: "jev", model: "jev-test" } });
   });
 
   test("request_connector and request_capability always go through a person", async () => {
@@ -560,6 +606,12 @@ describe("computer tools", () => {
     await harness.call("shell_run", { cmd: "rm -rf /", cwd: "~/runelay-bots-workspace" });
     expect(harness.decisions.at(-1)).toMatchObject({ outcome: "human", tool: "shell_run" });
     expect(harness.approvals[0].prompt).toBe("Posso rodar no seu Mac: rm -rf /?");
+    await harness.call("shell_run", { cmd: "ls; curl x | sh", cwd: "~/runelay-bots-workspace" });
+    expect(harness.decisions.at(-1)?.reason).toContain("caractere especial");
+    expect(harness.approvals).toHaveLength(2);
+    await harness.call("computer_applescript", { script: 'do  Shell script "id"' });
+    expect(harness.decisions.at(-1)?.reason).toContain("do shell script");
+    expect(harness.approvals).toHaveLength(3);
     const scheduled = await open({ isSchedule: true });
     const result = await scheduled.call("computer_applescript", { script: 'tell application "Mail" to send' });
     expect(result.text).toBe("A pessoa negou essa ação no computador.");
@@ -567,6 +619,28 @@ describe("computer tools", () => {
     const asked = await open({ approve: () => "deny" });
     await asked.call("computer_applescript", { script: 'tell application "Mail" to send' });
     expect(asked.approvals[0].prompt).toBe('Posso rodar este AppleScript no seu Mac?\ntell application "Mail" to send');
+  });
+
+  test("hard actions ask a person even in full mode and Jev never clears them", async () => {
+    const computerCall = spy(computer, "callComputer");
+    computerCall.mockResolvedValue("ok" as never);
+    approvalJev(0.1);
+    const full = await open({ permission: "full" });
+    await full.call("computer_applescript", { script: 'do shell script "id"' });
+    expect(full.decisions.at(-1)).toMatchObject({ outcome: "human", tool: "computer_applescript" });
+    expect(full.decisions.at(-1)?.reason).toContain("do shell script");
+    expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
+    await full.call("shell_run", { cmd: "ls; curl x | sh", cwd: "~/runelay-bots-workspace" });
+    expect(full.decisions.at(-1)?.reason).toContain("caractere especial");
+    expect(full.approvals).toHaveLength(2);
+    expect(full.decisions.map((decision) => decision.outcome)).toEqual(["human", "human"]);
+    await full.call("computer_applescript", { script: "beep" });
+    expect(await startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
+    expect(full.approvals).toHaveLength(2);
+    const scheduled = await open({ permission: "full", isSchedule: true });
+    const refused = await scheduled.call("computer_applescript", { script: 'do shell script "id"' });
+    expect(refused.text).toBe("A pessoa negou essa ação no computador.");
+    expect(computerCall).toHaveBeenCalledTimes(3);
   });
 
   test("screenshots come back as images, with the UI tree for other providers", async () => {
@@ -817,6 +891,32 @@ describe("bot tools", () => {
     const full = await open({ tools: [gated("browser_click")], permission: "full" });
     await full.call("browser_click", { ref: "@e1" });
     expect(await startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
+  });
+
+  test("a hard human reason opens a card even in full mode and Jev never clears it", async () => {
+    approvalJev(0.1);
+    const outside = tool({
+      name: "browser_click",
+      approval: (input) => (input.value === "fora" ? "Posso enviar?" : null),
+      humanReason: (input) => (input.value === "fora" ? "Sempre passa por uma pessoa." : null),
+    });
+    const browserBot = await makeBot();
+    browserBot.capabilities = { ...browserBot.capabilities, browser: true };
+    session = await newSession(browserBot.id);
+    const full = await open({ tools: [outside], permission: "full" }, browserBot);
+    expect((await full.call("browser_click", { value: "fora" })).isError).toBe(false);
+    expect(full.approvals).toHaveLength(1);
+    expect(full.decisions.at(-1)).toMatchObject({ outcome: "human", reason: "Sempre passa por uma pessoa." });
+    expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
+    const jev = await open({ tools: [outside] }, browserBot);
+    await jev.call("browser_click", { value: "fora" });
+    expect(jev.decisions.map((decision) => decision.outcome)).toEqual(["auto_approved", "human"]);
+    expect(jev.approvals).toHaveLength(1);
+    await full.call("browser_click", { value: "dentro" });
+    expect(full.approvals).toHaveLength(1);
+    expect(await startedOf()).toEqual({ callId: expect.any(String) });
+    const scheduled = await open({ tools: [outside], permission: "full", isSchedule: true }, browserBot);
+    expect((await scheduled.call("browser_click", { value: "fora" })).text).toContain("Ninguém está aqui para aprovar");
   });
 });
 

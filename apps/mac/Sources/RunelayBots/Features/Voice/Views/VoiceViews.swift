@@ -66,6 +66,7 @@ struct VoiceElapsed: View {
 
 struct VoiceStopButton: View {
     let action: () -> Void
+    @State private var hovering = false
     @Environment(\.appReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -75,8 +76,10 @@ struct VoiceStopButton: View {
                 .frame(width: 10, height: 10)
                 .modifier(SoftPulse(isEnabled: !reduceMotion))
                 .frame(width: 34, height: 34)
-                .glassSurface(Circle(), interactive: true, fallback: Theme.surfaceRaised)
+                .background(hovering ? Theme.hover : .clear, in: Circle())
                 .contentShape(Circle())
+                .onHover { hovering = $0 }
+                .animation(.easeOut(duration: 0.15), value: hovering)
         }
         .buttonStyle(PressableButtonStyle())
         .help("Parar de ouvir (solte ⌥Espaço)")

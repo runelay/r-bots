@@ -156,3 +156,25 @@ Desvios do contrato:
 - A resposta de `…/cells` traz as células escritas e as dependentes **da mesma aba**; dependentes de outras abas são recalculadas e gravadas, mas a célula não tem `tabId` para ir junto (o app relê a aba ao trocar).
 - `agenda_create` com convidado de fora das contas ligadas passa pelo card de aprovação existente; sem convidado, ou com `permission: full`, roda direto.
 - O download sai pelo servidor em `GET /bots/:id/exports/:exportId/file` (stream do BlobStore, atrás do portão de auth).
+
+## v44 (20/11): conteúdo do usuário isolado (uploads, artefatos, exportações, navegador)
+
+### PDF de nota e de planilha
+
+- O markdown da nota passa por um `marked` próprio: HTML cru (bloco ou inline) sai escapado como texto, link só com `http:`, `https:`, `mailto:` ou `#âncora` (senão fica só o texto), imagem só `data:image/(png|jpeg|gif|webp);base64` (senão fica o texto alternativo).
+- O primeiro elemento do `<head>` é `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:">`.
+- O HTML vai para um diretório temporário `0700`, arquivo `0600`. O Chromium roda com `--blink-settings=scriptEnabled=false`, `--host-resolver-rules=MAP * ~NOTFOUND`, `--proxy-server=127.0.0.1:9`, `--proxy-bypass-list=<-loopback>`, `--disable-background-networking`, `--disable-component-update`, `--disable-default-apps`, `--disable-extensions`, `--disable-sync`, `--no-first-run`, `--disable-features=Translate,MediaRouter,OptimizationHints,AutofillServerCommunication`, sem `--allow-file-access-from-files`. `--no-sandbox` continua (o container roda o Chromium sem o sandbox do kernel).
+
+### Planilhas
+
+- CSV: célula que começa com `=`, `+`, `-`, `@`, tab ou CR ganha um `'` na frente (OWASP); número negativo (`-5,0`, `-1.234,5%`) fica como está.
+- XLSX: fórmula com `WEBSERVICE`, `HYPERLINK`, `IMPORTXML`, `IMPORTDATA`, `IMPORTHTML`, `IMPORTFEED`, `IMPORTRANGE`, `IMAGE`, `FILTERXML`, `RTD`, `DDE`, `DDEAUTO`, `CALL`, `REGISTER`, `EXEC` ou `|` (DDE `cmd|`) vai como texto (`numFmt "@"`), não como fórmula.
+- CSV e PDF recusam aba com mais de 200 000 células na área em uso (`rowCount × colCount`); a exportação fica `failed` com: `A aba tem 200000 linhas por 2 colunas em uso; o limite para exportar é de 200.000 células. Divida a aba ou exporte em xlsx.` (`BlockError` 413).
+
+### Notas
+
+`POST /bots/:id/notes`, `PUT` e `PATCH` recusam conteúdo acima de 500 000 caracteres (o mesmo limite da ferramenta), `413`: `A nota passa de 500000 caracteres (<n>).`
+
+### Verificado 20/11
+
+Por testes: `exports.service.test.ts` (19), `notes.service.test.ts` (12).

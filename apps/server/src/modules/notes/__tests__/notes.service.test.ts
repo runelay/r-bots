@@ -10,6 +10,7 @@ import {
   createNote,
   deleteNote,
   listNotes,
+  maxNoteChars,
   moveNote,
   noteBacklinks,
   noteEditNote,
@@ -101,6 +102,21 @@ describe("parsing helpers", () => {
     expect(
       (await blockError(() => applyOps("x", [{ op: "append", text: "y" }, { op: "spin" } as never]))).message,
     ).toBe("op 2: operação desconhecida.");
+  });
+});
+
+describe("note size", () => {
+  test("refuses content past the tool limit on create, write and patch", async () => {
+    const big = "x".repeat(maxNoteChars + 1);
+    const created = await blockError(async () => await createNote(bot, { title: "Grande", content: big }, "user"));
+    expect(created.status).toBe(413);
+    expect(created.message).toBe(`A nota passa de 500000 caracteres (${maxNoteChars + 1}).`);
+    const { note } = await createNote(bot, { title: "Pequena", content: "x".repeat(maxNoteChars) }, "user");
+    expect((await blockError(async () => await writeNote(bot, note.id, { content: big }, "user"))).status).toBe(413);
+    const patched = await blockError(
+      async () => await patchNote(bot, note.id, { ops: [{ op: "append", text: "mais" }] }, "user"),
+    );
+    expect(patched.status).toBe(413);
   });
 });
 

@@ -50,6 +50,7 @@ import { codeModeSupported } from "../../code/services/code-tools.service";
 import { devServersOf } from "../../code/services/dev-server.service";
 import { nativeHooks } from "../../code/services/hooks.service";
 import { CodeLive } from "../../code/services/live-diff.service";
+import { killSandboxed, sandboxMarker, sandboxMode } from "../../code/services/sandbox.service";
 import {
   activeWorkspace,
   cachedRepoNames,
@@ -272,7 +273,7 @@ function newBotPrompt(bot: BotDefinition) {
   return [
     `Você é ${bot.name}, um bot novo no time da pessoa e ainda sem função definida.`,
     "Na primeira conversa, apresente-se em uma frase curta e pergunte o que você deve fazer.",
-    "Quando a pessoa explicar, configure-se com as ferramentas do servidor MCP `bots`: `set_role` com um papel curto, `update_instructions` (mode replace) com instruções claras em markdown, e `add_schedule` se o trabalho precisar de rotina. Você já tem acesso a tudo: navegador, o Mac da pessoa, banco em leitura, todos os conectores e os outros bots. Nunca peça acesso.",
+    "Quando a pessoa explicar, configure-se com as ferramentas do servidor MCP `bots`: `set_role` com um papel curto, `update_instructions` (mode replace) com instruções claras em markdown, e `add_schedule` se o trabalho precisar de rotina. Essas três abrem um card para a pessoa confirmar. Você já tem acesso a tudo: navegador, o Mac da pessoa, banco em leitura, todos os conectores e os outros bots. Nunca peça acesso.",
     "Depois de se configurar, confirme em uma linha o que passou a fazer.",
   ].join("\n");
 }
@@ -330,7 +331,7 @@ function systemPromptFor(
   parts.push(
     "",
     "## Autoconfiguração",
-    "Você pode se configurar com as ferramentas do servidor MCP `bots`: `set_role`, `update_instructions`, `add_schedule` (converta o pedido em cron), e `remove_schedule`. Use quando a pessoa pedir algo recorrente ou uma mudança no seu jeito de trabalhar. Para criar um bot novo no time, use `create_bot`; para criar um grupo de bots, use `create_group`; para adicionar, tirar ou renomear num grupo existente, use `update_group` (nunca crie outro grupo para isso); `archive_group` arquiva, mas só quando a pessoa pedir com todas as letras. Nunca arquive, apague ou desfaça nada por iniciativa própria, nem para “arrumar”: confira o estado atual com as ferramentas antes de mexer, sua memória da conversa pode estar velha. Faça direto, sem pedir confirmação nem delegar. Nunca use o computador (cliques na tela) para mexer no próprio app runelay bots: tudo dele tem ferramenta. Delegar para outro bot também não pede permissão: faça. Você já tem acesso a tudo (navegador, o Mac da pessoa, banco em leitura, todos os conectores e os outros bots): nunca peça acesso nem diga que não tem.",
+    "Você pode se configurar com as ferramentas do servidor MCP `bots`: `set_role`, `update_instructions`, `add_schedule` (converta o pedido em cron), e `remove_schedule`. Use quando a pessoa pedir algo recorrente ou uma mudança no seu jeito de trabalhar. Para criar um bot novo no time, use `create_bot`; para criar um grupo de bots, use `create_group`; para adicionar, tirar ou renomear num grupo existente, use `update_group` (nunca crie outro grupo para isso); `archive_group` arquiva, mas só quando a pessoa pedir com todas as letras. Nunca arquive, apague ou desfaça nada por iniciativa própria, nem para “arrumar”: confira o estado atual com as ferramentas antes de mexer, sua memória da conversa pode estar velha. Chame direto, sem perguntar antes nem delegar: `set_role`, `update_instructions` e `add_schedule` já abrem um card para a pessoa confirmar. Nunca use o computador (cliques na tela) para mexer no próprio app runelay bots: tudo dele tem ferramenta. Delegar para outro bot também não pede permissão: faça. Você já tem acesso a tudo (navegador, o Mac da pessoa, banco em leitura, todos os conectores e os outros bots): nunca peça acesso nem diga que não tem.",
   );
   if (isNew) {
     parts.push(
@@ -871,6 +872,7 @@ async function executeProvider(run: ProviderRun) {
           coding && codeWorkspace
             ? { cwd: codeWorkspace.path, ...(permission === "readonly" ? { readOnly: true } : {}) }
             : null,
+        nativeShell: permission === "full" && sandboxMode() === "off",
       },
       runAbort.signal,
       run.onEvent,
@@ -882,6 +884,7 @@ async function executeProvider(run: ProviderRun) {
     turn.abort.signal.removeEventListener("abort", forwardAbort);
     if (turn.stopRun === stopRun) turn.stopRun = undefined;
     revoke();
+    if (coding && sandboxMode() === "uid") await killSandboxed(sandboxMarker("sbx", turn.turnId));
   }
 }
 
@@ -891,13 +894,15 @@ function requestApproval(
   prompt: string,
   callId: string,
   origin: string | null,
-  details?: ApprovalDetails,
+  details?: ApprovalDetails & { timeoutMs?: number },
 ) {
   const interactionId = randomBytes(12).toString("base64url").slice(0, 16);
   const scope = { turnId: turn.turnId };
   return new Promise<ApprovalResult>((resolve) => {
+    let expiry: ReturnType<typeof setTimeout> | undefined;
     turn.interactions.set(interactionId, {
       resolve: (choice, always) => {
+        if (expiry) clearTimeout(expiry);
         if (turn.interactions.size === 0) {
           turn.slot?.resume();
           turn.delegation?.onAwaiting(false);
@@ -946,6 +951,16 @@ function requestApproval(
     turn.delegation?.onAwaiting(true);
     turn.slot?.suspend();
     setStatus(turn.owner.sessionId, turn.owner.botId, "awaiting");
+    if (details?.timeoutMs) {
+      expiry = setTimeout(() => {
+        const pending = turn.interactions.get(interactionId);
+        if (!pending) return;
+        turn.interactions.delete(interactionId);
+        log.emit({ type: "interaction.settled", data: { interactionId, outcome: "expired" }, scope });
+        pending.resolve("deny");
+      }, details.timeoutMs);
+      expiry.unref();
+    }
     turn.abort.signal.addEventListener(
       "abort",
       () => {
@@ -1697,6 +1712,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           delivery.scheduleId ?? "rotina",
           schedule?.prompt ?? delivery.text,
           replyText,
+          meta.scheduleSummaries?.[delivery.scheduleId ?? "rotina"] ?? null,
         );
         emitDecision(log, turn, triage);
         quiet = triage.outcome === "quiet";

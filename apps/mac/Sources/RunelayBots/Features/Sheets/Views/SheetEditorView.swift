@@ -19,8 +19,7 @@ struct SheetEditorView: View {
                     SheetGridView(store: store)
                 }
             }
-            .background(Theme.background, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
+            .clipped()
             SheetTabsBar(store: store)
         }
         .padding(.horizontal, Spacing.l)

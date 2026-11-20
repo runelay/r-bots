@@ -1,13 +1,18 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { eq, like } from "drizzle-orm";
-import { dataDir } from "../../../config/env";
 import { readOrCreateSecret } from "../../../config/runtime-secrets";
-import { getDb } from "../../../db/client";
+import { getDb, writeTransaction } from "../../../db/client";
 import { writeSetting } from "../../../db/settings";
 import { settings } from "../../../db/tables";
 import { forgetSecretValue, rememberSecretValue } from "../../../shared/redact";
+import {
+  deriveKey,
+  integrationInfo,
+  loadMasterKey,
+  openGcm,
+  parseKey,
+  sealV2,
+  sealVersionOf,
+} from "../../vault/services/vault-key.service";
 
 export const integrationIds = ["elevenlabs", "jev", "runelay"] as const;
 export type IntegrationId = (typeof integrationIds)[number];
@@ -43,27 +48,40 @@ function settingKey(id: IntegrationId) {
   return `integration:${id}`;
 }
 
-function vaultKey() {
-  try {
-    const raw = readFileSync(process.env.VAULT_KEY_FILE ?? join(dataDir, "vault.key"));
-    if (raw.length === 32) return raw;
-    const text = raw.toString("utf8").trim();
-    return /^[0-9a-f]{64}$/i.test(text) ? Buffer.from(text, "hex") : null;
-  } catch {
-    return null;
-  }
-}
-
 function dataKey() {
-  return Buffer.from(readOrCreateSecret("integrations.key"), "base64url").subarray(0, 32);
+  return parseKey(Buffer.from(readOrCreateSecret("integrations.key"), "utf8"));
 }
 
 function keyFor(ref: KeyRef) {
-  return ref === "vault" ? vaultKey() : dataKey();
+  return ref === "vault" ? loadMasterKey() : dataKey();
 }
 
-function aad(id: IntegrationId) {
+function aadV1(id: IntegrationId) {
   return Buffer.from(`runelay-bots:integration:v1:${id}`, "utf8");
+}
+
+function aadV2(id: IntegrationId, url: string | null) {
+  return Buffer.from(`runelay-bots:integration:v2:${id}:${url ?? ""}`, "utf8");
+}
+
+function seal(id: IntegrationId, secret: string, url: string | null) {
+  const vault = loadMasterKey();
+  const keyRef: KeyRef = vault ? "vault" : "data";
+  const base = vault ?? dataKey();
+  if (!base) throw new Error("no integration key");
+  const key = deriveKey(base, integrationInfo);
+  base.fill(0);
+  try {
+    const sealed = sealV2(key, secret, aadV2(id, url));
+    return {
+      iv: sealed.iv.toString("base64"),
+      tag: sealed.tag.toString("base64"),
+      ct: sealed.ct.toString("base64"),
+      keyRef,
+    };
+  } finally {
+    key.fill(0);
+  }
 }
 
 export async function loadIntegrations() {
@@ -74,24 +92,52 @@ export async function loadIntegrations() {
     const id = row.key.slice("integration:".length);
     if (isIntegrationId(id)) stored.set(id, row.value as StoredIntegration);
   }
+  await migrateIntegrations();
   return stored.size;
+}
+
+function partsOf(current: StoredIntegration) {
+  return {
+    iv: Buffer.from(current.iv, "base64"),
+    tag: Buffer.from(current.tag, "base64"),
+    ct: Buffer.from(current.ct, "base64"),
+  };
+}
+
+export async function migrateIntegrations() {
+  const updates: [IntegrationId, StoredIntegration][] = [];
+  for (const [id, current] of stored) {
+    if (!current || sealVersionOf(partsOf(current)) !== 1) continue;
+    const value = open(id, current);
+    if (value === null) continue;
+    updates.push([id, { ...current, ...seal(id, value, current.url) }]);
+  }
+  if (updates.length === 0) return 0;
+  await writeTransaction(async (tx) => {
+    for (const [id, next] of updates) await writeSetting(settingKey(id), next, tx);
+  });
+  for (const [id, next] of updates) stored.set(id, next);
+  console.log(`integrations: re-encrypted ${updates.length} keys to v2`);
+  return updates.length;
 }
 
 export function readStored(id: IntegrationId) {
   return stored.get(id) ?? null;
 }
 
-function open(id: IntegrationId, stored: StoredIntegration) {
-  const key = keyFor(stored.keyRef);
-  if (!key) return null;
+function open(id: IntegrationId, current: StoredIntegration) {
+  const base = keyFor(current.keyRef);
+  if (!base) return null;
+  const parts = partsOf(current);
+  const v1 = sealVersionOf(parts) === 1;
+  const key = v1 ? base : deriveKey(base, integrationInfo);
   try {
-    const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(stored.iv, "base64"));
-    decipher.setAAD(aad(id));
-    decipher.setAuthTag(Buffer.from(stored.tag, "base64"));
-    const ct = Buffer.from(stored.ct, "base64");
-    return Buffer.concat([decipher.update(ct), decipher.final()]).toString("utf8");
+    return openGcm(key, parts, v1 ? aadV1(id) : aadV2(id, current.url));
   } catch {
     return null;
+  } finally {
+    key.fill(0);
+    base.fill(0);
   }
 }
 
@@ -134,19 +180,9 @@ export function last4(value: string) {
 }
 
 export async function writeStored(id: IntegrationId, secret: string, url: string | null) {
-  const vault = vaultKey();
-  const keyRef: KeyRef = vault ? "vault" : "data";
-  const key = vault ?? dataKey();
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  cipher.setAAD(aad(id));
-  const ct = Buffer.concat([cipher.update(secret, "utf8"), cipher.final()]);
   const now = new Date().toISOString();
   const next: StoredIntegration = {
-    iv: iv.toString("base64"),
-    tag: cipher.getAuthTag().toString("base64"),
-    ct: ct.toString("base64"),
-    keyRef,
+    ...seal(id, secret, url),
     last4: last4(secret),
     url,
     validatedAt: now,

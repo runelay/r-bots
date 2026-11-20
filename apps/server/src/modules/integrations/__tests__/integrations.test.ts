@@ -1,9 +1,9 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { randomBytes } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { createCipheriv, randomBytes } from "node:crypto";
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fakeRunelay, request, startTestServer, type TestServer, testDataDir } from "../../../../test/helpers";
-import { readOrCreateSecret, runnerToken, runnerTokenFile } from "../../../config/runtime-secrets";
+import { readOrCreateSecret, rotateRunnerToken, runnerToken, runnerTokenFile } from "../../../config/runtime-secrets";
 import { getDb } from "../../../db";
 import { readSetting, writeSetting } from "../../../db/settings";
 import { settings } from "../../../db/tables";
@@ -20,7 +20,7 @@ import {
   resetIntegrationCache,
   writeStored,
 } from "../services/integration-store.service";
-import { integrationFlags } from "../services/integrations.service";
+import { integrationFlags, setProbeLoopbackPorts, trustedServiceUrl } from "../services/integrations.service";
 
 const goodKey = "sk_good_key_1234";
 const seen: Array<{ path: string; key: string | null; body: string }> = [];
@@ -31,7 +31,8 @@ const vaultKeyFile = process.env.VAULT_KEY_FILE as string;
 const createdVaultKey = !existsSync(vaultKeyFile);
 
 beforeAll(async () => {
-  if (createdVaultKey) writeFileSync(vaultKeyFile, randomBytes(32), { mode: 0o600 });
+  if (createdVaultKey) writeFileSync(vaultKeyFile, randomBytes(32).toString("hex"), { mode: 0o600 });
+  setProbeLoopbackPorts([Number(new URL(fakeRunelay.mcpUrl).port), 9]);
   services = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -226,6 +227,92 @@ describe("integrations", () => {
     expect(await listConnections(true)).toEqual([]);
   });
 
+  test("runelay needs https outside loopback and the probe refuses internal hosts", async () => {
+    const insecure = await request<{ field: string; error: string }>("/integrations/runelay", {
+      method: "PUT",
+      body: { key: "whatever-key", url: "http://runelay.example.com/mcp" },
+    });
+    expect(insecure.status).toBe(400);
+    expect(insecure.body.error).toContain("https");
+    const userinfo = await request<{ field: string }>("/integrations/runelay", {
+      method: "PUT",
+      body: { key: "whatever-key", url: "https://u:p@runelay.example.com/mcp" },
+    });
+    expect(userinfo.body.field).toBe("url");
+    const internal = await request<{ error: string }>("/integrations/runelay", {
+      method: "PUT",
+      body: { key: fakeRunelay.token, url: "https://10.1.2.3/mcp" },
+    });
+    expect(internal.body.error).toBe("Não consegui falar com o runelay nesse endereço.");
+    setProbeLoopbackPorts([]);
+    try {
+      const blocked = await request<{ error: string }>("/integrations/runelay", {
+        method: "PUT",
+        body: { key: fakeRunelay.token, url: fakeRunelay.mcpUrl },
+      });
+      expect(blocked.status).toBe(422);
+      process.env.RUNELAY_ALLOW_LOOPBACK = "1";
+      fakeRunelay.tool("list_connections", () => []);
+      const allowed = await request<Item>("/integrations/runelay", {
+        method: "PUT",
+        body: { key: fakeRunelay.token, url: fakeRunelay.mcpUrl },
+      });
+      expect(allowed.status).toBe(200);
+    } finally {
+      delete process.env.RUNELAY_ALLOW_LOOPBACK;
+      setProbeLoopbackPorts([Number(new URL(fakeRunelay.mcpUrl).port), 9]);
+    }
+  });
+
+  test("service urls must be https unless they point at loopback", () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(trustedServiceUrl(undefined, "https://fallback")).toBe("https://fallback");
+      expect(trustedServiceUrl(" ", "https://fallback")).toBe("https://fallback");
+      expect(trustedServiceUrl("https://api.example.com", "https://fallback")).toBe("https://api.example.com");
+      expect(trustedServiceUrl("http://127.0.0.1:9/x", "https://fallback")).toBe("http://127.0.0.1:9/x");
+      expect(trustedServiceUrl("http://api.example.com", "https://fallback")).toBe("https://fallback");
+      expect(trustedServiceUrl("https://u:p@api.example.com", "https://fallback")).toBe("https://fallback");
+      expect(trustedServiceUrl("not a url", "https://fallback")).toBe("https://fallback");
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test("v1 integration keys are re-encrypted to v2 at load and bound to their url", async () => {
+    const master = Buffer.from(readFileSync(vaultKeyFile, "utf8").trim(), "hex");
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", master, iv);
+    cipher.setAAD(Buffer.from("runelay-bots:integration:v1:jev", "utf8"));
+    const ct = Buffer.concat([cipher.update(goodKey, "utf8"), cipher.final()]);
+    const legacy = {
+      iv: iv.toString("base64"),
+      tag: cipher.getAuthTag().toString("base64"),
+      ct: ct.toString("base64"),
+      keyRef: "vault",
+      last4: "1234",
+      url: null,
+      validatedAt: "2026-11-01T00:00:00.000Z",
+      savedAt: "2026-11-01T00:00:00.000Z",
+    };
+    await writeSetting("integration:jev", legacy, getDb());
+    await writeSetting("integration:elevenlabs", { ...legacy, tag: Buffer.alloc(16).toString("base64") }, getDb());
+    const log = spyOn(console, "log").mockImplementation(() => undefined);
+    try {
+      await resetIntegrationCache();
+      expect(log).toHaveBeenCalledWith("integrations: re-encrypted 1 keys to v2");
+    } finally {
+      log.mockRestore();
+    }
+    const row = await readSetting<Record<string, string>>("integration:jev", {}, getDb());
+    expect(Buffer.from(row.iv, "base64")[0]).toBe(2);
+    expect(integrationSecret("jev")).toBe(goodKey);
+    await writeSetting("integration:jev", { ...row, url: "https://evil.example.com" }, getDb());
+    await resetIntegrationCache();
+    expect(integrationSecret("jev")).toBeNull();
+  });
+
   test("rejects bad input and unknown routes", async () => {
     const empty = await request<{ field: string }>("/integrations/jev", { method: "PUT", body: { key: "short" } });
     expect(empty.status).toBe(400);
@@ -251,7 +338,7 @@ describe("integrations", () => {
   test("reads a hex vault key, survives a throwing listener and network failures", async () => {
     const vaultKey = process.env.VAULT_KEY_FILE;
     const hexFile = join(testDataDir(), "hex.key");
-    writeFileSync(hexFile, `${randomBytes(32).toString("hex")}\n`);
+    writeFileSync(hexFile, `${randomBytes(32).toString("hex")}\n`, { mode: 0o600 });
     process.env.VAULT_KEY_FILE = hexFile;
     const off = onIntegrationChange(() => {
       throw new Error("listener broke");
@@ -305,6 +392,17 @@ describe("runtime secrets", () => {
     expect(token.length).toBeGreaterThanOrEqual(24);
     expect(readFileSync(join(testDataDir(), "runner.token"), "utf8").trim()).toBe(token);
     expect(runnerToken()).toBe(token);
+  });
+
+  test("runner token rotates on demand and is rewritten if its file disappears", async () => {
+    const first = runnerToken();
+    const rotated = rotateRunnerToken();
+    expect(rotated).not.toBe(first);
+    expect(runnerToken()).toBe(rotated);
+    expect(statSync(runnerTokenFile()).mode & 0o777).toBe(0o600);
+    rmSync(runnerTokenFile());
+    expect(runnerToken()).toBe(rotated);
+    expect(readFileSync(runnerTokenFile(), "utf8").trim()).toBe(rotated);
   });
 
   test("writes a cached secret back when its file was removed", async () => {

@@ -153,6 +153,10 @@ function decodeValue(row: CellRow): CellValue {
   }
 }
 
+function formatOf(value: unknown): CellFormat {
+  return { type: "general", ...(value as Partial<CellFormat>) };
+}
+
 export function cellOf(row: CellRow): SheetCell {
   return {
     a: address(row.row, row.col),
@@ -161,7 +165,7 @@ export function cellOf(row: CellRow): SheetCell {
     input: row.input,
     v: decodeValue(row),
     t: (row.type as CellType) ?? null,
-    ...(row.format ? { format: row.format as unknown as CellFormat } : {}),
+    ...(row.format ? { format: formatOf(row.format) } : {}),
     ...(row.error ? { error: row.error } : {}),
   };
 }
@@ -320,7 +324,7 @@ export async function previewOf(sheetId: string, tabId?: string): Promise<SheetP
     grid[row.row][row.col] = {
       v: decodeValue(row),
       t: (row.type as CellType) ?? null,
-      ...(row.format ? { format: row.format as unknown as CellFormat } : {}),
+      ...(row.format ? { format: formatOf(row.format) } : {}),
     };
   }
   const widths = tab.colWidths ?? {};

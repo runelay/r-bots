@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { heavyKind, heavyLimits, wrapHeavyCommand } from "../services/heavy-commands.service";
+import { existsSync } from "node:fs";
+import { dirname } from "node:path";
+import { dataDir } from "../../../config/env";
+import { heavyKind, heavyLimits, heavyTimeoutSec, wrapHeavyCommand } from "../services/heavy-commands.service";
 
 async function runShell(script: string) {
   const child = Bun.spawn(["bash", "-c", script], { stdout: "pipe", stderr: "pipe" });
@@ -37,6 +40,25 @@ describe("heavyKind", () => {
 describe("wrapHeavyCommand", () => {
   test("leaves light commands alone", () => {
     expect(wrapHeavyCommand("git status", "git status")).toBeNull();
+  });
+
+  test("the test lock lives in the private data dir, not in the shared /tmp", () => {
+    expect(heavyLimits.lockFile).toBe(process.env.CODE_TEST_LOCK ?? `${dataDir}/locks/tests.lock`);
+    wrapHeavyCommand("vitest", "vitest");
+    expect(existsSync(dirname(heavyLimits.lockFile))).toBe(true);
+    expect(heavyTimeoutSec("vitest")).toBe(heavyLimits.timeoutMin * 60 + 30);
+    expect(heavyTimeoutSec("ls")).toBe(0);
+  });
+
+  test("an outer wrapper runs the limited command while the lock stays outside it", () => {
+    const outer = (inner: string) => `SANDBOX[${inner}]`;
+    const test = wrapHeavyCommand("vitest", "vitest", outer) as string;
+    expect(test.startsWith(`flock -E 75 -w ${heavyLimits.testWaitSec} '${heavyLimits.lockFile}' SANDBOX[ulimit -c 0; env`)).toBe(
+      true,
+    );
+    const heavy = wrapHeavyCommand("tsc", "tsc", outer) as string;
+    expect(heavy.startsWith("SANDBOX[ulimit -c 0; env NODE_OPTIONS=")).toBe(true);
+    expect(heavy).not.toContain("flock");
   });
 
   test("heavy commands get a memory cap, nice and a timeout without the test lock", () => {

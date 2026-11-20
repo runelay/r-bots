@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { z } from "zod";
 import { makeBot } from "../../../../test/engine-helpers";
 import { resetData, testDataDir } from "../../../../test/helpers";
 import type { BotDefinition } from "../../bots/services/bots.service";
+import * as guard from "../../browser/services/browser-guard.service";
 import * as browser from "../../browser/services/browser.service";
 import * as control from "../../browser/services/control.service";
 import * as desktopService from "../../browser/services/desktop.service";
@@ -60,6 +62,10 @@ describe("toolsFor", () => {
     const open = find(tools, "browser_open");
     expect(open.label({ url: "https://x.com" })).toBe("Abrir https://x.com");
     expect(await open.run({ url: "https://x.com" }, signal)).toBe("opened");
+    const openShape = z.object(open.shape);
+    for (const url of ["file:///etc/passwd", "view-source:https://x.com", "chrome://settings", "javascript:alert(1)"])
+      expect(openShape.safeParse({ url }).success).toBe(false);
+    expect(openShape.safeParse({ url: "HTTP://x.com" }).success).toBe(true);
     const snapshot = find(tools, "browser_snapshot");
     expect(snapshot.label({})).toBe("Ler a página");
     expect(await snapshot.run({}, signal)).toBe("snap");
@@ -109,6 +115,8 @@ describe("toolsFor", () => {
       openBrowser: async (...args: unknown[]) => calls.push(["browser", ...args]),
     };
     spy(desktopService, "getDesktop").mockReturnValue(fakeDesktop as never);
+    const browsable = spy(guard, "assertBrowsable");
+    browsable.mockResolvedValue(undefined as never);
     const crop = spy(browser, "cropPreview");
     crop.mockResolvedValue("data:image/jpeg;base64,BB" as never);
     const tools = toolsFor(bot);
@@ -180,6 +188,11 @@ describe("toolsFor", () => {
       ["browser", "https://a.com"],
       ["browser", "about:blank"],
     ]);
+    expect(browsable).toHaveBeenCalledTimes(1);
+    expect(browsable).toHaveBeenCalledWith(bot.id, "https://a.com");
+    const desktopShape = z.object(open.shape);
+    expect(desktopShape.safeParse({ app: "browser", url: "file:///etc/passwd" }).success).toBe(false);
+    expect(desktopShape.safeParse({ app: "browser", url: "https://a.com" }).success).toBe(true);
     expect(ready).toHaveBeenCalledTimes(10);
   });
 });

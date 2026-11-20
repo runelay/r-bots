@@ -1,14 +1,16 @@
 import { randomBytes } from "node:crypto";
-import { isIP } from "node:net";
 import { join } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { rootDir } from "../../../config/env";
+import { ValidationError } from "../../../shared/errors";
+import { guardedFetch } from "../../../shared/net-guard";
 import { redactDeep, redactText, variantsOf } from "../../../shared/redact";
 import { macRunnerSupports } from "../../accounts/services/mac-runner.service";
 import { decideApproval } from "../../approvals/services/decisions.service";
 import { readBrowserState } from "../../browser/services/browser.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
+import { buildCommandSpec, parseSecretCommand, planSecretCommand } from "./secret-command.service";
 import {
   envNameOf,
   envRefsIn,
@@ -21,6 +23,7 @@ import {
   policyError,
   refsIn,
   resolveSecret,
+  saveSecretMeta,
   secretNamePattern,
   substituteRefs,
   VaultError,
@@ -100,20 +103,60 @@ function usableBy(botId: string) {
     policyError({ ...meta, domains: [] }, botId, null) === null;
 }
 
-const blockedHosts = /^(localhost|0\.0\.0\.0|.*\.localhost|.*\.internal|metadata\.google\.internal)$/i;
+let loopbackPorts: number[] = [];
+const systemPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+let commandPath = systemPath;
 
-function blockedAddress(host: string) {
-  if (blockedHosts.test(host)) return true;
-  const version = isIP(host);
-  if (version === 4) return /^(127\.|0\.|169\.254\.)/.test(host);
-  if (version === 6) return host === "::1" || host.startsWith("fe80:") || host === "::";
-  return false;
+export function setSecretCommandPath(path: string | null) {
+  commandPath = path ?? systemPath;
 }
 
-export async function prepareSecretInput(context: ToolContext, tool: string, input: Record<string, unknown>) {
+export function setEgressLoopbackPorts(ports: number[]) {
+  loopbackPorts = [...ports];
+}
+
+export async function approveSecretHosts(
+  context: ToolContext,
+  names: string[],
+  host: string,
+  callId: string,
+  tool: string,
+) {
+  const open = names.filter((name) => {
+    const meta = getSecretMeta(name);
+    return meta !== null && meta.domains.length === 0;
+  });
+  if (open.length === 0) return;
+  const refs = open.map((name) => `segredo:${name}`).join(", ");
+  const refuse = (detail: string) =>
+    new VaultError(
+      "no_domains",
+      `${refs} não tem sites liberados. ${detail} A pessoa pode colocar os sites no Cofre (por exemplo ${host}).`,
+    );
+  if (context.isSchedule) throw refuse("Ninguém está aqui para liberar agora.");
+  const { choice } = await context.requestApproval(
+    `${context.bot.name} quer usar ${refs} em ${host} (${tool}). Liberar esse site para ${open.length > 1 ? "esses segredos" : "esse segredo"} daqui para frente?`,
+    callId,
+    context.origin,
+    { target: { label: host, role: "page", url: `https://${host}` }, reason: `Liberar ${refs} em ${host}` },
+  );
+  if (choice !== "approve") throw refuse("A pessoa não liberou o site agora.");
+  for (const name of open) await saveSecretMeta(name, { domains: [host] });
+}
+
+export async function prepareSecretInput(
+  context: ToolContext,
+  tool: string,
+  input: Record<string, unknown>,
+  callId: string = newCallId(),
+) {
   if (tool !== "browser_fill" || !hasRefs(input.text)) return input;
   const page = await readBrowserState(context.bot.id);
-  const host = normalizeHost(page?.url ?? null);
+  const pageUrl = page?.url ?? "";
+  if (!pageUrl.startsWith("https://"))
+    throw new VaultError("insecure", "Segredo só é preenchido em página https. Abra a versão https do site.");
+  const host = normalizeHost(pageUrl);
+  if (host) await approveSecretHosts(context, refsIn(String(input.text)), host, callId, tool);
   const text = await substituteRefs(String(input.text), {
     botId: context.bot.id,
     botName: context.bot.name,
@@ -124,40 +167,36 @@ export async function prepareSecretInput(context: ToolContext, tool: string, inp
   return { ...input, text, secretFill: true };
 }
 
-const leakyCommand =
-  /(^|[\s|;&(`$])(base64|basenc|xxd|od|hexdump|rev|tac|fold|cut|tr|printenv|env|set|declare|export|compgen|strings|openssl|gpg|python3?|perl|ruby|node|php|awk|sed)(?=$|[\s|;&)`])|\/proc\/|>{1,2}\s*(?!&|\/dev\/null\b)[^\s]|\btee\b|\bcurl\b[^|;&]*\s(-d|--data[\w-]*|-F|--form)\s+@/;
-
 export async function secretBashCommand(context: ToolContext, command: string) {
   const { names, unknown } = envRefsIn(command);
   if (unknown.length > 0)
     throw new VaultError("not_found", `Não existe segredo para ${unknown.join(", ")}. Veja os nomes com list_secrets.`);
   if (names.length === 0) return null;
-  if (leakyCommand.test(command)) {
-    throw new VaultError(
-      "leaky_command",
-      'Esse comando poderia expor o valor do segredo (conversão, impressão do ambiente, gravação em arquivo ou outro interpretador). Use o segredo direto no programa que precisa dele, por exemplo curl -H "Authorization: Bearer $SEGREDO_X" https://…, sem redirecionar a saída para arquivo.',
-    );
-  }
+  const byEnv = new Map(listSecretMeta().map((meta) => [envNameOf(meta.name), meta.name]));
+  const plan = planSecretCommand(parseSecretCommand(command, byEnv));
+  if (plan.secrets.length === 0) return null;
   const hosts = [
-    ...new Set([...command.matchAll(/\bhttps?:\/\/([^/\s'"`$:?#]+)/gi)].map((match) => normalizeHost(match[1]) ?? "")),
-  ].filter(Boolean);
-  const env: Record<string, string> = {};
-  const redact: string[] = [];
-  for (const name of names) {
+    ...new Set(
+      [...plan.urls.map((url) => url.hostname), ...plan.implicitHosts].map((host) => normalizeHost(host) ?? ""),
+    ),
+  ];
+  for (const name of plan.secrets) {
     const meta = getSecretMeta(name);
-    if (meta && meta.domains.length > 0) {
-      if (hosts.length === 0)
-        throw new VaultError(
-          "denied_domain",
-          `O segredo:${name} só vale para ${meta.domains.join(", ")}, e o comando não tem o endereço do site. Escreva a URL completa no comando.`,
-        );
-      const outside = hosts.find((host) => policyError(meta, context.bot.id, host)?.code === "denied_domain");
-      if (outside)
-        throw new VaultError(
-          "denied_domain",
-          `O segredo:${name} só pode ser usado em ${meta.domains.join(", ")}, não em ${outside}.`,
-        );
+    if (!meta)
+      throw new VaultError("not_found", `Não existe segredo:${name} no cofre. Veja os nomes com list_secrets.`);
+    if (meta.domains.length === 0)
+      throw new VaultError(
+        "no_domains",
+        `O segredo:${name} não tem sites liberados, e no Bash ele só vale com sites definidos. Peça para a pessoa colocar os sites dele no Cofre.`,
+      );
+    for (const host of hosts) {
+      const denied = policyError(meta, context.bot.id, host || null);
+      if (denied) throw denied;
     }
+  }
+  const values = new Map<string, string>();
+  const redact: string[] = [];
+  for (const name of plan.secrets) {
     const value = await resolveSecret({
       name,
       botId: context.bot.id,
@@ -166,17 +205,14 @@ export async function secretBashCommand(context: ToolContext, command: string) {
       host: hosts[0] ?? null,
       sessionId: context.sessionId,
     });
-    env[envNameOf(name)] = value;
+    values.set(name, value);
     redact.push(...variantsOf(value));
   }
-  const rewritten = command.replace(
-    /segredo:([a-z0-9][a-z0-9_-]{0,63})/g,
-    (_match, name: string) => `\${${envNameOf(name)}}`,
-  );
-  const ticket = issueExecTicket(env, redact);
+  const spec = buildCommandSpec(plan, values);
+  const ticket = issueExecTicket({ ...spec, redact, path: commandPath }, context.signal);
   const helper = join(rootDir, "bin", "rb-secret-run.mjs");
   const port = process.env.GATEWAY_PORT ?? "2000";
-  return `'${process.execPath}' '${helper}' ${port} ${ticket} ${Buffer.from(rewritten, "utf8").toString("base64")}`;
+  return `BUN_BE_BUN=1 '${process.execPath}' '${helper}' ${port} 3<<<'${ticket}'`;
 }
 
 export function registerVaultTools(server: McpServer, context: ToolContext) {
@@ -329,7 +365,7 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
     "http_request",
     {
       description:
-        "Faz uma chamada HTTP(S) a uma API externa. Cabeçalhos, corpo e URL (fora o host) aceitam segredo:nome no lugar do valor. Não segue redirecionamento (devolve o Location). GET e HEAD rodam direto; os outros métodos podem pedir aprovação.",
+        "Faz uma chamada HTTP(S) a uma API externa. Cabeçalhos, corpo e URL (fora o host) aceitam segredo:nome no lugar do valor; com segredo, só https e só nos sites liberados dele. Endereços internos (localhost, rede privada, tailnet) são recusados. Não segue redirecionamento (devolve o Location). GET e HEAD sem segredo rodam direto; os outros métodos e qualquer chamada com segredo podem pedir aprovação.",
       inputSchema: {
         method: z.enum(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]).default("GET"),
         url: z.string().min(8).max(4000),
@@ -368,12 +404,26 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
           `${method} ${host}${parsed.pathname.length > 1 ? parsed.pathname.slice(0, 50) : ""}`,
           input,
         );
-        if (!/^https?:$/.test(parsed.protocol) || hasRefs(parsed.hostname) || blockedAddress(host)) {
+        const refs = [
+          ...new Set([rawUrl, body ?? "", ...Object.values(headers), ...Object.keys(headers)].flatMap(refsIn)),
+        ];
+        if (!/^https?:$/.test(parsed.protocol) || hasRefs(parsed.host) || parsed.username || parsed.password) {
           settledFail(context, callId, "Esse endereço não é permitido.", "TOOL_POLICY", "rejected");
-          return textResult("Esse endereço não é permitido (só http/https para hosts externos).", true);
+          return textResult(
+            "Esse endereço não é permitido (só http/https, sem usuário na URL nem segredo no host).",
+            true,
+          );
+        }
+        if (refs.length > 0 && parsed.protocol !== "https:") {
+          settledFail(context, callId, "Segredo só vai por https.", "TOOL_POLICY", "rejected");
+          return textResult("Segredo só vai por https. Use https:// na URL.", true);
+        }
+        if (Object.keys(headers).some(hasRefs)) {
+          settledFail(context, callId, "Segredo não vai no nome do cabeçalho.", "TOOL_POLICY", "rejected");
+          return textResult("Segredo só vai no valor do cabeçalho, não no nome.", true);
         }
         let cleared: Record<string, unknown> | null = null;
-        if (method !== "GET" && method !== "HEAD") {
+        if ((method !== "GET" && method !== "HEAD") || refs.length > 0) {
           const decision = await decideApproval(
             {
               botName: context.bot.name,
@@ -432,17 +482,30 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
           sessionId: context.sessionId,
         };
         try {
+          await approveSecretHosts(context, refs, host, callId, "http_request");
           const finalUrl = hasRefs(rawUrl) ? await substituteRefs(rawUrl, request) : rawUrl;
+          const checked = new URL(finalUrl);
+          if (
+            checked.protocol !== parsed.protocol ||
+            checked.hostname !== parsed.hostname ||
+            checked.port !== parsed.port
+          )
+            throw new VaultError(
+              "bad_url",
+              "O segredo mudou o endereço da chamada; ele só pode ir no caminho ou na query.",
+            );
           const finalHeaders: Record<string, string> = {};
           for (const [key, value] of Object.entries(headers))
             finalHeaders[key] = hasRefs(value) ? await substituteRefs(value, request) : value;
           const finalBody = body !== undefined && hasRefs(body) ? await substituteRefs(body, request) : body;
-          const response = await fetch(finalUrl, {
+          const response = await guardedFetch(checked, {
             method,
             headers: finalHeaders,
             ...(finalBody !== undefined && method !== "GET" && method !== "HEAD" ? { body: finalBody } : {}),
-            redirect: "manual",
-            signal: AbortSignal.any([context.signal, AbortSignal.timeout(30_000)]),
+            signal: context.signal,
+            timeoutMs: 30_000,
+            maxBytes: 5 * 1024 * 1024,
+            allowLoopbackPorts: loopbackPorts,
           });
           const text = method === "HEAD" ? "" : await response.text();
           const shownHeaders: Record<string, string> = {};
@@ -469,7 +532,11 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
             context,
             callId,
             message,
-            error instanceof VaultError ? "SECRET_DENIED" : "TOOL_EXECUTION_FAILED",
+            error instanceof VaultError
+              ? "SECRET_DENIED"
+              : error instanceof ValidationError
+                ? "TOOL_POLICY"
+                : "TOOL_EXECUTION_FAILED",
           );
           return textResult(message, true);
         }

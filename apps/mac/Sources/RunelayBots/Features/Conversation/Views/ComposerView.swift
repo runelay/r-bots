@@ -8,7 +8,6 @@ struct ComposerView: View {
     @State private var isFocused = false
     @State private var focusRequest = 0
     @State private var composerHeight = ComposerTextView.minimumHeight
-    @Namespace private var glassSpace
     @Environment(\.appReduceMotion) private var reduceMotion
     @Environment(AppModel.self) private var model
     @State private var slashSelection = 0
@@ -18,7 +17,6 @@ struct ComposerView: View {
     private let skillCatalog = SkillCatalog.shared
 
     var body: some View {
-        GlassGroup(spacing: Spacing.s) {
         VStack(alignment: .leading, spacing: 0) {
         if !store.composerAttachments.isEmpty {
             ComposerAttachmentStrip(store: store)
@@ -62,12 +60,7 @@ struct ComposerView: View {
                 }
                 .disabled(store.draft.isEmpty && store.composerAttachments.isEmpty)
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 34, height: 34)
-                    .glassSurface(Circle(), interactive: true, fallback: Theme.surfaceRaised)
-                    .contentShape(Circle())
+                ComposerIcon(systemName: "plus")
             }
             .menuStyle(.button)
             .buttonStyle(PressableButtonStyle())
@@ -123,12 +116,7 @@ struct ComposerView: View {
                 Button {
                     store.cancelTurn()
                 } label: {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-                        .frame(width: 34, height: 34)
-                        .glassSurface(Circle(), interactive: true, fallback: Theme.surfaceRaised)
-                        .glassMorphID("turnStop", in: glassSpace)
+                    ComposerIcon(systemName: "stop.fill", size: 12, weight: .semibold, color: Theme.textPrimary)
                 }
                 .buttonStyle(PressableButtonStyle())
                 .help("Parar este turno")
@@ -139,18 +127,12 @@ struct ComposerView: View {
                 VoiceStopButton {
                     voice.stop()
                 }
-                .glassMorphID("action", in: glassSpace)
                 .transition(.scale(scale: 0.6).combined(with: .opacity))
             } else {
                 Button {
                     voice.toggle(for: store)
                 } label: {
-                    Image(systemName: "mic")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(width: 34, height: 34)
-                        .glassSurface(Circle(), interactive: true, fallback: Theme.surfaceRaised)
-                        .glassMorphID("mic", in: glassSpace)
+                    ComposerIcon(systemName: "mic")
                 }
                 .buttonStyle(PressableButtonStyle())
                 .disabled(voice.phase != .idle || VoiceCall.shared.isActive(for: bot.id))
@@ -166,8 +148,7 @@ struct ComposerView: View {
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Theme.onAccent)
                             .frame(width: 34, height: 34)
-                            .glassSurface(Circle(), interactive: true, tint: Theme.brandAccent, fallback: Theme.brandAccent)
-                            .glassMorphID("action", in: glassSpace)
+                            .background(Theme.brandAccent, in: Circle())
                     }
                     .buttonStyle(PressableButtonStyle())
                     .keyboardShortcut(.return, modifiers: .command)
@@ -176,7 +157,6 @@ struct ComposerView: View {
                     .transition(.scale(scale: 0.6).combined(with: .opacity))
                 } else if !bot.isGroup && !bot.isPending {
                     CallStartButton(store: store, bot: bot)
-                        .glassMorphID("action", in: glassSpace)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
@@ -186,7 +166,11 @@ struct ComposerView: View {
         .padding(.vertical, Spacing.s)
         }
         .springAnimation(value: store.composerAttachments.isEmpty)
-        .glassSurface(RoundedRectangle(cornerRadius: Radius.composer, style: .continuous), fallback: Theme.surface)
+        .modifier(ComposerGlass(shape: RoundedRectangle(cornerRadius: Radius.composer, style: .continuous)))
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: ComposerHeightKey.self, value: proxy.size.height)
+            }
         }
         .offset(y: isFocused && !reduceMotion ? -1 : 0)
         .springAnimation(value: isFocused)
@@ -506,5 +490,45 @@ struct MentionList: View {
         .frame(width: 260)
         .background(Theme.inspectorBackground, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
         .softElevation(lifted: true)
+    }
+}
+
+struct ComposerHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+struct ComposerGlass<S: Shape>: ViewModifier {
+    let shape: S
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content.background(.regularMaterial, in: shape)
+        }
+    }
+}
+
+struct ComposerIcon: View {
+    let systemName: String
+    var size: CGFloat = 14
+    var weight: Font.Weight = .medium
+    var color: Color = Theme.textSecondary
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size, weight: weight))
+            .foregroundStyle(hovering && isEnabled ? Theme.textPrimary : color)
+            .frame(width: 34, height: 34)
+            .background(hovering && isEnabled ? Theme.hover : .clear, in: Circle())
+            .contentShape(Circle())
+            .onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.15), value: hovering)
     }
 }

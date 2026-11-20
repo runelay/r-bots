@@ -79,9 +79,7 @@ final class ConversationStore {
     private(set) var historySettled: Bool
     private(set) var hasOlder = false
     private(set) var isLoadingOlder = false
-    private(set) var prependToken = 0
-    private(set) var prependAnchorID: String?
-    var scrollAnchorID: String?
+    var scrollMemory: TranscriptScrollMemory?
     @ObservationIgnored private var olderCursor: Int?
     @ObservationIgnored var onNeedsAttention: (@MainActor () -> Void)?
     @ObservationIgnored var onBotUpdated: (@MainActor () -> Void)?
@@ -432,7 +430,6 @@ final class ConversationStore {
         let existing = Set(entries.map(\.id))
         let fresh = older.entries.filter { !existing.contains($0.id) }
         guard !fresh.isEmpty else { return }
-        prependAnchorID = entries.first?.id
         quietEntries = true
         entries = fresh + entries
         quietEntries = false
@@ -449,7 +446,6 @@ final class ConversationStore {
         let known = Set(callOrder)
         callOrder = older.callOrder.filter { !known.contains($0) } + callOrder
         seenFacts.formUnion(older.seenFacts)
-        prependToken += 1
     }
 
     private func settleHistory() {

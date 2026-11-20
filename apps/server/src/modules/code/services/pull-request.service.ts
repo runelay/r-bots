@@ -10,6 +10,7 @@ import {
   CodeError,
   closeWorkspace,
   git,
+  gitSafeEnv,
   publicWorkspace,
   type WorkspaceState,
 } from "./workspace.service";
@@ -75,7 +76,11 @@ const inFlight = new Set<string>();
 const ghBin = env.CODE_GH_BIN ?? "gh";
 
 function gh(cwd: string, args: string[], timeoutMs = 30_000): Promise<GhResult> {
-  return run(ghBin, args, { cwd, timeoutMs, env: childEnv({ GH_PROMPT_DISABLED: "1", NO_COLOR: "1" }) });
+  return run(ghBin, args, {
+    cwd,
+    timeoutMs,
+    env: childEnv({ GH_PROMPT_DISABLED: "1", NO_COLOR: "1", ...gitSafeEnv(cwd) }),
+  });
 }
 
 const generatedPatterns = [

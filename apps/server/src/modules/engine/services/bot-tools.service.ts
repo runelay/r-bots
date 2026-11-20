@@ -17,6 +17,7 @@ import {
   elementTarget,
   readBrowserState,
 } from "../../browser/services/browser.service";
+import { assertBrowsable } from "../../browser/services/browser-guard.service";
 import { waitForBotControl } from "../../browser/services/control.service";
 import { getDesktop } from "../../browser/services/desktop.service";
 import { canvasTools } from "../../canvas/services/canvas.service";
@@ -30,6 +31,7 @@ export interface BotTool {
   label: (input: Record<string, unknown>) => string | Promise<string>;
   run: (input: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
   details?: (input: Record<string, unknown>) => Promise<ApprovalDetails>;
+  humanReason?: (input: Record<string, unknown>) => string | null;
 }
 
 export interface ApprovalDetails {
@@ -39,6 +41,11 @@ export interface ApprovalDetails {
   grant?: string;
   secret?: Record<string, unknown>;
 }
+
+const webUrl = z
+  .string()
+  .url()
+  .regex(/^https?:\/\//i, "Só endereços http ou https.");
 
 const reasonField = z
   .string()
@@ -82,8 +89,9 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
     tools.push(
       {
         name: "browser_open",
-        description: "Abre uma URL no navegador do bot e tira um print da página.",
-        shape: { url: z.string().url() },
+        description:
+          "Abre uma URL http ou https no navegador do bot e tira um print da página. Endereços internos (localhost, rede privada, tailnet, metadados) são bloqueados, exceto os servidores de dev que você abriu.",
+        shape: { url: webUrl },
         approval: null,
         label: (input) => `Abrir ${text(input.url)}`,
         run: (input, signal) => browserOpen(bot.id, text(input.url), signal),
@@ -233,7 +241,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         name: "desktop_open",
         description:
           "Abre um app no computador virtual: browser (com url opcional) ou terminal. Abrir o terminal pede aprovação.",
-        shape: { app: z.enum(["browser", "terminal"]), url: z.string().url().optional(), reason: reasonField },
+        shape: { app: z.enum(["browser", "terminal"]), url: webUrl.optional(), reason: reasonField },
         details: async (input) => ({
           target: input.url
             ? { label: hostOf(text(input.url)), role: "page", url: text(input.url) }
@@ -250,9 +258,9 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
             : `Abrir navegador${input.url ? ` em ${hostOf(text(input.url))}` : ""}`,
         run: async (input) => {
           await ready();
-          return input.app === "terminal"
-            ? desktop().openTerminal()
-            : desktop().openBrowser(text(input.url) || "about:blank");
+          if (input.app === "terminal") return desktop().openTerminal();
+          if (input.url) await assertBrowsable(bot.id, text(input.url));
+          return desktop().openBrowser(text(input.url) || "about:blank");
         },
       },
     );

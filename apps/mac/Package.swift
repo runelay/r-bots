@@ -15,6 +15,11 @@ let package = Package(
                 .copy("Resources/Fonts"),
                 .copy("Resources/Logos")
             ]
+        ),
+        .testTarget(
+            name: "RunelayBotsTests",
+            dependencies: ["RunelayBots"],
+            path: "Tests/RunelayBotsTests"
         )
     ],
     swiftLanguageModes: [.v6]

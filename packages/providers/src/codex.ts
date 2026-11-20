@@ -31,9 +31,10 @@ export async function runCodex(
   const bin = findBinary(["codex"]);
   if (!bin) return emit({ type: "done", ok: false, message: "Codex CLI não está instalado." });
   const code = request.code ?? null;
-  const disabled = code
-    ? disabledFeatures.filter((feature) => feature !== "shell_tool" && feature !== "unified_exec")
-    : disabledFeatures;
+  const disabled =
+    code && request.nativeShell === true
+      ? disabledFeatures.filter((feature) => feature !== "shell_tool" && feature !== "unified_exec")
+      : disabledFeatures;
   const options = [
     "--json",
     "--skip-git-repo-check",
@@ -51,6 +52,10 @@ export async function runCodex(
     'web_search="disabled"',
     "-c",
     "project_doc_max_bytes=0",
+    "-c",
+    "allow_login_shell=false",
+    "-c",
+    'shell_environment_policy.inherit="core"',
     "-c",
     `developer_instructions=${toml(request.systemPrompt)}`,
     ...(request.effort ? ["-c", `model_reasoning_effort=${toml(request.effort)}`] : []),

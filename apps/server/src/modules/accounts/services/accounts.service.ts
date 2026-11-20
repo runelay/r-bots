@@ -69,12 +69,13 @@ function shortKey(key: string) {
 }
 
 async function macSlots(): Promise<MacSlot[]> {
-  const devices = await listRegisteredDevices();
+  const devices = (await listRegisteredDevices()).sort((a, b) => Number(b.owner) - Number(a.owner));
   const next: Omit<MacSlot, "prefix">[] = devices.map((device) => ({
     key: device.id,
     name: device.name,
     connected: macRunnerConnected(device.id),
   }));
+  if (devices.length > 0 && !devices[0]?.owner) next.unshift({ key: "", name: null, connected: false });
   for (const live of macRunnerConnections())
     if (!next.some((slot) => slot.key === live.key)) next.push({ key: live.key, name: live.name, connected: true });
   if (next.length === 0) next.push({ key: "", name: null, connected: false });

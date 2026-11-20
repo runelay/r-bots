@@ -81,12 +81,27 @@ struct ArtifactWebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-            if navigationAction.navigationType == .linkActivated, let target = navigationAction.request.url {
-                NSWorkspace.shared.open(target)
+            guard let target = navigationAction.request.url else {
                 decisionHandler(.cancel)
                 return
             }
-            decisionHandler(.allow)
+            if Self.sameDocument(target, loadedURL) {
+                decisionHandler(.allow)
+                return
+            }
+            if navigationAction.navigationType == .linkActivated, ["http", "https"].contains(target.scheme?.lowercased() ?? "") {
+                NSWorkspace.shared.open(target)
+            }
+            decisionHandler(.cancel)
+        }
+
+        private static func sameDocument(_ target: URL, _ loaded: URL?) -> Bool {
+            guard let loaded,
+                  var left = URLComponents(url: target, resolvingAgainstBaseURL: false),
+                  var right = URLComponents(url: loaded, resolvingAgainstBaseURL: false) else { return false }
+            left.fragment = nil
+            right.fragment = nil
+            return left.url == right.url
         }
     }
 }
@@ -200,10 +215,7 @@ struct ArtifactViewerLayer: View {
 
     var body: some View {
         ZStack {
-            if let ref = center.current, center.isBlock {
-                BlockDock(ref: ref)
-                    .transition(Motion.panel(reduceMotion: reduceMotion))
-            } else if let ref = center.current, let url = center.currentURL {
+            if let ref = center.current, !center.isBlock, let url = center.currentURL {
                 GeometryReader { geometry in
                     let presenting = center.presenting
                     ZStack {

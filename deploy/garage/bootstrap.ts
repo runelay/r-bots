@@ -83,7 +83,11 @@ async function ensureLayout(token: string, nodeId: string) {
 }
 
 async function ensureBucket(token: string) {
-  const found = await admin<{ id: string }>(token, "GET", `/v2/GetBucketInfo?globalAlias=${bucketName}`);
+  const found = await admin<{ id: string }>(
+    token,
+    "GET",
+    `/v2/GetBucketInfo?globalAlias=${encodeURIComponent(bucketName)}`,
+  );
   if (found) return { id: found.id, state: "kept" };
   const created = await admin<{ id: string }>(token, "POST", "/v2/CreateBucket", { globalAlias: bucketName });
   if (!created) throw new Error("bucket was not created");
@@ -101,15 +105,23 @@ async function readText(path: string) {
   return (await file.exists()) ? (await file.text()).trim() : "";
 }
 
+async function keyById(token: string, id: string) {
+  return await admin<KeyInfo>(token, "GET", `/v2/GetKeyInfo?id=${encodeURIComponent(id)}&showSecretKey=true`);
+}
+
 async function ensureKey(token: string) {
   const knownId = await readText(accessKeyFile);
   if (knownId) {
-    const known = await admin<KeyInfo>(token, "GET", `/v2/GetKeyInfo?id=${knownId}&showSecretKey=true`);
+    const known = await keyById(token, knownId);
     if (known?.secretAccessKey && known.secretAccessKey === (await readText(secretKeyFile)))
       return { key: known, state: "kept" };
   }
-  const byName = await admin<KeyInfo>(token, "GET", `/v2/GetKeyInfo?search=${keyName}&showSecretKey=true`);
-  if (byName?.secretAccessKey) return { key: byName, state: "reused" };
+  const listed = (await admin<{ id: string; name: string }[]>(token, "GET", "/v2/ListKeys")) ?? [];
+  const exact = listed.filter((item) => item.name === keyName);
+  if (exact.length === 1) {
+    const byName = await keyById(token, exact[0].id);
+    if (byName?.secretAccessKey) return { key: byName, state: "reused" };
+  }
   const created = await admin<KeyInfo>(token, "POST", "/v2/CreateKey", { name: keyName });
   if (!created?.secretAccessKey) throw new Error("key was not created");
   return { key: created, state: "created" };
@@ -138,7 +150,12 @@ async function setup() {
   await admin(token, "POST", "/v2/AllowBucketKey", {
     bucketId: bucket.id,
     accessKeyId: key.accessKeyId,
-    permissions: { read: true, write: true, owner: true },
+    permissions: { read: true, write: true, owner: false },
+  });
+  await admin(token, "POST", "/v2/DenyBucketKey", {
+    bucketId: bucket.id,
+    accessKeyId: key.accessKeyId,
+    permissions: { read: false, write: false, owner: true },
   });
   await mkdir(dataSecretsDir, { recursive: true });
   await chmod(dataSecretsDir, 0o700);

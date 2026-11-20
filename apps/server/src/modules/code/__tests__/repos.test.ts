@@ -3,7 +3,15 @@ import { join } from "node:path";
 import * as dbModule from "../../../db";
 import { type Db, getDb } from "../../../db";
 import { codeWorkspaces } from "../../../db/tables";
-import { addAllowedRepo, allowedRepos, fileRoots, seedAllowedRepos, worktreesRoot } from "../services/repos.service";
+import { dataDir } from "../../../config/env";
+import {
+  addAllowedRepo,
+  allowedRepos,
+  fileRoots,
+  repoRootProblem,
+  seedAllowedRepos,
+  worktreesRoot,
+} from "../services/repos.service";
 
 const spies: Array<{ mockRestore: () => void }> = [];
 
@@ -66,5 +74,20 @@ describe("repos", () => {
     expect(added).toMatchObject({ path, name: path.split("/").at(-1), reason: "sem banco", addedBy: null });
     expect(allowedRepos()).toEqual([]);
     expect(await fileRoots()).toEqual([worktreesRoot]);
+  });
+});
+
+describe("repoRootProblem", () => {
+  test("refuses the root, the home folder and anything that holds or sits in a server folder", () => {
+    const home = process.env.HOST_HOME as string;
+    expect(repoRootProblem("/")).toContain("pasta pessoal inteira");
+    expect(repoRootProblem(home)).toContain("pasta pessoal inteira");
+    expect(repoRootProblem("~")).toContain("pasta pessoal inteira");
+    expect(repoRootProblem(dataDir)).toContain("pasta do servidor");
+    expect(repoRootProblem(join(dataDir, "code"))).toContain("pasta do servidor");
+    expect(repoRootProblem(join(home, ".local"))).toContain("pasta do servidor");
+    expect(repoRootProblem(join(worktreesRoot, "repo", "task"))).toContain("pasta do servidor");
+    expect(repoRootProblem("/etc")).toContain("pasta do servidor");
+    expect(repoRootProblem(join(home, "repos", "app"))).toBeNull();
   });
 });

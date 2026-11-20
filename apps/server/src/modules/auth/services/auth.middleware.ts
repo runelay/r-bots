@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
-import { type Auth, apiKeyPrefix, authBasePath, devicePagePath, memberRole } from "./auth.service";
+import { requestContext } from "../../../shared/http";
+import { type Auth, apiKeyPrefix, authBasePath, devicePagePath, memberRole, sessionMaxAgeMs } from "./auth.service";
 
 export interface Principal {
   userId: string;
@@ -57,31 +58,10 @@ export function readToken(headers: Headers) {
   return apiKey || null;
 }
 
-export function parseKeyMetadata(raw: unknown): Record<string, unknown> {
-  let value = raw;
-  for (let depth = 0; depth < 2 && typeof value === "string"; depth++) {
-    try {
-      value = JSON.parse(value);
-    } catch {
-      return {};
-    }
-  }
-  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-}
+export const previewCookieName = "rb_preview";
 
-export function dateText(value: unknown) {
-  if (value instanceof Date) return Number.isNaN(value.getTime()) ? "" : value.toISOString();
-  return typeof value === "string" ? value : "";
-}
-
-function deviceOf(metadata: unknown): PrincipalDevice | undefined {
-  const parsed = parseKeyMetadata(metadata);
-  if (parsed.kind !== "device" || typeof parsed.deviceId !== "string") return undefined;
-  return {
-    id: parsed.deviceId,
-    name: typeof parsed.name === "string" ? parsed.name : "",
-    registeredAt: dateText(parsed.registeredAt),
-  };
+export function carriesPreviewCookie(headers: Headers) {
+  return new RegExp(`(?:^|;\\s*)${previewCookieName}=`).test(headers.get("cookie") ?? "");
 }
 
 function isUpgrade(request: Request) {
@@ -95,7 +75,10 @@ export interface InternalCredential {
 
 export interface AuthenticatorOptions {
   trusts: (origin: string, request: Request) => boolean;
+  authFor?: (request: Request) => Auth;
   internal?: InternalCredential;
+  deviceFor?: (apiKeyId: string) => Promise<PrincipalDevice | null>;
+  now?: () => number;
 }
 
 function matchesInternal(given: string, expected: string) {
@@ -106,13 +89,21 @@ function matchesInternal(given: string, expected: string) {
 }
 
 export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
+  async function deviceOf(apiKeyId: string) {
+    try {
+      return (await options.deviceFor?.(apiKeyId)) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   async function fromApiKey(key: string): Promise<Principal | null> {
     const result = await auth.api.verifyApiKey({ body: { key } }).catch(() => null);
     if (!result?.valid || !result.key) return null;
     const context = await auth.$context;
     const found = await context.internalAdapter.findUserById(result.key.referenceId);
     if (!found || (found as { banned?: boolean | null }).banned) return null;
-    const device = deviceOf((result.key as { metadata?: unknown }).metadata);
+    const device = await deviceOf(result.key.id);
     return {
       userId: found.id,
       email: found.email,
@@ -124,9 +115,12 @@ export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
     };
   }
 
-  async function fromSession(headers: Headers): Promise<Principal | null> {
-    const result = await auth.api.getSession({ headers }).catch(() => null);
+  async function fromSession(request: Request): Promise<Principal | null> {
+    const scoped = options.authFor?.(request) ?? auth;
+    const result = await scoped.api.getSession({ headers: request.headers }).catch(() => null);
     if (!result) return null;
+    const createdAt = new Date(result.session.createdAt).getTime();
+    if (Number.isFinite(createdAt) && (options.now ?? Date.now)() - createdAt > sessionMaxAgeMs) return null;
     return {
       userId: result.user.id,
       email: result.user.email,
@@ -139,8 +133,7 @@ export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
   }
 
   return async function authenticate(request: Request): Promise<AuthOutcome | Response> {
-    const url = new URL(request.url);
-    if (isPublicRoute(request.method, url.pathname)) return { kind: "public" };
+    if (isPublicRoute(request.method, requestContext(request).pathname)) return { kind: "public" };
     const token = readToken(request.headers);
     if (token && options.internal && matchesInternal(token, options.internal.token()))
       return { kind: "principal", principal: await options.internal.principal() };
@@ -148,11 +141,13 @@ export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
       const principal = await fromApiKey(token);
       return principal ? { kind: "principal", principal } : unauthorized();
     }
+    if (!token && carriesPreviewCookie(request.headers)) return unauthorized();
     if (!token && (isUpgrade(request) || !safeMethods.has(request.method))) {
       const origin = request.headers.get("origin");
       if (origin && !options.trusts(origin, request)) return forbidden("Origem não permitida.");
+      if (!origin && isUpgrade(request) && request.headers.has("cookie")) return forbidden("Origem não permitida.");
     }
-    const principal = await fromSession(request.headers);
+    const principal = await fromSession(request);
     return principal ? { kind: "principal", principal } : unauthorized();
   };
 }

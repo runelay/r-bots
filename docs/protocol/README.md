@@ -73,6 +73,10 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v41 | login obrigatório: portão sempre ligado, `BOTS_AUTH=off` só em teste, app sem modo sem conta | [auth](auth.md) |
 | v42 | tela de login dividida, `GET /auth/providers`, login social pela página `/device`, `rememberMe` | [auth](auth.md) |
 | v43 | origem pela requisição (sem `BETTER_AUTH_URL`), senha de 8 caracteres, chaves do Garage em `<dados>/secrets`, servidor sem `.env.local` | [auth](auth.md) |
+| v44 | conteúdo do usuário isolado: tipo do anexo pelos bytes, download com CSP sandbox, `send_file` restrito com aprovação, cota de anexos, CSP sandbox nos artefatos, PDF sem JS nem rede, CSV/XLSX sem fórmula perigosa, `browser_open` só público com proxy por bot | [uploads](uploads.md), [artifacts](artifacts.md), [blocks](blocks.md), [computer](computer.md) |
+| v44 | endurecimento de segurança: política de rotas só do dono, `Host` desconhecido 421, `setup.token`, chaves de API com vencimento e tabela `device`, cabeçalhos de segurança, prévia com cookie de uso único e `BOTS_PREVIEW_ORIGIN`, Mac de membro só quando endereçado | [auth](auth.md), [accounts](accounts.md) |
+| v44 | endurecimento do cofre, egress e deploy: `net-guard` (só IP público, IP fixado, sem redirecionamento), segredo sem sites pede liberação, Bash com segredo só `curl`/`gh`/`git` direto, tíquete pelo fd 3, cifra v2 com HKDF e política na AAD, histórico encadeado, `POST /vault/audit` só do Mac, limite de tokens de voz, `runner.token` novo a cada boot | [vault](vault.md), [integrations](integrations.md), [voice](voice.md) |
+| v44 | sandbox de ferramentas (`BOTS_TOOL_SANDBOX`, usuário `runelaytool`, `rb-sandbox-exec`), git do servidor sem hooks nem config do repositório, portão com realpath e somente leitura estrito, card que vence em 600 s, provedores sem shell nativo fora do Acesso total, ambiente dos filhos por lista permitida, dev server só em loopback | [code](code.md) |
 
 ## Contrato
 

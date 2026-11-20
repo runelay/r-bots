@@ -213,9 +213,9 @@ describe("dependency install", () => {
     );
     const { session, workspace } = await opened("ws-install-ok", { files: { "bun.lockb": "x" } });
     expect(workspace.install.status).toBe("done");
-    expect(workspace.install.command).toBe("bun install --frozen-lockfile");
+    expect(workspace.install.command).toBe("bun install --frozen-lockfile --ignore-scripts");
     const install = calls.calls.find((call) => call.command.endsWith("bun"));
-    expect(install?.args).toEqual(["install", "--frozen-lockfile"]);
+    expect(install?.args).toEqual(["install", "--frozen-lockfile", "--ignore-scripts"]);
     const log = await waitFor(() => {
       const text = readFileSync(installLogPath(workspace), "utf8");
       return text.includes("installed") && text.includes("warn") ? text : null;
@@ -230,12 +230,12 @@ describe("dependency install", () => {
     codeProcesses((call) => (call.command.endsWith("bun") ? { code: 1, stderr: "ERR boom\n" } : undefined));
     const failed = await opened("ws-install-fail", { files: { "bun.lock": "x" } });
     expect(failed.workspace.install.status).toBe("failed");
-    expect(["ERR boom", "bun install --frozen-lockfile saiu com código 1."]).toContain(
+    expect(["ERR boom", "bun install --frozen-lockfile --ignore-scripts saiu com código 1."]).toContain(
       failed.workspace.install.error as string,
     );
     codeProcesses((call) => (call.command.endsWith("npm") ? { code: 2 } : undefined));
     const silent = await opened("ws-install-silent", { files: { "package-lock.json": "{}" } });
-    expect(silent.workspace.install.error).toBe("npm ci --no-audit --no-fund saiu com código 2.");
+    expect(silent.workspace.install.error).toBe("npm ci --no-audit --no-fund --ignore-scripts saiu com código 2.");
   });
 
   test("fails when the binary is missing or cannot spawn", async () => {
@@ -252,7 +252,7 @@ describe("dependency install", () => {
     });
     const broken = await opened("ws-install-throw", { files: { "pnpm-lock.yaml": "x" } });
     expect(broken.workspace.install.status).toBe("failed");
-    expect(broken.workspace.install.error).toBe("pnpm install --frozen-lockfile saiu com código 1.");
+    expect(broken.workspace.install.error).toBe("pnpm install --frozen-lockfile --ignore-scripts saiu com código 1.");
   });
 
   test("treats unreadable folders and logs as empty", async () => {
@@ -274,7 +274,7 @@ describe("dependency install", () => {
     codeProcesses((call) => (call.command.endsWith("bun") ? { code: 3, stderr: "nope\n" } : undefined));
     const lost = await opened("ws-install-lostlog", { files: { "bun.lock": "x" } });
     readFileSpy.mockRestore();
-    expect(lost.workspace.install.error).toBe("bun install --frozen-lockfile saiu com código 3.");
+    expect(lost.workspace.install.error).toBe("bun install --frozen-lockfile --ignore-scripts saiu com código 3.");
   });
 
   test("logs instead of crashing when saving the session fails", async () => {

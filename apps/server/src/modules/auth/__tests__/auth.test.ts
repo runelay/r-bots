@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDb } from "../../../../test/db-helpers";
@@ -29,6 +29,7 @@ async function call(path: string, init: RequestInit & { token?: string } = {}) {
 
 const owner = { name: "Dono", email: "owner@example.com", password: "correct horse battery" };
 let ownerToken = "";
+let setupCode = "";
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "rb-auth-"));
@@ -41,6 +42,7 @@ beforeAll(async () => {
     host: "127.0.0.1",
     port: 2999,
   });
+  setupCode = readFileSync(mod.setupToken.issue(), "utf8").trim();
 });
 
 afterAll(async () => rmSync(dir, { recursive: true, force: true }));
@@ -85,6 +87,7 @@ describe("first owner", () => {
       ok: true,
       needsOwner: true,
       required: true,
+      setupTokenRequired: true,
       methods: { password: true, passkey: true, device: true, invites: true, passwordReset: false },
     });
   });
@@ -95,8 +98,26 @@ describe("first owner", () => {
   });
 
   test("creates the owner once and returns a working token", async () => {
-    const response = await call("/auth/setup", { method: "POST", body: JSON.stringify(owner) });
+    const missing = await call("/auth/setup", { method: "POST", body: JSON.stringify(owner) });
+    expect(missing.status).toBe(403);
+    expect(await missing.json()).toEqual({
+      ok: false,
+      error: "Informe o código de primeiro acesso que está no arquivo setup.token do servidor.",
+      code: "setup_token_required",
+    });
+    const wrong = await call("/auth/setup", {
+      method: "POST",
+      body: JSON.stringify({ ...owner, setupToken: "x".repeat(43) }),
+    });
+    expect(wrong.status).toBe(403);
+    expect(statSync(mod.setupToken.file).mode & 0o777).toBe(0o600);
+    const response = await call("/auth/setup", {
+      method: "POST",
+      headers: { "x-setup-token": setupCode },
+      body: JSON.stringify(owner),
+    });
     expect(response.status).toBe(201);
+    expect(existsSync(mod.setupToken.file)).toBe(false);
     const body = (await response.json()) as { token: string; user: { role: string } };
     expect(body.user.role).toBe("owner");
     ownerToken = body.token;
