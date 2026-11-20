@@ -817,6 +817,21 @@ final class ConversationStore {
                 }
                 ArtifactCenter.shared.noteChange(ref, byUser: byUser)
             }
+        case "server.card":
+            if let serverID = data["serverId"]?.stringValue {
+                ServerStore.shared.applyLine(.object(["server": data["server"] ?? .null]))
+                let ref = ArtifactRef(
+                    botID: data["botId"]?.stringValue ?? bot.id,
+                    id: serverID,
+                    title: data["server"]?["name"]?.stringValue ?? "Servidor",
+                    kind: ServerStore.panelKind,
+                    version: 1
+                )
+                let id = "server-\(serverID)"
+                if !entries.contains(where: { $0.id == id }) {
+                    append(TranscriptEntry(id: id, kind: .artifact(ref)), date: currentLineDate)
+                }
+            }
         case "block.created", "block.updated", "block.deleted":
             if let event = BlockEvent(type: fact.type, data: data, fallbackBotID: bot.id) {
                 if event.author == .bot, event.action != "deleted" {

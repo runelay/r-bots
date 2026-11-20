@@ -20,7 +20,11 @@ struct BlockStage: View {
                                 .zIndex(1)
                         }
                         Group {
-                            if center.isBlock {
+                            if ServerStore.isServerKind(ref.kind) {
+                                ServerPanel(ref: ref)
+                                    .id(ref.id)
+                                    .background { BlockPanelShortcuts() }
+                            } else if center.isBlock {
                                 BlockPanel(ref: ref)
                             } else {
                                 ArtifactPanel(ref: ref)

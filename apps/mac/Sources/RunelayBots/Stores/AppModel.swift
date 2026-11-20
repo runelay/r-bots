@@ -2072,6 +2072,10 @@ final class AppModel {
             }
             sessionStatuses = sessions
             statusStreamLive = true
+            ServerStore.shared.attach(client)
+            ServerStore.shared.applySnapshot(value["servers"])
+        case "server":
+            ServerStore.shared.applyLine(value)
         case "session":
             guard let id = value["sessionId"]?.stringValue else { return }
             let status = Self.botStatus(value["status"]?.stringValue)

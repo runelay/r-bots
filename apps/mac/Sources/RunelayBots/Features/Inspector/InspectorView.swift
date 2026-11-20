@@ -135,6 +135,10 @@ struct ActivitySection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
+            if !bot.isGroup && !bot.isPending {
+                ServersSection(bot: bot)
+            }
+
             if bot.hasBrowser {
                 VStack(alignment: .leading, spacing: Spacing.s) {
                     SectionCaption(title: "Computador")

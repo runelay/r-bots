@@ -41,7 +41,9 @@ struct ArtifactCard: View {
     let ref: ArtifactRef
 
     var body: some View {
-        if BlockKind.isBlockKind(ref.kind) {
+        if ServerStore.isServerKind(ref.kind) {
+            ServerCard(ref: ref)
+        } else if BlockKind.isBlockKind(ref.kind) {
             BlockCard(ref: ref)
         } else {
             ArtifactPageCard(ref: ref)
