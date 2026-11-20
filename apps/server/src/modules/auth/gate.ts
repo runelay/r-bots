@@ -6,6 +6,7 @@ export type AuthMode = "on" | "off";
 
 let current: AuthModule | null = null;
 const principals = new WeakMap<Request, Principal>();
+const originsKey = "auth:origins";
 
 function isTestEnv(env: Record<string, string | undefined>) {
   const bunTest = (env.BOTS_TEST ?? "").trim().toLowerCase();
@@ -30,7 +31,9 @@ async function recordOwner(ownerId: string) {
 export async function initAuth(env: Record<string, string | undefined> = Bun.env) {
   if (authMode(env) === "off") return null;
   const { getDb } = await import("../../db");
+  const { readSetting, writeSetting } = await import("../../db/settings");
   const { createAuthModule } = await import(".");
+  const knownOrigins = await readSetting<string[]>(originsKey, []);
   const module = createAuthModule({
     db: getDb(),
     env,
@@ -40,6 +43,8 @@ export async function initAuth(env: Record<string, string | undefined> = Bun.env
     host,
     port,
     internalToken: runnerToken,
+    knownOrigins: Array.isArray(knownOrigins) ? knownOrigins.filter((item) => typeof item === "string") : [],
+    saveOrigins: (origins) => writeSetting(originsKey, origins),
     onOwnerCreated: async (owner) => {
       await recordOwner(owner.id).catch((error) => console.error("auth: could not record the owner", error));
     },
@@ -47,7 +52,7 @@ export async function initAuth(env: Record<string, string | undefined> = Bun.env
   current = module;
   const waiting = await module.access.needsOwner();
   console.log(
-    `auth on${waiting ? ", waiting for the owner" : ""} (${module.baseURL}, secret from ${module.secretSource})`,
+    `auth on${waiting ? ", waiting for the owner" : ""} (origin from each request, secret from ${module.secretSource})`,
   );
   return module;
 }

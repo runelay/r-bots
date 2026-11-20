@@ -67,7 +67,7 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "rb-devices-"));
   mod = createAuthModule({
     db: (await freshDb()) as unknown as AuthDatabase,
-    env: { BETTER_AUTH_URL: "http://127.0.0.1:2999" },
+    env: {},
     dataDir: join(dir, "data"),
     repoDir: join(dir, "repo"),
     serverDir: join(dir, "server"),
@@ -91,7 +91,7 @@ beforeAll(async () => {
   memberToken = member.token;
   memberId = member.user.id;
   server = await startTestServer();
-  useAuthModule(mod, true);
+  useAuthModule(mod);
 });
 
 afterAll(async () => {
@@ -107,6 +107,7 @@ describe("devices", () => {
     expect(created.status).toBe(201);
     expect(created.body.token).toStartWith("rbk_");
     expect(created.body.device).toMatchObject({ name: "MacBook Air", userId: ownerId, connected: false });
+    expect(mod.origins.list()).toContain(new URL(server.url).origin);
     const fromDevice = await register(created.body.token, mac("Outro", "machine-9"));
     expect(fromDevice.status).toBe(403);
     expect(fromDevice.body).toMatchObject({ code: "forbidden" });
@@ -219,19 +220,16 @@ describe("devices", () => {
       expect(response.body.code).toBe("unauthorized");
       const principal = { userId: "u", role: "owner", method: "session" } as Principal;
       await expect(listDevices(principal)).rejects.toBeInstanceOf(DevicesError);
-      useAuthModule(
-        {
-          auth: {
-            get $context() {
-              return Promise.reject(new Error("db down"));
-            },
+      useAuthModule({
+        auth: {
+          get $context() {
+            return Promise.reject(new Error("db down"));
           },
-        } as unknown as AuthModule,
-        true,
-      );
+        },
+      } as unknown as AuthModule);
       expect(await listRegisteredDevices()).toEqual([]);
     } finally {
-      useAuthModule(mod, true);
+      useAuthModule(mod);
     }
   });
 

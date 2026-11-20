@@ -34,7 +34,7 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "rb-auth-"));
   mod = createAuthModule({
     db: await freshDb(),
-    env: { BETTER_AUTH_URL: base },
+    env: {},
     dataDir: join(dir, "data"),
     repoDir: join(dir, "repo"),
     serverDir: join(dir, "server"),
@@ -157,6 +157,34 @@ describe("invites", () => {
     expect(again.status).toBe(400);
     const denied = await call("/auth/invites", { method: "POST", token: body.token, body: "{}" });
     expect(denied.status).toBe(403);
+  });
+
+  test("a password needs at least 8 characters to join and to change", async () => {
+    const invite = (await (
+      await call("/auth/invites", { method: "POST", token: ownerToken, body: JSON.stringify({ email: "oito@b.co" }) })
+    ).json()) as { code: string };
+    const join = (password: string) =>
+      call("/auth/invites/accept", {
+        method: "POST",
+        body: JSON.stringify({ name: "Oito", email: "oito@b.co", password, code: invite.code }),
+      });
+    const short = await join("1234567");
+    expect(short.status).toBe(400);
+    expect(await short.json()).toMatchObject({
+      field: "password",
+      error: "A senha precisa de pelo menos 8 caracteres.",
+    });
+    const joined = await join("12345678");
+    expect(joined.status).toBe(201);
+    const { token } = (await joined.json()) as { token: string };
+    const change = (newPassword: string) =>
+      call("/api/auth/change-password", {
+        method: "POST",
+        token,
+        body: JSON.stringify({ currentPassword: "12345678", newPassword }),
+      });
+    expect((await change("abcdefg")).status).toBe(400);
+    expect((await change("abcdefgh")).status).toBe(200);
   });
 
   test("revoked invite stops working", async () => {

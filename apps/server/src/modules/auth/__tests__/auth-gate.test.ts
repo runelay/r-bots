@@ -36,7 +36,7 @@ beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "rb-auth-gate-"));
   mod = createAuthModule({
     db: await freshDb(),
-    env: { BETTER_AUTH_URL: base },
+    env: {},
     dataDir: join(dir, "data"),
     repoDir: join(dir, "repo"),
     serverDir: join(dir, "server"),
@@ -171,7 +171,7 @@ describe("internal token", () => {
   test("falls back to a neutral owner before anyone signs up and refuses a short configured token", async () => {
     const empty = createAuthModule({
       db: await freshDb(),
-      env: { BETTER_AUTH_URL: base },
+      env: {},
       dataDir: join(dir, "data-empty"),
       repoDir: join(dir, "repo"),
       serverDir: join(dir, "server"),
@@ -189,7 +189,7 @@ describe("internal token", () => {
     });
     const weak = createAuthModule({
       db: await freshDb(),
-      env: { BETTER_AUTH_URL: base },
+      env: {},
       dataDir: join(dir, "data-weak"),
       repoDir: join(dir, "repo"),
       serverDir: join(dir, "server"),
@@ -218,7 +218,6 @@ describe("social providers", () => {
     const social = createAuthModule({
       db: await freshDb(),
       env: {
-        BETTER_AUTH_URL: base,
         GITHUB_CLIENT_ID: "gh-id",
         GITHUB_CLIENT_SECRET: "gh-secret",
         APPLE_CLIENT_ID: "a-id",
@@ -243,7 +242,9 @@ describe("social providers", () => {
       null,
     );
     expect(started?.status).toBe(200);
-    expect(((await started?.json()) as { url: string }).url).toStartWith("https://github.com/login/oauth/authorize");
+    expect(((await (started as Response).json()) as { url: string }).url).toStartWith(
+      "https://github.com/login/oauth/authorize",
+    );
     const empty = await mod.handle(req("/auth/providers"), null);
     expect(await empty?.json()).toMatchObject({ providers: [] });
   });
@@ -293,11 +294,10 @@ describe("gate", () => {
     await getDb().delete(users);
     const created = await initAuth({
       BOTS_AUTH: "off",
-      BETTER_AUTH_URL: base,
       BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET,
     });
-    expect(created?.baseURL).toBe(base);
-    expect(logs).toContain(`auth on, waiting for the owner (${base}, secret from env)`);
+    expect(created?.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(logs).toContain("auth on, waiting for the owner (origin from each request, secret from env)");
     expect(authActive()).toBe(true);
     expect((await gate(req("/bots")))?.status).toBe(401);
     expect((await gate(req("/status")))?.status).toBe(401);
@@ -306,15 +306,11 @@ describe("gate", () => {
     expect(await status?.json()).toMatchObject({ ok: true, needsOwner: true, required: true });
     const device = await gate(req("/device"));
     expect(device?.status).toBe(200);
-    const previous = process.env.RUNNER_TOKEN;
-    process.env.RUNNER_TOKEN = internalToken;
-    restores.push(() => {
-      process.env.RUNNER_TOKEN = previous;
-    });
-    const machine = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${internalToken}` } });
+    const machineToken = runnerToken();
+    const machine = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${machineToken}` } });
     expect(await gate(machine)).toBeNull();
     expect(principalOf(machine)).toMatchObject({ userId: "internal", method: "internal" });
-    const invite = await gate(req("/auth/invites", { method: "POST", token: internalToken, body: "{}" }));
+    const invite = await gate(req("/auth/invites", { method: "POST", token: machineToken, body: "{}" }));
     expect(invite?.status).toBe(403);
     const setup = await gate(
       req("/auth/setup", {
@@ -329,10 +325,13 @@ describe("gate", () => {
     expect(await gate(req("/bots", { token }))).toBeNull();
     const after = await gate(req("/auth/setup"));
     expect(await after?.json()).toMatchObject({ needsOwner: false, required: true });
-    const again = await initAuth({ BETTER_AUTH_URL: base, BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
+    expect(await created?.origins.remember("https://perfil.example.ts.net:10447")).toBe(true);
+    expect(await readSetting<string[]>("auth:origins", [])).toEqual(["https://perfil.example.ts.net:10447"]);
+    const again = await initAuth({ BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
     expect(again).not.toBeNull();
-    expect(logs).toContain(`auth on (${base}, secret from env)`);
-    const internal = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${internalToken}` } });
+    expect(again?.origins.list()).toEqual(["https://perfil.example.ts.net:10447"]);
+    expect(logs).toContain("auth on (origin from each request, secret from env)");
+    const internal = new Request(`${base}/bots`, { headers: { authorization: `Bearer ${runnerToken()}` } });
     expect(await gate(internal)).toBeNull();
     expect(principalOf(internal)).toMatchObject({ userId: user.id, method: "internal", role: "owner" });
   });
@@ -353,7 +352,7 @@ describe("gate", () => {
     const { getDb } = await import("../../../db");
     const { user } = await import("../../../db/schema/auth");
     await getDb().delete(user);
-    await initAuth({ BETTER_AUTH_URL: base, BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
+    await initAuth({ BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET });
     const setup = await gate(
       req("/auth/setup", {
         method: "POST",

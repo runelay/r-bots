@@ -43,7 +43,7 @@ export interface AuthConfig {
   secret: string;
   baseURL: string;
   appName?: string;
-  trustedOrigins?: string[];
+  trustedOrigins?: () => string[];
   social?: SocialConfig;
 }
 
@@ -61,12 +61,12 @@ export function createAuth(config: AuthConfig) {
     basePath: authBasePath,
     secret: config.secret,
     database: drizzleAdapter(config.db, { provider: "pg", schema: authSchema }),
-    trustedOrigins: [origin, ...socialOrigins, ...(config.trustedOrigins ?? [])],
+    trustedOrigins: () => [origin, ...socialOrigins, ...(config.trustedOrigins?.() ?? [])],
     socialProviders,
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,
-      minPasswordLength: 10,
+      minPasswordLength: 8,
       maxPasswordLength: 256,
       revokeSessionsOnPasswordReset: true,
     },
@@ -90,6 +90,8 @@ export function createAuth(config: AuthConfig) {
     advanced: {
       ipAddress: { ipAddressHeaders: ["x-forwarded-for", "x-real-ip"] },
       useSecureCookies: base.protocol === "https:",
+      disableOriginCheck: false,
+      disableCSRFCheck: false,
     },
     telemetry: { enabled: false },
     plugins: [

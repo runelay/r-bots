@@ -44,7 +44,7 @@ function readCredentials(body: unknown): Credentials {
   const password = typeof input.password === "string" ? input.password : "";
   if (!name) throw new ValidationError("Informe o nome.", "name");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ValidationError("E-mail inválido.", "email");
-  if (password.length < 10) throw new ValidationError("A senha precisa de pelo menos 10 caracteres.", "password");
+  if (password.length < 8) throw new ValidationError("A senha precisa de pelo menos 8 caracteres.", "password");
   return { name, email, password };
 }
 

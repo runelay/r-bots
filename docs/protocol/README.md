@@ -72,6 +72,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v40 | banco no Postgres; busca de conversas e notas com `tsvector` + `unaccent` (mesmas rotas e corpos) | [conversations](conversations.md) |
 | v41 | login obrigatório: portão sempre ligado, `BOTS_AUTH=off` só em teste, app sem modo sem conta | [auth](auth.md) |
 | v42 | tela de login dividida, `GET /auth/providers`, login social pela página `/device`, `rememberMe` | [auth](auth.md) |
+| v43 | origem pela requisição (sem `BETTER_AUTH_URL`), senha de 8 caracteres, chaves do Garage em `<dados>/secrets`, servidor sem `.env.local` | [auth](auth.md) |
 
 ## Contrato
 

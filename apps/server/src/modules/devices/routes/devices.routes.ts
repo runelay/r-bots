@@ -1,6 +1,7 @@
 import type { Req, Res } from "../../../shared/http";
 import { notFound, readBody, sendJson, validationResponse } from "../../../shared/http";
-import { principalOf } from "../../auth/gate";
+import { requestOrigin } from "../../auth";
+import { currentAuthModule, principalOf } from "../../auth/gate";
 import { DevicesError, listDevices, registerDevice, revokeDevice } from "../services/devices.service";
 
 const noStore = { "cache-control": "no-store" };
@@ -11,8 +12,11 @@ export async function handleDevices(req: Req, res: Res, method: string, parts: s
     if (!principal) throw new DevicesError(401, "unauthorized", "Entre na sua conta para gerenciar dispositivos.");
     if (parts.length === 1 && method === "GET")
       return sendJson(res, 200, { ok: true, devices: await listDevices(principal) }, noStore);
-    if (parts.length === 1 && method === "POST")
-      return sendJson(res, 201, { ok: true, ...(await registerDevice(principal, await readBody(req))) }, noStore);
+    if (parts.length === 1 && method === "POST") {
+      const registered = await registerDevice(principal, await readBody(req));
+      await currentAuthModule()?.origins.remember(requestOrigin(req.raw));
+      return sendJson(res, 201, { ok: true, ...registered }, noStore);
+    }
     if (parts.length === 2 && method === "DELETE")
       return sendJson(res, 200, { ok: true, ...(await revokeDevice(principal, parts[1] ?? "")) }, noStore);
   } catch (error) {

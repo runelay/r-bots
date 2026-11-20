@@ -6,9 +6,11 @@ import { createAuthenticator, type Principal } from "./services/auth.middleware"
 import { type AuthDatabase, createAuth, ownerRole, socialFromEnv } from "./services/auth.service";
 import { resolveAuthSecret } from "./services/auth-secret.service";
 import { createAvatarService } from "./services/avatar.service";
+import { createAuthPool, createOriginRegistry } from "./services/origins.service";
 
 export type { AuthOutcome, Principal } from "./services/auth.middleware";
 export { isPublicRoute, unauthorized } from "./services/auth.middleware";
+export { requestOrigin } from "./services/origins.service";
 
 export interface AuthModuleOptions {
   db: AuthDatabase;
@@ -21,10 +23,12 @@ export interface AuthModuleOptions {
   internalToken?: () => string;
   onOwnerCreated?: (owner: IssuedSession["user"]) => void | Promise<void>;
   blobs?: () => BlobStore;
+  knownOrigins?: string[];
+  saveOrigins?: (origins: string[]) => void | Promise<void>;
 }
 
-export function authBaseURL(env: Record<string, string | undefined>, host: string, port: number) {
-  return env.BETTER_AUTH_URL?.trim() || `http://${host}:${port}`;
+export function authBaseURL(host: string, port: number) {
+  return `http://${host}:${port}`;
 }
 
 export function createAuthModule(options: AuthModuleOptions) {
@@ -32,14 +36,16 @@ export function createAuthModule(options: AuthModuleOptions) {
     env: options.env,
     dataDir: options.dataDir,
   });
-  const baseURL = authBaseURL(options.env, options.host, options.port);
-  const extraOrigins = (options.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
+  const baseURL = authBaseURL(options.host, options.port);
+  const origins = createOriginRegistry({ known: options.knownOrigins, save: options.saveOrigins });
   const social = socialFromEnv(options.env);
   const providers = Object.keys(social);
-  const auth = createAuth({ db: options.db, secret: resolved.secret, baseURL, trustedOrigins: extraOrigins, social });
+  const pool = createAuthPool(
+    (origin) =>
+      createAuth({ db: options.db, secret: resolved.secret, baseURL: origin, trustedOrigins: origins.list, social }),
+    baseURL,
+  );
+  const auth = pool.fallback;
   const access = createAccessService(auth, options.db, { onOwnerCreated: options.onOwnerCreated });
   const internalToken = options.internalToken;
   const internal = internalToken
@@ -57,14 +63,23 @@ export function createAuthModule(options: AuthModuleOptions) {
         },
       }
     : undefined;
-  const authenticate = createAuthenticator(auth, { trustedOrigins: [baseURL, ...extraOrigins], internal });
+  const authenticate = createAuthenticator(auth, { trusts: origins.trusts, internal });
   const avatars = createAvatarService(auth, options.blobs ?? getBlobStore);
-  const routes = createAuthRoutes({ auth, access, avatars, secret: resolved.secret, providers });
+  const routes = createAuthRoutes({
+    auth,
+    authFor: pool.forRequest,
+    access,
+    avatars,
+    secret: resolved.secret,
+    providers,
+  });
   return {
     auth,
     access,
     avatars,
     authenticate,
+    authFor: pool.forRequest,
+    origins,
     handle: routes.handle,
     baseURL,
     providers,

@@ -15,7 +15,7 @@ Contas, sessões e chaves de API do servidor. Tudo passa pelo [better-auth](http
 
 | Plugin | Para quê |
 | --- | --- |
-| e-mail e senha | login no app e na página `/device`. Cadastro aberto desligado (`disableSignUp`). Senha de 10 a 256 caracteres |
+| e-mail e senha | login no app e na página `/device`. Cadastro aberto desligado (`disableSignUp`). Senha de 8 a 256 caracteres |
 | `bearer` | o app nativo manda `Authorization: Bearer <token>` em vez de cookie. O token sai no header `set-auth-token` do login |
 | `@better-auth/passkey` | Touch ID. `rpID` = host de `BETTER_AUTH_URL` |
 | `@better-auth/api-key` | chave do runner do Mac e de automações. Prefixo `rbk_`, guardada com hash, sem vencimento e sem limite de uso por chave |
@@ -357,3 +357,36 @@ GET /auth/providers -> 200
 Testes do módulo de auth com o better-auth real: `socialFromEnv` só aceita par completo; módulo com GitHub e Apple lista `["apple","github"]`, `/auth/providers` é pública, e `POST /api/auth/sign-in/social` com `provider: "github"` devolve 200 com `url` começando em `https://github.com/login/oauth/authorize`.
 
 Produção (`release-955354f`): `/auth/providers` 200 sem credencial com `providers: []`; `/bots`, `/status`, `/accounts`, `/integrations` 401 sem credencial e 200 com `RUNNER_TOKEN`; 4 bots com uma conversa cada, banco 25/31/0, integrações conectadas e contas do Mac `ready` depois de o app reconectar.
+
+## v43 (20/11): origem pela requisição, senha de 8 caracteres e servidor sem `.env.local`
+
+### Origem
+
+- `BETTER_AUTH_URL` e `BETTER_AUTH_TRUSTED_ORIGINS` saíram: nenhuma é lida. A origem de cada requisição vem de `X-Forwarded-Proto` + `X-Forwarded-Host` (o `tailscale serve` manda os dois e preserva o `Host`), depois do `Host`, depois da URL. O servidor só escuta em `127.0.0.1`, então esses cabeçalhos só chegam do proxy do tailnet ou da própria máquina.
+- O servidor mantém um better-auth por origem (até 32, o mais antigo sai), com `baseURL` = essa origem: cookie `__Secure-` em https, `rpID` da passkey = host dessa origem, callbacks sociais em `<origem>/api/auth/callback/<provedor>`. Funciona por qualquer endereço do servidor (local, tailnet, perfis do app) ao mesmo tempo.
+- Origem confiável (CSRF do better-auth e escrita com cookie no portão): a própria origem da requisição, as origens registradas por dispositivos e `https://appleid.apple.com` com Apple ligado. `POST /devices` grava a origem de onde o Mac se registrou em `settings` (`auth:origins`). A checagem roda sempre, inclusive com `NODE_ENV=test` (`disableOriginCheck: false`).
+
+### Senha
+
+Mínimo de 8 caracteres em todo lugar (primeiro acesso, convite e `POST /api/auth/change-password`). Menos que isso: `400 {"ok":false,"error":"A senha precisa de pelo menos 8 caracteres.","field":"password"}` nas rotas `/auth/*` e `400` do better-auth na troca.
+
+### Sem `.env.local`
+
+- Chaves do armazenamento (Garage) em `<dados>/secrets/s3.access-key-id` e `s3.secret-access-key` (0600), escritas pelo `storage-init` como as senhas do Postgres e do Redis; `S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY` no ambiente ainda passam na frente. O `storage-init` não escreve mais no `.env.local`.
+- O compose carrega `.env.local` só se existir (`env_file` com `required: false`) e não monta mais o arquivo no container.
+
+### Verificado
+
+Imagem `release-final` numa instância separada (:2100, Postgres e Redis efêmeros, cópia dos dados importada do SQLite) e depois na produção (:2000, `https://…ts.net:10447`), sem `.env.local`:
+
+```
+GET /bots sem credencial -> 401
+GET /status sem credencial -> 401
+POST /api/auth/sign-in/email (Origin = endereço do tailnet, sem BETTER_AUTH_URL) -> 200, set-auth-token presente
+POST /api/auth/sign-in/email (Origin: https://evil.example, com cookie) -> 403 (log: Invalid origin: https://evil.example)
+GET /auth/me -> {"email":"…","role":"owner","method":"session"}
+GET /bots/boss/uploads/01M7TDSK6MY7MHB9T9B6WAKMF1 -> 200, 64625 bytes (Garage com as chaves do arquivo)
+POST /auth/invites/accept {"password":"1234567",…} -> 400 {"field":"password","error":"A senha precisa de pelo menos 8 caracteres."}
+```
+
+Mac de teste pelo tailnet: `POST /devices` com a sessão, `mac runner connected`, turno em `mac:claude` concluído.

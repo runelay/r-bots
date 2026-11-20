@@ -12,6 +12,7 @@ import { devicePage } from "./device-page";
 
 export interface AuthRouteDeps {
   auth: Auth;
+  authFor?: (request: Request) => Auth;
   access: AccessService;
   avatars?: AvatarService;
   secret: string;
@@ -117,7 +118,7 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
     const header = request.headers.get("authorization") ?? "";
     const token = header.slice(0, 7).toLowerCase() === "bearer " ? header.slice(7).trim() : "";
     if (principal.method === "session" && token) {
-      const context = await deps.auth.$context;
+      const context = await (deps.authFor?.(request) ?? deps.auth).$context;
       body.cookie = { name: context.authCookies.sessionToken.name, value: signSessionCookie(token, deps.secret) };
     }
     return json(body);
@@ -128,7 +129,8 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
     const path = url.pathname;
     const method = request.method;
     try {
-      if (path === authBasePath || path.startsWith(`${authBasePath}/`)) return await deps.auth.handler(request);
+      if (path === authBasePath || path.startsWith(`${authBasePath}/`))
+        return await (deps.authFor?.(request) ?? deps.auth).handler(request);
       if (path === devicePagePath && method === "GET")
         return new Response(devicePage(authBasePath), {
           headers: {
