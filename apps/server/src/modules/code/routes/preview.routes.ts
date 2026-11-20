@@ -102,10 +102,32 @@ function forwardHeaders(source: Headers, port: number) {
   return headers;
 }
 
-function filterResponse(answer: Response) {
+const compressibleTypes = /^(text\/|application\/(javascript|json|xml|wasm|manifest\+json)|image\/svg\+xml)/i;
+
+function wantsGzip(acceptEncoding: string | null) {
+  return /\bgzip\b/i.test(acceptEncoding ?? "");
+}
+
+function filterResponse(answer: Response, acceptEncoding: string | null) {
   const headers = new Headers(answer.headers);
   for (const name of strippedResponseHeaders) headers.delete(name);
-  return new Response(answer.body, { status: answer.status, statusText: answer.statusText, headers });
+  const compress =
+    answer.body !== null &&
+    wantsGzip(acceptEncoding) &&
+    !headers.has("content-encoding") &&
+    compressibleTypes.test(headers.get("content-type") ?? "") &&
+    !/event-stream/i.test(headers.get("content-type") ?? "") &&
+    answer.status !== 204 &&
+    answer.status !== 304;
+  if (!compress) return new Response(answer.body, { status: answer.status, statusText: answer.statusText, headers });
+  headers.delete("content-length");
+  headers.set("content-encoding", "gzip");
+  headers.append("vary", "accept-encoding");
+  return new Response(answer.body!.pipeThrough(new CompressionStream("gzip")), {
+    status: answer.status,
+    statusText: answer.statusText,
+    headers,
+  });
 }
 
 function proxy(req: Req, res: Res, port: number, path: string) {
@@ -116,7 +138,7 @@ function proxy(req: Req, res: Res, port: number, path: string) {
     body: hasBody ? req.raw.body : undefined,
     redirect: "manual",
   })
-    .then((answer) => res.respond(filterResponse(answer)))
+    .then((answer) => res.respond(filterResponse(answer, req.raw.headers.get("accept-encoding"))))
     .catch((error: Error) => {
       console.error("preview proxy failed", error);
       if (!res.headersSent) sendJson(res, 502, { ok: false, error: "O servidor de desenvolvimento não respondeu." });
