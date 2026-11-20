@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import type { LiveMessage } from "@runelay-bots/protocol";
 import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import {
   aborted,
@@ -20,7 +21,8 @@ import * as decisions from "../../approvals/services/decisions.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import * as threads from "../../conversations/services/threads.service";
-import { answer, botStatus, cancel, conversationStatus, isBusy } from "../services/engine.service";
+import * as uploads from "../../uploads/services/uploads.service";
+import { answer, botStatus, cancel, conversationStatus, isBusy, steerLead } from "../services/engine.service";
 import type { ApprovalResult } from "../services/mcp-gateway.service";
 
 beforeEach(() => {
@@ -227,7 +229,7 @@ describe("steering a paused turn", () => {
     expect((await settledOf(session))?.outcome).toBe("completed");
   });
 
-  test("queues voice, skill, attachment, empty and non-chat messages instead of steering", async () => {
+  test("queues voice, empty and non-chat messages instead of steering", async () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);
     const ask = asking("Posso?");
@@ -235,14 +237,160 @@ describe("steering a paused turn", () => {
     send(session);
     const card = await nextInteraction(session);
     send(session, { text: "voz", voice: true });
-    send(session, { text: "skill", skills: [{ slug: "s", name: "S", body: "b", files: [] }] });
     send(session, { text: "   " });
     send(session, { text: "rotina", source: "schedule" });
     expect(await opened(session)).toHaveLength(1);
     answer(session, "dlv_ok", card.interactionId, "approve");
     await idle(session);
-    expect(await factsOfType(session, "turn.started")).toHaveLength(5);
+    expect(await factsOfType(session, "turn.started")).toHaveLength(4);
     expect((await factsOfType(session, "delivery.consumed")).some((fact) => fact.data.steer)).toBe(false);
+  });
+
+  test("steers with a skill attached and keeps the skill in the consumed fact", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const ask = asking("Posso?");
+    fakeProviders.next(sequence(ask.script, replyWith("segui a skill")));
+    send(session);
+    await nextInteraction(session);
+    send(session, { text: "usa isso", skills: [{ slug: "s", name: "S", body: "b", files: [] }] });
+    await idle(session);
+    const steer = (await factsOfType(session, "delivery.consumed")).find((fact) => fact.data.steer);
+    expect(steer?.data.skills).toEqual([{ slug: "s", name: "S" }]);
+    expect(lastRequest().prompt).toContain("A pessoa anexou a skill");
+    expect(await factsOfType(session, "turn.started")).toHaveLength(1);
+  });
+});
+
+describe("steering a running turn", () => {
+  function liveTurn(reply: string) {
+    const pushed: LiveMessage[] = [];
+    const arrived = Promise.withResolvers<void>();
+    const started = Promise.withResolvers<void>();
+    const script = async (turn: FakeTurn) => {
+      turn.emit({ type: "session", id: "prov-live" });
+      turn.inbox?.((message) => {
+        void Promise.resolve(message).then((item) => {
+          pushed.push(item);
+          arrived.resolve();
+        });
+        return true;
+      });
+      started.resolve();
+      await arrived.promise;
+      turn.emit({ type: "text", part: "r", text: reply });
+      turn.inbox?.(null);
+      turn.emit({ type: "done", ok: true });
+    };
+    return { script, pushed, started: started.promise };
+  }
+
+  test("pushes the message into the live run with the steer lead", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const live = liveTurn("Tirei as faixas e não abro PR.");
+    fakeProviders.next(live.script);
+    send(session, { text: "faz a landing" });
+    await live.started;
+    send(session, { deliveryId: "dlv_meio", text: "não abre PR, tira as faixas" });
+    await idle(session);
+    expect(live.pushed).toHaveLength(1);
+    expect(live.pushed[0].text).toStartWith(steerLead);
+    expect(live.pushed[0].text).toContain("não abre PR, tira as faixas");
+    const steer = (await factsOfType(session, "delivery.consumed")).find((fact) => fact.data.steer);
+    expect(steer?.data).toMatchObject({ deliveryId: "dlv_meio", turnId: "turn_0", source: "chat" });
+    expect(fakeProviders.turns).toHaveLength(1);
+    expect(await factsOfType(session, "turn.started")).toHaveLength(1);
+    expect(await repliesOf(session)).toEqual(["Tirei as faixas e não abro PR."]);
+  });
+
+  test("sends attached images along with the live message", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    track(
+      spyOn(uploads, "prepareAttachments").mockResolvedValue({
+        text: '- Imagem "faixa.png" vai junto nesta mensagem.',
+        images: [{ path: "/tmp/faixa.png", mime: "image/png", label: "Imagem anexada: faixa.png" }],
+      } as never),
+    );
+    const live = liveTurn("Vi a imagem.");
+    fakeProviders.next(live.script);
+    send(session, { text: "faz a landing" });
+    await live.started;
+    send(session, {
+      text: "tira isso",
+      attachments: [
+        {
+          uploadId: "up_1",
+          name: "faixa.png",
+          mime: "image/png",
+          size: 10,
+          kind: "image",
+          file: "faixa.png",
+          createdAt: new Date().toISOString(),
+          source: "user",
+        },
+      ],
+    });
+    await idle(session);
+    expect(live.pushed[0].images).toEqual([
+      { path: "/tmp/faixa.png", mime: "image/png", label: "Imagem anexada: faixa.png" },
+    ]);
+    expect(live.pushed[0].text).toContain('Imagem "faixa.png"');
+    const steer = (await factsOfType(session, "delivery.consumed")).find((fact) => fact.data.steer);
+    expect(steer?.data.attachments).toMatchObject([{ uploadId: "up_1" }]);
+  });
+
+  test("stops at the next tool boundary and resumes with the message when the provider has no live input", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const started = Promise.withResolvers<void>();
+    const steered = Promise.withResolvers<void>();
+    fakeProviders.next(
+      sequence(async (turn) => {
+        turn.emit({ type: "session", id: "prov-run" });
+        started.resolve();
+        await steered.promise;
+        turn.emit({ type: "text", part: "old", text: "ainda no plano antigo" });
+        const context = contextOf(turn);
+        context.onCallStart();
+        context.onCallEnd();
+        await aborted(turn.signal);
+      }, replyWith("Ajustei.")),
+    );
+    send(session, { text: "faz a landing" });
+    await started.promise;
+    send(session, { text: "muda o título" });
+    steered.resolve();
+    await idle(session);
+    expect(fakeProviders.turns).toHaveLength(2);
+    expect(lastRequest().resume).toBe("prov-run");
+    expect(lastRequest().prompt).toStartWith(steerLead);
+    expect(lastRequest().prompt).toContain("muda o título");
+    expect(await repliesOf(session)).toEqual(["Ajustei."]);
+    expect(await factsOfType(session, "turn.started")).toHaveLength(1);
+    expect((await settledOf(session))?.outcome).toBe("completed");
+  });
+
+  test("hands messages that arrived before the run started to the live input", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const gate = Promise.withResolvers<void>();
+    track(
+      spyOn(handoff, "handoffBlock").mockImplementation(async () => {
+        await gate.promise;
+        return "";
+      }),
+    );
+    const live = liveTurn("Considerei.");
+    fakeProviders.next(live.script);
+    send(session, { text: "faz a landing" });
+    await waitFor(async () => (await factsOfType(session, "turn.started")).length === 1);
+    send(session, { text: "e usa azul" });
+    gate.resolve();
+    await idle(session);
+    expect(live.pushed.map((item) => item.text)).toEqual([`${steerLead}\ne usa azul`]);
+    expect(fakeProviders.turns).toHaveLength(1);
   });
 });
 

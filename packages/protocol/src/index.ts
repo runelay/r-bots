@@ -46,6 +46,15 @@ export interface NativeToolHooks {
   ) => Promise<void>;
 }
 
+export interface LiveMessage {
+  text: string;
+  images?: Array<{ path: string; mime: string; label: string }>;
+}
+
+export type LivePush = (message: LiveMessage | Promise<LiveMessage>) => boolean;
+
+export type LiveInbox = (push: LivePush | null) => void;
+
 export type ProviderEvent =
   | { type: "session"; id: string }
   | { type: "text.delta"; part: string; text: string }

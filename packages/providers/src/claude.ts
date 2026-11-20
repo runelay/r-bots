@@ -11,7 +11,7 @@ import {
   type SpawnedProcess,
   type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import type { LiveInbox, LiveMessage, NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { accountEnv, childEnv } from "./proc";
 import { spawnMarked } from "./proc-tree";
 
@@ -95,24 +95,67 @@ export function privateMcpArgs(args: string[], workDir: string) {
   return { args: next, file };
 }
 
-async function promptWithImages(request: TurnRequest): Promise<string | AsyncIterable<SDKUserMessage>> {
-  if (!request.images?.length) return request.prompt;
+async function userMessage(
+  text: string,
+  images: LiveMessage["images"] = [],
+  priority?: "next",
+): Promise<SDKUserMessage> {
   const content: Array<Record<string, unknown>> = [];
-  for (const image of request.images) {
+  for (const image of images) {
     const data = await readFile(image.path).catch(() => null);
     if (!data) continue;
     content.push({ type: "text", text: image.label });
     content.push({ type: "image", source: { type: "base64", media_type: image.mime, data: data.toString("base64") } });
   }
-  content.push({ type: "text", text: request.prompt || "Veja os anexos." });
-  const message = {
+  content.push({ type: "text", text: text || "Veja os anexos." });
+  return {
     type: "user",
     message: { role: "user", content },
     parent_tool_use_id: null,
     session_id: "",
+    ...(priority ? { priority } : {}),
   } as unknown as SDKUserMessage;
+}
+
+export function liveInput(first: Promise<SDKUserMessage>) {
+  const pending: Promise<SDKUserMessage>[] = [first];
+  let wake: (() => void) | null = null;
+  let closed = false;
+  const messages = (async function* () {
+    for (;;) {
+      const next = pending.shift();
+      if (next) {
+        const message = await next.catch(() => null);
+        if (message) yield message;
+        continue;
+      }
+      if (closed) return;
+      await new Promise<void>((resolve) => {
+        wake = resolve;
+      });
+      wake = null;
+    }
+  })();
+  const nudge = () => (wake as (() => void) | null)?.();
+  return {
+    messages,
+    push(message: Promise<SDKUserMessage>) {
+      if (closed) return false;
+      pending.push(message);
+      nudge();
+      return true;
+    },
+    close() {
+      closed = true;
+      nudge();
+    },
+  };
+}
+
+function promptWithImages(request: TurnRequest): string | AsyncIterable<SDKUserMessage> {
+  if (!request.images?.length) return request.prompt;
   return (async function* () {
-    yield message;
+    yield await userMessage(request.prompt, request.images);
   })();
 }
 
@@ -122,6 +165,7 @@ export async function runClaude(
   signal: AbortSignal,
   emit: (event: ProviderEvent) => void,
   hooks?: NativeToolHooks,
+  inbox?: LiveInbox,
 ) {
   const code = request.code && hooks ? request.code : null;
   const abortController = new AbortController();
@@ -138,8 +182,19 @@ export async function runClaude(
     MCP_TOOL_TIMEOUT: "900000",
   });
 
+  const live = inbox ? liveInput(userMessage(request.prompt, request.images)) : null;
+  const closeLive = () => {
+    if (!live) return;
+    live.close();
+    inbox?.(null);
+  };
+  signal.addEventListener("abort", closeLive, { once: true });
+  if (live && inbox && !signal.aborted)
+    inbox((message) => live.push(Promise.resolve(message).then((item) => userMessage(item.text, item.images, "next"))));
+  let totals: Record<string, number> | null = null;
+
   const stream = query({
-    prompt: await promptWithImages(request),
+    prompt: live ? live.messages : promptWithImages(request),
     options: {
       model: request.model,
       ...(request.effort ? { effort: request.effort as "low" | "medium" | "high" } : {}),
@@ -199,65 +254,79 @@ export async function runClaude(
     },
   });
 
-  for await (const message of stream) {
-    if (message.type === "system" && message.subtype === "init") {
-      emit({ type: "session", id: message.session_id });
-      continue;
-    }
-    if (message.type === "result") {
-      result = message;
-      continue;
-    }
-    if (message.type === "stream_event") {
-      if (message.parent_tool_use_id) continue;
-      const event = message.event as {
-        type: string;
-        index?: number;
-        message?: { id?: string; usage?: Record<string, number> };
-        content_block?: { type: string };
-        delta?: { type: string; text?: string };
-      };
-      if (event.type === "message_start") {
-        currentMessage = event.message?.id ?? String(Date.now());
-        const usage = event.message?.usage;
+  try {
+    for await (const message of stream) {
+      if (message.type === "system" && message.subtype === "init") {
+        emit({ type: "session", id: message.session_id });
+        continue;
+      }
+      if (message.type === "result") {
+        result = message;
+        const usage = (message as { usage?: Record<string, number> }).usage;
         if (usage) {
-          contextTokens =
-            (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
+          const sum: Record<string, number> = totals ?? {};
+          for (const key of ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"])
+            sum[key] = (sum[key] ?? 0) + (usage[key] ?? 0);
+          totals = sum;
         }
-      } else if (event.type === "content_block_start" && event.content_block?.type === "text") {
-        const part = `${currentMessage}:${event.index ?? 0}`;
-        partByIndex.set(`${currentMessage}:${event.index ?? 0}`, part);
-        const queue = partsByMessage.get(currentMessage) ?? [];
-        queue.push(part);
-        partsByMessage.set(currentMessage, queue);
-      } else if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
-        const part = partByIndex.get(`${currentMessage}:${event.index ?? 0}`);
-        if (part) emit({ type: "text.delta", part, text: event.delta.text ?? "" });
+        closeLive();
+        continue;
       }
-      continue;
-    }
-    if (message.type === "assistant" && !message.parent_tool_use_id) {
-      const id = message.message.id ?? currentMessage;
-      for (const block of message.message.content as Array<{ type: string; text?: string }>) {
-        if (block.type !== "text") continue;
-        const queue = partsByMessage.get(id) ?? [];
-        const part = queue.shift() ?? `${id}:${Math.random().toString(36).slice(2, 8)}`;
-        emit({ type: "text", part, text: block.text ?? "" });
+      if (message.type === "stream_event") {
+        if (message.parent_tool_use_id) continue;
+        const event = message.event as {
+          type: string;
+          index?: number;
+          message?: { id?: string; usage?: Record<string, number> };
+          content_block?: { type: string };
+          delta?: { type: string; text?: string };
+        };
+        if (event.type === "message_start") {
+          currentMessage = event.message?.id ?? String(Date.now());
+          const usage = event.message?.usage;
+          if (usage) {
+            contextTokens =
+              (usage.input_tokens ?? 0) +
+              (usage.cache_read_input_tokens ?? 0) +
+              (usage.cache_creation_input_tokens ?? 0);
+          }
+        } else if (event.type === "content_block_start" && event.content_block?.type === "text") {
+          const part = `${currentMessage}:${event.index ?? 0}`;
+          partByIndex.set(`${currentMessage}:${event.index ?? 0}`, part);
+          const queue = partsByMessage.get(currentMessage) ?? [];
+          queue.push(part);
+          partsByMessage.set(currentMessage, queue);
+        } else if (event.type === "content_block_delta" && event.delta?.type === "text_delta") {
+          const part = partByIndex.get(`${currentMessage}:${event.index ?? 0}`);
+          if (part) emit({ type: "text.delta", part, text: event.delta.text ?? "" });
+        }
+        continue;
+      }
+      if (message.type === "assistant" && !message.parent_tool_use_id) {
+        const id = message.message.id ?? currentMessage;
+        for (const block of message.message.content as Array<{ type: string; text?: string }>) {
+          if (block.type !== "text") continue;
+          const queue = partsByMessage.get(id) ?? [];
+          const part = queue.shift() ?? `${id}:${Math.random().toString(36).slice(2, 8)}`;
+          emit({ type: "text", part, text: block.text ?? "" });
+        }
       }
     }
+  } finally {
+    signal.removeEventListener("abort", closeLive);
+    closeLive();
   }
 
-  const final = result as
-    | (Extract<SDKMessage, { type: "result" }> & { usage?: Record<string, number>; errors?: string[]; result?: string })
-    | null;
-  if (final?.usage) {
+  const final = result as (Extract<SDKMessage, { type: "result" }> & { errors?: string[]; result?: string }) | null;
+  const spent = totals as Record<string, number> | null;
+  if (spent) {
     emit({
       type: "usage",
       usage: {
-        inputTokens: final.usage.input_tokens ?? 0,
-        outputTokens: final.usage.output_tokens ?? 0,
-        cacheReadTokens: final.usage.cache_read_input_tokens ?? 0,
-        cacheWriteTokens: final.usage.cache_creation_input_tokens ?? 0,
+        inputTokens: spent.input_tokens ?? 0,
+        outputTokens: spent.output_tokens ?? 0,
+        cacheReadTokens: spent.cache_read_input_tokens ?? 0,
+        cacheWriteTokens: spent.cache_creation_input_tokens ?? 0,
       },
       contextTokens,
     });

@@ -11,7 +11,15 @@ import {
   setLaneConcurrency,
 } from "../../jobs/services/jobs.service";
 import type { JobContext } from "../../jobs/types/jobs.types";
-import { cancel, type DelegationHooks, type Delivery, runDelivery, sessionBusy, useTurnQueue } from "./engine.service";
+import {
+  cancel,
+  type DelegationHooks,
+  type Delivery,
+  runDelivery,
+  sessionBusy,
+  steerRunning,
+  useTurnQueue,
+} from "./engine.service";
 import { maxTurns, onSuspendedChange, slotStats } from "./turn-slots.service";
 
 export const turnJobType = "turn.run";
@@ -122,6 +130,10 @@ export async function runTurnJob(payload: TurnPayload, context: JobContext) {
   if (await deliveryHandled(session, deliveryId)) {
     await forget(sessionId, deliveryId);
     return { skipped: "handled" };
+  }
+  if (steerRunning(session, payload.delivery)) {
+    await forget(sessionId, deliveryId);
+    return { skipped: "steered" };
   }
   if (sessionBusy(sessionId) || !(await isHead(sessionId, deliveryId))) return context.defer(busyDelayMs);
   unmarkQueued(sessionId, deliveryId);

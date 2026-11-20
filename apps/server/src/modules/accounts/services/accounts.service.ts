@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import {
   type AccountProbe,
+  type LiveInbox,
   type ModelOption,
   type NativeToolHooks,
   type Provider,
@@ -15,11 +16,11 @@ import {
   type AccountDir,
   type AccountSettings,
   autoName,
-  detectProvider,
   type DirProvider,
+  detectProvider,
+  dirProviders,
   discoverAccountDirs,
   displayPath,
-  dirProviders,
   expandPath,
   homeDir,
   readAccountSettings,
@@ -239,10 +240,11 @@ export function runOnAccount(
   signal: AbortSignal,
   emit: (event: ProviderEvent) => void,
   hooks?: NativeToolHooks,
+  inbox?: LiveInbox,
 ) {
   const fault = injectedFault(account.id);
   if (fault) return Promise.resolve(emitFault(fault, emit));
-  return runTurn({ ...request, configDir: accountDir(account.id) }, dataDir, signal, emit, hooks);
+  return runTurn({ ...request, configDir: accountDir(account.id) }, dataDir, signal, emit, hooks, inbox);
 }
 
 async function changeSettings(change: (settings: AccountSettings) => void) {

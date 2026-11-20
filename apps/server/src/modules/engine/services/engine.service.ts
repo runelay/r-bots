@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import type { Provider, ProviderEvent, Usage } from "@runelay-bots/protocol";
+import type { LiveMessage, LivePush, Provider, ProviderEvent, Usage } from "@runelay-bots/protocol";
 import { emptyUsage } from "@runelay-bots/protocol";
 import { nowNote, userTimezone } from "../../../shared/clock";
 import {
@@ -209,10 +209,19 @@ interface Turn {
   cancelReason?: string;
   delegation?: DelegationHooks;
   owner: { sessionId: string; botId: string };
-  steer?: Delivery[];
+  steer?: Steer[];
   stopRun?: () => void;
+  yieldRun?: () => void;
+  inject?: LivePush;
+  accepting: boolean;
+  provider?: Provider;
   slot?: TurnSlot;
   priority: SlotPriority;
+}
+
+interface Steer {
+  paused: boolean;
+  message: Promise<LiveMessage>;
 }
 
 interface Runtime {
@@ -518,20 +527,53 @@ function settleCompletion(deliveryId: string) {
   completions.delete(deliveryId);
 }
 
-function steerPausedTurn(session: StoredSession, runtime: Runtime, delivery: Delivery) {
+export const steerLead =
+  "A pessoa mandou esta mensagem enquanto você trabalhava. Considere agora, ajuste o que está fazendo e responda a ela:";
+const pausedLead =
+  "A pessoa respondeu por mensagem enquanto seu pedido de aprovação ou sua pergunta estava aberta. O card foi fechado e a ação pendente não rodou. Siga a partir desta mensagem, numa resposta só:";
+
+async function steerMessage(turn: Turn, delivery: Delivery): Promise<LiveMessage> {
+  const bot = getBot(turn.owner.botId);
+  const vision = turn.provider ? turn.provider === "claude" : true;
+  const prepared =
+    bot && delivery.attachments?.length
+      ? await prepareAttachments(bot.id, delivery.attachments, vision).catch(() => ({
+          text: "",
+          images: [] as PreparedImage[],
+        }))
+      : { text: "", images: [] as PreparedImage[] };
+  const body = [
+    skillPrompt(delivery, bot ? connectorsOf(bot).memory : false),
+    deliveryNote(delivery),
+    requestText(delivery),
+  ]
+    .filter(Boolean)
+    .join("\n\n---\n\n");
+  const text = [body, prepared.text].filter(Boolean).join("\n\n");
+  return { text, images: prepared.images };
+}
+
+function steerTurn(session: StoredSession, runtime: Runtime, delivery: Delivery) {
   const turn = runtime.turn;
-  if (!turn?.stopRun || turn.interactions.size === 0 || session.meta.kind === "group") return false;
-  if (
-    delivery.source !== "chat" ||
-    delivery.voice ||
-    delivery.skills?.length ||
-    delivery.attachments?.length ||
-    !delivery.text.trim()
-  )
-    return false;
+  if (!turn?.accepting || session.meta.kind === "group") return false;
+  if (delivery.source !== "chat" || delivery.voice || delivery.delegation) return false;
+  if (!delivery.text.trim() && !delivery.attachments?.length && !delivery.skills?.length) return false;
+  const paused = Boolean(turn.stopRun) && turn.interactions.size > 0;
+  if (!paused && turn.priority !== "chat") return false;
   const scope = { turnId: turn.turnId };
-  turn.steer ??= [];
-  turn.steer.push(delivery);
+  const message = steerMessage(turn, delivery);
+  const asked = deliveryAskOf(delivery);
+  turn.asked.commit ||= asked.commit;
+  turn.asked.push ||= asked.push;
+  turn.asked.pr ||= asked.pr;
+  const injected =
+    !paused && turn.inject
+      ? turn.inject(message.then((item) => ({ ...item, text: `${steerLead}\n${item.text}` })))
+      : false;
+  if (!injected) {
+    turn.steer ??= [];
+    turn.steer.push({ paused, message });
+  }
   session.log.emit(
     {
       type: "delivery.admitted",
@@ -549,16 +591,23 @@ function steerPausedTurn(session: StoredSession, runtime: Runtime, delivery: Del
         turnId: turn.turnId,
         source: "chat",
         steer: true,
+        ...(delivery.skills?.length
+          ? { skills: delivery.skills.map((skill) => ({ slug: skill.slug, name: skill.name })) }
+          : {}),
+        ...(delivery.attachments?.length
+          ? { attachments: delivery.attachments.map((item) => publicUpload(session.meta.botId, item)) }
+          : {}),
       },
       scope,
     },
   );
   void recordThreadMessage(session.meta.botId, session.meta.sessionId, {
     role: "user",
-    text: titleFrom(delivery.text),
+    text: titleFrom(delivery.text.trim() || attachmentsTitle(delivery.attachments ?? [])),
     at: new Date().toISOString(),
   }).catch(() => undefined);
-  turn.stopRun();
+  if (!paused) return true;
+  turn.stopRun?.();
   for (const [interactionId, pending] of [...turn.interactions]) {
     turn.interactions.delete(interactionId);
     session.log.emit({
@@ -571,6 +620,11 @@ function steerPausedTurn(session: StoredSession, runtime: Runtime, delivery: Del
   return true;
 }
 
+export function steerRunning(session: StoredSession, delivery: Delivery) {
+  const runtime = runtimes.get(session.meta.sessionId);
+  return runtime ? steerTurn(session, runtime, delivery) : false;
+}
+
 function deliverInProcess(session: StoredSession, runtime: Runtime, delivery: Delivery) {
   runtime.queue.push(delivery);
   if (!runtime.turn && !draining.has(session.meta.sessionId)) void drain(session, runtime);
@@ -578,7 +632,7 @@ function deliverInProcess(session: StoredSession, runtime: Runtime, delivery: De
 
 export async function deliver(session: StoredSession, delivery: Delivery) {
   const runtime = runtimeOf(session.meta.sessionId);
-  if (steerPausedTurn(session, runtime, delivery)) return;
+  if (steerTurn(session, runtime, delivery)) return;
   if (!turnQueue || delivery.voice) return deliverInProcess(session, runtime, delivery);
   await turnQueue.enqueue(session, delivery).catch((error) => {
     console.warn(`fila indisponível, turno roda direto: ${error instanceof Error ? error.message : String(error)}`);
@@ -890,6 +944,22 @@ async function executeProvider(run: ProviderRun) {
     runAbort.abort();
   };
   turn.stopRun = stopRun;
+  turn.provider = run.provider;
+  const yieldRun = () => {
+    run.onEndRun();
+    setTimeout(() => runAbort.abort(), 300);
+  };
+  turn.yieldRun = yieldRun;
+  const inbox = (push: LivePush | null) => {
+    turn.inject = push ?? undefined;
+    if (!push || !turn.steer?.some((item) => !item.paused)) return;
+    const live = turn.steer.filter((item) => !item.paused);
+    turn.steer = turn.steer.filter((item) => item.paused);
+    for (const item of live) {
+      if (push(item.message.then((message) => ({ ...message, text: `${steerLead}\n${message.text}` })))) continue;
+      turn.steer.push(item);
+    }
+  };
   const context: ToolContext = {
     token,
     botId: bot.id,
@@ -919,10 +989,7 @@ async function executeProvider(run: ProviderRun) {
     provider: run.provider,
     runner: run.account.runner,
     permission,
-    endRun: () => {
-      run.onEndRun();
-      setTimeout(() => runAbort.abort(), 300);
-    },
+    endRun: yieldRun,
     cancelTurn: (reason) => {
       if (turn.abort.signal.aborted) return;
       turn.cancelled = true;
@@ -987,10 +1054,13 @@ async function executeProvider(run: ProviderRun) {
         : home
           ? homeHooks(context, home)
           : undefined,
+      inbox,
     );
   } finally {
     turn.abort.signal.removeEventListener("abort", forwardAbort);
     if (turn.stopRun === stopRun) turn.stopRun = undefined;
+    if (turn.yieldRun === yieldRun) turn.yieldRun = undefined;
+    turn.inject = undefined;
     revoke();
     if (coding && sandboxMode() === "uid") await killSandboxed(sandboxMarker("sbx", turn.turnId));
   }
@@ -1267,12 +1337,13 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     interactions: new Map(),
     cancelled: false,
     request: delivery.text,
-    asked: deliveryAskOf(delivery),
+    asked: { ...deliveryAskOf(delivery) },
     calls: [],
     guardBusy: false,
     guardStop: false,
     ...(delivery.delegation ? { delegation: delivery.delegation } : {}),
     owner: { sessionId: session.meta.sessionId, botId: session.meta.botId },
+    accepting: true,
     priority: delivery.voice
       ? "voice"
       : delivery.source === "delegate"
@@ -1640,6 +1711,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         },
         onCallEnd: () => {
           needsRun = true;
+          if (turn.steer?.some((item) => !item.paused)) turn.yieldRun?.();
         },
         onEvent: (event) => {
           if (event.type === "session") {
@@ -1696,6 +1768,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
               });
               turn.calls.push(`${event.name}(${JSON.stringify(event.input ?? {}).slice(0, 120)})`);
               needsRun = true;
+              if (turn.steer?.some((item) => !item.paused)) turn.yieldRun?.();
               void codeLive?.scan(callId, "tool", { input: event.input, output: event.output });
             }
           } else if (event.type === "warning") {
@@ -1802,16 +1875,16 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     }
     for (let steers = 0; steers < 5 && turn.steer?.length; steers++) {
       if (turn.cancelled || failure || turn.guardStop || turn.abort.signal.aborted) break;
-      const note = turn.steer
-        .splice(0)
-        .map((item) => item.text.trim())
-        .join("\n\n");
-      const prompt = `A pessoa respondeu por mensagem enquanto seu pedido de aprovação ou sua pergunta estava aberta. O card foi fechado e a ação pendente não rodou. Siga a partir desta mensagem, numa resposta só:\n${note}`;
+      const items = turn.steer.splice(0);
+      const messages = await Promise.all(items.map((item) => item.message));
+      const note = messages.map((item) => item.text.trim()).join("\n\n");
+      const images = messages.flatMap((item) => item.images ?? []);
+      const prompt = `${items.some((item) => item.paused) ? pausedLead : steerLead}\n${note}`;
       pendingTexts = [];
       switching = false;
       needsRun = true;
       const from = group || isSchedule ? null : (providerSession ?? meta.providerSessions?.[sessionKey] ?? null);
-      await runProvider(prompt, from);
+      await runProvider(prompt, from, account.provider === "claude" ? images : []);
       if (failure && from && !turn.cancelled) {
         failure = null;
         needsRun = true;
@@ -1821,9 +1894,14 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           skills: skillNames,
           full: true,
         });
-        await runProvider(`${carry ? `${carry}\n\n---\n\n` : ""}${prompt}`, null);
+        await runProvider(
+          `${carry ? `${carry}\n\n---\n\n` : ""}${prompt}`,
+          null,
+          account.provider === "claude" ? images : [],
+        );
       }
     }
+    turn.accepting = false;
     if (codeLive) await codeLive.scan(null, "sweep");
 
     flush("reply");
@@ -1974,6 +2052,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         },
       });
   } finally {
+    turn.accepting = false;
     turn.slot?.release();
     stopLive();
     runtime.turn = null;

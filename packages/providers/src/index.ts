@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   AccountProbe,
+  LiveInbox,
   ModelOption,
   NativeToolHooks,
   Provider,
@@ -146,6 +147,7 @@ export async function runTurn(
   signal: AbortSignal,
   emit: (event: ProviderEvent) => void,
   hooks?: NativeToolHooks,
+  inbox?: LiveInbox,
 ) {
   const workDir = join(baseDir, "work", request.workKey.replace(/[^\w/-]/g, "_"));
   await mkdir(workDir, { recursive: true, mode: 0o700 });
@@ -162,7 +164,7 @@ export async function runTurn(
   const guarded = (event: ProviderEvent) =>
     emit(event.type === "done" && expired ? { type: "done", ok: false, message: timeoutMessage(minutes) } : event);
   try {
-    if (request.provider === "claude") return await runClaude(request, workDir, turn.signal, guarded, hooks);
+    if (request.provider === "claude") return await runClaude(request, workDir, turn.signal, guarded, hooks, inbox);
     if (request.provider === "codex") return await runCodex(request, workDir, turn.signal, guarded);
     if (request.provider === "cursor") return await runCursor(request, workDir, turn.signal, guarded);
     return await runGrok({ ...request, code: null }, workDir, turn.signal, guarded);

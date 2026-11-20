@@ -9,7 +9,7 @@ import type {
   SDKMessage,
   SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { NativeToolHooks } from "@runelay-bots/protocol";
+import type { LivePush, NativeToolHooks } from "@runelay-bots/protocol";
 import { hookFailureMessage, nativeTools, privateMcpArgs, runClaude, unclearedMessage } from "../claude";
 import { fakeCli, fakeSdk, type QueryParams, recorder, turnRequest } from "./fakes";
 
@@ -210,6 +210,37 @@ describe("runClaude", () => {
       emit,
     );
     expect(consumed).toEqual([{ type: "text", text: "look" }]);
+  });
+
+  test("live input pushes messages into the running query and closes after the result", async () => {
+    const image = join(fakeCli.home, "live.png");
+    await writeFile(image, "live-bytes");
+    let push: LivePush | null = null;
+    const states: boolean[] = [];
+    const consumed: Array<{ priority?: string; message: { content: Array<{ type: string; text?: string }> } }> = [];
+    fakeSdk.next(async function* (params) {
+      const input = (params.prompt as AsyncIterable<(typeof consumed)[number]>)[Symbol.asyncIterator]();
+      consumed.push((await input.next()).value);
+      expect(push?.({ text: "muda o título", images: [{ path: image, mime: "image/png", label: "faixa" }] })).toBe(
+        true,
+      );
+      consumed.push((await input.next()).value);
+      yield success as unknown as SDKMessage;
+      expect((await input.next()).done).toBe(true);
+    });
+    const { emit, events } = recorder();
+    await runClaude(turnRequest({ prompt: "faz a landing" }), fakeCli.home, signal(), emit, undefined, (next) => {
+      states.push(next !== null);
+      push = next;
+    });
+    expect(consumed[0].priority).toBeUndefined();
+    expect(consumed[0].message.content).toEqual([{ type: "text", text: "faz a landing" }]);
+    expect(consumed[1].priority).toBe("next");
+    expect(consumed[1].message.content.map((block) => block.type)).toEqual(["text", "image", "text"]);
+    expect(consumed[1].message.content.at(-1)).toEqual({ type: "text", text: "muda o título" });
+    expect(states).toEqual([true, false, false]);
+    expect((push as LivePush | null)?.({ text: "tarde" }) ?? false).toBe(false);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
   });
 
   test("mcp, effort and resume are forwarded", async () => {

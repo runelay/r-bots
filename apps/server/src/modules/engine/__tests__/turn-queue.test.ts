@@ -102,7 +102,7 @@ describe("turn queue", () => {
     fakeProviders.next((turn) => {
       turn.emit({ type: "done", ok: true });
     });
-    sent.push(send(session, { text: "dois" }), send(session, { text: "três" }));
+    sent.push(send(session, { text: "dois", source: "schedule" }), send(session, { text: "três", source: "schedule" }));
     await waitFor(() => queuedTurns(session.meta.sessionId) === 2);
     expect(isBusy(session.meta.sessionId)).toBe(true);
     const stats = await turnStats();
@@ -157,6 +157,26 @@ describe("turn queue", () => {
     expect(await consumedIds(session)).toEqual([sent.deliveryId]);
   });
 
+  test("steers a chat job into the live turn of its conversation instead of waiting", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const held = hold();
+    fakeProviders.next(held.script);
+    send(session, { text: "faz a landing" });
+    await held.started;
+    fakeProviders.next((turn) => {
+      turn.emit({ type: "done", ok: true });
+    });
+    const late = payloadOf(session, { deliveryId: "dlv_tarde", text: "tira as faixas", source: "chat" });
+    expect(await runTurnJob(late, context())).toEqual({ skipped: "steered" });
+    const steer = (await factsOfType(session, "delivery.consumed")).find((fact) => fact.data.steer);
+    expect(steer?.data).toMatchObject({ deliveryId: "dlv_tarde", turnId: "turn_0" });
+    held.release();
+    await idle(session);
+    expect(await factsOfType(session, "turn.started")).toHaveLength(1);
+    expect(fakeProviders.turns.at(-1)?.request.prompt).toContain("tira as faixas");
+  });
+
   test("skips a conversation that is gone and tells the delegation", async () => {
     const delegation = hooks();
     const bot = await makeBot();
@@ -183,7 +203,7 @@ describe("turn queue", () => {
     await held.started;
     const delegation = hooks();
     send(session, { source: "delegate", delegation: delegation.value });
-    send(session);
+    send(session, { source: "schedule" });
     await waitFor(() => queuedTurns(session.meta.sessionId) === 2);
     cancel(session);
     await waitFor(() => queuedTurns(session.meta.sessionId) === 0 && delegation.results.length === 1);

@@ -1,4 +1,11 @@
-import type { AccountProbe, NativeToolHooks, Provider, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import type {
+  AccountProbe,
+  LiveInbox,
+  NativeToolHooks,
+  Provider,
+  ProviderEvent,
+  TurnRequest,
+} from "@runelay-bots/protocol";
 import { emptyUsage } from "@runelay-bots/protocol";
 
 export interface FakeTurn {
@@ -7,6 +14,7 @@ export interface FakeTurn {
   signal: AbortSignal;
   emit: (event: ProviderEvent) => void;
   hooks?: NativeToolHooks;
+  inbox?: LiveInbox;
 }
 
 export type TurnScript = (turn: FakeTurn) => unknown;
@@ -57,8 +65,9 @@ export const fakeProviders = {
     signal: AbortSignal,
     emit: (event: ProviderEvent) => void,
     hooks?: NativeToolHooks,
+    inbox?: LiveInbox,
   ) => {
-    const turn: FakeTurn = { request, baseDir, signal, emit, hooks };
+    const turn: FakeTurn = { request, baseDir, signal, emit, hooks, inbox };
     fakeProviders.turns.push(turn);
     await fakeProviders.script(turn);
   },
