@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { childEnv, run } from "@runelay-bots/providers/proc";
 import type { StoredSession } from "../../conversations/services/sessions.service";
-import { recordWorktree, touchWorktree } from "../repositories/code.repository";
+import { recordWorktree, touchWorktree, worktreeById } from "../repositories/code.repository";
 import { stopDevServers } from "./dev-server.service";
 import {
   activeWorkspace,
+  addWorkspace,
   baseContent,
   CodeError,
   changedFiles,
@@ -14,8 +15,15 @@ import {
   invalidateStatus,
   listRepos,
   openWorkspace,
+  publicWorkspace,
+  readHead,
   readMaybe,
+  shareWithSandbox,
+  workspaceAt,
+  workspaceById,
+  workspaceFromRecord,
   type WorkspaceState,
+  worktreeIdAt,
 } from "./workspace.service";
 
 export async function openTaskWorkspace(session: StoredSession, botId: string, repo: string, task: string) {
@@ -24,12 +32,44 @@ export async function openTaskWorkspace(session: StoredSession, botId: string, r
   return result;
 }
 
-export async function closeTaskWorkspace(session: StoredSession) {
-  const workspace = activeWorkspace(session);
-  if (!workspace) return null;
+const adoptable = new Set(["alive", "delivered"]);
+
+export async function adoptWorkspaceAt(session: StoredSession, path: string) {
+  if (workspaceAt(session, path)) return null;
+  const spot = worktreeIdAt(path);
+  if (!spot) return null;
+  const known = workspaceById(session, spot.id);
+  if (known?.active) return null;
+  const record = await worktreeById(spot.id);
+  if (
+    !record ||
+    record.sessionId !== session.meta.sessionId ||
+    record.botId !== session.meta.botId ||
+    record.path !== spot.path ||
+    !adoptable.has(record.status)
+  )
+    return null;
+  const head = await readHead(record.path).catch(() => null);
+  if (!head) return null;
+  const workspace = known ?? workspaceFromRecord(record);
+  workspace.active = true;
+  workspace.closedAt = null;
+  if (head.branch) workspace.branch = head.branch;
+  addWorkspace(session, workspace, false);
+  await session.save();
+  await shareWithSandbox(workspace);
+  session.log.emit({ type: "code.workspace", data: { action: "adopted", ...publicWorkspace(workspace) } });
+  await touchWorktree(workspace.id, { status: "alive" });
+  return workspace;
+}
+
+export async function closeTaskWorkspace(session: StoredSession, target?: WorkspaceState | null) {
+  const workspace = target ?? activeWorkspace(session);
+  if (!workspace?.active) return null;
+  const primary = activeWorkspace(session) === workspace;
   await stopDevServers(workspace);
-  await closeWorkspace(session);
-  session.meta.providerSessions = {};
+  await closeWorkspace(session, false, workspace);
+  if (primary) session.meta.providerSessions = {};
   await session.save();
   await touchWorktree(workspace.id, { status: "closed" });
   return workspace;

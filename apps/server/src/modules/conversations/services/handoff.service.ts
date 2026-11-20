@@ -1,5 +1,5 @@
 import type { Account } from "../../accounts/services/accounts.service";
-import { activeWorkspace, changedFiles } from "../../code/services/workspace.service";
+import { activeWorkspace, activeWorkspaces, changedFiles } from "../../code/services/workspace.service";
 import { summarizeForReset } from "../../memory/services/memory.service";
 import type { Fact, StoredSession } from "./sessions.service";
 
@@ -440,21 +440,23 @@ export function handoffMode(session: StoredSession, key: string) {
 
 async function stateBlock(session: StoredSession, items: ThreadItem[], skills: string[], currentTurnId: string) {
   const lines: string[] = [];
-  const workspace = activeWorkspace(session);
-  if (workspace) {
+  const primary = activeWorkspace(session);
+  const open = primary ? [primary, ...activeWorkspaces(session).filter((item) => item !== primary)] : [];
+  for (const workspace of open) {
     lines.push(
-      `- Repositório aberto: ${workspace.repoName}, branch ${workspace.branch} (base ${workspace.base}), worktree ${workspace.path}.`,
+      `- Repositório aberto${open.length > 1 ? (workspace === primary ? " (diretório de trabalho)" : "") : ""}: ${workspace.repoName}, branch ${workspace.branch} (base ${workspace.base}), worktree ${workspace.path}${workspace.pr ? `, PR #${workspace.pr.number} (${workspace.pr.status})` : ""}.`,
     );
+    const where = open.length > 1 ? `em ${workspace.repoName}` : "na worktree";
     const files = await changedFiles(workspace).catch(() => []);
     if (files.length > 0) {
       const added = files.reduce((sum, file) => sum + file.added, 0);
       const removed = files.reduce((sum, file) => sum + file.removed, 0);
       const shown = files.slice(0, 30).map((file) => `${file.path} +${file.added} −${file.removed}`);
       lines.push(
-        `- Arquivos mudados na worktree (${files.length}, +${added} −${removed}): ${shown.join("; ")}${files.length > 30 ? `; e mais ${files.length - 30}` : ""}.`,
+        `- Arquivos mudados ${where} (${files.length}, +${added} −${removed}): ${shown.join("; ")}${files.length > 30 ? `; e mais ${files.length - 30}` : ""}.`,
       );
     } else {
-      lines.push("- Nenhum arquivo mudado na worktree.");
+      lines.push(`- Nenhum arquivo mudado ${where}.`);
     }
   }
   const pending = items.filter((item) => item.kind === "approval" && item.pending && item.turnId === currentTurnId);

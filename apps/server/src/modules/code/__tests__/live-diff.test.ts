@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EventLog } from "../../conversations/services/sessions.service";
-import { type CodeSignal, CodeLive, onCodeSignal } from "../services/live-diff.service";
+import { type CodeSignal, CodeLive, CodeLives, onCodeSignal } from "../services/live-diff.service";
 import type { WorkspaceState } from "../services/workspace.service";
 import * as workspaceService from "../services/workspace.service";
 
@@ -201,7 +201,7 @@ describe("CodeLive", () => {
     });
     expect(workspace.branch).toBe("hotfix/x");
     expect(workspace.baseCommit).toBe(gitSync(workspace.path, ["rev-parse", "main"]));
-    expect(signals).toEqual([{ sessionId: "s1", kind: "head" }]);
+    expect(signals).toEqual([{ sessionId: "s1", kind: "head", workspaceId: workspace.id }]);
 
     writeFileSync(join(workspace.path, "f1.txt"), "c\n");
     gitSync(workspace.path, ["commit", "-q", "-am", "mine"]);
@@ -248,5 +248,25 @@ describe("CodeLive", () => {
     head.mockRestore();
     expect(events.some((event) => event.type === "code.branch")).toBe(false);
     expect(events.find((event) => event.type === "code.edit")?.data.after).toBe("b\n");
+  });
+});
+
+describe("CodeLives", () => {
+  test("tracks each open repo once and scans only the open ones", async () => {
+    const first = await makeRepo({ "a.txt": "a\n" });
+    const second = await makeRepo({ "b.txt": "b\n" });
+    const { log, events } = fakeLog();
+    const lives = new CodeLives(log, "turn_many");
+    const live = lives.add(first, new Map());
+    expect(lives.add(first, new Map())).toBe(live);
+    expect(lives.has(first)).toBe(true);
+    expect(lives.has(second)).toBe(false);
+    lives.add(second, new Map());
+    writeFileSync(join(first.path, "a.txt"), "a\nmore\n");
+    writeFileSync(join(second.path, "b.txt"), "b\nmore\n");
+    second.active = false;
+    await lives.scan("c1", "tool");
+    const edits = events.filter((event) => event.type === "code.edit");
+    expect(edits.map((event) => event.data.workspaceId)).toEqual([first.id]);
   });
 });

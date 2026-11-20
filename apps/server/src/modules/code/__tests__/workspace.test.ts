@@ -15,9 +15,11 @@ import {
 } from "../../../../test/code-helpers";
 import { waitFor } from "../../../../test/engine-helpers";
 import { resetData } from "../../../../test/helpers";
+import { adoptWorkspaceAt, openTaskWorkspace } from "../services/actions.service";
 import { addAllowedRepo } from "../services/repos.service";
 import {
   activeWorkspace,
+  activeWorkspaces,
   alignBase,
   allDiffs,
   baseContent,
@@ -51,6 +53,8 @@ import {
   snapshotChanges,
   type WorkspaceState,
   waitForInstall,
+  workspaceAt,
+  workspacesOf,
 } from "../services/workspace.service";
 
 beforeEach(async () => {
@@ -210,6 +214,64 @@ describe("opening and closing workspaces", () => {
     expect(error).toBeInstanceOf(CodeError);
     expect(error.status).toBe(500);
     expect(error.message).toContain("fatal: refused");
+  });
+});
+
+describe("several repositories in one conversation", () => {
+  test("opening another repo adds it, keeps the first and moves the working directory", async () => {
+    const first = await opened("ws-multi-api");
+    await makeRepo("ws-multi-web");
+    await listRepos(true);
+    const second = await openWorkspace(first.session, "bot-ws-multi-api", "ws-multi-web", "Web");
+    await waitForInstall(second.workspace);
+    expect(second.created).toBe(true);
+    expect(activeWorkspaces(first.session)).toEqual([first.workspace, second.workspace]);
+    expect(activeWorkspace(first.session)).toBe(second.workspace);
+    expect(workspaceAt(first.session, join(first.workspace.path, "src", "a.ts"))).toBe(first.workspace);
+    expect(workspaceAt(first.session, "/elsewhere")).toBeNull();
+
+    const back = await openWorkspace(first.session, "bot-ws-multi-api", "ws-multi-api", "Add feature");
+    expect(back).toEqual({ workspace: first.workspace, created: false });
+    expect(activeWorkspace(first.session)).toBe(first.workspace);
+
+    expect(await closeWorkspace(first.session)).toBe(first.workspace);
+    expect(activeWorkspace(first.session)).toBe(second.workspace);
+    expect(activeWorkspaces(first.session)).toEqual([second.workspace]);
+  });
+
+  test("reads the old single workspace field", async () => {
+    const { session, workspace } = await opened("ws-legacy");
+    session.meta.workspaces = undefined;
+    session.meta.workspace = { ...workspace };
+    const list = workspacesOf(session);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toBe(session.meta.workspace as WorkspaceState);
+    session.meta.workspaces = [{ ...workspace }];
+    expect(workspacesOf(session)).toHaveLength(1);
+    expect(activeWorkspace(session)).toBe(session.meta.workspaces[0]);
+  });
+
+  test("adopts a worktree of the same conversation edited by path", async () => {
+    await makeRepo("ws-adopt-api");
+    await makeRepo("ws-adopt-web");
+    await listRepos(true);
+    const session = await newSession("bot-adopt");
+    const api = await openTaskWorkspace(session, "bot-adopt", "ws-adopt-api", "Api");
+    await waitForInstall(api.workspace);
+    const web = await openTaskWorkspace(session, "bot-adopt", "ws-adopt-web", "Web");
+    await waitForInstall(web.workspace);
+    session.meta.workspaces = [web.workspace];
+    session.meta.workspace = web.workspace;
+    const stranger = await newSession("bot-adopt");
+    expect(await adoptWorkspaceAt(stranger, join(api.workspace.path, "src", "x.ts"))).toBeNull();
+    expect(await adoptWorkspaceAt(session, "/tmp/elsewhere")).toBeNull();
+    const adopted = await adoptWorkspaceAt(session, join(api.workspace.path, "src", "x.ts"));
+    expect(adopted?.id).toBe(api.workspace.id);
+    expect(adopted?.branch).toBe(api.workspace.branch);
+    expect(activeWorkspace(session)).toBe(web.workspace);
+    expect(activeWorkspaces(session).map((item) => item.id)).toEqual([web.workspace.id, api.workspace.id]);
+    expect((await factsOf(session, "code.workspace")).at(-1)?.data.action).toBe("adopted");
+    expect(await adoptWorkspaceAt(session, api.workspace.path)).toBeNull();
   });
 });
 

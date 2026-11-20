@@ -48,19 +48,21 @@ import {
 import { startLiveView } from "../../browser/services/browser.service";
 import { canvasEditNote, canvasGuide } from "../../canvas/services/canvas.service";
 import { touchWorktree } from "../../code/repositories/code.repository";
-import { mentionedRepo, openTaskWorkspace } from "../../code/services/actions.service";
+import { adoptWorkspaceAt, mentionedRepo, openTaskWorkspace } from "../../code/services/actions.service";
 import { ensureBotHome, shellSupported } from "../../code/services/bot-home.service";
 import { codeModeSupported } from "../../code/services/code-tools.service";
 import { devServersOf } from "../../code/services/dev-server.service";
-import { homeHooks, nativeHooks } from "../../code/services/hooks.service";
-import { CodeLive } from "../../code/services/live-diff.service";
+import { homeHooks, nativeHooks, type WorkspaceRouter } from "../../code/services/hooks.service";
+import { CodeLives } from "../../code/services/live-diff.service";
 import { killSandboxed, sandboxMarker, sandboxMode } from "../../code/services/sandbox.service";
 import {
   activeWorkspace,
+  activeWorkspaces,
   cachedRepoNames,
   createCheckpoint,
   snapshotChanges,
   type WorkspaceState,
+  workspaceAt,
 } from "../../code/services/workspace.service";
 import { watchComputerEvents } from "../../computer/services/computer.service";
 import { runelayEnabled } from "../../connectors/services/runelay.service";
@@ -235,6 +237,7 @@ const codeFooter = ["", "---", "Responda sempre em português do Brasil, curto e
 interface CodePrompt {
   workspace: WorkspaceState | null;
   supported: boolean;
+  others?: WorkspaceState[];
 }
 
 function codeGuide() {
@@ -277,9 +280,13 @@ function workspaceGuide(code: CodePrompt) {
           ? "instaladas"
           : "sem lockfile ou já presentes";
   const servers = devServersOf(workspace);
+  const others = code.others ?? [];
   return [
     "## Repositório aberto",
     `Repositório ${workspace.repoName}. Worktree ${workspace.path} (é o seu diretório de trabalho), branch ${workspace.branch}, a partir de ${workspace.base}. Dependências: ${install}.`,
+    others.length > 0
+      ? `Outros repositórios abertos nesta conversa (edite pelo caminho da worktree de cada um; cada um tem a própria branch, PR e servidores): ${others.map((item) => `${item.repoName} em ${item.path} (branch ${item.branch})`).join("; ")}. Para abrir mais um repositório sem fechar estes, use workspace_open. Para entregar um deles, passe repo no workspace_deliver.`
+      : "",
     servers.length > 0
       ? `Servidores no ar: ${servers.map((server) => `${server.url} (${server.command})`).join("; ")}.`
       : "",
@@ -832,7 +839,7 @@ interface ProviderRun {
   onCallEnd: () => void;
   usage: Usage;
   request: string;
-  codeRun?: { workspace: WorkspaceState; live: CodeLive } | null;
+  codeRun?: { workspace: WorkspaceState; live: CodeLives; router: WorkspaceRouter } | null;
   onEndRun: () => void;
 }
 
@@ -942,7 +949,13 @@ async function executeProvider(run: ProviderRun) {
             bot,
             delegates,
             session.meta.turnCount <= 1 && session.meta.kind === "thread",
-            codeWorkspace ? { workspace: codeWorkspace, supported: coding } : null,
+            codeWorkspace
+              ? {
+                  workspace: codeWorkspace,
+                  supported: coding,
+                  others: activeWorkspaces(session).filter((item) => item !== codeWorkspace),
+                }
+              : null,
             permission,
             home?.path ?? null,
           ),
@@ -966,7 +979,7 @@ async function executeProvider(run: ProviderRun) {
       runAbort.signal,
       run.onEvent,
       coding && codeWorkspace && run.provider === "claude" && run.codeRun
-        ? nativeHooks(context, codeWorkspace, run.codeRun.live)
+        ? nativeHooks(context, codeWorkspace, run.codeRun.live, run.codeRun.router)
         : home
           ? homeHooks(context, home)
           : undefined,
@@ -1432,7 +1445,22 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     }
 
     let codeWorkspace = null as WorkspaceState | null;
-    let codeLive = null as CodeLive | null;
+    let codeLive = null as CodeLives | null;
+    const trackWorkspace = async (item: WorkspaceState) => {
+      if (!codeLive) codeLive = new CodeLives(log, turnId);
+      await createCheckpoint(session, item, turnId).catch((error) => console.warn("checkpoint failed", error));
+      if (!codeLive.has(item))
+        codeLive.add(item, await snapshotChanges(item).catch(() => new Map<string, string | null>()));
+      void touchWorktree(item.id);
+    };
+    const router: WorkspaceRouter = {
+      workspaceFor: (path) => workspaceAt(session, path),
+      adopt: async (path) => {
+        const adopted = await adoptWorkspaceAt(session, path);
+        if (adopted) await trackWorkspace(adopted);
+        return adopted;
+      },
+    };
     if (!isSchedule) {
       const names = listBots(true).flatMap((item) => [item.id, item.name]);
       const mentioned = await mentionedRepo(delivery.text, names).catch(() => null);
@@ -1452,14 +1480,8 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     }
     const opened = activeWorkspace(session);
     if (opened) {
-      await createCheckpoint(session, opened, turnId).catch((error) => console.warn("checkpoint failed", error));
-      codeLive = new CodeLive(
-        log,
-        turnId,
-        opened,
-        await snapshotChanges(opened).catch(() => new Map<string, string | null>()),
-      );
-      void touchWorktree(opened.id);
+      for (const item of [opened, ...activeWorkspaces(session).filter((other) => other !== opened)])
+        await trackWorkspace(item);
       codeWorkspace = opened;
     }
     const keyFor = (workspace: WorkspaceState | null) =>
@@ -1599,7 +1621,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         log,
         group,
         resume: resumeFrom,
-        codeRun: codeWorkspace && codeLive ? { workspace: codeWorkspace, live: codeLive } : null,
+        codeRun: codeWorkspace && codeLive ? { workspace: codeWorkspace, live: codeLive, router } : null,
         onEndRun: () => {
           switching = true;
         },
@@ -1757,14 +1779,8 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       if (!next || next.id === codeWorkspace?.id || !codeModeSupported(account.provider, account.runner)) break;
       flush("narration");
       switching = false;
-      await createCheckpoint(session, next, turnId).catch((error) => console.warn("checkpoint failed", error));
       if (codeLive) await codeLive.scan(null, "sweep");
-      codeLive = new CodeLive(
-        log,
-        turnId,
-        next,
-        await snapshotChanges(next).catch(() => new Map<string, string | null>()),
-      );
+      await trackWorkspace(next);
       codeWorkspace = next;
       sessionKey = keyFor(next);
       providerSession = null;

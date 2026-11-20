@@ -1,6 +1,6 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { getStoredSession } from "../../conversations/services/sessions.service";
+import { getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import {
   closeTaskWorkspace,
@@ -24,12 +24,34 @@ import { kickPr } from "./pull-request.service";
 import { addAllowedRepo, allowedRepoFor, gitRepoAt, repoRootProblem } from "./repos.service";
 import {
   activeWorkspace,
+  activeWorkspaces,
   CodeError,
   changedFiles,
   forgetRepoCache,
   publicWorkspace,
   type WorkspaceState,
+  workspaceAt,
 } from "./workspace.service";
+
+export function pickWorkspace(session: StoredSession | undefined, repo: unknown, fallback: WorkspaceState) {
+  if (typeof repo !== "string" || !repo.trim()) return activeWorkspace(session) ?? fallback;
+  const value = repo.trim();
+  const list = activeWorkspaces(session);
+  const found =
+    list.find((item) => item.repoName === value || item.id === value || item.path === value || item.repo === value) ??
+    list.find((item) => item.repoName.toLowerCase() === value.toLowerCase()) ??
+    workspaceAt(session, value);
+  if (found) return found;
+  throw new CodeError(
+    `${value} não está aberto nesta conversa. Abertos: ${list.map((item) => item.repoName).join(", ") || "nenhum"}.`,
+  );
+}
+
+const repoField = z
+  .string()
+  .max(300)
+  .optional()
+  .describe("Repositório aberto nesta conversa (nome ou caminho da worktree); por padrão, o diretório de trabalho");
 
 function text(value: unknown, isError = false) {
   return {
@@ -101,7 +123,7 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
     "workspace_open",
     {
       description:
-        "Abre um repositório liberado para trabalhar em código nesta conversa: cria uma worktree e uma branch feat/<tarefa> só desta conversa e liga as ferramentas de código (ler, editar, rodar comandos). Use quando o pedido envolver código de um repositório. repo é o nome ou o caminho de um repositório liberado; se não estiver liberado, peça com workspace_add. task é uma frase curta da tarefa, vira o nome da branch.",
+        "Abre um repositório liberado para trabalhar em código nesta conversa: cria uma worktree e uma branch feat/<tarefa> só desta conversa e liga as ferramentas de código (ler, editar, rodar comandos). Use quando o pedido envolver código de um repositório. repo é o nome ou o caminho de um repositório liberado; se não estiver liberado, peça com workspace_add. task é uma frase curta da tarefa, vira o nome da branch. Uma conversa pode ter vários repositórios abertos ao mesmo tempo (ex.: api e web): abrir outro não fecha o anterior, só troca o diretório de trabalho para ele; o anterior continua aberto e editável pelo caminho da worktree.",
       inputSchema: { repo: z.string().min(1).max(300), task: z.string().min(1).max(300) },
     },
     async (args: Record<string, unknown>) => {
@@ -128,6 +150,9 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
         const lines = [
           `Workspace aberto: ${workspace.repoName} em ${workspace.path}, branch ${workspace.branch} (a partir de ${workspace.base}).`,
           installNote(workspace),
+          ...activeWorkspaces(current)
+            .filter((item) => item !== workspace)
+            .map((item) => `Continua aberto: ${item.repoName} em ${item.path} (branch ${item.branch}).`),
         ];
         if (!supported)
           lines.push(
@@ -149,10 +174,10 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
     "workspace_close",
     {
       description:
-        "Desliga o modo código desta conversa. A worktree e a branch continuam no disco. Só use quando a pessoa pedir para parar de mexer no repositório.",
-      inputSchema: {},
+        "Fecha um repositório desta conversa (por padrão, o do diretório de trabalho). A worktree e a branch continuam no disco. Só use quando a pessoa pedir para parar de mexer no repositório.",
+      inputSchema: { repo: repoField },
     },
-    async () => {
+    async (args: Record<string, unknown>) => {
       const start = await beginCall(context, {
         name: "workspace_close",
         label: "Fechar o repositório",
@@ -161,12 +186,20 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       });
       if (!start.allowed) return text(start.message ?? "Negado.", true);
       const current = session();
-      const workspace = activeWorkspace(current);
-      if (!current || !workspace) {
+      const fallback = activeWorkspace(current);
+      if (!current || !fallback) {
         endCall(context, start.callId, "workspace_close", {}, { ok: true, output: { closed: false } });
         return text("Nenhum repositório aberto nesta conversa.");
       }
-      await closeTaskWorkspace(current);
+      let workspace: WorkspaceState;
+      try {
+        workspace = pickWorkspace(current, args.repo, fallback);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        endCall(context, start.callId, "workspace_close", args, { ok: false, error: message });
+        return text(message, true);
+      }
+      await closeTaskWorkspace(current, workspace);
       endCall(
         context,
         start.callId,
@@ -177,8 +210,9 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       return text(`Fechado. A worktree continua em ${workspace.path} (branch ${workspace.branch}).`);
     },
   );
-  const workspace = activeWorkspace(session());
-  if (!workspace) return;
+  const opened = activeWorkspace(session());
+  if (!opened) return;
+  const target = (repo: unknown) => pickWorkspace(session(), repo, opened);
   server.registerTool(
     "dev_server_start",
     {
@@ -189,10 +223,17 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
         port: z.number().int().min(1024).max(65535).optional(),
         cwd: z.string().max(300).optional(),
         replace: z.boolean().optional(),
+        repo: repoField,
       },
     },
     async (args: Record<string, unknown>) => {
       const cmd = String(args.cmd);
+      let workspace: WorkspaceState;
+      try {
+        workspace = target(args.repo);
+      } catch (error) {
+        return text(error instanceof Error ? error.message : String(error), true);
+      }
       const start = await beginCall(context, {
         name: "dev_server_start",
         label: `Subir ${cmd.replace(/\s+/g, " ").slice(0, 60)}`,
@@ -250,9 +291,15 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
     "dev_server_stop",
     {
       description: "Para o servidor de desenvolvimento desta tarefa (todos, ou só o da porta).",
-      inputSchema: { port: z.number().int().optional() },
+      inputSchema: { port: z.number().int().optional(), repo: repoField },
     },
     async (args: Record<string, unknown>) => {
+      let workspace: WorkspaceState;
+      try {
+        workspace = target(args.repo);
+      } catch (error) {
+        return text(error instanceof Error ? error.message : String(error), true);
+      }
       const start = await beginCall(context, {
         name: "dev_server_stop",
         label: args.port ? `Parar o servidor da porta ${String(args.port)}` : "Parar o servidor",
@@ -276,9 +323,19 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
     "dev_server_logs",
     {
       description: "Mostra as últimas linhas do servidor de desenvolvimento desta tarefa.",
-      inputSchema: { port: z.number().int().optional(), lines: z.number().int().min(1).max(400).optional() },
+      inputSchema: {
+        port: z.number().int().optional(),
+        lines: z.number().int().min(1).max(400).optional(),
+        repo: repoField,
+      },
     },
     async (args: Record<string, unknown>) => {
+      let workspace: WorkspaceState;
+      try {
+        workspace = target(args.repo);
+      } catch (error) {
+        return text(error instanceof Error ? error.message : String(error), true);
+      }
       const start = await beginCall(context, {
         name: "dev_server_logs",
         label: "Ver o log do servidor",
@@ -309,16 +366,23 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
     "workspace_deliver",
     {
       description:
-        "Entrega o trabalho desta tarefa: action commit faz UM commit com tudo o que está pendente na branch da tarefa; action push faz esse commit (se houver pendência) e git push da branch (nunca force); se a branch já tem PR aberto, o push atualiza esse PR; action pr faz o mesmo e abre PR para a base (develop ou main) só se ainda não existir um, senão devolve o PR existente. Se a pessoa disser só push, use push, nunca pr. Roda direto, sem card. Mudanças de módulos diferentes: faça antes um commit por módulo no Bash (git add <arquivos> + git commit -m) e use isto só para o resto, para o push ou para o PR. message em conventional commits, em inglês, curta (até 2 linhas), sem assinatura de IA; pode ficar vazia no push quando não há nada pendente.",
+        "Entrega o trabalho desta tarefa (de um repositório por vez: repo escolhe qual, quando a conversa tem mais de um aberto): action commit faz UM commit com tudo o que está pendente na branch da tarefa; action push faz esse commit (se houver pendência) e git push da branch (nunca force); se a branch já tem PR aberto, o push atualiza esse PR; action pr faz o mesmo e abre PR para a base (develop ou main) só se ainda não existir um, senão devolve o PR existente. Se a pessoa disser só push, use push, nunca pr. Roda direto, sem card. Mudanças de módulos diferentes: faça antes um commit por módulo no Bash (git add <arquivos> + git commit -m) e use isto só para o resto, para o push ou para o PR. message em conventional commits, em inglês, curta (até 2 linhas), sem assinatura de IA; pode ficar vazia no push quando não há nada pendente.",
       inputSchema: {
         action: z.enum(["commit", "push", "pr"]),
         message: z.string().max(200).optional(),
         title: z.string().max(200).optional(),
         body: z.string().max(5000).optional(),
         base: z.string().max(100).optional().describe("Base do PR; por padrão, a de onde a branch saiu"),
+        repo: repoField,
       },
     },
     async (args: Record<string, unknown>) => {
+      let workspace: WorkspaceState;
+      try {
+        workspace = target(args.repo);
+      } catch (error) {
+        return text(error instanceof Error ? error.message : String(error), true);
+      }
       const input = {
         action: args.action === "pr" ? "pr" : args.action === "push" ? "push" : "commit",
         message: String(args.message ?? ""),
@@ -358,7 +422,7 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
         const result = await deliverWorkspace(workspace, input);
         const owner = session();
         owner?.log.emit({ type: "code.delivered", data: { workspaceId: workspace.id, ...result } });
-        if (owner && result.prUrl) kickPr(owner, result.prUrl);
+        if (owner && result.prUrl) kickPr(owner, result.prUrl, workspace);
         endCall(context, start.callId, "workspace_deliver", args, { ok: true, output: result });
         const committed = result.commit ? `Commit ${result.commit}` : "Nada novo para commitar";
         const previous = result.previousPr

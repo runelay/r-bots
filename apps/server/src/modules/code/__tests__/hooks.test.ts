@@ -20,10 +20,12 @@ import {
   endCall,
   homeHooks,
   nativeHooks,
+  worktreePathsIn,
   sandboxedBash,
 } from "../services/hooks.service";
 import type { CodeLive } from "../services/live-diff.service";
 import type { Gate } from "../services/policy.service";
+import { worktreesRoot } from "../services/repos.service";
 import { resetSandboxProbe, sandboxMarker, sandboxMissingMessage } from "../services/sandbox.service";
 import type { WorkspaceState } from "../services/workspace.service";
 
@@ -548,6 +550,25 @@ describe("nativeHooks", () => {
     await hooks.after("Edit", {}, { filePath: "x" }, "tu2", false);
     expect(scan).toHaveBeenCalledWith("tu2", "tool", expect.objectContaining({ input: expect.any(Object) }));
     expect(events.find((event) => event.type === "call.settled")?.data.output).toEqual({ ok: true });
+  });
+
+  test("finds worktree paths in commands and routes tools to the workspace that owns them", async () => {
+    const other = join(worktreesRoot, "api", "api-bot-task");
+    expect(worktreePathsIn(`cd ${other} && git status; ls ${other}/src`)).toEqual([other]);
+    expect(worktreePathsIn("cd ~/.local/share/runelay-bots-worktrees/api/api-bot-task/src")).toEqual([other]);
+    expect(worktreePathsIn("ls /tmp")).toEqual([]);
+    const { context } = makeContext();
+    const { live, scan } = fakeLive();
+    const ws = workspace();
+    const owned = { ...ws, id: "ws_other", path: other };
+    const adopt = mock(async (_path: string) => null);
+    const router = { workspaceFor: (path: string) => (path.startsWith(other) ? owned : null), adopt };
+    const hooks = nativeHooks(context, ws, live, router);
+    const result = await hooks.before("Bash", { command: `cd ${other} && git status` }, "tu-route");
+    expect(result).toMatchObject({ allow: true });
+    expect(adopt).toHaveBeenCalledWith(other);
+    await hooks.after("Bash", {}, "ok", "tu-route", false);
+    expect(scan).toHaveBeenCalledWith("tu-route", "tool", expect.any(Object));
   });
 
   test("an approved edit outside the worktree emits its own diff", async () => {

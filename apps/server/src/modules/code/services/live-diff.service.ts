@@ -18,7 +18,7 @@ const bulkLimit = Number(process.env.CODE_LIVE_BULK_LIMIT ?? 25);
 const prUrlPattern = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
 
 export type CodeSignal =
-  | { sessionId: string; kind: "head" }
+  | { sessionId: string; kind: "head"; workspaceId?: string }
   | { sessionId: string; kind: "pr"; urls: string[]; created: boolean };
 
 let signalHandler: ((signal: CodeSignal) => void) | null = null;
@@ -65,8 +65,8 @@ export class CodeLive {
       .catch(() => undefined);
   }
 
-  scan(callId: string | null, source: "tool" | "sweep", trace?: ToolTrace) {
-    if (trace) this.notePullRequests(trace);
+  scan(callId: string | null, source: "tool" | "sweep", trace?: ToolTrace, notePrs = true) {
+    if (trace && notePrs) this.notePullRequests(trace);
     const next = this.chain
       .then(() => this.run(callId, source))
       .catch((error) => console.warn("code scan failed", error));
@@ -104,7 +104,7 @@ export class CodeLive {
         data: { workspaceId: this.workspace.id, from: change.from, to: change.to },
         scope: { turnId: this.turnId },
       });
-    signal({ sessionId: this.log.sessionId, kind: "head" });
+    signal({ sessionId: this.log.sessionId, kind: "head", workspaceId: this.workspace.id });
     return true;
   }
 
@@ -190,5 +190,39 @@ export class CodeLive {
       data: { workspaceId: this.workspace.id, ...summary },
       scope: { turnId: this.turnId },
     });
+  }
+}
+
+export interface LiveScanner {
+  scan(callId: string | null, source: "tool" | "sweep", trace?: ToolTrace): Promise<void>;
+}
+
+export class CodeLives implements LiveScanner {
+  private lives = new Map<string, CodeLive>();
+
+  constructor(
+    private readonly log: EventLog,
+    private readonly turnId: string,
+  ) {}
+
+  has(workspace: WorkspaceState) {
+    return this.lives.has(workspace.id);
+  }
+
+  add(workspace: WorkspaceState, snapshot: Map<string, string | null>) {
+    const current = this.lives.get(workspace.id);
+    if (current && current.workspace === workspace) return current;
+    const live = new CodeLive(this.log, this.turnId, workspace, snapshot);
+    this.lives.set(workspace.id, live);
+    return live;
+  }
+
+  async scan(callId: string | null, source: "tool" | "sweep", trace?: ToolTrace) {
+    let first = true;
+    for (const live of [...this.lives.values()]) {
+      if (!live.workspace.active) continue;
+      await live.scan(callId, source, trace, first);
+      first = false;
+    }
   }
 }

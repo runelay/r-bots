@@ -259,7 +259,7 @@ describe("switching workspaces mid-turn", () => {
     );
     expect(await repliesOf(session, "narration")).toEqual(["Vou abrir o outro repositório."]);
     expect(await repliesOf(session)).toEqual(["Feito no segundo repositório."]);
-    expect(scan.mock.calls.filter((call) => call[1] === "sweep")).toHaveLength(2);
+    expect(scan.mock.calls.filter((call) => call[1] === "sweep")).toHaveLength(3);
     expect(Object.keys(session.meta.providerSessions ?? {})).toEqual([`vps:claude@${second.id}`]);
   });
 

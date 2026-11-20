@@ -132,6 +132,10 @@ export async function touchWorktree(id: string, patch: Partial<WorktreeRecord> =
   return current;
 }
 
+export async function worktreeById(id: string) {
+  return (await loadRegistry()).find((item) => item.id === id) ?? null;
+}
+
 export async function listWorktrees() {
   return [...(await loadRegistry())].sort((a, b) => b.lastAccessedAt.localeCompare(a.lastAccessedAt));
 }

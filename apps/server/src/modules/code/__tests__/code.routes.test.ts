@@ -144,7 +144,14 @@ describe("bot code state", () => {
   test("reports an empty state and resolves sessions", async () => {
     const empty = await request<Record<string, unknown>>(`/bots/${bot.id}/code`);
     expect(empty.status).toBe(200);
-    expect(empty.body).toEqual({ workspace: null, files: [], servers: [], checkpoints: [], running: false });
+    expect(empty.body).toEqual({
+      workspace: null,
+      workspaces: [],
+      files: [],
+      servers: [],
+      checkpoints: [],
+      running: false,
+    });
     const conversation = await createConversation(bot.id, {});
     const bySession = await request(`/bots/${bot.id}/code?sessionId=${conversation.meta.sessionId}`);
     expect(bySession.status).toBe(200);
@@ -193,6 +200,36 @@ describe("bot code state", () => {
 });
 
 describe("workspace lifecycle", () => {
+  test("lists every open repo and scopes routes by workspaceId", async () => {
+    const first = await openRepo();
+    const second = await openRepo();
+    writeFileSync(join(first.workspace.path, "src/a.txt"), "a\nfirst\n");
+    workspaceService.invalidateStatus(first.workspace);
+    const state = await request<{
+      workspace: { id: string; primary: boolean };
+      workspaces: Array<{ id: string; primary: boolean; files: number; changes: Array<{ path: string }> }>;
+    }>(`/bots/${bot.id}/code`);
+    expect(state.body.workspace.id).toBe(second.workspace.id);
+    expect(state.body.workspaces.map((item) => [item.id, item.primary, item.files])).toEqual([
+      [first.workspace.id, false, 1],
+      [second.workspace.id, true, 0],
+    ]);
+    expect(state.body.workspaces[0].changes.map((file) => file.path)).toEqual(["src/a.txt"]);
+    const files = await request<Array<{ path: string }>>(
+      `/bots/${bot.id}/code/files?fresh=1&workspaceId=${first.workspace.id}`,
+    );
+    expect(files.body.map((file) => file.path)).toEqual(["src/a.txt"]);
+    const missing = await request<{ error: string }>(`/bots/${bot.id}/code/files?workspaceId=nope`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.error).toBe("Esta conversa não tem esse repositório aberto.");
+    const closed = await request(`/bots/${bot.id}/code/workspace?workspaceId=${first.workspace.id}`, {
+      method: "DELETE",
+    });
+    expect(closed.status).toBe(200);
+    expect(activeWorkspace(second.session)?.id).toBe(second.workspace.id);
+    expect(first.workspace.active).toBe(false);
+  });
+
   test("opens, diffs, reverts, delivers and finishes", async () => {
     const { name, session, workspace } = await openRepo();
     const reopened = await request<{ created: boolean }>(`/bots/${bot.id}/code/workspace`, {

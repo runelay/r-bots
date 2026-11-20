@@ -8,6 +8,7 @@ import { stopDevServers } from "./dev-server.service";
 import { type CodeSignal, onCodeSignal } from "./live-diff.service";
 import {
   activeWorkspace,
+  activeWorkspaces,
   alignBase,
   CodeError,
   closeWorkspace,
@@ -18,7 +19,12 @@ import {
   type KnownPr,
   publicWorkspace,
   type WorkspaceState,
+  workspaceById,
 } from "./workspace.service";
+
+function watchKey(session: StoredSession, workspace: WorkspaceState) {
+  return `${session.meta.sessionId}:${workspace.id}`;
+}
 
 export type PrStatus = "open" | "draft" | "merged" | "closed";
 export type CheckStatus = "pending" | "success" | "failure" | "skipped" | "neutral";
@@ -520,10 +526,10 @@ async function emitSummary(session: StoredSession, workspace: WorkspaceState) {
   });
 }
 
-export async function refreshPr(session: StoredSession, discover = true) {
-  const workspace = activeWorkspace(session);
-  if (!workspace) return null;
-  const key = session.meta.sessionId;
+export async function refreshPr(session: StoredSession, discover = true, target?: WorkspaceState | null) {
+  const workspace = target ?? activeWorkspace(session);
+  if (!workspace?.active) return null;
+  const key = watchKey(session, workspace);
   if (inFlight.has(key)) return workspace.pr ?? null;
   inFlight.add(key);
   try {
@@ -551,15 +557,15 @@ export async function refreshPr(session: StoredSession, discover = true) {
   }
 }
 
-export function kickPr(session: StoredSession, url?: string | null) {
-  const workspace = activeWorkspace(session);
+export function kickPr(session: StoredSession, url?: string | null, target?: WorkspaceState | null) {
+  const workspace = target ?? activeWorkspace(session);
   if (!workspace) return;
   const number = Number(url?.match(/\/pull\/(\d+)/)?.[1] ?? 0);
-  nextCheck.set(session.meta.sessionId, Date.now());
+  nextCheck.set(watchKey(session, workspace), Date.now());
   if (!number) return;
   if (!(workspace.prs ?? []).some((item) => item.number === number))
     remember(workspace, { number, head: workspace.branch, status: "open" });
-  void refreshPr(session, false).catch((error) => console.warn("pr fetch failed", error));
+  void refreshPr(session, false, workspace).catch((error) => console.warn("pr fetch failed", error));
 }
 
 async function originSlug(workspace: WorkspaceState) {
@@ -568,8 +574,10 @@ async function originSlug(workspace: WorkspaceState) {
 }
 
 async function adoptPrUrls(session: StoredSession, urls: string[], created: boolean) {
-  const workspace = activeWorkspace(session);
-  if (!workspace) return;
+  for (const workspace of activeWorkspaces(session)) await adoptPrUrlsIn(session, workspace, urls, created);
+}
+
+async function adoptPrUrlsIn(session: StoredSession, workspace: WorkspaceState, urls: string[], created: boolean) {
   const slug = await originSlug(workspace);
   if (!slug) return;
   const branches = new Set([workspace.branch, ...(await visitedBranches(workspace))]);
@@ -585,15 +593,15 @@ async function adoptPrUrls(session: StoredSession, urls: string[], created: bool
     adopted = true;
   }
   if (!adopted) return;
-  nextCheck.set(session.meta.sessionId, Date.now());
-  await refreshPr(session, false);
+  nextCheck.set(watchKey(session, workspace), Date.now());
+  await refreshPr(session, false, workspace);
 }
 
 export async function handleCodeSignal(signal: CodeSignal) {
   const session = getStoredSession(signal.sessionId);
   if (!session) return;
   if (signal.kind === "pr") await adoptPrUrls(session, signal.urls, signal.created);
-  else await refreshPr(session);
+  else await refreshPr(session, true, signal.workspaceId ? workspaceById(session, signal.workspaceId) : null);
 }
 
 async function isClean(workspace: WorkspaceState) {
@@ -612,8 +620,8 @@ async function isClean(workspace: WorkspaceState) {
   return { clean: true, reason: "" };
 }
 
-export async function finishWorkspace(session: StoredSession, by: "user" | "auto") {
-  const workspace = activeWorkspace(session);
+export async function finishWorkspace(session: StoredSession, by: "user" | "auto", target?: WorkspaceState | null) {
+  const workspace = target ?? activeWorkspace(session);
   if (!workspace) throw new CodeError("Esta conversa não tem repositório aberto.", 404);
   if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando.", 409);
   const check = await isClean(workspace);
@@ -625,25 +633,26 @@ export async function finishWorkspace(session: StoredSession, by: "user" | "auto
       `Não consegui remover a worktree: ${(removed.stderr || removed.stdout).trim().slice(0, 300)}`,
       500,
     );
-  await closeWorkspace(session, true);
-  session.meta.providerSessions = {};
+  const primary = activeWorkspace(session) === workspace;
+  await closeWorkspace(session, true, workspace);
+  if (primary) session.meta.providerSessions = {};
   await session.save();
   await touchWorktree(workspace.id, { status: "removed" });
-  nextCheck.delete(session.meta.sessionId);
+  nextCheck.delete(watchKey(session, workspace));
   const pr = workspace.pr ? { number: workspace.pr.number, status: workspace.pr.status, url: workspace.pr.url } : null;
   session.log.emit({ type: "code.workspace", data: { action: "removed", by, ...publicWorkspace(workspace), pr } });
   return { ok: true, path: workspace.path, branch: workspace.branch, pr };
 }
 
-export async function reopenPr(session: StoredSession) {
-  const workspace = activeWorkspace(session);
+export async function reopenPr(session: StoredSession, target?: WorkspaceState | null) {
+  const workspace = target ?? activeWorkspace(session);
   if (!workspace?.pr) throw new CodeError("Esta conversa não tem PR.", 404);
   if (workspace.pr.status !== "closed") throw new CodeError("O PR não está fechado.", 409);
   const result = await gh(workspace.path, ["pr", "reopen", String(workspace.pr.number)], 60_000);
   if (result.code !== 0)
     throw new CodeError(`Não consegui reabrir o PR: ${(result.stderr || result.stdout).trim().slice(0, 300)}`, 500);
-  nextCheck.set(session.meta.sessionId, Date.now());
-  return refreshPr(session);
+  nextCheck.set(watchKey(session, workspace), Date.now());
+  return refreshPr(session, true, workspace);
 }
 
 async function autoClose(session: StoredSession, workspace: WorkspaceState) {
@@ -652,23 +661,27 @@ async function autoClose(session: StoredSession, workspace: WorkspaceState) {
   if (Date.now() - Date.parse(pr.mergedAt) < autoCloseMs) return;
   if (isBusy(session.meta.sessionId)) return;
   if (!(await isClean(workspace)).clean) return;
-  await finishWorkspace(session, "auto");
+  await finishWorkspace(session, "auto", workspace);
 }
 
 async function tick() {
   const now = Date.now();
   for (const session of allStoredSessions()) {
-    const workspace = activeWorkspace(session);
-    if (!workspace) continue;
-    const key = session.meta.sessionId;
-    const due = nextCheck.get(key) ?? 0;
-    if (due > now) continue;
-    nextCheck.set(key, now + delayFor(workspace.pr ?? null));
-    try {
-      await refreshPr(session);
-      await autoClose(session, workspace);
-    } catch (error) {
-      console.warn("pr watch failed", key, error instanceof Error ? error.message : error);
+    for (const workspace of activeWorkspaces(session)) {
+      const key = watchKey(session, workspace);
+      const due = nextCheck.get(key) ?? 0;
+      if (due > now) continue;
+      nextCheck.set(key, now + delayFor(workspace.pr ?? null));
+      try {
+        await refreshPr(session, true, workspace);
+        await autoClose(session, workspace);
+      } catch (error) {
+        console.warn(
+          "pr watch failed",
+          session.meta.sessionId,
+          `${workspace.repoName}: ${error instanceof Error ? error.message : error}`,
+        );
+      }
     }
   }
 }

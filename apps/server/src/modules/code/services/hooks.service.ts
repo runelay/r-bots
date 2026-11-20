@@ -9,9 +9,10 @@ import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import { secretBashCommand } from "../../vault/services/vault-tools.service";
 import { addGrant, hasGrant } from "../repositories/code.repository";
 import { heavyTimeoutSec, wrapHeavyCommand } from "./heavy-commands.service";
-import type { CodeLive } from "./live-diff.service";
+import type { LiveScanner } from "./live-diff.service";
 import { commandIsReadOnly, fixedRuleViolation, type Gate, gateNative } from "./policy.service";
 import { criticalCommand, prodReadCommand } from "./prod-guard.service";
+import { expandHome, hostHome, worktreesRoot } from "./repos.service";
 import { sandboxMarker, sandboxMode, sandboxProblem, sandboxShell } from "./sandbox.service";
 import {
   clipText,
@@ -421,19 +422,54 @@ export async function sandboxedBash(
   return { command: wrapHeavyCommand(command, command, outer) ?? outer(command) };
 }
 
-export function nativeHooks(context: ToolContext, workspace: WorkspaceState, live: CodeLive): NativeToolHooks {
+export interface WorkspaceRouter {
+  workspaceFor(path: string): WorkspaceState | null;
+  adopt(path: string): Promise<WorkspaceState | null>;
+}
+
+const homeWorktrees = worktreesRoot.startsWith(`${hostHome}/`)
+  ? `~${worktreesRoot.slice(hostHome.length)}`
+  : worktreesRoot;
+
+export function worktreePathsIn(command: string) {
+  const roots = [worktreesRoot, homeWorktrees].map((root) => root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(`(?:${roots.join("|")})/[\\w.-]+/[\\w.-]+`, "g");
+  return [...new Set((command.match(pattern) ?? []).map((path) => resolve(expandHome(path))))];
+}
+
+function leadingCd(command: string) {
+  const match = command.trim().match(/^cd\s+("[^"]+"|'[^']+'|\S+)/);
+  return match ? resolve(expandHome(match[1].replace(/^["']|["']$/g, ""))) : null;
+}
+
+export function nativeHooks(
+  context: ToolContext,
+  primary: WorkspaceState,
+  live: LiveScanner,
+  router?: WorkspaceRouter,
+): NativeToolHooks {
   const calls = new Map<
     string,
-    { callId: string; absPath: string | null; before: string | null; input: Record<string, unknown> }
+    {
+      callId: string;
+      absPath: string | null;
+      before: string | null;
+      input: Record<string, unknown>;
+      workspace: WorkspaceState;
+    }
   >();
   return {
     before: async (tool, input, toolUseId) => {
+      const command = tool === "Bash" ? String(input.command ?? "") : "";
+      const file = String(input.file_path ?? input.notebook_path ?? "");
+      const touched = command ? worktreePathsIn(command) : file ? [resolve(primary.path, expandHome(file))] : [];
+      if (router) for (const path of touched) await router.adopt(path).catch(() => null);
+      const anchor = command ? leadingCd(command) : file ? resolve(primary.path, expandHome(file)) : null;
+      const workspace = (anchor && router?.workspaceFor(anchor)) || primary;
       const gate: Gate =
         tool === "Bash" && input.run_in_background
           ? { kind: "deny", message: backgroundDeny }
           : gateNative(tool, input, workspace);
-      const command = tool === "Bash" ? String(input.command ?? "") : "";
-      const file = String(input.file_path ?? input.notebook_path ?? "");
       const target = command
         ? { label: oneLine(command, 160), role: "command" }
         : file
@@ -462,14 +498,20 @@ export function nativeHooks(context: ToolContext, workspace: WorkspaceState, liv
         rewritten = prepared.command;
       }
       const absPath = editTools.has(tool) && file ? resolve(workspace.path, file) : null;
-      calls.set(toolUseId, { callId: start.callId, absPath, before: absPath ? await readMaybe(absPath) : null, input });
+      calls.set(toolUseId, {
+        callId: start.callId,
+        absPath,
+        before: absPath ? await readMaybe(absPath) : null,
+        input,
+        workspace,
+      });
       return rewritten ? { allow: true, input: { ...input, command: rewritten } } : { allow: true };
     },
     after: async (tool, _input, response, toolUseId, failed) => {
       const call = calls.get(toolUseId);
       if (!call) return;
       calls.delete(toolUseId);
-      const shown = shownInput(tool, call.input, workspace) as Record<string, unknown>;
+      const shown = shownInput(tool, call.input, call.workspace) as Record<string, unknown>;
       if (failed) {
         endCall(context, call.callId, tool, shown, {
           ok: false,
@@ -478,9 +520,10 @@ export function nativeHooks(context: ToolContext, workspace: WorkspaceState, liv
         return;
       }
       endCall(context, call.callId, tool, shown, { ok: true, output: shownOutput(tool, response) });
-      if (call.absPath && !insideWorkspace(workspace, call.absPath)) {
+      const owner = call.absPath ? (router?.workspaceFor(call.absPath) ?? null) : null;
+      if (call.absPath && !owner && !insideWorkspace(primary, call.absPath)) {
         const after = await readMaybe(call.absPath);
-        await emitEdit(context, workspace, {
+        await emitEdit(context, primary, {
           callId: call.callId,
           absPath: call.absPath,
           before: call.before,

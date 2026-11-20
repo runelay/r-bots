@@ -9,7 +9,9 @@ import { devServersOf, stopDevServers } from "../services/dev-server.service";
 import { finishWorkspace, kickPr, refreshPr, reopenPr } from "../services/pull-request.service";
 import {
   activeWorkspace,
+  activeWorkspaces,
   allDiffs,
+  type Checkpoint,
   CodeError,
   changedFiles,
   codeSummary,
@@ -19,6 +21,8 @@ import {
   restoreCheckpoint,
   revertFile,
   type WorkspaceState,
+  workspaceById,
+  workspacesOf,
 } from "../services/workspace.service";
 
 async function readBody(req: Req) {
@@ -75,10 +79,30 @@ async function sessionFor(bot: BotDefinition, url: URL) {
   return session;
 }
 
-function requireWorkspace(session: StoredSession) {
-  const workspace = activeWorkspace(session);
-  if (!workspace) throw new CodeError("Esta conversa não tem repositório aberto.", 404);
+function requireWorkspace(session: StoredSession, url?: URL) {
+  const id = url?.searchParams.get("workspaceId");
+  const workspace = id ? workspaceById(session, id) : activeWorkspace(session);
+  if (!workspace?.active)
+    throw new CodeError(
+      id ? "Esta conversa não tem esse repositório aberto." : "Esta conversa não tem repositório aberto.",
+      404,
+    );
   return workspace;
+}
+
+async function workspaceEntry(session: StoredSession, workspace: WorkspaceState) {
+  const files = await changedFiles(workspace).catch(() => []);
+  return {
+    summary: {
+      ...publicWorkspace(workspace),
+      primary: activeWorkspace(session) === workspace,
+      files: files.length,
+      added: files.reduce((sum, file) => sum + file.added, 0),
+      removed: files.reduce((sum, file) => sum + file.removed, 0),
+    },
+    files,
+    servers: devServersOf(workspace),
+  };
 }
 
 async function codeState(session: StoredSession) {
@@ -86,22 +110,21 @@ async function codeState(session: StoredSession) {
   if (!workspace)
     return {
       workspace: null,
+      workspaces: [],
       files: [],
       servers: [],
-      checkpoints: await checkpointsOf(session, null),
+      checkpoints: await checkpointsOf(session, []),
       running: isRunning(session.meta.sessionId),
     };
-  const files = await changedFiles(workspace).catch(() => []);
+  const open = activeWorkspaces(session).sort((a, b) => a.openedAt.localeCompare(b.openedAt));
+  const entries = await Promise.all(open.map((item) => workspaceEntry(session, item)));
+  const main = entries[open.indexOf(workspace)];
   return {
-    workspace: {
-      ...publicWorkspace(workspace),
-      files: files.length,
-      added: files.reduce((sum, file) => sum + file.added, 0),
-      removed: files.reduce((sum, file) => sum + file.removed, 0),
-    },
-    files,
-    servers: devServersOf(workspace),
-    checkpoints: await checkpointsOf(session, workspace),
+    workspace: main.summary,
+    workspaces: entries.map((entry) => ({ ...entry.summary, changes: entry.files, servers: entry.servers })),
+    files: main.files,
+    servers: main.servers,
+    checkpoints: await checkpointsOf(session, open),
     running: isRunning(session.meta.sessionId),
   };
 }
@@ -157,11 +180,18 @@ async function turnRequests(session: StoredSession) {
   return requests;
 }
 
-async function checkpointsOf(session: StoredSession, workspace: WorkspaceState | null) {
+async function checkpointsOf(session: StoredSession, open: WorkspaceState[]) {
   const reverted = new Set(session.meta.revertedTurns ?? []);
   const requests = await turnRequests(session);
+  const ids = new Set(open.map((item) => item.id));
+  const seen = new Set<string>();
   return (session.meta.checkpoints ?? [])
-    .filter((item) => (!workspace || item.workspaceId === workspace.id) && !reverted.has(item.turnId))
+    .filter((item) => {
+      if ((ids.size > 0 && !ids.has(item.workspaceId)) || reverted.has(item.turnId) || seen.has(item.turnId))
+        return false;
+      seen.add(item.turnId);
+      return true;
+    })
     .map((item) => ({
       turnId: item.turnId,
       at: item.at,
@@ -193,20 +223,23 @@ async function rewind(session: StoredSession, turnId: string) {
   if (number < 0) throw new CodeError("Turno inválido.");
   if (isBusy(session.meta.sessionId))
     throw new CodeError("O bot ainda está trabalhando. Pare a resposta antes de desfazer.", 409);
-  const workspace = activeWorkspace(session) ?? session.meta.workspace ?? null;
+  const open = activeWorkspaces(session);
+  const targets = open.length > 0 ? open : workspacesOf(session).filter((item) => item === session.meta.workspace);
   const reverted = new Set(session.meta.revertedTurns ?? []);
-  const checkpoint = (session.meta.checkpoints ?? [])
-    .filter(
-      (item) =>
-        !reverted.has(item.turnId) &&
-        (!workspace || item.workspaceId === workspace.id) &&
-        turnNumber(item.turnId) >= number,
-    )
-    .sort((a, b) => turnNumber(a.turnId) - turnNumber(b.turnId))[0];
-  let files = { restored: 0, removed: 0 };
-  if (checkpoint && workspace) {
+  const files = { restored: 0, removed: 0 };
+  let checkpoint: Checkpoint | undefined;
+  for (const workspace of targets) {
+    const found = (session.meta.checkpoints ?? [])
+      .filter(
+        (item) => !reverted.has(item.turnId) && item.workspaceId === workspace.id && turnNumber(item.turnId) >= number,
+      )
+      .sort((a, b) => turnNumber(a.turnId) - turnNumber(b.turnId))[0];
+    if (!found) continue;
+    checkpoint ??= found;
     await stopDevServers(workspace);
-    files = await restoreCheckpoint(workspace, checkpoint);
+    const result = await restoreCheckpoint(workspace, found);
+    files.restored += result.restored;
+    files.removed += result.removed;
   }
   const turnIds = (await turnsFrom(session, number)).filter((id) => !reverted.has(id));
   session.meta.revertedTurns = [...reverted, ...turnIds];
@@ -219,12 +252,12 @@ async function rewind(session: StoredSession, turnId: string) {
     data: {
       turnId,
       turnIds,
-      files: Boolean(checkpoint && workspace),
+      files: Boolean(checkpoint),
       ...files,
       ...(checkpoint ? { checkpoint: checkpoint.ref } : {}),
     },
   });
-  return { turnId, turnIds, filesRestored: Boolean(checkpoint && workspace), ...files };
+  return { turnId, turnIds, filesRestored: Boolean(checkpoint), ...files };
 }
 
 export async function handleBotCode(req: Req, res: Res, url: URL, method: string, bot: BotDefinition, rest: string[]) {
@@ -250,21 +283,26 @@ export async function handleBotCode(req: Req, res: Res, url: URL, method: string
     }
     if (tail === "workspace" && method === "DELETE") {
       if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando.", 409);
-      const closed = await closeTaskWorkspace(session);
+      const id = url.searchParams.get("workspaceId");
+      const closed = await closeTaskWorkspace(session, id ? workspaceById(session, id) : null);
       return closed
         ? sendJson(res, 200, { ok: true, path: closed.path, branch: closed.branch })
         : sendJson(res, 404, { ok: false, error: "Esta conversa não tem repositório aberto." });
     }
     if (tail === "files" && method === "GET")
-      return sendJson(res, 200, await changedFiles(requireWorkspace(session), url.searchParams.get("fresh") === "1"));
+      return sendJson(
+        res,
+        200,
+        await changedFiles(requireWorkspace(session, url), url.searchParams.get("fresh") === "1"),
+      );
     if (tail === "diff" && method === "GET") {
-      const workspace = requireWorkspace(session);
+      const workspace = requireWorkspace(session, url);
       const path = url.searchParams.get("path");
       void touchWorktree(workspace.id);
       return sendJson(res, 200, path ? await fileDiff(workspace, path) : await allDiffs(workspace));
     }
     if (tail === "revert" && method === "POST") {
-      const workspace = requireWorkspace(session);
+      const workspace = requireWorkspace(session, url);
       const body = await readBody(req);
       const path = await revertFile(workspace, String(body.path ?? ""));
       session.log.emit({ type: "code.reverted", data: { workspaceId: workspace.id, path, by: "user" } });
@@ -275,7 +313,7 @@ export async function handleBotCode(req: Req, res: Res, url: URL, method: string
       return sendJson(res, 200, await rewind(session, String(body.turnId ?? "")));
     }
     if (tail === "deliver" && method === "POST") {
-      const workspace = requireWorkspace(session);
+      const workspace = requireWorkspace(session, url);
       if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando.", 409);
       const body = await readBody(req);
       const action =
@@ -288,22 +326,27 @@ export async function handleBotCode(req: Req, res: Res, url: URL, method: string
         ...(typeof body.body === "string" ? { body: body.body } : {}),
       });
       session.log.emit({ type: "code.delivered", data: { workspaceId: workspace.id, by: "user", ...result } });
-      if (result.prUrl) kickPr(session, result.prUrl);
+      if (result.prUrl) kickPr(session, result.prUrl, workspace);
       return sendJson(res, 200, result);
     }
-    if (tail === "finish" && method === "POST") return sendJson(res, 200, await finishWorkspace(session, "user"));
+    if (tail === "finish" && method === "POST")
+      return sendJson(res, 200, await finishWorkspace(session, "user", requireWorkspace(session, url)));
     if (tail === "pr" && method === "GET") {
-      requireWorkspace(session);
+      const workspace = requireWorkspace(session, url);
       return sendJson(res, 200, {
-        pr: url.searchParams.get("refresh") === "1" ? await refreshPr(session) : (activeWorkspace(session)?.pr ?? null),
+        pr:
+          url.searchParams.get("refresh") === "1" ? await refreshPr(session, true, workspace) : (workspace.pr ?? null),
       });
     }
-    if (tail === "pr/reopen" && method === "POST") return sendJson(res, 200, { pr: await reopenPr(session) });
-    if (tail === "servers" && method === "GET") return sendJson(res, 200, devServersOf(requireWorkspace(session)));
+    if (tail === "pr/reopen" && method === "POST")
+      return sendJson(res, 200, {
+        pr: await reopenPr(session, url.searchParams.get("workspaceId") ? requireWorkspace(session, url) : null),
+      });
+    if (tail === "servers" && method === "GET") return sendJson(res, 200, devServersOf(requireWorkspace(session, url)));
     if (tail === "servers/stop" && method === "POST") {
       const body = await readBody(req);
       const stopped = await stopDevServers(
-        requireWorkspace(session),
+        requireWorkspace(session, url),
         typeof body.port === "number" ? body.port : undefined,
       );
       return sendJson(res, 200, { ok: true, stopped: stopped.map((item) => item.port) });

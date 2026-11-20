@@ -44,6 +44,7 @@ export interface SessionMeta {
   carryOver?: string | null;
   contextTokens?: number;
   workspace?: WorkspaceState;
+  workspaces?: WorkspaceState[];
   checkpoints?: Checkpoint[];
   revertedTurns?: string[];
   providerSynced?: Record<string, string>;

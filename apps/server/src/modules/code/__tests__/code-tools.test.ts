@@ -9,7 +9,7 @@ import type { EventLog, StoredSession } from "../../conversations/services/sessi
 import * as sessions from "../../conversations/services/sessions.service";
 import type { ApprovalResult, ToolContext } from "../../engine/services/mcp-gateway.service";
 import * as actions from "../services/actions.service";
-import { codeModeSupported, registerCodeTools } from "../services/code-tools.service";
+import { codeModeSupported, pickWorkspace, registerCodeTools } from "../services/code-tools.service";
 import type { PublicDevServer } from "../services/dev-server.service";
 import * as devServers from "../services/dev-server.service";
 import * as pullRequests from "../services/pull-request.service";
@@ -325,7 +325,7 @@ describe("with an open workspace", () => {
     expect(textOf(await call("workspace_close"))).toBe(
       `Fechado. A worktree continua em ${current.path} (branch ${current.branch}).`,
     );
-    expect(close).toHaveBeenCalledWith(owner.stored);
+    expect(close).toHaveBeenCalledWith(owner.stored, current);
     expect(settled().at(-1)).toMatchObject({ output: { closed: true, path: current.path, branch: current.branch } });
   });
 
@@ -485,7 +485,7 @@ describe("with an open workspace", () => {
       expect(textOf(await first.call("workspace_deliver", { action: "push" }))).toBe(
         "Commit abc1234; push da branch feat/task feito. O PR https://gh/pr/1 foi atualizado.",
       );
-      expect(first.kick).toHaveBeenCalledWith(first.owner.stored, "https://gh/pr/1");
+      expect(first.kick).toHaveBeenCalledWith(first.owner.stored, "https://gh/pr/1", first.current);
       for (const spy of spies.splice(0)) spy.mockRestore();
 
       const second = setup(delivered({ action: "push" }));
@@ -579,9 +579,28 @@ describe("with an open workspace", () => {
     });
     spies.push(refusing);
     for (const name of ["workspace_open", "workspace_close", "dev_server_stop", "dev_server_logs"])
-      expect(await call(name, { repo: "r", task: "t" })).toEqual({
+      expect(await call(name, name === "workspace_open" ? { repo: "r", task: "t" } : {})).toEqual({
         content: [{ type: "text", text: "Negado." }],
         isError: true,
       });
+  });
+});
+
+describe("pickWorkspace", () => {
+  test("picks an open repo by name, id, path or folder and refuses one that is not open", () => {
+    const api = { ...workspace(), id: "ws_api", repoName: "conty-api", path: "/srv/w/api", repo: "/srv/api" };
+    const web = workspace();
+    const { stored } = session(web);
+    stored.meta.workspaces = [api, web];
+    expect(pickWorkspace(stored, undefined, api)).toBe(web);
+    expect(pickWorkspace(stored, "conty-api", web)).toBe(api);
+    expect(pickWorkspace(stored, "CONTY-API", web)).toBe(api);
+    expect(pickWorkspace(stored, "ws_api", web)).toBe(api);
+    expect(pickWorkspace(stored, "/srv/api", web)).toBe(api);
+    expect(pickWorkspace(stored, "/srv/w/api/src", web)).toBe(api);
+    expect(() => pickWorkspace(stored, "other", web)).toThrow(
+      "other não está aberto nesta conversa. Abertos: conty-api, conty-lp.",
+    );
+    expect(() => pickWorkspace(undefined, "other", web)).toThrow("Abertos: nenhum.");
   });
 });

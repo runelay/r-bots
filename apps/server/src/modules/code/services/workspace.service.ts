@@ -522,9 +522,90 @@ function startInstall(session: StoredSession, workspace: WorkspaceState) {
   void work.finally(() => installs.delete(workspace.path));
 }
 
+const keptWorkspaces = 8;
+
+export function workspacesOf(session: StoredSession | undefined | null): WorkspaceState[] {
+  if (!session) return [];
+  const meta = session.meta;
+  if (!Array.isArray(meta.workspaces)) meta.workspaces = meta.workspace ? [meta.workspace] : [];
+  const list = meta.workspaces;
+  const primary = meta.workspace;
+  if (primary && !list.includes(primary)) {
+    const same = list.find((item) => item.id === primary.id);
+    if (same) meta.workspace = same;
+    else list.push(primary);
+  }
+  return list;
+}
+
+export function activeWorkspaces(session: StoredSession | undefined | null) {
+  return workspacesOf(session).filter((item) => item.active);
+}
+
 export function activeWorkspace(session: StoredSession | undefined | null) {
-  const workspace = session?.meta.workspace;
-  return workspace?.active ? workspace : null;
+  const list = workspacesOf(session);
+  const primary = session?.meta.workspace;
+  if (primary?.active) return primary;
+  return list.filter((item) => item.active).at(-1) ?? null;
+}
+
+export function workspaceById(session: StoredSession | undefined | null, id: string) {
+  return workspacesOf(session).find((item) => item.id === id) ?? null;
+}
+
+export function workspaceAt(session: StoredSession | undefined | null, path: string) {
+  const absolute = resolve(expandHome(path));
+  let best: WorkspaceState | null = null;
+  for (const item of activeWorkspaces(session)) {
+    if (!insideWorkspace(item, absolute)) continue;
+    if (!best || item.path.length > best.path.length) best = item;
+  }
+  return best;
+}
+
+export function addWorkspace(session: StoredSession, workspace: WorkspaceState, primary: boolean) {
+  const list = workspacesOf(session).filter((item) => item.id !== workspace.id);
+  list.push(workspace);
+  while (list.length > keptWorkspaces) {
+    const index = list.findIndex((item) => !item.active && item !== session.meta.workspace);
+    if (index < 0) break;
+    list.splice(index, 1);
+  }
+  session.meta.workspaces = list;
+  if (primary || !session.meta.workspace) session.meta.workspace = workspace;
+}
+
+export function worktreeIdAt(path: string) {
+  const rel = relative(worktreesRoot, resolve(expandHome(path)));
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return null;
+  const [name, id] = rel.split("/");
+  return name && id ? { repoName: name, id, path: join(worktreesRoot, name, id) } : null;
+}
+
+export function workspaceFromRecord(record: {
+  id: string;
+  path: string;
+  repo: string;
+  repoName: string;
+  branch: string;
+  base: string;
+  baseCommit: string;
+  createdAt: string;
+}): WorkspaceState {
+  return {
+    id: record.id,
+    repo: record.repo,
+    repoName: record.repoName,
+    path: record.path,
+    branch: record.branch,
+    base: record.base || "HEAD",
+    baseCommit: record.baseCommit,
+    task: "",
+    openedAt: record.createdAt,
+    active: true,
+    closedAt: null,
+    install: { status: "skipped", manager: null, command: null, startedAt: null, finishedAt: new Date().toISOString() },
+  };
 }
 
 export function publicWorkspace(workspace: WorkspaceState) {
@@ -544,16 +625,28 @@ export function publicWorkspace(workspace: WorkspaceState) {
   };
 }
 
+async function reusable(session: StoredSession, repoPath: string) {
+  const same = workspacesOf(session).filter((item) => item.repo === repoPath);
+  const ordered = [...same.filter((item) => item.active), ...same.filter((item) => !item.active).reverse()];
+  for (const item of ordered) if (await exists(item.path)) return item;
+  return null;
+}
+
 export async function openWorkspace(session: StoredSession, botId: string, repoInput: string, task: string) {
   const repo = await resolveRepo(repoInput);
-  const current = session.meta.workspace;
-  if (current && current.repo === repo.path && (await exists(current.path))) {
-    if (current.active) return { workspace: current, created: false };
+  const current = await reusable(session, repo.path);
+  if (current) {
+    const wasActive = current.active;
+    const wasPrimary = session.meta.workspace === current;
+    if (wasActive && wasPrimary) return { workspace: current, created: false };
     current.active = true;
     current.closedAt = null;
+    addWorkspace(session, current, true);
     await session.save();
-    await shareWithSandbox(current);
-    session.log.emit({ type: "code.workspace", data: { action: "reopened", ...publicWorkspace(current) } });
+    if (!wasActive) {
+      await shareWithSandbox(current);
+      session.log.emit({ type: "code.workspace", data: { action: "reopened", ...publicWorkspace(current) } });
+    }
     return { workspace: current, created: false };
   }
   const hasOrigin = (await git(repo.path, ["remote", "get-url", "origin"])).code === 0;
@@ -588,7 +681,7 @@ export async function openWorkspace(session: StoredSession, botId: string, repoI
     closedAt: null,
     install: { status: "skipped", manager: null, command: null, startedAt: null, finishedAt: null },
   };
-  session.meta.workspace = workspace;
+  addWorkspace(session, workspace, true);
   await session.save();
   session.log.emit({ type: "code.workspace", data: { action: "opened", ...publicWorkspace(workspace) } });
   await shareWithSandbox(workspace);
@@ -597,11 +690,15 @@ export async function openWorkspace(session: StoredSession, botId: string, repoI
   return { workspace, created: true };
 }
 
-export async function closeWorkspace(session: StoredSession, quiet = false) {
-  const workspace = session.meta.workspace;
+export async function closeWorkspace(session: StoredSession, quiet = false, target?: WorkspaceState | null) {
+  const workspace = target ?? activeWorkspace(session);
   if (!workspace?.active) return null;
   workspace.active = false;
   workspace.closedAt = new Date().toISOString();
+  if (session.meta.workspace === workspace) {
+    const next = activeWorkspaces(session).at(-1);
+    if (next) session.meta.workspace = next;
+  }
   await session.save();
   if (!quiet) session.log.emit({ type: "code.workspace", data: { action: "closed", ...publicWorkspace(workspace) } });
   return workspace;
