@@ -269,3 +269,55 @@ blobs/users/…/avatar/ -> vazio
 GET /auth/me (Bearer RUNNER_TOKEN) -> 200
 {"ok":true,"user":{"id":"kE53UMUWZX4ROjBdDL1WrUaCAto1vmlD","name":"Teste Dono","email":"dono@example.com","role":"owner","image":null},"method":"internal","expiresAt":null}
 ```
+
+## v38 (19/11): login obrigatório
+
+### Servidor
+
+- O portão está sempre ligado. Sem nenhum usuário, só respondem `GET /health`, as rotas de primeiro acesso (`GET`/`POST /auth/setup`), `POST /auth/invites/accept`, `/api/auth/*` e `GET /device`. Todo o resto dá 401. O modo automático da v36 (aberto até criar o dono) saiu.
+- `BOTS_AUTH=off` só vale em teste (`NODE_ENV=test`, que o `bun test` define, ou `BOTS_TEST=1`/`true`). Em qualquer outro ambiente o valor é ignorado e o portão continua ligado. `BOTS_AUTH=on` deixou de existir como opção (é sempre assim).
+- `GET /auth/setup` responde `required: true` sempre. O campo fica por compatibilidade.
+- `RUNNER_TOKEN` (≥24 caracteres) continua valendo como credencial de máquina em qualquer rota, inclusive antes do dono (principal `userId: "internal"`), até o executor do Mac virar dispositivo. Ele não administra contas: `/auth/invites*` com `method: "internal"` dá 403.
+- Log do boot: `auth on, waiting for the owner (…)` sem usuário, `auth on (…)` com dono.
+- O binário compilado (`bun build --compile`) carrega `reflect-metadata` na primeira linha de `src/index.ts`; sem isso o `tsyringe` do plugin de passkey derruba o boot (o bundler avalia o `tsyringe` antes do polyfill que o `@peculiar/x509` importa).
+- `BETTER_AUTH_URL` precisa ser o endereço que o app usa (no tailnet, `https://<host>:10447`). Sem ela, o login do app leva 403 `INVALID_ORIGIN`, porque o app manda `Origin` com o endereço do tailnet.
+- Healthcheck do compose passou para `/health` (`/bots` agora dá 401).
+- Operação: `GET /status` exige credencial. Antes de reiniciar, `curl -s -H "Authorization: Bearer $RUNNER_TOKEN" 127.0.0.1:2000/status`.
+
+### App
+
+- Não existe mais uso sem conta: saíram o bloco "Neste Mac" (nome e foto do macOS), o "Agora não" do primeiro acesso, o pular quando `/auth/setup` dá 404 e o menu da barra lateral sem "Sair".
+- Sem sessão: tela de entrar ou de primeiro acesso. `/auth/setup` 404: tela "Este servidor está desatualizado" com o campo do endereço. Servidor fora do ar e sem sessão salva: "Não deu para falar com o servidor", também com o campo.
+- Ajustes › Conta mostra só a conta: foto, nome, e-mail, trocar senha e sair.
+
+### Verificado
+
+Produção (container `runelay-bots`, imagem `runelay-bots-server:release-b75488d`), antes e depois. `RUNNER_TOKEN` = credencial de máquina.
+
+```text
+antes (release-f04bdae): /bots, /status, /accounts, /integrations, /meta sem credencial -> 200; /auth/setup -> 404
+
+boot: auth on, waiting for the owner (https://vps.…:10447, secret from data-file)
+
+                 sem credencial   RUNNER_TOKEN
+/health          200              200
+/bots            401              200
+/status          401              200
+/accounts        401              200
+/integrations    401              200
+/meta            401              200
+/vault/secrets   401              200
+/usage/limits    401              200
+/auth/setup      200              200
+tailnet /health 200 · /bots 401
+
+GET /auth/setup -> 200
+{"ok":true,"needsOwner":true,"required":true,"methods":{"password":true,"passkey":true,"device":true,"invites":true,"passwordReset":false}}
+
+bots 4 (boss, davi, engenheiro-de-software, qa), uma conversa cada; banco 25 bots, 31 threads, 0 usuários (igual ao antes)
+integrações elevenlabs/jev/runelay connected; contas vps:claude, vps:codex, mac:claude, mac:codex, mac:cursor ready (igual ao antes)
+log: mac runner connected (RUNNER_TOKEN)
+
+instância de teste, BETTER_AUTH_URL ausente: POST /api/auth/sign-in/email com Origin do tailnet -> 403 {"code":"INVALID_ORIGIN"}
+com BETTER_AUTH_URL: -> 200
+```

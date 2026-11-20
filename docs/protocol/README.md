@@ -1,6 +1,6 @@
 # Protocolo do runelay bots
 
-Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v35, todas de 19/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
+Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000`, exposto no tailnet em `:10447`) e o app do Mac: rotas REST, API de sessão no formato do eve, stream NDJSON de eventos, WebSockets (navegador, desktop, runner) e as ferramentas que os bots recebem. Cada corpo foi capturado do servidor rodando. O texto cresceu por versão (v1 a v38, todas de 19/11) e aqui está separado por assunto; dentro de cada arquivo as seções seguem a ordem em que foram escritas, com o título da versão de origem. Por isso a numeração às vezes sai fora de ordem (v8.1 depois da v11, v14 antes da v13, v20 antes da v19, v24 antes da v23). Até a v20 o texto está em inglês; da v21 em diante, em português.
 
 ## Arquivos
 
@@ -67,6 +67,7 @@ Contrato verificado entre o servidor do runelay bots (gateway em `127.0.0.1:2000
 | v35 | integrações pelo app (sem `.env.local`), `GET /meta.integrations`, tokens internos no `data/` | [integrations](integrations.md) |
 | v36 | primeiro acesso pelo app, portão automático quando existe dono, `RUNNER_TOKEN` com o portão ligado, troca de senha | [auth](auth.md) |
 | v37 | foto da conta: `PUT/DELETE /auth/me/avatar`, `GET /auth/avatars/:userId/:arquivo`, `user.image` no `/auth/me` | [auth](auth.md) |
+| v38 | login obrigatório: portão sempre ligado, `BOTS_AUTH=off` só em teste, app sem modo sem conta | [auth](auth.md) |
 
 ## Contrato
 

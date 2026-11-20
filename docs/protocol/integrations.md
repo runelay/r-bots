@@ -19,7 +19,7 @@ Trocar ou remover uma integração vale na hora, sem reiniciar: o runelay recone
 
 ### Tokens internos
 
-- `RUNNER_TOKEN`: sem a variável, é gerado no primeiro boot em `<data>/runner.token` (0600, 32 bytes base64url). O log mostra só o caminho: `runner token in <data>/runner.token`. Com `BOTS_AUTH=on` o app pega a chave do runner sozinho no login (`/auth/runner-key`); sem login, o arquivo vai para `~/Library/Application Support/runelay bots/runner.token` no Mac.
+- `RUNNER_TOKEN`: sem a variável, é gerado no primeiro boot em `<data>/runner.token` (0600, 32 bytes base64url). O log mostra só o caminho: `runner token in <data>/runner.token`. O app pega a chave do runner sozinho no login (`/auth/runner-key`; login obrigatório desde a v38); antes do login, o arquivo vai para `~/Library/Application Support/runelay bots/runner.token` no Mac.
 - `BETTER_AUTH_SECRET`: sem a variável, é gerado em `<data>/auth.secret` (0600). O servidor não escreve mais no `.env.local`.
 
 ### `GET /integrations` → 200

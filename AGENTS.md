@@ -56,10 +56,10 @@ docker compose up -d --build        # rebuild after changing apps/server or pack
 docker compose restart              # picks up .env.local, not code
 docker compose logs -f --tail 200
 docker compose ps
-curl -s 127.0.0.1:2000/status       # check before any restart
+curl -s -H "Authorization: Bearer $RUNNER_TOKEN" 127.0.0.1:2000/status  # check before any restart
 ```
 
-Never restart or rebuild while a bot is working: check `GET /status` first.
+Never restart or rebuild while a bot is working: check `GET /status` first (it needs `Authorization: Bearer $RUNNER_TOKEN` since v38).
 
 Mac app (on the Mac, inside `apps/mac`):
 
