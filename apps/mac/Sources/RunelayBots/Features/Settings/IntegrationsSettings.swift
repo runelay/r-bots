@@ -122,15 +122,18 @@ final class IntegrationsStore {
 }
 
 struct IntegrationsSettings: View {
+    var showsIntro = true
     @Environment(AppModel.self) private var model
     @State private var store = IntegrationsStore()
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.xl) {
-            Text("Serviços opcionais. Os bots funcionam sem eles; cada chave liga uma parte a mais. A chave fica cifrada no servidor e nunca volta para o app.")
-                .font(TypeScale.rowSubtitle)
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if showsIntro {
+                Text("Serviços opcionais. Os bots funcionam sem eles; cada chave liga uma parte a mais. A chave fica cifrada no servidor e nunca volta para o app.")
+                    .font(TypeScale.rowSubtitle)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             switch store.state {
             case .loading:
                 VStack(spacing: Spacing.s) {

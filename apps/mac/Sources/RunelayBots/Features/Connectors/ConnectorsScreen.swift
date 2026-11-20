@@ -4,49 +4,18 @@ import SwiftUI
 
 struct ConnectorsScreen: View {
     @Environment(AppModel.self) private var model
-    @Environment(\.appReduceMotion) private var reduceMotion
 
     var body: some View {
-        let store = model.catalog
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
-                if let name = store.detail, let connector = model.connector(named: name) {
-                    SourceDetailView(connector: connector) {
-                        withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                            store.detail = nil
-                        }
-                    }
-                    .transition(.opacity)
-                } else if !model.meta.integrationOn("runelay") {
+                ConnectorsCatalog(onRunelayOff: model.openIntegrations) { actions in
                     PageHeaderView(
                         title: "Catálogo",
                         description: "Conecte suas contas uma vez. Todos os agentes da organização usam.",
                         signed: true
                     ) {
-                        EmptyView()
+                        actions
                     }
-                    RunelayOffState()
-                        .transition(.opacity)
-                } else {
-                    PageHeaderView(
-                        title: "Catálogo",
-                        description: "Conecte suas contas uma vez. Todos os agentes da organização usam.",
-                        signed: true
-                    ) {
-                        IconActionButton(
-                            systemImage: "arrow.clockwise",
-                            label: "Testar os instalados de novo",
-                            spinning: model.isRefreshingConnectors
-                        ) {
-                            model.refreshConnectors()
-                            Task { await store.load(model: model) }
-                        }
-                        .disabled(model.isRefreshingConnectors)
-                        AddConnectorButton()
-                    }
-                    CatalogSearchField()
-                    CatalogContent()
-                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: 880, alignment: .leading)
@@ -57,6 +26,37 @@ struct ConnectorsScreen: View {
         }
         .scrollEdgesHidden()
         .background(Theme.background)
+    }
+}
+
+struct ConnectorsCatalog<Header: View>: View {
+    let onRunelayOff: () -> Void
+    @ViewBuilder let header: (AnyView) -> Header
+
+    @Environment(AppModel.self) private var model
+    @Environment(\.appReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let store = model.catalog
+        VStack(alignment: .leading, spacing: Spacing.xl) {
+            if let name = store.detail, let connector = model.connector(named: name) {
+                SourceDetailView(connector: connector) {
+                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                        store.detail = nil
+                    }
+                }
+                .transition(.opacity)
+            } else if !model.meta.integrationOn("runelay") {
+                header(AnyView(EmptyView()))
+                RunelayOffState(action: onRunelayOff)
+                    .transition(.opacity)
+            } else {
+                header(AnyView(actions))
+                CatalogSearchField()
+                CatalogContent()
+                    .transition(.opacity)
+            }
+        }
         .springAnimation(value: store.detail)
         .task(id: model.meta.integrationOn("runelay")) {
             await store.load(model: model)
@@ -85,6 +85,21 @@ struct ConnectorsScreen: View {
             set: { store.tokenRequest = $0 }
         )) { item in
             CatalogTokenSheet(connector: item)
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: Spacing.s) {
+            IconActionButton(
+                systemImage: "arrow.clockwise",
+                label: "Testar os instalados de novo",
+                spinning: model.isRefreshingConnectors
+            ) {
+                model.refreshConnectors()
+                Task { await model.catalog.load(model: model) }
+            }
+            .disabled(model.isRefreshingConnectors)
+            AddConnectorButton()
         }
     }
 }
@@ -678,7 +693,7 @@ struct IconActionButton: View {
 }
 
 private struct RunelayOffState: View {
-    @Environment(AppModel.self) private var model
+    let action: () -> Void
 
     var body: some View {
         VStack(spacing: Spacing.m) {
@@ -687,9 +702,7 @@ private struct RunelayOffState: View {
                 title: "Conectores e memória estão desligados",
                 description: "Conecte o runelay para os bots usarem Linear, GitHub, Supabase e o resto das suas contas, além da memória e das skills compartilhadas."
             )
-            Button("Conectar runelay") {
-                model.openIntegrations()
-            }
+            Button("Conectar runelay", action: action)
             .buttonStyle(.brandPrimary)
         }
         .frame(maxWidth: .infinity)
