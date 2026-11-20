@@ -10,7 +10,14 @@ import type {
   SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { LivePush, NativeToolHooks } from "@runelay-bots/protocol";
-import { hookFailureMessage, nativeTools, privateMcpArgs, runClaude, unclearedMessage } from "../claude";
+import {
+  contextBudgetEnv,
+  hookFailureMessage,
+  nativeTools,
+  privateMcpArgs,
+  runClaude,
+  unclearedMessage,
+} from "../claude";
 import { fakeCli, fakeSdk, type QueryParams, recorder, turnRequest } from "./fakes";
 
 const signal = () => new AbortController().signal;
@@ -96,6 +103,23 @@ describe("runClaude", () => {
     expect(options.effort).toBeUndefined();
     expect(options.env?.CLAUDE_AGENT_SDK_CLIENT_APP).toBe("runelay-bots/3.0.0");
     expect(options.env?.CLAUDE_CONFIG_DIR).toBeUndefined();
+    expect(options.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("200000");
+    expect(options.env?.BASH_MAX_OUTPUT_LENGTH).toBe("12000");
+    expect(options.env?.MAX_MCP_OUTPUT_TOKENS).toBe("10000");
+  });
+
+  test("context budget env follows the server overrides", () => {
+    expect(
+      contextBudgetEnv({
+        BOTS_COMPACT_WINDOW: "300000",
+        BOTS_BASH_OUTPUT_CHARS: "8000",
+        BOTS_MCP_OUTPUT_TOKENS: "6000",
+      }),
+    ).toEqual({
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "300000",
+      BASH_MAX_OUTPUT_LENGTH: "8000",
+      MAX_MCP_OUTPUT_TOKENS: "6000",
+    });
   });
 
   test("runs in the account directory it was given", async () => {

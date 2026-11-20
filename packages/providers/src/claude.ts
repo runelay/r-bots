@@ -15,6 +15,14 @@ import type { LiveInbox, LiveMessage, NativeToolHooks, ProviderEvent, TurnReques
 import { accountEnv, childEnv } from "./proc";
 import { spawnMarked } from "./proc-tree";
 
+export function contextBudgetEnv(env: Record<string, string | undefined> = Bun.env) {
+  return {
+    CLAUDE_CODE_AUTO_COMPACT_WINDOW: env.BOTS_COMPACT_WINDOW ?? "200000",
+    BASH_MAX_OUTPUT_LENGTH: env.BOTS_BASH_OUTPUT_CHARS ?? "12000",
+    MAX_MCP_OUTPUT_TOKENS: env.BOTS_MCP_OUTPUT_TOKENS ?? "10000",
+  };
+}
+
 export const nativeTools = ["Read", "Edit", "MultiEdit", "Write", "Glob", "Grep", "Bash", "TodoWrite"];
 
 export const hookFailureMessage = "A checagem de segurança desta ferramenta falhou; a chamada foi negada.";
@@ -180,6 +188,7 @@ export async function runClaude(
     ...accountEnv("claude", request.configDir),
     CLAUDE_AGENT_SDK_CLIENT_APP: "runelay-bots/3.0.0",
     MCP_TOOL_TIMEOUT: "900000",
+    ...contextBudgetEnv(),
   });
 
   const live = inbox ? liveInput(userMessage(request.prompt, request.images)) : null;
