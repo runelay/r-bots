@@ -8,18 +8,29 @@ struct CodeStrip: View {
     let openChanges: (CodeWorkspace) -> Void
 
     var body: some View {
-        HStack(spacing: Spacing.s) {
-            ForEach(workspaces, id: \.id) { workspace in
+        Group {
+            if workspaces.count > 1 {
+                CodeRepoStack(store: store, workspaces: workspaces, running: running, openChanges: openChanges)
+                    .transition(.opacity)
+            } else if let workspace = workspaces.first {
                 CodeRepoPill(store: store, workspace: workspace, running: running) {
                     openChanges(workspace)
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.94)))
             }
         }
-        .springAnimation(value: workspaces.map(\.id))
+        .springAnimation(value: workspaces.count > 1)
         .frame(maxWidth: .infinity)
         .padding(.top, Spacing.s)
     }
+}
+
+private enum CodePillMetrics {
+    static let height: CGFloat = 28
+    static let rowPitch: CGFloat = height + Spacing.s
+    static let peek: CGFloat = 5
+    static let visibleLayers = 3
+    static let exitDelay: Duration = .milliseconds(220)
 }
 
 private struct CodeRepoPill: View {
@@ -34,55 +45,13 @@ private struct CodeRepoPill: View {
         Button {
             showsPopover.toggle()
         } label: {
-            HStack(spacing: Spacing.s) {
-                ZStack {
-                    if running {
-                        ProgressView().controlSize(.mini)
-                            .transition(.opacity)
-                    } else {
-                        Image(systemName: "arrow.triangle.branch")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(Theme.textTertiary)
-                            .transition(.opacity)
-                    }
-                }
-                .frame(width: 14)
-                Text(workspace.repoName)
-                    .font(TypeScale.captionStrong)
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(1)
-                if let counts {
-                    HStack(spacing: Spacing.xs) {
-                        Text("\(counts.files)")
-                            .foregroundStyle(Theme.textSecondary)
-                        Text("·").foregroundStyle(Theme.textTertiary)
-                        ChangeCount(added: counts.added, removed: counts.removed)
-                    }
-                    .font(TypeScale.counter)
-                    .contentTransition(.numericText())
-                }
-                if let pr = workspace.pr {
-                    PullRequestPillBadge(pr: pr)
-                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                }
-            }
-            .padding(.horizontal, Spacing.m)
-            .frame(height: 28)
-            .overlay {
-                if running {
-                    GlassShimmer()
-                        .clipShape(Capsule())
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
-                }
-            }
-            .glassSurface(Capsule(), interactive: true, fallback: hovering || showsPopover ? Theme.surfaceRaised : Theme.surface)
-            .contentShape(Capsule())
+            CodeRepoPillLabel(workspace: workspace, running: running)
+                .codeRepoPillChrome(running: running, lifted: hovering || showsPopover)
         }
         .buttonStyle(PressableButtonStyle())
         .clickable()
         .onHover { hovering = $0 }
-        .help("\(workspace.repoName) · \(workspace.branch)\(counts.map { " · \($0.files) arquivo\($0.files == 1 ? "" : "s") alterado\($0.files == 1 ? "" : "s")" } ?? "")\(workspace.pr.map { " · " + PullRequestPillBadge(pr: $0).helpText } ?? "")")
+        .help(CodeRepoPillLabel.helpText(workspace))
         .glassPopup(isPresented: $showsPopover) {
             CodeWorkspacePopover(store: store, workspace: workspace) {
                 showsPopover = false
@@ -96,12 +65,278 @@ private struct CodeRepoPill: View {
         .springAnimation(value: workspace.pr)
         .springAnimation(value: running)
     }
+}
 
-    private var counts: (files: Int, added: Int, removed: Int)? {
+private struct CodeRepoStack: View {
+    let store: ConversationStore
+    let workspaces: [CodeWorkspace]
+    let running: Bool
+    let openChanges: (CodeWorkspace) -> Void
+    @Environment(\.appReduceMotion) private var reduceMotion
+    @FocusState private var focused: Bool
+    @State private var topID: String?
+    @State private var hovering = false
+    @State private var suppressed = false
+    @State private var highlightedID: String?
+    @State private var showsPopover = false
+    @State private var widths: [String: CGFloat] = [:]
+    @State private var exitTask: Task<Void, Never>?
+
+    private var ordered: [CodeWorkspace] {
+        let preferred = topID ?? store.codeState?.workspace?.id
+        guard let top = workspaces.first(where: { $0.id == preferred }) ?? workspaces.first else { return workspaces }
+        return [top] + workspaces.filter { $0.id != top.id }
+    }
+
+    private var expanded: Bool {
+        (hovering || focused) && !suppressed && !showsPopover
+    }
+
+    private var topWidth: CGFloat? {
+        ordered.first.flatMap { widths[$0.id] }
+    }
+
+    private var columnWidth: CGFloat? {
+        let measured = ordered.compactMap { widths[$0.id] }
+        return measured.count == ordered.count ? measured.max() : nil
+    }
+
+    private var stackHeight: CGFloat {
+        let count = ordered.count
+        if expanded {
+            return CGFloat(count) * CodePillMetrics.rowPitch - Spacing.s
+        }
+        return CodePillMetrics.height + CGFloat(min(count, CodePillMetrics.visibleLayers) - 1) * CodePillMetrics.peek
+    }
+
+    var body: some View {
+        let items = ordered
+        ZStack(alignment: .top) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, workspace in
+                layer(workspace, depth: index, total: items.count)
+            }
+        }
+        .frame(width: expanded ? columnWidth : topWidth, height: stackHeight, alignment: .top)
+        .contentShape(Rectangle())
+        .background(alignment: .top) {
+            Color.clear
+                .frame(width: topWidth ?? 0, height: CodePillMetrics.height)
+                .allowsHitTesting(false)
+                .glassPopup(isPresented: $showsPopover) {
+                    if let workspace = items.first {
+                        CodeWorkspacePopover(store: store, workspace: workspace) {
+                            showsPopover = false
+                            openChanges(workspace)
+                        } close: {
+                            showsPopover = false
+                        }
+                    }
+                }
+        }
+        .onHover(perform: hover)
+        .focusable()
+        .focused($focused)
+        .focusEffectDisabled()
+        .onChange(of: focused) { _, isFocused in
+            if isFocused {
+                suppressed = false
+                highlightedID = highlightedID ?? items.first?.id
+            } else if !hovering {
+                highlightedID = nil
+            }
+        }
+        .onKeyPress(.downArrow) { move(by: 1) }
+        .onKeyPress(.upArrow) { move(by: -1) }
+        .onKeyPress(.return) {
+            guard let id = highlightedID ?? items.first?.id else { return .ignored }
+            open(id, fromKeyboard: true)
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            guard expanded else { return .ignored }
+            suppressed = true
+            return .handled
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(items.count) repositórios")
+        .springAnimation(value: expanded)
+        .springAnimation(value: items.map(\.id))
+        .springAnimation(value: highlightedID)
+        .springAnimation(value: running)
+        .onDisappear { exitTask?.cancel() }
+    }
+
+    @ViewBuilder
+    private func layer(_ workspace: CodeWorkspace, depth: Int, total: Int) -> some View {
+        let hidden = !expanded && depth >= CodePillMetrics.visibleLayers
+        let peeking = !expanded && depth > 0
+        let falloff = CGFloat(min(depth, CodePillMetrics.visibleLayers - 1))
+        let highlighted = expanded && highlightedID == workspace.id
+        Button {
+            open(workspace.id, fromKeyboard: false)
+        } label: {
+            HStack(spacing: Spacing.s) {
+                CodeRepoPillLabel(workspace: workspace, running: running, padded: false)
+                if depth == 0, total > 1 {
+                    Text("+\(total - 1)")
+                        .font(TypeScale.counter)
+                        .foregroundStyle(Theme.textSecondary)
+                        .padding(.horizontal, Spacing.xs + Spacing.xxs)
+                        .frame(height: 18)
+                        .background(Theme.hover, in: Capsule())
+                        .opacity(expanded ? 0 : 1)
+                        .help("\(total) repositórios abertos")
+                }
+            }
+            .padding(.horizontal, Spacing.m)
+            .frame(height: CodePillMetrics.height)
+            .fixedSize()
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                widths[workspace.id] = width
+            }
+            .opacity(peeking ? 0 : 1)
+            .frame(width: (expanded ? columnWidth : topWidth) ?? widths[workspace.id])
+            .background {
+                if highlighted {
+                    Capsule().fill(Theme.hover)
+                }
+            }
+            .codeRepoPillChrome(running: running && !peeking, lifted: highlighted || (depth == 0 && showsPopover))
+        }
+        .buttonStyle(PressableButtonStyle())
+        .clickable()
+        .help(CodeRepoPillLabel.helpText(workspace))
+        .onHover { inside in
+            if inside, expanded {
+                highlightedID = workspace.id
+            }
+        }
+        .allowsHitTesting(expanded || depth == 0)
+        .accessibilityHidden(hidden)
+        .scaleEffect(peeking && !reduceMotion ? 1 - 0.05 * falloff : 1, anchor: .top)
+        .offset(y: expanded ? CGFloat(depth) * CodePillMetrics.rowPitch : falloff * CodePillMetrics.peek)
+        .opacity(hidden ? 0 : peeking ? 1 - 0.28 * falloff : 1)
+        .zIndex(Double(total - depth))
+    }
+
+    private func hover(_ inside: Bool) {
+        exitTask?.cancel()
+        if inside {
+            if !hovering {
+                suppressed = false
+            }
+            hovering = true
+            return
+        }
+        exitTask = Task { @MainActor in
+            try? await Task.sleep(for: CodePillMetrics.exitDelay)
+            guard !Task.isCancelled else { return }
+            hovering = false
+            if !focused {
+                highlightedID = nil
+            }
+        }
+    }
+
+    private func move(by step: Int) -> KeyPress.Result {
+        let ids = ordered.map(\.id)
+        guard !ids.isEmpty else { return .ignored }
+        suppressed = false
+        let current = highlightedID.flatMap { ids.firstIndex(of: $0) } ?? (step > 0 ? -1 : ids.count)
+        highlightedID = ids[(current + step + ids.count) % ids.count]
+        return .handled
+    }
+
+    private func open(_ id: String, fromKeyboard: Bool) {
+        exitTask?.cancel()
+        if !fromKeyboard {
+            focused = false
+        }
+        topID = id
+        highlightedID = id
+        suppressed = true
+        showsPopover = true
+    }
+}
+
+private struct CodeRepoPillLabel: View {
+    let workspace: CodeWorkspace
+    let running: Bool
+    var padded = true
+
+    var body: some View {
+        if padded {
+            content
+                .padding(.horizontal, Spacing.m)
+                .frame(height: CodePillMetrics.height)
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
+        HStack(spacing: Spacing.s) {
+            ZStack {
+                if running {
+                    ProgressView().controlSize(.mini)
+                        .transition(.opacity)
+                } else {
+                    Image(systemName: "arrow.triangle.branch")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .transition(.opacity)
+                }
+            }
+            .frame(width: 14)
+            Text(workspace.repoName)
+                .font(TypeScale.captionStrong)
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(1)
+            if let counts = Self.counts(workspace) {
+                HStack(spacing: Spacing.xs) {
+                    Text("\(counts.files)")
+                        .foregroundStyle(Theme.textSecondary)
+                    Text("·").foregroundStyle(Theme.textTertiary)
+                    ChangeCount(added: counts.added, removed: counts.removed)
+                }
+                .font(TypeScale.counter)
+                .contentTransition(.numericText())
+            }
+            if let pr = workspace.pr {
+                PullRequestPillBadge(pr: pr)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
+        }
+    }
+
+    static func counts(_ workspace: CodeWorkspace) -> (files: Int, added: Int, removed: Int)? {
         if let pr = workspace.pr, pr.status == .merged || pr.status == .closed {
             return pr.files > 0 ? (pr.files, pr.additions, pr.deletions) : nil
         }
         return workspace.files > 0 ? (workspace.files, workspace.added, workspace.removed) : nil
+    }
+
+    static func helpText(_ workspace: CodeWorkspace) -> String {
+        let files = counts(workspace).map { " · \($0.files) arquivo\($0.files == 1 ? "" : "s") alterado\($0.files == 1 ? "" : "s")" } ?? ""
+        let pr = workspace.pr.map { " · " + PullRequestPillBadge(pr: $0).helpText } ?? ""
+        return "\(workspace.repoName) · \(workspace.branch)\(files)\(pr)"
+    }
+}
+
+private extension View {
+    func codeRepoPillChrome(running: Bool, lifted: Bool) -> some View {
+        overlay {
+            if running {
+                GlassShimmer()
+                    .clipShape(Capsule())
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .glassSurface(Capsule(), interactive: true, fallback: lifted ? Theme.surfaceRaised : Theme.surface)
+        .contentShape(Capsule())
     }
 }
 
