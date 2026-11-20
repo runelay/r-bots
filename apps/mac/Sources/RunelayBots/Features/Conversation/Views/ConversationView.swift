@@ -208,12 +208,8 @@ struct ConversationView: View {
     @State private var unseenCount = 0
     @State private var lastEntryID: String?
     @State private var userScrolled = false
-    @State private var revealed = false
-    @State private var revealToken = 0
-    @State private var bottomDistance: CGFloat = .infinity
-    @State private var hiddenSince = Date()
-    @State private var hiddenPass = 0
     @State private var footerHeight: CGFloat = 0
+    @State private var visible = VisibleItems()
 
     private static let bottomID = "transcript-bottom"
     private static let fadeHeight: CGFloat = 40
@@ -257,9 +253,6 @@ struct ConversationView: View {
         .overlay(alignment: .top) {
             CallOverlay(bot: bot)
         }
-        .onDisappear {
-            revealToken &+= 1
-        }
     }
 
     private var transcript: some View {
@@ -270,24 +263,9 @@ struct ConversationView: View {
                     let bubbles = snapshot.bubbles
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if store.hasOlder {
-                            Button {
+                            OlderMessagesRow(loading: store.isLoadingOlder) {
                                 store.loadOlder()
-                            } label: {
-                                HStack(spacing: Spacing.s) {
-                                    if store.isLoadingOlder {
-                                        ProgressView()
-                                            .controlSize(.small)
-                                    }
-                                    Text(store.isLoadingOlder ? "Carregando mensagens anteriores…" : "Ver mensagens anteriores")
-                                        .font(TypeScale.caption)
-                                        .foregroundStyle(Theme.textTertiary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
-                            .clickable()
-                            .disabled(store.isLoadingOlder)
                         }
                         ForEach(snapshot.items) { item in
                             Group {
@@ -339,25 +317,26 @@ struct ConversationView: View {
                                 .transition(.opacity)
                         }
                         Spacer(minLength: 0)
-                            .frame(height: Self.fadeHeight + (hiddenPass.isMultiple(of: 2) ? 0 : 0.5))
+                            .frame(height: Self.fadeHeight)
                             .id(Self.bottomID)
                     }
                     .frame(maxWidth: Metrics.transcriptWidth, alignment: .leading)
                     .padding(.horizontal, Spacing.xxl)
                     .padding(.top, Spacing.l + Spacing.s)
                     .frame(maxWidth: .infinity, minHeight: geometry.size.height, alignment: .bottom)
-                    .id(ObjectIdentifier(store))
-                    .transition(Motion.clear(reduceMotion: reduceMotion))
                     .scrollTargetLayout()
-                    .springAnimation(value: store.historySettled ? store.entries.count : 0)
+                    .springAnimation(value: store.entryMotion)
                     .springAnimation(value: store.showsThinking)
                 }
                 .defaultScrollAnchor(.bottom)
-                .defaultScrollAnchor(showsJumpButton ? .top : .bottom, for: .sizeChanges)
+                .defaultScrollAnchor(showsJumpButton && !store.isLoadingOlder ? .top : .bottom, for: .sizeChanges)
+                .onScrollTargetVisibilityChange(idType: String.self, threshold: 0.2) { ids in
+                    visible.firstID = ids.first
+                }
                 .onScrollGeometryChange(for: Bool.self) { geometry in
-                    geometry.contentOffset.y < 120 || geometry.contentSize.height <= geometry.containerSize.height + 1
+                    geometry.contentOffset.y < 160 || geometry.contentSize.height <= geometry.containerSize.height + 1
                 } action: { _, nearTop in
-                    guard nearTop, revealed, store.historySettled, store.hasOlder, !store.isLoadingOlder else { return }
+                    guard nearTop, userScrolled, store.historySettled, store.hasOlder, !store.isLoadingOlder else { return }
                     store.loadOlder()
                 }
                 .onScrollGeometryChange(for: Int.self) { geometry in
@@ -370,13 +349,6 @@ struct ConversationView: View {
                         showsJumpButton = false
                         unseenCount = 0
                     }
-                }
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentSize.height + geometry.contentInsets.bottom - geometry.visibleRect.maxY
-                } action: { _, distance in
-                    guard !revealed else { return }
-                    bottomDistance = distance
-                    positionHidden(proxy)
                 }
                 .mask {
                     transcriptMask
@@ -399,16 +371,10 @@ struct ConversationView: View {
                         userScrolled = true
                     }
                 }
-                .overlay {
-                    if !revealed {
-                        Theme.background
-                            .transition(.opacity)
-                    }
-                }
-                .onChange(of: store.entries.count) {
+                .onChange(of: store.entryMotion) {
                     let previous = lastEntryID
                     lastEntryID = store.entries.last?.id
-                    guard revealed, store.historySettled, store.prependAnchorID == nil || !store.isLoadingOlder else { return }
+                    guard store.historySettled, !store.isLoadingOlder else { return }
                     guard previous != lastEntryID else { return }
                     let sentByMe = store.entries.last.map { $0.kind == .user && store.userMessages[$0.id]?.fromBotID == nil } ?? false
                     if showsJumpButton && !sentByMe {
@@ -419,33 +385,35 @@ struct ConversationView: View {
                     scrollToEnd(proxy)
                 }
                 .onChange(of: store.historySettled) {
-                    hiddenSince = Date()
                     jumpToBottom(proxy)
                     fillIfShort()
-                    positionHidden(proxy)
+                    reportShown()
                 }
                 .onChange(of: store.isLoadingOlder) {
                     if !store.isLoadingOlder {
                         fillIfShort()
-                        positionHidden(proxy)
                     }
                 }
-                .onChange(of: bot.id, initial: true) {
-                    startHidden(proxy)
-                }
-                .onChange(of: ObjectIdentifier(store)) {
-                    startHidden(proxy)
-                }
-                .onChange(of: store.prependToken) {
-                    guard revealed, let anchor = store.prependAnchorID else { return }
-                    var transaction = Transaction()
-                    transaction.disablesAnimations = true
-                    withTransaction(transaction) {
-                        proxy.scrollTo(anchor, anchor: .top)
+                .onAppear {
+                    lastEntryID = store.entries.last?.id
+                    if let anchor = store.scrollAnchorID {
+                        userScrolled = true
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            proxy.scrollTo(anchor, anchor: .top)
+                        }
                     }
+                    if store.historySettled {
+                        fillIfShort()
+                        reportShown()
+                    }
+                }
+                .onDisappear {
+                    store.scrollAnchorID = showsJumpButton && userScrolled ? visible.firstID : nil
                 }
                 .onChange(of: store.showsThinking) {
-                    guard revealed, store.historySettled, !showsJumpButton else { return }
+                    guard store.historySettled, !showsJumpButton else { return }
                     withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
                         proxy.scrollTo(Self.bottomID, anchor: .bottom)
                     }
@@ -453,16 +421,18 @@ struct ConversationView: View {
             }
         }
         .overlay {
-            if store.isLoadingHistory {
-                TranscriptSkeleton()
-                    .transition(.opacity)
-            } else if store.entries.isEmpty && !store.showsThinking {
+            TranscriptLoadingLayer(loading: store.isLoadingHistory)
+        }
+        .overlay {
+            if !store.isLoadingHistory && store.entries.isEmpty && !store.showsThinking {
                 ConversationEmptyState(bot: bot, mood: store.mood)
-                    .transition(.opacity)
             }
         }
-        .springAnimation(value: store.isLoadingHistory)
-        .springAnimation(value: ObjectIdentifier(store))
+    }
+
+    private func reportShown() {
+        guard store.historySettled else { return }
+        OpenTiming.shown(store.sessionId, source: store.isRestored ? "cache" : "network")
     }
 
     private var transcriptMask: some View {
@@ -489,56 +459,6 @@ struct ConversationView: View {
             withAnimation(.smooth(duration: 0.45)) {
                 proxy.scrollTo(Self.bottomID, anchor: .bottom)
             }
-        }
-    }
-
-    private func startHidden(_ proxy: ScrollViewProxy) {
-        revealed = false
-        userScrolled = false
-        showsJumpButton = false
-        bottomDistance = .infinity
-        hiddenSince = Date()
-        guard store.historySettled else { return }
-        jumpToBottom(proxy)
-        positionHidden(proxy)
-    }
-
-    private func positionHidden(_ proxy: ScrollViewProxy) {
-        guard !revealed, store.historySettled else { return }
-        revealToken += 1
-        let token = revealToken
-        if store.transcriptSnapshot(now: Date()).items.isEmpty && !store.isLoadingOlder {
-            reveal()
-            return
-        }
-        let overdue = Date().timeIntervalSince(hiddenSince) > 2.5
-        let ready = (-4...24).contains(bottomDistance) && !store.isLoadingOlder
-        if !ready {
-            DispatchQueue.main.async {
-                guard token == revealToken, !revealed else { return }
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) {
-                    proxy.scrollTo(Self.bottomID, anchor: .bottom)
-                }
-                DispatchQueue.main.async {
-                    hiddenPass &+= 1
-                }
-            }
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + (ready ? 0.05 : overdue ? 0.03 : 0.4)) {
-            guard token == revealToken, !revealed else { return }
-            if ready || overdue {
-                reveal()
-            } else {
-                positionHidden(proxy)
-            }
-        }
-    }
-
-    private func reveal() {
-        withAnimation(.easeOut(duration: 0.12)) {
-            revealed = true
         }
     }
 
@@ -609,6 +529,10 @@ struct ConversationView: View {
         .springAnimation(value: store.connection)
         .springAnimation(value: store.openApprovalIDs.count)
     }
+}
+
+final class VisibleItems {
+    var firstID: String?
 }
 
 struct JumpToBottomButton: View {

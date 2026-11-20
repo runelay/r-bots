@@ -29,7 +29,22 @@ final class ConversationStore {
     var composerAttachments: [ComposerAttachment] = []
     @ObservationIgnored private var sendWhenReady = false
 
-    private(set) var entries: [TranscriptEntry] = [] { didSet { transcriptRevision &+= 1 } }
+    private(set) var entries: [TranscriptEntry] = [] {
+        didSet {
+            transcriptRevision &+= 1
+            if historySettled && !quietEntries {
+                entryMotion &+= 1
+            }
+        }
+    }
+    private(set) var entryMotion = 0
+    @ObservationIgnored private var quietEntries = false
+    @ObservationIgnored private var recentLines: [[StreamFact]] = []
+    @ObservationIgnored private var lineCursor: Int?
+    @ObservationIgnored private var restoredCursor: Int?
+    @ObservationIgnored private var catchUpBuffer: [StreamRecord]?
+    @ObservationIgnored private var catchUpTarget: Int?
+    @ObservationIgnored private var saveTask: Task<Void, Never>?
     private(set) var userMessages: [String: UserMessage] = [:] { didSet { transcriptRevision &+= 1 } }
     private(set) var textParts: [String: TextPart] = [:] { didSet { transcriptRevision &+= 1 } }
     private(set) var toolCalls: [String: ToolCall] = [:] { didSet { transcriptRevision &+= 1 } }
@@ -85,6 +100,82 @@ final class ConversationStore {
         self.client = client
         self.sessionId = sessionId
         historySettled = settled || sessionId == nil
+        if let sessionId, !settled, let cached = TranscriptCache.shared.read(server: client.baseURL, sessionID: sessionId) {
+            restore(cached)
+        }
+    }
+
+    var isRestored: Bool {
+        restoredCursor != nil
+    }
+
+    private func restore(_ cached: CachedTranscript) {
+        for facts in cached.lines {
+            apply(.facts(facts))
+        }
+        recentLines = cached.lines
+        lineCursor = cached.total
+        restoredCursor = cached.total
+        olderCursor = cached.start > 0 ? cached.start : nil
+        hasOlder = cached.start > 0
+        historySettled = true
+    }
+
+    private func remember(_ lines: [[StreamFact]], total: Int? = nil) {
+        guard let sessionId else { return }
+        recentLines.append(contentsOf: lines)
+        if recentLines.count > TranscriptCache.pageSize {
+            recentLines.removeFirst(recentLines.count - TranscriptCache.pageSize)
+        }
+        lineCursor = total ?? (lineCursor ?? 0) + lines.count
+        guard let cursor = lineCursor else { return }
+        let snapshot = CachedTranscript(lines: recentLines, total: cursor)
+        let server = client.baseURL
+        saveTask?.cancel()
+        saveTask = Task(priority: .utility) {
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            TranscriptCache.shared.write(snapshot, server: server, sessionID: sessionId)
+        }
+    }
+
+    private func receive(_ record: StreamRecord) {
+        if var buffer = catchUpBuffer {
+            buffer.append(record)
+            catchUpBuffer = buffer
+            if case .facts = record, let target = catchUpTarget,
+               (lineCursor ?? 0) + buffer.reduce(0, { $0 + (Self.isFacts($1) ? 1 : 0) }) >= target {
+                flushCatchUp()
+            }
+            return
+        }
+        apply(record)
+        if case .facts(let facts) = record {
+            remember([facts])
+        }
+    }
+
+    private static func isFacts(_ record: StreamRecord) -> Bool {
+        if case .facts = record { return true }
+        return false
+    }
+
+    private func flushCatchUp() {
+        guard let buffer = catchUpBuffer else { return }
+        catchUpBuffer = nil
+        catchUpTarget = nil
+        quietEntries = true
+        var lines: [[StreamFact]] = []
+        for record in buffer {
+            apply(record)
+            if case .facts(let facts) = record {
+                lines.append(facts)
+            }
+        }
+        quietEntries = false
+        if !lines.isEmpty {
+            remember(lines)
+        }
     }
 
     func transcriptSnapshot(now: Date) -> TranscriptSnapshot {
@@ -270,9 +361,29 @@ final class ConversationStore {
         let client = client
         let basePath = bot.sessionBasePath
         let stream = SessionStream(client: client, basePath: basePath, sessionId: sessionId)
+        if let cursor = lineCursor {
+            catchUpBuffer = []
+            Task { [weak self] in
+                let head = try? await client.events(basePath: basePath, sessionId: sessionId, before: nil, limit: 1)
+                guard let self, self.catchUpBuffer != nil else { return }
+                let buffered = self.catchUpBuffer?.reduce(0) { $0 + (Self.isFacts($1) ? 1 : 0) } ?? 0
+                if let total = head?.total, total > cursor + buffered {
+                    self.catchUpTarget = total
+                    try? await Task.sleep(for: .seconds(4))
+                }
+                self.flushCatchUp()
+            }
+            streamTask = Task { [weak self] in
+                for await record in stream.records(startingAt: cursor) {
+                    guard let self else { return }
+                    self.receive(record)
+                }
+            }
+            return
+        }
         streamTask = Task { [weak self] in
             var startIndex = 0
-            let firstPage = try? await client.events(basePath: basePath, sessionId: sessionId, before: nil, limit: 60)
+            let firstPage = try? await client.events(basePath: basePath, sessionId: sessionId, before: nil, limit: TranscriptCache.pageSize)
             if let page = firstPage {
                 guard let self else { return }
                 for facts in page.lines {
@@ -281,11 +392,13 @@ final class ConversationStore {
                 self.olderCursor = page.nextBefore
                 self.hasOlder = (page.nextBefore ?? 0) > 0
                 startIndex = page.total ?? 0
+                self.recentLines = []
+                self.remember(page.lines, total: startIndex)
                 self.settleHistory()
             }
             for await record in stream.records(startingAt: startIndex) {
                 guard let self else { return }
-                self.apply(record)
+                self.receive(record)
             }
         }
     }
@@ -297,7 +410,7 @@ final class ConversationStore {
         let basePath = bot.sessionBasePath
         Task {
             defer { isLoadingOlder = false }
-            let fetched = try? await client.events(basePath: basePath, sessionId: sessionId, before: before, limit: 60)
+            let fetched = try? await client.events(basePath: basePath, sessionId: sessionId, before: before, limit: TranscriptCache.pageSize)
             guard let page = fetched else {
                 hasOlder = false
                 return
@@ -317,7 +430,9 @@ final class ConversationStore {
         let fresh = older.entries.filter { !existing.contains($0.id) }
         guard !fresh.isEmpty else { return }
         prependAnchorID = entries.first?.id
+        quietEntries = true
         entries = fresh + entries
+        quietEntries = false
         userMessages.merge(older.userMessages) { current, _ in current }
         textParts.merge(older.textParts) { current, _ in current }
         toolCalls.merge(older.toolCalls) { current, _ in current }

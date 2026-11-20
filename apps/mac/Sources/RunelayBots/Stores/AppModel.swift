@@ -257,6 +257,7 @@ final class AppModel {
     private(set) var conversationLists: [String: [BotConversation]] = [:]
     private var sessionStatuses: [String: BotStatus] = [:]
     @ObservationIgnored private var parkedStores: [String: ConversationStore] = [:]
+    @ObservationIgnored private var parkedOrder: [String] = []
     @ObservationIgnored private var draftReturns: [String: ConversationStore] = [:]
     private(set) var draftBots: Set<String> = []
     private var draftPermissions: [String: PermissionMode] = [:]
@@ -411,12 +412,14 @@ final class AppModel {
         started = true
         async let metaResult = client.meta()
         await loadBots()
+        warmTranscripts()
         applyMeta(await metaResult)
         await loadSections()
         await loadGroups()
         await loadAccounts()
         await loadConnectors()
         startRefreshing()
+        OpenBench.runIfRequested(self)
     }
 
     func loadBots() async {
@@ -849,14 +852,16 @@ final class AppModel {
             store.start()
             return
         }
+        if let knownSession = bot.thread?.sessionId {
+            let store = makeStore(bot: bot, sessionId: knownSession)
+            threads[botID] = store
+            store.start()
+            return
+        }
         resolvingThreads.insert(botID)
         let client = client
-        let knownSession = bot.thread?.sessionId
         Task {
-            var sessionId = knownSession
-            if sessionId == nil {
-                sessionId = await client.thread(botID: botID)?.sessionId
-            }
+            var sessionId = await client.thread(botID: botID)?.sessionId
             if sessionId == nil {
                 sessionId = (try? await client.sessions(botID: botID))?.first?.sessionId
             }
@@ -1143,6 +1148,8 @@ final class AppModel {
         threads = [:]
         parkedStores = [:]
         draftReturns = [:]
+        parkedOrder = []
+        TranscriptCache.shared.forgetMemory()
         browser.reset(botID: nil)
         NSApp?.dockTile.badgeLabel = nil
     }
@@ -1286,9 +1293,10 @@ final class AppModel {
         if let current = threads[botID] {
             if current.sessionId == sessionID { return }
             if let id = current.sessionId {
-                parkedStores[id] = current
+                park(current, sessionID: id)
             }
         }
+        parkedOrder.removeAll { $0 == sessionID }
         let store = parkedStores.removeValue(forKey: sessionID) ?? makeStore(bot: bot, sessionId: sessionID)
         threads[botID] = store
         resolvingThreads.remove(botID)
@@ -1299,8 +1307,30 @@ final class AppModel {
         guard let sessionID else { return }
         guard threads[botID]?.sessionId != sessionID, parkedStores[sessionID] == nil, let bot = bot(id: botID) else { return }
         let store = makeStore(bot: bot, sessionId: sessionID)
-        parkedStores[sessionID] = store
+        park(store, sessionID: sessionID)
         store.start()
+    }
+
+    private func park(_ store: ConversationStore, sessionID: String) {
+        parkedStores[sessionID] = store
+        parkedOrder.removeAll { $0 == sessionID }
+        parkedOrder.append(sessionID)
+        while parkedOrder.count > 8 {
+            let evicted = parkedOrder.removeFirst()
+            parkedStores.removeValue(forKey: evicted)?.stop()
+        }
+    }
+
+    func prefetchConversation(botID: String, sessionID: String) {
+        guard threads[botID]?.sessionId != sessionID, parkedStores[sessionID] == nil, let bot = bot(id: botID) else { return }
+        TranscriptCache.shared.warm(client: client, basePath: bot.sessionBasePath, sessionID: sessionID)
+    }
+
+    private func warmTranscripts() {
+        for bot in sortedBots.prefix(8) where !bot.isPending {
+            guard let sessionID = bot.thread?.sessionId, threads[bot.id] == nil else { continue }
+            TranscriptCache.shared.warm(client: client, basePath: bot.sessionBasePath, sessionID: sessionID)
+        }
     }
 
     func isDraft(_ botID: String) -> Bool {
@@ -1336,7 +1366,7 @@ final class AppModel {
         draftBots.remove(botID)
         draftPermissions.removeValue(forKey: botID)
         if let previous = draftReturns.removeValue(forKey: botID), let id = previous.sessionId {
-            parkedStores[id] = previous
+            park(previous, sessionID: id)
         }
         collapsedBots.remove(botID)
         upsertConversation(created)

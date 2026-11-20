@@ -254,8 +254,8 @@ struct DetailView: View {
     var body: some View {
         if let store = model.selectedConversation, let bot = model.selectedBot {
             ConversationView(store: store, bot: bot, focusToken: model.composerFocusToken)
-                .id(bot.id)
-                .transition(.opacity)
+                .id(ObjectIdentifier(store))
+                .transition(.identity)
         } else {
             ZStack(alignment: .top) {
                 VStack(spacing: Spacing.m) {

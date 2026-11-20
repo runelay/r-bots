@@ -377,28 +377,99 @@ struct ViaAgentTag: View {
 }
 
 struct TranscriptSkeleton: View {
+    private static let solo = BubbleMeta()
+    private static let first = BubbleMeta(isFirst: true, isLast: false)
+    private static let last = BubbleMeta(isFirst: false, isLast: true)
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Spacing.xl) {
-            Spacer()
-            HStack {
-                Spacer()
-                RoundedRectangle(cornerRadius: Radius.large, style: .continuous)
-                    .fill(Theme.surfaceRaised)
-                    .frame(width: 220, height: 40)
-            }
-            RoundedRectangle(cornerRadius: Radius.large, style: .continuous)
-                .fill(Theme.surface)
-                .frame(height: 96)
-            RoundedRectangle(cornerRadius: Radius.large, style: .continuous)
-                .fill(Theme.surface)
-                .frame(width: 320, height: 56)
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 0)
+            userBubble(width: 260, height: 40)
+            botBubble(width: 420, height: 88, meta: Self.first, avatar: false)
+                .padding(.top, 14)
+            botBubble(width: 300, height: 40, meta: Self.last, avatar: true)
+                .padding(.top, 4)
+            userBubble(width: 180, height: 40)
+                .padding(.top, 14)
+            botBubble(width: 360, height: 64, meta: Self.solo, avatar: true)
+                .padding(.top, 14)
         }
-        .frame(maxWidth: Metrics.transcriptWidth)
+        .frame(maxWidth: Metrics.transcriptWidth, alignment: .leading)
         .padding(.horizontal, Spacing.xxl)
-        .padding(.bottom, Spacing.l)
+        .padding(.bottom, 40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background)
         .accessibilityLabel("Carregando conversa")
+    }
+
+    private func userBubble(width: CGFloat, height: CGFloat) -> some View {
+        HStack {
+            Spacer(minLength: 0)
+            BubbleShape.make(meta: Self.solo, trailing: true)
+                .fill(Theme.surfaceRaised)
+                .frame(width: width, height: height)
+        }
+    }
+
+    private func botBubble(width: CGFloat, height: CGFloat, meta: BubbleMeta, avatar: Bool) -> some View {
+        HStack(alignment: .bottom, spacing: Spacing.s) {
+            Circle()
+                .fill(avatar ? Theme.surfaceRaised : Color.clear)
+                .frame(width: 20, height: 20)
+            BubbleShape.make(meta: meta, trailing: false)
+                .fill(Theme.surface)
+                .frame(width: width, height: height)
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+struct TranscriptLoadingLayer: View {
+    let loading: Bool
+    @State private var armed = false
+
+    var body: some View {
+        ZStack {
+            if loading && armed {
+                TranscriptSkeleton()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: loading && armed)
+        .allowsHitTesting(loading && armed)
+        .task {
+            guard loading else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            armed = true
+        }
+    }
+}
+
+struct OlderMessagesRow: View {
+    let loading: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                if loading {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Text("Ver mensagens anteriores")
+                        .font(TypeScale.caption)
+                        .foregroundStyle(hovering ? Theme.textSecondary : Theme.textTertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 24)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .clickable()
+        .disabled(loading)
+        .onHover { hovering = $0 }
+        .accessibilityLabel(loading ? "Carregando mensagens anteriores" : "Ver mensagens anteriores")
     }
 }
 
