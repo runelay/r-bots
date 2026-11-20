@@ -120,7 +120,6 @@ private struct SignInFormPane: View {
             footer
         }
         .padding(.horizontal, Spacing.xl)
-        .padding(.top, FrameMetrics.stripHeight + Spacing.s)
         .padding(.bottom, Spacing.l)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: variant)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: error)
@@ -132,13 +131,6 @@ private struct SignInFormPane: View {
 
     private var topBar: some View {
         HStack(spacing: Spacing.s) {
-            RunelayAppMark(size: 26)
-            Text("runelay bots")
-                .font(BrandFonts.wordmark(15))
-                .tracking(-0.5)
-                .foregroundStyle(Theme.textPrimary)
-                .lineLimit(1)
-                .fixedSize()
             Spacer(minLength: Spacing.m)
             if variant != .setup && session.pendingUserCode == nil {
                 Text(variant == .signin ? "Não tem conta?" : "Já tem conta?")
@@ -155,7 +147,7 @@ private struct SignInFormPane: View {
                 .buttonStyle(SignInSmallButtonStyle())
             }
         }
-        .frame(height: 32)
+        .frame(height: FrameMetrics.stripHeight)
     }
 
     private var subtitle: String {
