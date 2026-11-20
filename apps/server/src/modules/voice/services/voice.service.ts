@@ -15,8 +15,15 @@ import { type BotDefinition, voiceOf } from "../../bots/services/bots.service";
 import type { Fact, StoredSession } from "../../conversations/services/sessions.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
-import { deliver } from "../../engine/services/engine.service";
+import { answerQuestion, deliver } from "../../engine/services/engine.service";
 import { integrationSecret, onIntegrationChange } from "../../integrations/services/integration-store.service";
+import {
+  isSpokenSkip,
+  matchSpokenOption,
+  otherOptionId,
+  type Question,
+  spokenQuestion,
+} from "../../questions/services/questions.service";
 
 function apiBase() {
   return process.env.ELEVENLABS_API_URL ?? "https://api.elevenlabs.io";
@@ -401,6 +408,8 @@ export type CallEvent = Record<string, unknown> & { type: string };
 interface PendingApproval {
   interactionId: string;
   prompt: string;
+  questions?: Question[];
+  answers?: Array<{ questionId: string; optionIds?: string[]; text?: string; skipped?: boolean }>;
 }
 
 export interface VoiceCall {
@@ -614,8 +623,21 @@ function onFacts(call: VoiceCall, facts: Fact[]) {
       list.push(String(fact.data.value ?? ""));
       call.replies.set(turnId, list);
     } else if (fact.type === "interaction.opened") {
-      const request = fact.data.request as { prompt?: string } | undefined;
+      const request = fact.data.request as { prompt?: string; kind?: string; questions?: Question[] } | undefined;
       const interactionId = String(fact.data.interactionId ?? "");
+      if (request?.kind === "question" && request.questions?.length) {
+        call.pending = {
+          interactionId,
+          prompt: String(request.prompt ?? ""),
+          questions: request.questions,
+          answers: [],
+        };
+        emit(call, { type: "question.asked", interactionId, questions: request.questions });
+        emit(call, { type: "bot.state", state: "awaiting", turnId });
+        call.fast.cancelAll();
+        sayFixed(call, "question", spokenQuestion(request.questions[0], 0, request.questions.length));
+        continue;
+      }
       call.pending = { interactionId, prompt: String(request?.prompt ?? "") };
       emit(call, { type: "approval.asked", interactionId, prompt: call.pending.prompt });
       emit(call, { type: "bot.state", state: "awaiting", turnId });
@@ -717,6 +739,7 @@ export function classifyAnswer(text: string): "approve" | "deny" | null {
 export async function onUtterance(call: VoiceCall, text: string, interrupted = false) {
   const startedAt = Date.now();
   if (call.hangup || (!call.ended && wantsHangup(text))) return hangUp(call);
+  if (call.pending?.questions) return answerSpokenQuestion(call, text);
   if (call.pending) {
     call.fast.cancelAll();
     const pending = call.pending;
@@ -746,6 +769,32 @@ export async function onUtterance(call: VoiceCall, text: string, interrupted = f
   if (isCourtesy(text)) call.lastAck = null;
   else speak(call, "ack", text, startedAt);
   return { action: "message" as const, deliveryId, sessionId: call.session.meta.sessionId, continuation: false };
+}
+
+function answerSpokenQuestion(call: VoiceCall, text: string) {
+  call.fast.cancelAll();
+  const pending = call.pending as PendingApproval & { questions: Question[] };
+  const answers = pending.answers ?? [];
+  const question = pending.questions[answers.length];
+  if (isSpokenSkip(text)) answers.push({ questionId: question.id, skipped: true });
+  else {
+    const optionIds = matchSpokenOption(question, text);
+    answers.push(
+      optionIds.length > 0
+        ? { questionId: question.id, optionIds }
+        : { questionId: question.id, optionIds: [otherOptionId], text },
+    );
+  }
+  pending.answers = answers;
+  const next = pending.questions[answers.length];
+  if (next) {
+    sayFixed(call, "question", spokenQuestion(next, answers.length, pending.questions.length));
+    return { action: "question" as const, interactionId: pending.interactionId, index: answers.length };
+  }
+  call.pending = null;
+  const applied = answerQuestion(call.session, randomUUID(), pending.interactionId, { questions: answers });
+  sayFixed(call, "question", answers.every((item) => item.skipped) ? "Tá bom, eu decido." : "Beleza, seguindo.");
+  return { action: "answered" as const, interactionId: pending.interactionId, applied };
 }
 
 export function armIdle(call: VoiceCall) {

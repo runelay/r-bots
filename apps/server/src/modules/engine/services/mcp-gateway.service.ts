@@ -47,6 +47,11 @@ import {
   prepareSecretInput,
   registerVaultTools,
 } from "../../vault/services/vault-tools.service";
+import {
+  type QuestionOutcome,
+  type QuestionRequest,
+  registerQuestionTools,
+} from "../../questions/services/questions.service";
 import { registerServerTools } from "../../servers/services/server-tools.service";
 import type { ApprovalDetails, BotTool } from "./bot-tools.service";
 
@@ -77,6 +82,7 @@ export interface ToolContext {
     origin: string | null,
     details?: ApprovalDetails,
   ) => Promise<ApprovalResult>;
+  askUser?: (request: QuestionRequest, callId: string, origin: string | null) => Promise<QuestionOutcome>;
   delegate: (targetId: string, message: string, callId: string) => Promise<string>;
   bot: BotDefinition;
   request: string;
@@ -1565,6 +1571,7 @@ export function buildServer(context: ToolContext) {
   registerVaultTools(server, context);
   registerServerTools(server, context);
   registerThreadTools(server, context);
+  registerQuestionTools(server, context);
   if (context.groupMembers.length > 0) {
     const ids = context.groupMembers.map((member) => member.id) as [string, ...string[]];
     server.registerTool(

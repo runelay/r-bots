@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { model } from "../../../config/env";
+import { ValidationError } from "../../../shared/errors";
 import { notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
 import type { BotDefinition } from "../../bots/services/bots.service";
-import { answer, cancel, deliver } from "../../engine/services/engine.service";
+import { answer, answerQuestion, cancel, deliver } from "../../engine/services/engine.service";
+import { isQuestionAnswer } from "../../questions/services/questions.service";
 import { lineOf } from "../repositories/sessions.repository";
 import { createStoredSession, getStoredSession, type StoredSession, sessionsOf } from "../services/sessions.service";
 import { peekThread } from "../services/threads.service";
@@ -52,6 +54,15 @@ async function handleSessionPost(req: Req, res: Res, bot: BotDefinition, session
   if (raw.answers && raw.answers.length > 0) {
     let applied = 0;
     for (const item of raw.answers) {
+      if (isQuestionAnswer(item)) {
+        try {
+          if (item.interactionId && answerQuestion(session, deliveryId, item.interactionId, item)) applied++;
+        } catch (error) {
+          if (!(error instanceof ValidationError)) throw error;
+          return sendJson(res, 400, { ok: false, error: error.message, field: error.field });
+        }
+        continue;
+      }
       const optionId =
         item.optionId === "approve" || item.optionId === "deny" || item.optionId === "approve_always"
           ? item.optionId
@@ -68,7 +79,7 @@ async function handleSessionPost(req: Req, res: Res, bot: BotDefinition, session
       return sendJson(res, 409, {
         ok: false,
         code: "interaction_not_pending",
-        error: "Essa aprovação não está mais pendente.",
+        error: "Essa aprovação ou pergunta não está mais pendente.",
       });
     }
   }

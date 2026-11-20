@@ -288,12 +288,7 @@ describe("hang up by voice", () => {
     expect(result).toMatchObject({ action: "hangup" });
     expect(deliver).not.toHaveBeenCalled();
     expect(query.prompts).toHaveLength(1);
-    expect(events.map((event) => event.type)).toEqual([
-      "speech.started",
-      "speech.delta",
-      "speech.done",
-      "call.hangup",
-    ]);
+    expect(events.map((event) => event.type)).toEqual(["speech.started", "speech.delta", "speech.done", "call.hangup"]);
     expect(events[0]).toMatchObject({ kind: "goodbye" });
     expect(events[2]).toMatchObject({ text: "Combinado, até mais." });
     expect(events[3]).toMatchObject({ speechId: events[0]?.id });
@@ -313,7 +308,9 @@ describe("hang up by voice", () => {
   });
 
   test("goodbye wins over an open approval and follows the voice language", async () => {
-    const { call } = await warmCall(botOf({ voiceId: "abcdefgh12", speed: 1, language: "en" } as BotDefinition["voice"]));
+    const { call } = await warmCall(
+      botOf({ voiceId: "abcdefgh12", speed: 1, language: "en" } as BotDefinition["voice"]),
+    );
     const events = listen(call);
     call.pending = { interactionId: "i1", prompt: "Posso mandar o e-mail?" };
     expect(await onUtterance(call, "pode desligar")).toMatchObject({ action: "hangup" });
@@ -615,6 +612,69 @@ describe("calls", () => {
     emitFacts(call, { type: "interaction.settled", data: { interactionId: "i1", outcome: "approved" } });
     expect(call.pending).toBeNull();
     expect(events.at(-1)).toEqual({ type: "approval.settled", interactionId: "i1", outcome: "approved" });
+  });
+
+  test("questions are read aloud and answered by letter, ordinal, label, free text or skip", async () => {
+    const { call } = await warmCall();
+    const events = listen(call);
+    const applied = spyOn(engine, "answerQuestion").mockReturnValue(true);
+    try {
+      const options = [
+        { id: "a", label: "Manter o critério de Reels", recommended: true },
+        { id: "b", label: "Só a data da postagem" },
+      ];
+      const questions = [
+        { id: "q1", title: "O que a checagem confere?", multiSelect: false, options },
+        { id: "q2", title: "Qual rede?", multiSelect: true, options },
+        { id: "q3", title: "Prazo?", multiSelect: false, options },
+        { id: "q4", title: "Aviso?", multiSelect: false, options },
+        { id: "q5", title: "Tom?", multiSelect: false, options },
+      ];
+      emitFacts(call, {
+        type: "interaction.opened",
+        data: { interactionId: "q", request: { kind: "question", prompt: "O que a checagem confere?", questions } },
+        scope: { turnId: "t1" },
+      });
+      expect(events).toContainEqual({ type: "question.asked", interactionId: "q", questions });
+      expect(events.at(-1)).toMatchObject({
+        type: "speech.done",
+        text: "Pergunta 1 de 5. O que a checagem confere? A, Manter o critério de Reels, que eu recomendo; B, Só a data da postagem. Ou fala outra coisa.",
+      });
+      expect(await onUtterance(call, "a segunda")).toEqual({ action: "question", interactionId: "q", index: 1 });
+      expect(await onUtterance(call, "manter o critério de reels e só a data da postagem")).toMatchObject({
+        index: 2,
+      });
+      expect(await onUtterance(call, "bê")).toMatchObject({ index: 3 });
+      expect(await onUtterance(call, "pode pular")).toMatchObject({ index: 4 });
+      expect(await onUtterance(call, "quero olhar os comentários também")).toEqual({
+        action: "answered",
+        interactionId: "q",
+        applied: true,
+      });
+      expect(call.pending).toBeNull();
+      expect(applied.mock.calls[0]?.[3]).toEqual({
+        questions: [
+          { questionId: "q1", optionIds: ["b"] },
+          { questionId: "q2", optionIds: ["a", "b"] },
+          { questionId: "q3", optionIds: ["b"] },
+          { questionId: "q4", skipped: true },
+          { questionId: "q5", optionIds: ["other"], text: "quero olhar os comentários também" },
+        ],
+      });
+      expect(events.at(-1)).toMatchObject({ text: "Beleza, seguindo." });
+      emitFacts(call, {
+        type: "interaction.opened",
+        data: { interactionId: "q2", request: { kind: "question", prompt: "Prazo?", questions: [questions[2]] } },
+        scope: { turnId: "t2" },
+      });
+      expect(events.at(-1)).toMatchObject({
+        text: "Prazo? A, Manter o critério de Reels, que eu recomendo; B, Só a data da postagem. Ou fala outra coisa.",
+      });
+      expect(await onUtterance(call, "tanto faz")).toMatchObject({ action: "answered" });
+      expect(events.at(-1)).toMatchObject({ text: "Tá bom, eu decido." });
+    } finally {
+      applied.mockRestore();
+    }
   });
 
   test("a classifier that fails falls back to repeating the question", async () => {

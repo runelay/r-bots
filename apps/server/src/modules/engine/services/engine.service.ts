@@ -71,6 +71,15 @@ import { recordThreadMessage } from "../../conversations/services/threads.servic
 import { activeMembers, getGroup, mentionedMembers } from "../../groups/services/groups.service";
 import { queueCapture } from "../../memory/services/capture-jobs.service";
 import { type RecallItem, recall, recallBlock, teamLogBlock } from "../../memory/services/memory.service";
+import {
+  type AnsweredQuestion,
+  answerSummary,
+  type QuestionOutcome,
+  type QuestionRequest,
+  questionGuide,
+  questionInteraction,
+  resolveAnswers,
+} from "../../questions/services/questions.service";
 import { type LoadedSkill, skillsBlock } from "../../skills/services/skills.service";
 import {
   attachmentsTitle,
@@ -177,6 +186,8 @@ function setStatus(sessionId: string, botId: string, status: RunStatus) {
 
 interface PendingInteraction {
   resolve: (optionId: "approve" | "deny", always?: boolean) => void;
+  question?: QuestionRequest;
+  answer?: (answers: AnsweredQuestion[]) => void;
 }
 
 interface Turn {
@@ -342,6 +353,7 @@ function systemPromptFor(
   if (openGuide) parts.push("", openGuide);
   if (home && !openGuide) parts.push("", shellGuide(home));
   parts.push("", permissionGuide(permission));
+  parts.push("", questionGuide);
   parts.push("", canvasGuide);
   parts.push("", blocksGuide);
   parts.push("", uploadGuide);
@@ -683,6 +695,7 @@ export function answer(
   const turn = runtimes.get(session.meta.sessionId)?.turn;
   const pending = turn?.interactions.get(interactionId);
   if (!turn || !pending) return false;
+  if (pending.question) return answerQuestion(session, deliveryId, interactionId, { optionId: "skip" });
   turn.interactions.delete(interactionId);
   turn.deliveryId = deliveryId;
   const responseId = `response_${deliveryId}_0`;
@@ -702,6 +715,35 @@ export function answer(
     },
   );
   pending.resolve(optionId === "deny" ? "deny" : "approve", optionId === "approve_always");
+  return true;
+}
+
+export function answerQuestion(session: StoredSession, deliveryId: string, interactionId: string, raw: unknown) {
+  const turn = runtimes.get(session.meta.sessionId)?.turn;
+  const pending = turn?.interactions.get(interactionId);
+  if (!turn || !pending?.question || !pending.answer) return false;
+  const answers = resolveAnswers(pending.question, raw);
+  turn.interactions.delete(interactionId);
+  turn.deliveryId = deliveryId;
+  const responseId = `response_${deliveryId}_0`;
+  const scope = { turnId: turn.turnId };
+  const skipped = answers.every((item) => item.skipped);
+  session.log.emit(
+    { type: "response.submitted", data: { deliveryId, interactionId, responseId, value: { answers } }, scope },
+    { type: "response.settled", data: { outcome: "applied", responseId }, scope },
+    {
+      type: "interaction.settled",
+      data: {
+        cause: { responseId },
+        interactionId,
+        outcome: skipped ? "declined" : "accepted",
+        response: { answers },
+        summary: answerSummary(answers),
+      },
+      scope,
+    },
+  );
+  pending.answer(answers);
   return true;
 }
 
@@ -832,6 +874,7 @@ async function executeProvider(run: ProviderRun) {
     onCallStart: run.onCallStart,
     onCallEnd: run.onCallEnd,
     requestApproval: (prompt, callId, origin, details) => requestApproval(log, turn, prompt, callId, origin, details),
+    askUser: (request, callId, origin) => askQuestion(log, turn, request, callId, origin),
     delegate: (targetId, message, callId) => delegateTo(run, targetId, message, callId),
     bot,
     request: run.request,
@@ -980,6 +1023,56 @@ function requestApproval(
         if (!turn.interactions.delete(interactionId)) return;
         log.emit({ type: "interaction.settled", data: { interactionId, outcome: "withdrawn" }, scope });
         resolve({ choice: "deny", interactionId });
+      },
+      { once: true },
+    );
+  });
+}
+
+function askQuestion(log: EventLog, turn: Turn, request: QuestionRequest, callId: string, origin: string | null) {
+  const interactionId = randomBytes(12).toString("base64url").slice(0, 16);
+  const scope = { turnId: turn.turnId };
+  return new Promise<QuestionOutcome>((resolve) => {
+    const finish = (outcome: QuestionOutcome) => {
+      if (turn.interactions.size === 0) {
+        turn.slot?.resume();
+        turn.delegation?.onAwaiting(false);
+        setStatus(turn.owner.sessionId, turn.owner.botId, "working");
+      }
+      resolve(outcome);
+    };
+    turn.interactions.set(interactionId, {
+      question: request,
+      resolve: () => finish({ status: "withdrawn", interactionId }),
+      answer: (answers) =>
+        finish({ status: answers.every((item) => item.skipped) ? "skipped" : "answered", interactionId, answers }),
+    });
+    log.emit(
+      {
+        type: "interaction.opened",
+        data: {
+          interactionId,
+          request: questionInteraction(request),
+          subject: { callId },
+          ...(origin ? { origin: { agent: origin } } : {}),
+        },
+        scope,
+      },
+      { type: "turn.paused", data: { awaiting: [{ interactionId }], turnId: turn.turnId }, scope },
+      {
+        type: "delivery.settled",
+        data: { deliveryId: turn.deliveryId, outcome: "awaiting-input", turnId: turn.turnId },
+      },
+    );
+    turn.delegation?.onAwaiting(true);
+    turn.slot?.suspend();
+    setStatus(turn.owner.sessionId, turn.owner.botId, "awaiting");
+    turn.abort.signal.addEventListener(
+      "abort",
+      () => {
+        if (!turn.interactions.delete(interactionId)) return;
+        log.emit({ type: "interaction.settled", data: { interactionId, outcome: "withdrawn" }, scope });
+        resolve({ status: "withdrawn", interactionId });
       },
       { once: true },
     );
@@ -1654,7 +1747,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         .splice(0)
         .map((item) => item.text.trim())
         .join("\n\n");
-      const prompt = `A pessoa respondeu por mensagem enquanto seu pedido de aprovação estava aberto. O pedido foi fechado e a ação não rodou. Siga a partir desta mensagem, numa resposta só:\n${note}`;
+      const prompt = `A pessoa respondeu por mensagem enquanto seu pedido de aprovação ou sua pergunta estava aberta. O card foi fechado e a ação pendente não rodou. Siga a partir desta mensagem, numa resposta só:\n${note}`;
       pendingTexts = [];
       switching = false;
       needsRun = true;
