@@ -378,7 +378,7 @@ describe("schedules", () => {
     const triage = track(spyOn(decisions, "decideTriage").mockResolvedValue(decision("quiet")));
     fakeProviders.next(replyWith("Nada de novo hoje."));
     await run(session, { source: "schedule", scheduleId: "diaria", text: "Resumo do dia." });
-    expect(triage).toHaveBeenCalledWith(bot.role, "diaria", "Resumo do dia.", "Nada de novo hoje.");
+    expect(triage).toHaveBeenCalledWith(bot.role, "diaria", "Resumo do dia.", "Nada de novo hoje.", null);
     expect(await settledOf(session)).toMatchObject({ outcome: "completed", quiet: true });
     expect((await factsOfType(session, "decision.made"))[0].data.outcome).toBe("quiet");
     expect((await factsOfType(session, "delivery.admitted")).at(-1)?.data.source).toEqual({
@@ -398,7 +398,7 @@ describe("schedules", () => {
     expect((await settledOf(session)).quiet).toBeUndefined();
 
     await run(session, { source: "schedule", text: "Rotina sem nome." });
-    expect(triage).toHaveBeenLastCalledWith(bot.role, "rotina", "Rotina sem nome.", "Nada de novo hoje.");
+    expect(triage).toHaveBeenLastCalledWith(bot.role, "rotina", "Rotina sem nome.", "Nada de novo hoje.", null);
     expect(session.meta.scheduleSummaries?.rotina).toBe("Nada de novo hoje.");
 
     await run(session, { text: "e aí?" });
