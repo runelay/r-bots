@@ -640,7 +640,7 @@ struct RunelaySignature: View {
 
     var body: some View {
         Button {
-            if let url = CatalogLinks.dashboard {
+            if let url = CatalogLinks.site {
                 NSWorkspace.shared.open(url)
             }
         } label: {
@@ -659,8 +659,8 @@ struct RunelaySignature: View {
             isHovering = hovering
         }
         .springAnimation(value: isHovering)
-        .help("Abrir o painel da runelay")
-        .accessibilityLabel("by runelay, abrir o painel da runelay")
+        .help("Abrir runelay.com")
+        .accessibilityLabel("by runelay, abrir runelay.com")
     }
 }
 

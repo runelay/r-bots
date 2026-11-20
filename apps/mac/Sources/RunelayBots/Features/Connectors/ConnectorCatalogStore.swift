@@ -126,6 +126,7 @@ extension BotsClient {
 
 enum CatalogLinks {
     static let dashboard = URL(string: "https://app.runelay.com/connectors")
+    static let site = URL(string: "https://runelay.com")
 }
 
 @MainActor
