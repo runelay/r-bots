@@ -8,7 +8,7 @@ enum AccountVariant: Equatable {
 
     var title: String {
         switch self {
-        case .setup: "Configure seus bots na runelay"
+        case .setup: "Configure seu r/bots"
         case .signin: "Entrar na sua conta"
         case .invite: "Criar conta com convite"
         }
