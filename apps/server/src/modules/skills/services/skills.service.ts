@@ -102,21 +102,35 @@ export async function loadSkill(slug: string): Promise<LoadedSkill> {
 }
 
 const maxBody = 40_000;
+const indexLimit = 200;
+
+export async function skillsIndex(timeoutMs = 3000) {
+  const list = await Promise.race([
+    listSkills(""),
+    new Promise<SkillSummary[]>((resolve) => setTimeout(() => resolve([]), timeoutMs)),
+  ]).catch(() => []);
+  if (list.length === 0) return "";
+  const lines = list
+    .slice(0, indexLimit)
+    .map((skill) => `- \`${skill.slug}\`${skill.description ? `: ${skill.description}` : ""}`);
+  const more = list.length > indexLimit ? `\n- e mais ${list.length - indexLimit}; ache com memory_search (kind skill).` : "";
+  return `## Skills da pessoa\nSlug e para que serve. Quando a tarefa bater com uma delas, leia inteira com \`skill_read(slug)\` antes de começar e siga passo a passo.\n${lines.join("\n")}${more}`;
+}
 
 export function skillsBlock(skills: LoadedSkill[], canReadFiles: boolean) {
   return skills
     .map((skill) => {
       const body =
         skill.body.length > maxBody
-          ? `${skill.body.slice(0, maxBody)}\n\n[cortado; o resto está em skill_read("${skill.slug}")]`
+          ? `${skill.body.slice(0, maxBody)}\n\n[cortado; leia o resto com skill_read(slug: "${skill.slug}") antes de seguir]`
           : skill.body;
       const files =
         skill.files.length === 0
           ? ""
           : canReadFiles
-            ? `\n\nArquivos da skill (leia com skill_read(slug: "${skill.slug}", path) quando o passo pedir): ${skill.files.slice(0, 60).join(", ")}${skill.files.length > 60 ? ", …" : ""}`
+            ? `\n\nArquivos da skill: ${skill.files.slice(0, 60).join(", ")}${skill.files.length > 60 ? ", …" : ""}.\nQuando um passo citar um arquivo (scripts/, references/, templates), leia com skill_read(slug: "${skill.slug}", path) antes de executar o passo e use o que ele traz; não improvise no lugar de um script ou modelo da skill.`
             : "";
-      return `## Siga a skill ${skill.name}\nA pessoa anexou esta skill à mensagem. Siga as instruções dela neste turno.\n\n${body}${files}`;
+      return `## Siga a skill ${skill.name} (\`${skill.slug}\`)\nA pessoa anexou esta skill à mensagem. Siga as instruções dela até concluir o pedido, inclusive nas próximas mensagens sobre a mesma tarefa.\n\n${body}${files}`;
     })
     .join("\n\n");
 }

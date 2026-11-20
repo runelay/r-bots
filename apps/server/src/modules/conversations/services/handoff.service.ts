@@ -146,9 +146,11 @@ export async function threadItems(session: StoredSession): Promise<ThreadItem[]>
           if (data.source === "schedule") break;
           const parts = (data.parts as Array<{ text?: string }> | undefined) ?? [];
           const from = (data.from as { name?: string } | undefined)?.name;
-          const skills = ((data.skills as Array<{ name?: string }> | undefined) ?? [])
-            .map((skill) => skill.name)
-            .filter(Boolean);
+          const attached = (data.skills as Array<{ slug?: string; name?: string }> | undefined) ?? [];
+          const skills = attached.map((skill) => skill.name).filter(Boolean);
+          const skillRefs = attached
+            .filter((skill) => skill.slug)
+            .map((skill) => `${skill.name ?? skill.slug} (${skill.slug})`);
           const attachments = (
             (data.attachments as Array<{ name?: string; kind?: string; uploadId?: string }> | undefined) ?? []
           ).map((item) => `${item.name} (${item.kind}, ${item.uploadId})`);
@@ -172,7 +174,7 @@ export async function threadItems(session: StoredSession): Promise<ThreadItem[]>
             at,
             text,
             brief: oneLine(text, 400),
-            meta: { attachments: data.attachments ?? [], skills },
+            meta: { attachments: data.attachments ?? [], skills, skillRefs },
           });
           break;
         }
@@ -481,6 +483,18 @@ async function stateBlock(session: StoredSession, items: ThreadItem[], skills: s
   }
   if (uploads.length > 0) lines.push(`- Anexos recentes: ${uploads.slice(-5).join("; ")}.`);
   if (skills.length > 0) lines.push(`- Skills anexadas ao pedido em curso: ${skills.join(", ")}.`);
+  const earlier = [
+    ...new Set(
+      items
+        .filter((item) => item.kind === "user_message" && item.turnId !== currentTurnId)
+        .slice(-6)
+        .flatMap((item) => (item.meta?.skillRefs as string[] | undefined) ?? []),
+    ),
+  ].slice(-3);
+  if (earlier.length > 0)
+    lines.push(
+      `- Skills anexadas antes nesta conversa: ${earlier.join(", ")}. Se o pedido delas ainda não terminou, releia com skill_read(slug) e continue seguindo os passos.`,
+    );
   return lines.length > 0 ? `Estado atual:\n${lines.join("\n")}` : "";
 }
 

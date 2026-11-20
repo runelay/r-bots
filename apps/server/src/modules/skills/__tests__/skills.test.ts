@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, setSystemTime, spyOn,
 import { fakeRunelay, request, startTestServer, type TestServer } from "../../../../test/helpers";
 import * as runelay from "../../connectors/services/runelay.service";
 import * as skills from "../services/skills.service";
-import { listSkills, loadSkill, skillSlugPattern, skillsBlock } from "../services/skills.service";
+import { listSkills, loadSkill, skillSlugPattern, skillsBlock, skillsIndex } from "../services/skills.service";
 
 let server: TestServer;
 let clock = Date.now() + 10 * 60_000;
@@ -120,13 +120,35 @@ describe("skillsBlock", () => {
     );
     expect(block).toContain("## Siga a skill A");
     expect(block).toContain('skill_read(slug: "a", path)');
-    expect(block).toContain('[cortado; o resto está em skill_read("b")]');
+    expect(block).toContain('[cortado; leia o resto com skill_read(slug: "b") antes de seguir]');
     expect(block).toContain("f59.md, …");
     expect(block).not.toContain("f60.md");
     expect(block).toContain(
-      "## Siga a skill C\nA pessoa anexou esta skill à mensagem. Siga as instruções dela neste turno.\n\nsem arquivos",
+      "## Siga a skill C (`c`)\nA pessoa anexou esta skill à mensagem. Siga as instruções dela até concluir o pedido, inclusive nas próximas mensagens sobre a mesma tarefa.\n\nsem arquivos",
     );
     expect(skillsBlock([{ slug: "a", name: "A", body: "corpo", files: ["x.md"] }], false)).not.toContain("x.md");
+  });
+});
+
+describe("skillsIndex", () => {
+  test("lists slugs with descriptions and tells the bot to read before acting", async () => {
+    fakeRunelay.route("GET", "/skills", {
+      data: { items: [{ slug: "commit", description: "Commits por módulo." }, { slug: "nada" }], nextCursor: null },
+    });
+    const index = await skillsIndex();
+    expect(index).toContain("## Skills da pessoa");
+    expect(index).toContain("skill_read(slug)");
+    expect(index).toContain("- `commit`: Commits por módulo.");
+    expect(index).toContain("- `nada`");
+  });
+
+  test("returns nothing when runelay fails", async () => {
+    const list = spyOn(skills, "listSkills").mockRejectedValue(new Error("caiu"));
+    try {
+      expect(await skillsIndex()).toBe("");
+    } finally {
+      list.mockRestore();
+    }
   });
 });
 

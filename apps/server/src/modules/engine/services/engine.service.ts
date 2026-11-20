@@ -63,6 +63,7 @@ import {
   type WorkspaceState,
 } from "../../code/services/workspace.service";
 import { watchComputerEvents } from "../../computer/services/computer.service";
+import { runelayEnabled } from "../../connectors/services/runelay.service";
 import { autoTitle, createConversation } from "../../conversations/services/conversations.service";
 import { handoffBlock, refreshSummary } from "../../conversations/services/handoff.service";
 import type { EventLog, Fact, StoredSession } from "../../conversations/services/sessions.service";
@@ -81,7 +82,7 @@ import {
   resolveAnswers,
 } from "../../questions/services/questions.service";
 import { settingsGuide } from "../../settings/services/settings-tools.service";
-import { type LoadedSkill, skillsBlock } from "../../skills/services/skills.service";
+import { type LoadedSkill, skillsBlock, skillsIndex } from "../../skills/services/skills.service";
 import {
   attachmentsTitle,
   type PreparedImage,
@@ -338,6 +339,9 @@ function systemPromptFor(
     parts.push(
       "",
       "Você pode consultar as memórias e skills da pessoa com `memory_search`, `memory_read` e `skill_read`.",
+      "",
+      "## Skills",
+      "Skill é um procedimento escrito pela pessoa, como as skills do Claude Code. Quando o pedido bater com uma skill (pelo nome, pelo slug ou pelo assunto da lista “Skills da pessoa”), leia a skill inteira com `skill_read(slug)` antes de agir e siga os passos na ordem, sem pular nem improvisar. Arquivos da skill (scripts/, references/, templates) você lê com `skill_read(slug, path)` quando o passo citar, e usa o script ou modelo dela em vez de escrever o seu. Não adivinhe slug: use os da lista ou ache com `memory_search` (kind skill). Se a skill pedir algo que não existe aqui (caminho do Mac, comando que você não tem), adapte com o equivalente que você tem e diga em uma linha o que adaptou. As instruções da skill valem até o pedido terminar, não só na primeira resposta.",
     );
   if (bot.capabilities.browser) {
     parts.push(
@@ -412,7 +416,7 @@ function requestText(delivery: Delivery) {
 function skillPrompt(delivery: Delivery, canReadFiles: boolean) {
   if (!delivery.skills?.length) return "";
   const names = delivery.skills.map((skill) => `“${skill.name}”`).join(" e ");
-  return `A pessoa anexou ${delivery.skills.length === 1 ? "a skill" : "as skills"} ${names} a esta mensagem. Skill anexada não é comando de barra: é um procedimento escrito. Siga cada uma inteira, na ordem, neste turno. Se alguma coisa dela não der para fazer aqui, diga qual passo ficou de fora e por quê.\n\n${skillsBlock(delivery.skills, canReadFiles)}`;
+  return `A pessoa anexou ${delivery.skills.length === 1 ? "a skill" : "as skills"} ${names} a esta mensagem. Skill anexada não é comando de barra: é um procedimento escrito. Siga cada uma inteira, na ordem, até concluir o pedido, inclusive nas próximas mensagens sobre a mesma tarefa. Se alguma coisa dela não der para fazer aqui, diga qual passo ficou de fora e por quê.\n\n${skillsBlock(delivery.skills, canReadFiles)}`;
 }
 
 function deliveryNote(delivery: Delivery) {
@@ -1549,6 +1553,8 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       const blocksNote = await blocksEditNote(bot.id).catch(() => "");
       if (blocksNote) extraSystem = [extraSystem, blocksNote].filter(Boolean).join("\n\n");
     }
+    if (connectorsOf(bot).memory && runelayEnabled())
+      extraSystem = [await skillsIndex(), extraSystem].filter(Boolean).join("\n\n");
     if (delivery.voice) extraSystem = [extraSystem, voiceNote].filter(Boolean).join("\n\n");
     extraSystem = [extraSystem, nowNote(await userTimezone())].filter(Boolean).join("\n\n");
     const liveBots = [bot, ...delegatesOf(bot)]

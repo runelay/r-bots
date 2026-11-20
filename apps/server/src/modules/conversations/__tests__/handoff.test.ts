@@ -257,6 +257,17 @@ describe("handoffBlock", () => {
     );
   });
 
+  test("reminds skills attached on earlier turns with their slugs", async () => {
+    add("turn_0", {
+      type: "delivery.consumed",
+      data: { source: "chat", parts: [{ text: "faz o fluxo" }], skills: [{ slug: "dev-flow", name: "Dev flow" }] },
+    });
+    add("turn_1", { type: "delivery.consumed", data: { source: "chat", parts: [{ text: "continue" }] } });
+    const block = await handoffBlock(session, { key: "k", currentTurnId: "turn_1" });
+    expect(block).toContain("- Skills anexadas antes nesta conversa: Dev flow (dev-flow).");
+    expect(block).toContain("releia com skill_read(slug)");
+  });
+
   test("renders the full conversation with the state, ids and reason", async () => {
     await richHistory();
     add("turn_7", { type: "interaction.opened", data: { interactionId: "now", request: { prompt: "Agora?" } } });
