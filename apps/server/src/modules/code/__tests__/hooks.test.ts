@@ -10,7 +10,8 @@ import type { EventLog } from "../../conversations/services/sessions.service";
 import type { ApprovalResult, ToolContext } from "../../engine/services/mcp-gateway.service";
 import * as vaultTools from "../../vault/services/vault-tools.service";
 import { listGrants } from "../repositories/code.repository";
-import { beginCall, codeLabel, emitEdit, endCall, nativeHooks } from "../services/hooks.service";
+import { ensureBotHome } from "../services/bot-home.service";
+import { beginCall, codeLabel, emitEdit, endCall, homeHooks, nativeHooks } from "../services/hooks.service";
 import type { CodeLive } from "../services/live-diff.service";
 import type { Gate } from "../services/policy.service";
 import type { WorkspaceState } from "../services/workspace.service";
@@ -363,6 +364,41 @@ describe("beginCall", () => {
       });
     });
 
+    test("full access still asks before writing in production, deploying or sending money", async () => {
+      const hard: Gate = { kind: "human", prompt: "p", reason: "r", hard: true };
+      const write = await start("full", "Bash", { command: `supabase db query --remote=abc "update t set a=1"` }, hard);
+      expect(write.result.allowed).toBe(true);
+      expect(write.requestApproval).toHaveBeenCalledWith(
+        `Rodar SQL no banco remoto sem --read-only: supabase db query --remote=abc update t set a=1?`,
+        write.result.callId,
+        null,
+        { reason: "Escrita em produção só com o seu ok, mesmo em Acesso total." },
+      );
+      const deploy = await start("full", "Bash", { command: "wrangler deploy" }, hard);
+      expect(deploy.requestApproval).toHaveBeenCalledTimes(1);
+      const denied = makeContext({ permission: "full" }, { choice: "deny", interactionId: "int_2" });
+      const refused = await beginCall(denied.context, {
+        name: "Bash",
+        label: "x",
+        input: { command: "gh pr merge 12" },
+        gate: { kind: "allow" },
+        workspace: workspace(),
+      });
+      expect(refused.allowed).toBe(false);
+    });
+
+    test("read-only production queries run without a card in every mode", async () => {
+      const hard: Gate = { kind: "human", prompt: "p", reason: "r", hard: true };
+      const command = `cd /tmp && supabase db query --remote=abc --read-only "select 1" | head -5`;
+      for (const mode of ["readonly", "edit", "default", "full"] as PermissionMode[]) {
+        const { result, requestApproval } = await start(mode, "Bash", { command }, hard);
+        expect(result.allowed).toBe(true);
+        expect(requestApproval).not.toHaveBeenCalled();
+      }
+      const blocked = await start("default", "Bash", { command }, { kind: "deny", message: "fora" });
+      expect(blocked.result.allowed).toBe(false);
+    });
+
     test("bash without a workspace counts as a command", async () => {
       const harness = makeContext({ permission: "readonly" });
       const result = await beginCall(harness.context, {
@@ -638,5 +674,60 @@ describe("nativeHooks", () => {
     const count = events.length;
     await hooks.after("Glob", {}, {}, "missing", false);
     expect(events).toHaveLength(count);
+  });
+});
+
+describe("homeHooks", () => {
+  test("runs reads and commands in the bot home and gates the hard list", async () => {
+    const home = await ensureBotHome(`home-${Date.now()}`);
+    const { context, events, requestApproval } = makeContext({ permission: "full" });
+    const hooks = homeHooks(context, home);
+    expect(await hooks.before("Bash", { command: "gh auth status" }, "h1")).toEqual({ allow: true });
+    await hooks.after("Bash", {}, { stdout: "ok", stderr: "" }, "h1", false);
+    expect(events.find((event) => event.type === "call.settled")?.data).toMatchObject({
+      outcome: "completed",
+      output: { stdout: "ok", stderr: "" },
+    });
+    expect(await hooks.before("Read", { file_path: join(home.path, "a.txt") }, "h2")).toEqual({ allow: true });
+    await hooks.after("Read", {}, "falhou", "h2", true);
+    expect(events.at(-1)?.data.error).toEqual({ code: "TOOL_EXECUTION_FAILED", message: "falhou" });
+    await hooks.before("Read", { file_path: "a.txt" }, "h3");
+    await hooks.after("Read", {}, { error: 1 }, "h3", true);
+    expect(events.at(-1)?.data.error).toEqual({ code: "TOOL_EXECUTION_FAILED", message: '{"error":1}' });
+    await hooks.after("Bash", {}, {}, "nunca-visto", false);
+    const deploy = await hooks.before("Bash", { command: "wrangler deploy" }, "h4");
+    expect(deploy).toEqual({ allow: true });
+    expect(requestApproval).toHaveBeenCalledTimes(1);
+    expect(await hooks.before("Bash", { command: "ls &" }, "h5")).toMatchObject({ allow: false });
+    expect(await hooks.before("TodoWrite", {}, "h6")).toEqual({ allow: true });
+  });
+
+  test("applies secrets and heavy limits and stops on a secret error", async () => {
+    const home = await ensureBotHome(`home-secret-${Date.now()}`);
+    const secret = spyOn(vaultTools, "secretBashCommand").mockResolvedValue("SECRET=1 vitest run");
+    try {
+      const { context, events } = makeContext();
+      const hooks = homeHooks(context, home);
+      const result = await hooks.before("Bash", { command: "vitest run" }, "s1");
+      expect((result as unknown as { input: { command: string } }).input.command).toContain("SECRET=1 vitest run");
+      secret.mockResolvedValueOnce("TOKEN=x curl localhost");
+      expect(await hooks.before("Bash", { command: "curl localhost" }, "s2")).toEqual({
+        allow: true,
+        input: { command: "TOKEN=x curl localhost" },
+      });
+      secret.mockRejectedValueOnce(new Error("sem segredo"));
+      expect(await hooks.before("Bash", { command: "echo $X" }, "s3")).toEqual({
+        allow: false,
+        message: "sem segredo",
+      });
+      secret.mockRejectedValueOnce("plain failure");
+      expect(await hooks.before("Bash", { command: "echo $Y" }, "s4")).toEqual({
+        allow: false,
+        message: "plain failure",
+      });
+      expect(events.at(-1)?.data).toMatchObject({ outcome: "failed", error: { message: "plain failure" } });
+    } finally {
+      secret.mockRestore();
+    }
   });
 });

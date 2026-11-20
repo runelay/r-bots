@@ -11,6 +11,7 @@ import { addGrant, hasGrant } from "../repositories/code.repository";
 import { wrapHeavyCommand } from "./heavy-commands.service";
 import type { CodeLive } from "./live-diff.service";
 import { commandIsReadOnly, fixedRuleViolation, type Gate, gateNative } from "./policy.service";
+import { criticalCommand, prodReadCommand } from "./prod-guard.service";
 import {
   clipText,
   diffTexts,
@@ -180,27 +181,34 @@ export async function beginCall(
   };
   const mode = context.permission ?? "default";
   let gate = spec.gate;
+  const bashCommand = spec.name === "Bash" ? String(spec.input.command ?? "") : "";
+  const prodRead = Boolean(bashCommand) && gate.kind !== "deny" && prodReadCommand(bashCommand);
+  if (prodRead) gate = { kind: "allow" };
   if (mode !== "default" && !spec.alwaysHuman) {
     const command =
       spec.name === "Bash"
-        ? String(spec.input.command ?? "")
+        ? bashCommand
         : spec.name === "dev_server_start" || spec.name === "server_start"
           ? String(spec.input.cmd ?? "")
           : "";
-    const action: ActionClass = editTools.has(spec.name)
-      ? "edit"
-      : spec.name === "workspace_deliver"
-        ? "deliver"
-        : spec.name === "dev_server_start" || spec.name === "server_start" || spec.name === "server_restart"
-          ? "command"
-          : spec.name === "Bash"
-            ? spec.workspace && commandIsReadOnly(command, spec.workspace)
-              ? "read"
-              : "command"
-            : "read";
+    const action: ActionClass = prodRead
+      ? "read"
+      : editTools.has(spec.name)
+        ? "edit"
+        : spec.name === "workspace_deliver"
+          ? "deliver"
+          : spec.name === "dev_server_start" || spec.name === "server_start" || spec.name === "server_restart"
+            ? "command"
+            : spec.name === "Bash"
+              ? spec.workspace && commandIsReadOnly(command, spec.workspace)
+                ? "read"
+                : "command"
+              : "read";
     const fixed = mode === "full" && command && spec.workspace ? fixedRuleViolation(command, spec.workspace) : null;
     const before = gate.kind;
     gate = applyCodePermission(mode, action, gate, fixed, spec.label);
+    const critical = mode === "full" && bashCommand && gate.kind === "allow" ? criticalCommand(bashCommand) : null;
+    if (critical) gate = { kind: "human", prompt: critical.prompt, reason: critical.reason, hard: true };
     if (gate.kind === "allow" && before !== "allow") {
       humanRecord(context, spec.name, callId, `Modo ${permissionLabels[mode]}: liberado sem card.`, "granted");
       log.emit({ type: "call.started", data: { callId, clearedBy: { permission: mode } }, scope: scope(context) });
@@ -418,6 +426,59 @@ export function nativeHooks(context: ToolContext, workspace: WorkspaceState, liv
       } else if (call.absPath || tool === "Bash") {
         await live.scan(call.callId, "tool");
       }
+    },
+  };
+}
+
+export function homeHooks(context: ToolContext, home: WorkspaceState): NativeToolHooks {
+  const calls = new Map<string, { callId: string; input: Record<string, unknown> }>();
+  return {
+    before: async (tool, input, toolUseId) => {
+      const command = tool === "Bash" ? String(input.command ?? "") : "";
+      const file = String(input.file_path ?? input.notebook_path ?? "");
+      const target = command
+        ? { label: oneLine(command, 160), role: "command" }
+        : file
+          ? { label: file, role: "file" }
+          : undefined;
+      const shown = shownInput(tool, input, null) as Record<string, unknown>;
+      const start = await beginCall(context, {
+        callId: toolUseId,
+        name: tool,
+        label: codeLabel(tool, input),
+        input: shown,
+        gate: gateNative(tool, input, home),
+        workspace: home,
+        ...(target ? { target } : {}),
+      });
+      if (!start.allowed) return { allow: false, message: start.message };
+      let rewritten: string | null = null;
+      if (command) {
+        try {
+          rewritten = await secretBashCommand(context, command);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          endCall(context, start.callId, tool, shown, { ok: false, error: message });
+          return { allow: false, message };
+        }
+        rewritten = wrapHeavyCommand(command, rewritten ?? command) ?? rewritten;
+      }
+      calls.set(toolUseId, { callId: start.callId, input });
+      return rewritten ? { allow: true, input: { ...input, command: rewritten } } : { allow: true };
+    },
+    after: async (tool, _input, response, toolUseId, failed) => {
+      const call = calls.get(toolUseId);
+      if (!call) return;
+      calls.delete(toolUseId);
+      const shown = shownInput(tool, call.input, null) as Record<string, unknown>;
+      if (failed) {
+        endCall(context, call.callId, tool, shown, {
+          ok: false,
+          error: typeof response === "string" ? response : JSON.stringify(response),
+        });
+        return;
+      }
+      endCall(context, call.callId, tool, shown, { ok: true, output: shownOutput(tool, response) });
     },
   };
 }

@@ -1446,7 +1446,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
     "add_schedule",
     {
       description:
-        'Cria uma rotina recorrente. Converta o pedido da pessoa em cron de 5 campos (minuto hora dia mês dia-da-semana), por exemplo dias úteis às 9h = "0 9 * * 1-5". prompt é o que você vai fazer a cada execução. Pede aprovação.',
+        'Cria uma rotina recorrente. Converta o pedido da pessoa em cron de 5 campos (minuto hora dia mês dia-da-semana), por exemplo dias úteis às 9h = "0 9 * * 1-5". prompt é o que você vai fazer a cada execução. Crie direto quando a pessoa pedir; o servidor só abre card se o modo da conversa exigir.',
       inputSchema: {
         name: z.string().min(1).max(40),
         cron: z.string().min(1),
@@ -1481,7 +1481,10 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
   );
   server.registerTool(
     "remove_schedule",
-    { description: "Remove uma rotina sua pelo nome. Pede aprovação.", inputSchema: { name: z.string().min(1) } },
+    {
+      description: "Remove uma rotina sua pelo nome. O servidor só abre card se o modo da conversa exigir.",
+      inputSchema: { name: z.string().min(1) },
+    },
     (args: Record<string, unknown>) =>
       runConfigTool(
         context,

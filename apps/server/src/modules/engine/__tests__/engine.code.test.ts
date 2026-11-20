@@ -98,7 +98,7 @@ describe("an open workspace", () => {
     expect(request.systemPrompt).toContain(`Repositório ${open.repoName}. Worktree ${open.path}`);
     expect(request.systemPrompt).toContain("instalando em segundo plano (bun install)");
     expect(request.systemPrompt).toContain("Servidores no ar: http://127.0.0.1:5173 (bun dev).");
-    expect(request.systemPrompt).not.toContain("Você não tem acesso a arquivos");
+    expect(request.systemPrompt).not.toContain("## Terminal na VPS");
     expect(await repliesOf(session)).toEqual(["Mudei o a.ts."]);
     expect(session.meta.providerSessions).toEqual({ [`vps:claude@${open.id}`]: "prov-code" });
   });
@@ -133,7 +133,8 @@ describe("an open workspace", () => {
     expect(request.systemPrompt).toContain(
       `o repositório ${open.repoName} aberto (branch ${open.branch}), mas o modelo atual não edita código`,
     );
-    expect(request.systemPrompt).toContain("Você não tem acesso a arquivos");
+    expect(request.systemPrompt).toContain("Neste modelo você não tem terminal");
+    expect(request.systemPrompt).not.toContain("## Terminal na VPS");
     expect(Object.keys(session.meta.providerSessions ?? {})).toEqual(["vps:grok"]);
   });
 

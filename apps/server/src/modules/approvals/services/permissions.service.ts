@@ -69,7 +69,7 @@ export function permissionGuide(mode: PermissionMode) {
       "Modo Somente leitura (vale acima de qualquer regra de autonomia deste prompt): você lê, busca e roda comandos de leitura (git status, git diff, ls, cat, rg, testes que não escrevem nada). Não edita arquivos, não faz commit, push nem PR, não roda comando que muda algo e não escreve em conectores: essas ações são negadas na hora. Se o pedido precisar disso, explique o que faria e diga que a pessoa pode trocar o modo da conversa.",
     edit: "Modo Editar (vale acima de qualquer regra de autonomia deste prompt): você lê e edita arquivos da worktree direto. Todo comando que não seja só leitura, commit, push, PR e escrita em conectores pedem um card de aprovação à pessoa. Peça uma vez por passo, sem repetir o que já foi negado.",
     default: "Modo Padrão: autonomia normal. Só a lista dura pede aprovação.",
-    full: "Modo Acesso total: nada pede aprovação, inclusive o que normalmente estaria na lista dura. Continuam proibidos, e são negados sem card: assinatura de IA em commit ou PR (Co-Authored-By, Generated with) e push --force em main, master ou develop. Mesmo com acesso total, faça só o que a pessoa pediu.",
+    full: "Modo Acesso total: terminal, arquivos, conectores, commit, push, PR e rotinas rodam direto, sem card. Só a lista dura de produção ainda abre card: deploy, escrita em banco de produção, dinheiro e mensagem para fora. Continuam proibidos, e são negados sem card: assinatura de IA em commit ou PR (Co-Authored-By, Generated with) e push --force em main, master ou develop. Mesmo com acesso total, faça só o que a pessoa pediu.",
   };
   return `## Permissão desta conversa\n${lines[mode]}`;
 }

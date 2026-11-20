@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import {
   hold,
@@ -21,6 +22,7 @@ import * as decisions from "../../approvals/services/decisions.service";
 import * as blockTools from "../../blocks/services/block-tools.service";
 import { setKnownConnectors } from "../../bots/services/bots.service";
 import * as canvas from "../../canvas/services/canvas.service";
+import { botHomePath } from "../../code/services/bot-home.service";
 import * as computer from "../../computer/services/computer.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import * as threads from "../../conversations/services/threads.service";
@@ -96,7 +98,7 @@ describe("a chat turn", () => {
     expect(await repliesOf(session)).toEqual(["Olá, tudo certo."]);
     const usage = (await factsOfType(session, "usage.recorded"))[0].data;
     expect(usage).toMatchObject({ account: "vps:claude", usage: { inputTokens: 11, outputTokens: 5 } });
-    expect(session.meta.providerSessions).toEqual({ "vps:claude": "prov-1" });
+    expect(session.meta.providerSessions).toEqual({ "vps:claude@home": "prov-1" });
     expect(session.meta.contextTokens).toBe(900);
     expect(session.meta.lastEngine?.account).toBe("vps:claude");
     expect(session.meta.title.length).toBeGreaterThan(0);
@@ -247,7 +249,11 @@ describe("the system prompt", () => {
       expect(prompt).toContain("Serviços conectados liberados (runelay): linear.");
       expect(prompt).toContain("## Uso do Mac da pessoa");
       expect(prompt).toContain("Você acabou de ser criado.");
-      expect(prompt).toContain("Você não tem acesso a arquivos");
+      expect(prompt).toContain("## Terminal na VPS");
+      expect(prompt).toContain(botHomePath(bot.id));
+      expect(prompt).not.toContain("Neste modelo você não tem terminal");
+      expect(lastRequest().code).toEqual({ cwd: botHomePath(bot.id) });
+      expect(existsSync(botHomePath(bot.id))).toBe(true);
       await run(session);
       expect(lastRequest().systemPrompt).not.toContain("Você acabou de ser criado.");
     } finally {

@@ -49,10 +49,11 @@ import { startLiveView } from "../../browser/services/browser.service";
 import { canvasEditNote, canvasGuide } from "../../canvas/services/canvas.service";
 import { touchWorktree } from "../../code/repositories/code.repository";
 import { mentionedRepo, openTaskWorkspace } from "../../code/services/actions.service";
+import { ensureBotHome, shellSupported } from "../../code/services/bot-home.service";
 import { codeModeSupported } from "../../code/services/code-tools.service";
 import { noteSessionAccount } from "../../usage/services/usage-scan.service";
 import { devServersOf } from "../../code/services/dev-server.service";
-import { nativeHooks } from "../../code/services/hooks.service";
+import { homeHooks, nativeHooks } from "../../code/services/hooks.service";
 import { CodeLive } from "../../code/services/live-diff.service";
 import {
   activeWorkspace,
@@ -213,7 +214,7 @@ const footer = [
   "",
   "---",
   "Responda sempre em português do Brasil, curto e direto.",
-  "Você não tem acesso a arquivos, terminal ou internet além das ferramentas do servidor MCP `bots`.",
+  "Neste modelo você não tem terminal nem arquivos da VPS: só as ferramentas do servidor MCP `bots`. Se o pedido precisar de shell, gh, wrangler ou supabase CLI, diga em uma linha para trocar para um modelo Claude da VPS no seletor.",
 ].join("\n");
 const codeFooter = ["", "---", "Responda sempre em português do Brasil, curto e direto."].join("\n");
 
@@ -233,6 +234,18 @@ function codeGuide() {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function shellGuide(home: string) {
+  return [
+    "## Terminal na VPS",
+    `Você tem terminal de verdade na VPS: Bash, Read, Write, Edit, Glob e Grep. Seu diretório de trabalho é ${home} (use para scripts, arquivos e saídas). Repositórios liberados podem ser lidos direto pelo caminho.`,
+    "Ferramentas instaladas e já autenticadas: `gh` (GitHub), `supabase` (CLI com login), `wrangler` (Cloudflare), `curl`, `git`, `node`, `bun`, `jq`, `psql`. Nunca imprima token nem rode comando que mostre credencial.",
+    '- Banco de produção, leitura: `supabase db query --remote=<ref> --read-only "<sql>"` roda direto em qualquer modo (o banco garante que é só leitura). `supabase projects list` mostra os refs; suas instruções e a memória dizem quais são de produção. O conector supabase (`connector_call` → `supabase.execute_sql`) também serve.',
+    "- CI e deploy: `gh run list`, `gh pr view`, `gh api`. Logs da Cloudflare: `wrangler tail <worker> --format json` com `timeout 60` na frente (nunca deixe rodando). Saúde: `curl -s <url>`.",
+    "- Sem `&`, nohup ou watchers: comandos terminam no mesmo turno.",
+    "- Lista dura, sempre com card da pessoa, em qualquer modo: deploy (wrangler deploy, gh pr merge, gh workflow run), escrita em produção (SQL sem --read-only no banco remoto, migration, secrets), dinheiro e mensagem para fora. Pedidos de leitura nunca precisam de card: faça.",
+  ].join("\n");
 }
 
 function workspaceGuide(code: CodePrompt) {
@@ -276,7 +289,7 @@ function newBotPrompt(bot: BotDefinition) {
   return [
     `Você é ${bot.name}, um bot novo no time da pessoa e ainda sem função definida.`,
     "Na primeira conversa, apresente-se em uma frase curta e pergunte o que você deve fazer.",
-    "Quando a pessoa explicar, configure-se com as ferramentas do servidor MCP `bots`: `set_role` com um papel curto, `update_instructions` (mode replace) com instruções claras em markdown, e `add_schedule` se o trabalho precisar de rotina. Você já tem acesso a tudo: navegador, o Mac da pessoa, banco em leitura, todos os conectores e os outros bots. Nunca peça acesso.",
+    "Quando a pessoa explicar, configure-se com as ferramentas do servidor MCP `bots`: `set_role` com um papel curto, `update_instructions` (mode replace) com instruções claras em markdown, e `add_schedule` se o trabalho precisar de rotina. Você já tem acesso a tudo: terminal na VPS (gh, supabase, wrangler, curl), navegador, o Mac da pessoa, banco de produção em leitura, todos os conectores e os outros bots. Nunca peça acesso.",
     "Depois de se configurar, confirme em uma linha o que passou a fazer.",
   ].join("\n");
 }
@@ -287,6 +300,7 @@ function systemPromptFor(
   isNew: boolean,
   code: CodePrompt | null = null,
   permission: PermissionMode = "default",
+  home: string | null = null,
 ) {
   const parts = [bot.instructions.trim() || newBotPrompt(bot)];
   const tools = toolsFor(bot).map((tool) => tool.name);
@@ -326,6 +340,7 @@ function systemPromptFor(
   parts.push("", codeGuide());
   const openGuide = code ? workspaceGuide(code) : "";
   if (openGuide) parts.push("", openGuide);
+  if (home && !openGuide) parts.push("", shellGuide(home));
   parts.push("", permissionGuide(permission));
   parts.push("", canvasGuide);
   parts.push("", blocksGuide);
@@ -334,7 +349,10 @@ function systemPromptFor(
   parts.push(
     "",
     "## Autoconfiguração",
-    "Você pode se configurar com as ferramentas do servidor MCP `bots`: `set_role`, `update_instructions`, `add_schedule` (converta o pedido em cron), e `remove_schedule`. Use quando a pessoa pedir algo recorrente ou uma mudança no seu jeito de trabalhar. Para criar um bot novo no time, use `create_bot`; para criar um grupo de bots, use `create_group`; para adicionar, tirar ou renomear num grupo existente, use `update_group` (nunca crie outro grupo para isso); `archive_group` arquiva, mas só quando a pessoa pedir com todas as letras. Nunca arquive, apague ou desfaça nada por iniciativa própria, nem para “arrumar”: confira o estado atual com as ferramentas antes de mexer, sua memória da conversa pode estar velha. Faça direto, sem pedir confirmação nem delegar. Nunca use o computador (cliques na tela) para mexer no próprio app runelay bots: tudo dele tem ferramenta. Delegar para outro bot também não pede permissão: faça. Você já tem acesso a tudo (navegador, o Mac da pessoa, banco em leitura, todos os conectores e os outros bots): nunca peça acesso nem diga que não tem.",
+    "Você pode se configurar com as ferramentas do servidor MCP `bots`: `set_role`, `update_instructions`, `add_schedule` (converta o pedido em cron), e `remove_schedule`. Use quando a pessoa pedir algo recorrente ou uma mudança no seu jeito de trabalhar. Para criar um bot novo no time, use `create_bot`; para criar um grupo de bots, use `create_group`; para adicionar, tirar ou renomear num grupo existente, use `update_group` (nunca crie outro grupo para isso); `archive_group` arquiva, mas só quando a pessoa pedir com todas as letras. Nunca arquive, apague ou desfaça nada por iniciativa própria, nem para “arrumar”: confira o estado atual com as ferramentas antes de mexer, sua memória da conversa pode estar velha. Faça direto, sem pedir confirmação nem delegar. Nunca use o computador (cliques na tela) para mexer no próprio app runelay bots: tudo dele tem ferramenta. Delegar para outro bot também não pede permissão: faça. Você já tem acesso a tudo (terminal na VPS com gh, supabase, wrangler e curl, navegador, o Mac da pessoa, banco de produção em leitura, todos os conectores e os outros bots): nunca peça acesso nem diga que não tem. Ferramentas que aparecem em conversas antigas e não estão na sua lista de agora não existem mais: use as de agora.",
+    "",
+    "## Rotinas",
+    "Quando a pessoa pedir para criar uma rotina, crie com `add_schedule` neste turno, sem perguntar antes. Decida o óbvio sozinho: o escopo que o pedido descreve (se fala de vários ambientes ou tenants, todos), todas as checagens que você consegue rodar e uma frequência sensata; diga a frequência em uma linha no fim. O prompt da rotina é autossuficiente: comandos reais, refs e o formato da saída. Passo que mexe em dinheiro, escreve em produção, faz deploy ou manda mensagem para fora não entra na rotina: vira um aviso no resultado. Se a rotina tiver checagens longas ou de raciocínio complexo e você estiver num modelo pequeno (Haiku), sugira em uma linha trocar para Sonnet, sem esperar resposta.",
   );
   if (isNew) {
     parts.push(
@@ -342,7 +360,7 @@ function systemPromptFor(
       "Você acabou de ser criado. Se a pessoa pedir algo recorrente ou que precisa de uma capacidade que você não tem, configure-se com essas ferramentas.",
     );
   }
-  return `${parts.join("\n")}\n${code?.workspace && code.supported ? codeFooter : footer}`;
+  return `${parts.join("\n")}\n${(code?.workspace && code.supported) || home ? codeFooter : footer}`;
 }
 
 function escapeRegExp(value: string) {
@@ -781,6 +799,7 @@ async function executeProvider(run: ProviderRun) {
   const log = run.log;
   const codeWorkspace = run.codeRun ? run.codeRun.workspace : null;
   const coding = Boolean(codeWorkspace && codeModeSupported(run.provider, run.account.runner));
+  const home = !coding && shellSupported(run.provider, run.account.runner) ? await ensureBotHome(run.bot.id) : null;
   const bot =
     coding && !run.bot.capabilities.browser
       ? { ...run.bot, capabilities: { ...run.bot.capabilities, browser: true } }
@@ -861,6 +880,7 @@ async function executeProvider(run: ProviderRun) {
             session.meta.turnCount <= 1 && session.meta.kind === "thread",
             codeWorkspace ? { workspace: codeWorkspace, supported: coding } : null,
             permission,
+            home?.path ?? null,
           ),
           run.extraSystem,
         ]
@@ -874,13 +894,17 @@ async function executeProvider(run: ProviderRun) {
         code:
           coding && codeWorkspace
             ? { cwd: codeWorkspace.path, ...(permission === "readonly" ? { readOnly: true } : {}) }
-            : null,
+            : home
+              ? { cwd: home.path, ...(permission === "readonly" ? { readOnly: true } : {}) }
+              : null,
       },
       runAbort.signal,
       run.onEvent,
       coding && codeWorkspace && run.provider === "claude" && run.codeRun
         ? nativeHooks(context, codeWorkspace, run.codeRun.live)
-        : undefined,
+        : home
+          ? homeHooks(context, home)
+          : undefined,
     );
   } finally {
     turn.abort.signal.removeEventListener("abort", forwardAbort);
@@ -1309,7 +1333,11 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       codeWorkspace = opened;
     }
     const keyFor = (workspace: WorkspaceState | null) =>
-      workspace && codeModeSupported(account.provider, account.runner) ? `${account.id}@${workspace.id}` : account.id;
+      workspace && codeModeSupported(account.provider, account.runner)
+        ? `${account.id}@${workspace.id}`
+        : shellSupported(account.provider, account.runner)
+          ? `${account.id}@home`
+          : account.id;
     let sessionKey = keyFor(codeWorkspace);
     let switching = false;
 
