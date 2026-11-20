@@ -87,6 +87,7 @@ import { settingsGuide } from "../../settings/services/settings-tools.service";
 import { type LoadedSkill, skillsBlock, skillsIndex } from "../../skills/services/skills.service";
 import {
   attachmentsTitle,
+  importGeneratedImage,
   type PreparedImage,
   prepareAttachments,
   publicUpload,
@@ -1681,8 +1682,9 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       attachmentText = prepared.text;
       attachmentImages = prepared.images;
     }
-    const runProvider = (prompt: string, resumeFrom: string | null, images: PreparedImage[] = []) =>
-      executeProvider({
+    const generated: Promise<unknown>[] = [];
+    const runProvider = async (prompt: string, resumeFrom: string | null, images: PreparedImage[] = []) => {
+      await executeProvider({
         account,
         images,
         provider: account.provider,
@@ -1771,6 +1773,13 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
               if (turn.steer?.some((item) => !item.paused)) turn.yieldRun?.();
               void codeLive?.scan(callId, "tool", { input: event.input, output: event.output });
             }
+          } else if (event.type === "image") {
+            const scope = { runId, turnId };
+            generated.push(
+              importGeneratedImage(bot.id, event.path)
+                .then((attachment) => log.emit({ type: "file.sent", data: { attachment, botId: bot.id }, scope }))
+                .catch((error) => console.warn(`generated image ${bot.id}: ${String(error)}`)),
+            );
           } else if (event.type === "warning") {
             console.warn(`provider warning ${account.id}: ${event.message}`);
           } else if (event.type === "done" && !event.ok) {
@@ -1778,6 +1787,8 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           }
         },
       });
+      await Promise.all(generated.splice(0));
+    };
     const skillNames = (delivery.skills ?? []).map((skill) => skill.name);
     const withAttachments = (prompt: string) =>
       attachmentText ? `${prompt}${delivery.text.trim() ? "\n\n" : ""}${attachmentText}` : prompt;

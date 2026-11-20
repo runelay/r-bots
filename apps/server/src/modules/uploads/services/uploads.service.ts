@@ -1133,6 +1133,19 @@ export function fileEventOf(output: unknown): FileEvent | null {
   return (output as { fileEvent: FileEvent }).fileEvent;
 }
 
+const generatedImage = /(^|\/)generated_images\/[^/]+\/[^/]+\.(png|jpe?g|webp|gif)$/i;
+
+export async function importGeneratedImage(botId: string, source: string) {
+  if (!generatedImage.test(source)) throw new Error("Imagem gerada fora da pasta do Codex.");
+  const dir = join(outboxDir(botId), "imagens");
+  await mkdir(dir, { recursive: true });
+  const stem = basename(source, extname(source)).replace(/^exec-/, "").slice(0, 8);
+  const name = `imagem-${stem}${extname(source).toLowerCase()}`;
+  const target = join(dir, name);
+  await copyFile(source, target);
+  return publicUpload(botId, await importBotFile(botId, target, name));
+}
+
 export function uploadTools(botId: string): BotTool[] {
   return [
     {

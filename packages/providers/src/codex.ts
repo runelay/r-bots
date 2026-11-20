@@ -1,3 +1,6 @@
+import { readdir, stat } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { accountEnv, childEnv, findBinary, parseJson, runLines } from "./proc";
 
@@ -10,16 +13,36 @@ const disabledFeatures = [
   "browser_use_external",
   "computer_use",
   "in_app_browser",
-  "image_generation",
   "multi_agent",
-  "view_image",
   "tool_suggest",
   "skill_search",
   "sleep_tool",
 ];
 
+const imageGuide =
+  "## Imagens\nVocê gera e edita imagens com a ferramenta nativa `image_gen`, sem chave de API e sem shell. Cada imagem gerada entra sozinha na conversa como anexo quando a sua resposta termina e fica salva na pasta de saída do bot (`outbox/imagens`). Não use `send_file` para ela, não cole o caminho e não diga que não consegue gerar imagens.";
+
+const imageFile = /\.(png|jpe?g|webp|gif)$/i;
+
 function toml(value: string) {
   return JSON.stringify(value);
+}
+
+export function codexHome(configDir: string | null | undefined) {
+  return configDir || process.env.CODEX_HOME || join(homedir(), ".codex");
+}
+
+export async function generatedImages(home: string, threadId: string, since: number) {
+  const dir = join(home, "generated_images", threadId);
+  const names = await readdir(dir).catch(() => [] as string[]);
+  const found: Array<{ path: string; at: number }> = [];
+  for (const name of names) {
+    if (!imageFile.test(name)) continue;
+    const path = join(dir, name);
+    const info = await stat(path).catch(() => null);
+    if (info?.isFile() && info.mtimeMs >= since) found.push({ path, at: info.mtimeMs });
+  }
+  return found.sort((a, b) => a.at - b.at).map((item) => item.path);
 }
 
 export async function runCodex(
@@ -57,7 +80,7 @@ export async function runCodex(
     "-c",
     'shell_environment_policy.inherit="core"',
     "-c",
-    `developer_instructions=${toml(request.systemPrompt)}`,
+    `developer_instructions=${toml(`${request.systemPrompt}\n\n${imageGuide}`)}`,
     ...(request.effort ? ["-c", `model_reasoning_effort=${toml(request.effort)}`] : []),
     ...disabled.flatMap((feature) => ["--disable", feature]),
   ];
@@ -80,6 +103,8 @@ export async function runCodex(
   });
   let failure: string | null = null;
   let finished = false;
+  let threadId = request.resume ?? null;
+  const startedAt = Date.now() - 1000;
   const { code: exitCode, stderr } = await runLines(
     bin,
     args,
@@ -89,6 +114,7 @@ export async function runCodex(
       if (!event) return;
       const type = String(event.type ?? "");
       if (type === "thread.started" && typeof event.thread_id === "string") {
+        threadId = event.thread_id;
         emit({ type: "session", id: event.thread_id });
       } else if (type === "item.started" || type === "item.completed") {
         const item = event.item as
@@ -155,6 +181,10 @@ export async function runCodex(
     },
   );
   if (signal.aborted) return emit({ type: "done", ok: false, message: "cancelled" });
+  if (threadId) {
+    for (const path of await generatedImages(codexHome(request.configDir), threadId, startedAt))
+      emit({ type: "image", path });
+  }
   if (failure || exitCode !== 0 || !finished) {
     return emit({
       type: "done",

@@ -61,6 +61,7 @@ export type ProviderEvent =
   | { type: "text"; part: string; text: string }
   | { type: "usage"; usage: Usage; contextTokens: number | null }
   | { type: "warning"; message: string }
+  | { type: "image"; path: string }
   | {
       type: "tool";
       id: string;

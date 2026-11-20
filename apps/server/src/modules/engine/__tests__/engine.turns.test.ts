@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import {
   hold,
@@ -142,6 +144,35 @@ describe("a chat turn", () => {
     expect((await factsOfType(session, "model.started")).length).toBeGreaterThanOrEqual(3);
     expect(warn).toHaveBeenCalledWith("provider warning vps:claude: devagar");
     expect(await factsOfType(session, "usage.recorded")).toHaveLength(0);
+  });
+
+  test("attaches images the provider generated and skips paths outside generated_images", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const warn = track(spyOn(console, "warn").mockImplementation(() => undefined));
+    const home = mkdtempSync(join(tmpdir(), "codex-gen-"));
+    const dir = join(home, "generated_images", "th-1");
+    mkdirSync(dir, { recursive: true });
+    const image = join(dir, "exec-0123abcd-ffff.png");
+    writeFileSync(
+      image,
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    );
+    fakeProviders.next(({ emit }) => {
+      emit({ type: "image", path: image });
+      emit({ type: "image", path: join(home, "secret.png") });
+      emit({ type: "text", part: "a", text: "Feito." });
+      emit({ type: "done", ok: true });
+    });
+    await run(session, { text: "gera uma imagem" });
+    const sent = await factsOfType(session, "file.sent");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.data).toMatchObject({ botId: bot.id, attachment: { name: "imagem-0123abcd.png", source: "bot" } });
+    expect(warn.mock.calls.some((call) => String(call[0]).startsWith(`generated image ${bot.id}`))).toBe(true);
+    rmSync(home, { recursive: true, force: true });
   });
 
   test("fails the turn with the provider message and forgets a resumed session without reply", async () => {

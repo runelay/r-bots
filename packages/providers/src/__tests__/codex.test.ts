@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import * as fs from "node:fs";
-import { runCodex } from "../codex";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { codexHome, generatedImages, runCodex } from "../codex";
 import { fakeCli, recorder, turnRequest } from "./fakes";
 
 const signal = () => new AbortController().signal;
@@ -53,7 +55,11 @@ describe("runCodex", () => {
     expect(args.slice(0, 2)).toEqual(["exec", "--json"]);
     expect(args[args.indexOf("-s") + 1]).toBe("read-only");
     expect(args[args.indexOf("-C") + 1]).toBe(fakeCli.home);
-    expect(args).toContain('developer_instructions="be brief"');
+    const instructions = args.find((arg) => arg.startsWith("developer_instructions="));
+    expect(instructions?.startsWith('developer_instructions="be brief\\n\\n## Imagens')).toBe(true);
+    expect(instructions).toContain("image_gen");
+    expect(args).not.toContain("image_generation");
+    expect(args).not.toContain("view_image");
     expect(args).toContain("shell_tool");
     expect(args).toContain("allow_login_shell=false");
     expect(args).toContain('shell_environment_policy.inherit="core"');
@@ -207,5 +213,40 @@ describe("runCodex", () => {
     const { events, emit } = recorder();
     await runCodex(turnRequest({ provider: "codex", prompt: "" }), fakeCli.home, controller.signal, emit);
     expect(events.at(-1)).toEqual({ type: "done", ok: false, message: "cancelled" });
+  });
+
+  test("attaches the images codex generated in this turn", async () => {
+    const accountDir = fs.mkdtempSync(join(tmpdir(), "codex-home-"));
+    const dir = join(accountDir, "generated_images", "th-img");
+    fs.mkdirSync(dir, { recursive: true });
+    const old = join(dir, "exec-old.png");
+    fs.writeFileSync(old, "x");
+    fs.utimesSync(old, new Date(2000, 0, 1), new Date(2000, 0, 1));
+    fs.writeFileSync(join(dir, "notes.txt"), "x");
+    fs.mkdirSync(join(dir, "nested.png"));
+    fakeCli.lines("codex", [{ type: "thread.started", thread_id: "th-img" }, { type: "turn.completed" }]);
+    const { events, emit } = recorder();
+    const run = runCodex(turnRequest({ provider: "codex", configDir: accountDir }), fakeCli.home, signal(), emit);
+    fs.writeFileSync(join(dir, "exec-b.png"), "x");
+    fs.writeFileSync(join(dir, "exec-a.webp"), "x");
+    fs.utimesSync(join(dir, "exec-b.png"), new Date(Date.now() + 2000), new Date(Date.now() + 2000));
+    await run;
+    expect(events.filter((event) => event.type === "image")).toEqual([
+      { type: "image", path: join(dir, "exec-a.webp") },
+      { type: "image", path: join(dir, "exec-b.png") },
+    ]);
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+    fs.rmSync(accountDir, { recursive: true, force: true });
+  });
+
+  test("finds generated images through the account home", async () => {
+    expect(codexHome("/acc")).toBe("/acc");
+    const previous = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = "/env-home";
+    expect(codexHome(null)).toBe("/env-home");
+    delete process.env.CODEX_HOME;
+    expect(codexHome(undefined)).toBe(join(fakeCli.home, ".codex"));
+    if (previous !== undefined) process.env.CODEX_HOME = previous;
+    expect(await generatedImages("/missing", "th", 0)).toEqual([]);
   });
 });
