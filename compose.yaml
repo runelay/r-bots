@@ -15,6 +15,10 @@ services:
         condition: service_healthy
       storage-init:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     shm_size: 2gb
     mem_limit: ${BOTS_MEM_LIMIT:-6g}
     memswap_limit: ${BOTS_MEM_LIMIT:-6g}
@@ -31,6 +35,8 @@ services:
       BOTS_MAX_TURNS: ${BOTS_MAX_TURNS:-3}
       VOICE_MAX_WARM: ${VOICE_MAX_WARM:-3}
       HOST_HOME: ${HOME}
+      POSTGRES_PORT: ${BOTS_POSTGRES_PORT:-5432}
+      REDIS_URL: redis://127.0.0.1:${BOTS_REDIS_PORT:-6379}
     volumes:
       - ${HOME}:${HOME}
       - ${HOME}/.local/share/runelay-bots:/data
@@ -54,6 +60,82 @@ services:
       options:
         max-size: 20m
         max-file: "5"
+
+  data-secrets:
+    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine}
+    command: ["bun", "/bootstrap/bootstrap.ts"]
+    volumes:
+      - ./deploy/secrets:/bootstrap:ro
+      - ${HOME}/.local/share/runelay-bots:/data
+    restart: "no"
+
+  postgres:
+    image: ${BOTS_POSTGRES_IMAGE:-postgres:17-bookworm}
+    container_name: ${BOTS_POSTGRES_CONTAINER_NAME:-runelay-bots-postgres}
+    user: "1000:1000"
+    restart: unless-stopped
+    depends_on:
+      data-secrets:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: runelay_bots
+      POSTGRES_DB: runelay_bots
+      POSTGRES_PASSWORD_FILE: /secrets/postgres.password
+      POSTGRES_INITDB_ARGS: --encoding=UTF8 --locale=C.UTF-8
+      PGDATA: /var/lib/postgresql/data
+    ports:
+      - 127.0.0.1:${BOTS_POSTGRES_PORT:-5432}:5432
+    shm_size: 256mb
+    mem_limit: ${BOTS_POSTGRES_MEM_LIMIT:-1g}
+    memswap_limit: ${BOTS_POSTGRES_MEM_LIMIT:-1g}
+    stop_grace_period: 60s
+    volumes:
+      - ${HOME}/.local/share/runelay-bots/postgres:/var/lib/postgresql/data
+      - ${HOME}/.local/share/runelay-bots/secrets:/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U runelay_bots -d runelay_bots"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  redis:
+    image: ${BOTS_REDIS_IMAGE:-redis:7.4-alpine}
+    container_name: ${BOTS_REDIS_CONTAINER_NAME:-runelay-bots-redis}
+    user: "1000:1000"
+    restart: unless-stopped
+    depends_on:
+      data-secrets:
+        condition: service_completed_successfully
+    command:
+      - sh
+      - -c
+      - umask 077 && { cat /etc/redis/redis.conf; printf 'requirepass %s\n' "$$(cat /secrets/redis.password)"; } > /tmp/redis.conf && exec redis-server /tmp/redis.conf
+    ports:
+      - 127.0.0.1:${BOTS_REDIS_PORT:-6379}:6379
+    mem_limit: ${BOTS_REDIS_MEM_LIMIT:-512m}
+    memswap_limit: ${BOTS_REDIS_MEM_LIMIT:-512m}
+    stop_grace_period: 30s
+    volumes:
+      - ./deploy/redis/redis.conf:/etc/redis/redis.conf:ro
+      - ${HOME}/.local/share/runelay-bots/redis:/data
+      - ${HOME}/.local/share/runelay-bots/secrets:/secrets:ro
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /secrets/redis.password)\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
   storage-secrets:
     image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine}
