@@ -40,6 +40,7 @@ export interface ApprovalDetails {
   previewImage?: string;
   reason?: string;
   grant?: string;
+  untilTurnEnd?: boolean;
   secret?: Record<string, unknown>;
   integration?: Record<string, unknown>;
 }

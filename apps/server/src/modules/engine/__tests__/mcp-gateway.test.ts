@@ -576,10 +576,10 @@ describe("computer tools", () => {
       tool === "computer_ui_tree" ? { windows: "none" } : null) as never);
     const { call, approvals } = await open({ approve: () => "deny" }, other);
     await call("computer_scroll", { deltaY: 3 });
-    expect(approvals[0].details).toEqual({});
+    expect(approvals[0].details).toEqual({ untilTurnEnd: true });
     await call("computer_ui_tree");
     await call("computer_key", { combo: "cmd+l" });
-    expect(approvals[1].details).toEqual({});
+    expect(approvals[1].details).toEqual({ untilTurnEnd: true });
     await call("files_list", { path: "~/Desktop" });
     expect(await settledOf()).toMatchObject({ outcome: "completed", output: null });
   });

@@ -1203,7 +1203,11 @@ function requestApproval(
                   ]
                 : [
                     { id: "approve", label: "Aprovar" },
-                    ...(details?.grant ? [{ id: "approve_always", label: "Sempre neste repositório" }] : []),
+                    ...(details?.grant
+                      ? [{ id: "approve_always", label: "Sempre neste repositório" }]
+                      : details?.untilTurnEnd
+                        ? [{ id: "approve_always", label: "Permitir até o fim da tarefa" }]
+                        : []),
                     { id: "deny", label: "Negar" },
                   ],
             ...(details?.secret ? { secret: details.secret } : {}),

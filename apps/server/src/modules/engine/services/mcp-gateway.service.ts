@@ -110,6 +110,17 @@ export interface ToolContext {
 const gatedTools = new Set(["browser_click", "browser_fill", "desktop_click", "desktop_open"]);
 const alwaysHuman = new Set(["desktop_type", "desktop_key"]);
 
+const computerTurnGrants = new Set<string>();
+
+function computerGrantKey(context: { sessionId: string; turnId: string }) {
+  return `${context.sessionId}:${context.turnId}`;
+}
+
+function grantComputerTurn(context: { sessionId: string; turnId: string }) {
+  if (computerTurnGrants.size > 500) computerTurnGrants.clear();
+  computerTurnGrants.add(computerGrantKey(context));
+}
+
 function brief(value: unknown, max = 160) {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   const clean = (text ?? "").replace(/\s+/g, " ").trim();
@@ -954,6 +965,8 @@ async function runComputerTool(context: ToolContext, spec: ComputerSpec, input: 
       cleared = { vault: true };
     } else if (spec.act && !hard && context.permission === "full") {
       cleared = { permission: "full" };
+    } else if (spec.act && !hard && computerTurnGrants.has(computerGrantKey(context))) {
+      cleared = { turnGrant: true };
     } else if (spec.act) {
       let needsHuman = true;
       if (hard) {
@@ -993,14 +1006,15 @@ async function runComputerTool(context: ToolContext, spec: ComputerSpec, input: 
           return textResult("A pessoa negou essa ação no computador.", true);
         };
         if (context.isSchedule) return reject(null);
-        const { choice, interactionId } = await context.requestApproval(
+        const { choice, interactionId, always } = await context.requestApproval(
           spec.prompt?.(args) ??
             `Posso ${label.charAt(0).toLowerCase()}${label.slice(1)}${spec.name === "computer_click" && !element ? "" : " no seu Mac"}?`,
           callId,
           context.origin,
-          details,
+          { ...details, ...(hard ? {} : { untilTurnEnd: true }) },
         );
         if (choice !== "approve") return reject(interactionId);
+        if (always && !hard) grantComputerTurn(context);
         cleared = { interactionId };
       }
     }
