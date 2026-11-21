@@ -11,7 +11,7 @@ export type AuthMode = "on" | "off";
 let current: AuthModule | null = null;
 const principals = new WeakMap<Request, Principal>();
 const originsKey = "auth:origins";
-let revokedListener: ((userId: string, deviceIds: string[]) => void) | null = null;
+const revokedListeners = new Set<(userId: string, deviceIds: string[]) => void>();
 
 function isTestEnv(env: Record<string, string | undefined>) {
   const bunTest = (env.BOTS_TEST ?? "").trim().toLowerCase();
@@ -33,12 +33,15 @@ async function recordOwner(ownerId: string) {
   await writeSetting("auth:owner", { userId: ownerId, claimedAt: new Date().toISOString() });
 }
 
-export function onUserRevoked(listener: ((userId: string, deviceIds: string[]) => void) | null) {
-  revokedListener = listener;
+export function onUserRevoked(listener: (userId: string, deviceIds: string[]) => void) {
+  revokedListeners.add(listener);
+  return () => {
+    revokedListeners.delete(listener);
+  };
 }
 
 export function notifyUserRevoked(userId: string, deviceIds: string[]) {
-  revokedListener?.(userId, deviceIds);
+  for (const listener of revokedListeners) listener(userId, deviceIds);
 }
 
 export async function initAuth(env: Record<string, string | undefined> = Bun.env) {

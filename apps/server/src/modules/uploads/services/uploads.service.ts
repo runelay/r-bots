@@ -902,8 +902,10 @@ async function prepare(botId: string, meta: UploadMeta): Promise<Prepared> {
     prepared.error = error instanceof Error ? error.message : String(error);
     return prepared;
   }
-  await mkdir(derivedDir(botId, meta.uploadId), { recursive: true });
-  await writeFile(cache, JSON.stringify(prepared));
+  try {
+    await mkdir(derivedDir(botId, meta.uploadId), { recursive: true });
+    await writeFile(cache, JSON.stringify(prepared));
+  } catch {}
   return prepared;
 }
 
