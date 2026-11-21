@@ -217,7 +217,7 @@ export function laneConcurrency(lane: Lane) {
 }
 
 export async function redisCommand<T>(name: string, args: (string | number)[]): Promise<T> {
-  const client = await requireRuntime().queues.turns.client;
+  const client = await requireRuntime().queues.turns.getBackend().client;
   return (await client.runCommand(name, args)) as T;
 }
 
