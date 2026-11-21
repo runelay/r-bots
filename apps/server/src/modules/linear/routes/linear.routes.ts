@@ -28,7 +28,7 @@ function failure(res: Res, error: unknown) {
   if (error instanceof LinearError) return sendJson(res, error.status, { ok: false, error: error.message });
   return sendJson(res, 502, {
     ok: false,
-    error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+    error: (error instanceof Error ? error.message : "Erro interno.").slice(0, 300),
   });
 }
 

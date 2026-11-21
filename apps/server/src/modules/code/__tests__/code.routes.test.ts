@@ -136,7 +136,7 @@ describe("global code routes", () => {
     spy(codeRepository, "listGrants").mockImplementation(() => Promise.reject("plain failure"));
     const plain = await request<{ error: string }>("/code/grants");
     expect(plain.status).toBe(500);
-    expect(plain.body.error).toBe("plain failure");
+    expect(plain.body.error).toBe("Erro interno.");
   });
 });
 

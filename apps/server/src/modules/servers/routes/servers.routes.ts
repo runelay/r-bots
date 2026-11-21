@@ -60,7 +60,7 @@ function failure(res: Res, error: unknown) {
   if (error instanceof ValidationError || error instanceof SyntaxError) return validationResponse(res, error);
   return sendJson(res, 400, {
     ok: false,
-    error: (error instanceof Error ? error.message : String(error)).slice(0, 400),
+    error: (error instanceof Error ? error.message : "Erro interno.").slice(0, 400),
   });
 }
 
