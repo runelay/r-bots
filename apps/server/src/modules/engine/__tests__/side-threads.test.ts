@@ -13,11 +13,13 @@ import {
 } from "../../../../test/engine-helpers";
 import { hold, idle, quietEngine, restoreTracked, run, sequence, track } from "../../../../test/engine-turn-helpers";
 import { fakeProviders, replyWith, startTestServer, type TestServer } from "../../../../test/helpers";
+import * as accounts from "../../accounts/services/accounts.service";
 import { type BotDefinition, setArchived } from "../../bots/services/bots.service";
 import type { WorkspaceState } from "../../code/services/workspace.service";
 import { childConversations, publicConversation } from "../../conversations/services/conversations.service";
 import { getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import { outboxDir } from "../../uploads/services/send-file.service";
+import * as uploads from "../../uploads/services/uploads.service";
 import { importBotFile, publicUpload } from "../../uploads/services/uploads.service";
 import * as engine from "../services/engine.service";
 import {
@@ -101,6 +103,19 @@ describe("side threads", () => {
     expect(fakeProviders.turns.at(-1)?.request.fork).toBeUndefined();
   });
 
+  test("still forks a Claude session when the accounts cannot be listed", async () => {
+    const parent = await newSession(bot.id);
+    await run(parent, { text: "contexto da mãe" });
+    const [key] = Object.keys(parent.meta.providerSessions ?? {});
+    track(spyOn(accounts, "listAccounts").mockRejectedValueOnce(new Error("accounts down")));
+    fakeProviders.next(replyWith("lado ok"));
+    const { session: side } = await openSideThread(parent, { text: "verifica os testes" });
+    await idle(side);
+    const request = fakeProviders.turns.at(-1)?.request;
+    expect(request?.fork).toBe(true);
+    expect(request?.resume).toBe(parent.meta.providerSessions?.[key]);
+  });
+
   test("seed providers without fork with the parent's handoff and share the worktree", async () => {
     const parent = await newSession(bot.id);
     await run(parent, { text: "contexto da mãe" });
@@ -167,6 +182,12 @@ describe("side threads", () => {
     const meta = await importBotFile(bot.id, path);
     const attachment = publicUpload(bot.id, meta);
     const delivered = track(spyOn(engine, "deliver").mockResolvedValue(undefined));
+    const realRead = uploads.readUpload;
+    track(
+      spyOn(uploads, "readUpload").mockImplementation(async (owner, uploadId) =>
+        uploadId === "upl_broken" ? Promise.reject(new Error("storage down")) : realRead(owner, uploadId),
+      ),
+    );
     await reportToParent(parent.meta.sessionId, side, {
       outcome: "completed",
       reply: " ",
@@ -174,6 +195,7 @@ describe("side threads", () => {
         { botId: bot.id, attachment },
         { botId: bot.id, attachment },
         { botId: "outro", attachment },
+        { botId: bot.id, attachment: { ...attachment, uploadId: "upl_broken" } },
       ],
     });
     await reportToParent(parent.meta.sessionId, side, { outcome: "failed", reply: "", error: "quebrou" });

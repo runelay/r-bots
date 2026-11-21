@@ -571,6 +571,20 @@ describe("nativeHooks", () => {
     expect(scan).toHaveBeenCalledWith("tu-route", "tool", expect.any(Object));
   });
 
+  test("a worktree that fails to be adopted does not block the command", async () => {
+    const other = join(worktreesRoot, "api", "api-bot-broken");
+    const { context } = makeContext();
+    const { live } = fakeLive();
+    const ws = workspace();
+    const adopt = mock(async (_path: string): Promise<WorkspaceState | null> => {
+      throw new Error("record gone");
+    });
+    const hooks = nativeHooks(context, ws, live, { workspaceFor: () => null, adopt });
+    const result = await hooks.before("Bash", { command: `ls ${other}` }, "tu-adopt-fail");
+    expect(result).toMatchObject({ allow: true });
+    expect(adopt).toHaveBeenCalledWith(other);
+  });
+
   test("an approved edit outside the worktree emits its own diff", async () => {
     const outside = mkdtempSync(join(tmpdir(), "rb-hooks-outside-"));
     try {

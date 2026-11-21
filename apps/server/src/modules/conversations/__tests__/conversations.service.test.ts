@@ -9,11 +9,13 @@ import { loadConversationRows } from "../repositories/sessions.repository";
 import {
   archiveConversation,
   autoTitle,
+  childConversations,
   ConversationError,
   type ConversationEvent,
   conversationOf,
   conversationSessions,
   createConversation,
+  delegationConversation,
   isConversationSession,
   listConversations,
   markConversation,
@@ -183,6 +185,33 @@ describe("conversation listing", () => {
     expect(list.slice(1).map((item) => item.sessionId)).toEqual([newer.meta.sessionId, older.meta.sessionId]);
     expect((await listConversations(bot.id, true)).map((item) => item.title)).toEqual(["Arquivada"]);
     expect(conversationSessions(bot.id, true)).toEqual([archived]);
+  });
+
+  test("finds the children of a conversation oldest first and the newest delegation from a caller", async () => {
+    const parent = await createConversation(bot.id, { title: "Pai" });
+    const parentId = parent.meta.sessionId;
+    const later = await createConversation(bot.id, { title: "Depois", meta: { parentSessionId: parentId } });
+    later.meta.startedAt = "2002-01-01T00:00:00.000Z";
+    const first = await createConversation(bot.id, { title: "Antes", meta: { spawnedBy: parentId } });
+    first.meta.startedAt = "2001-01-01T00:00:00.000Z";
+    const gone = await createConversation(bot.id, { title: "Arquivada", meta: { parentSessionId: parentId } });
+    await archiveConversation(gone, true);
+    expect(childConversations(parentId)).toEqual([first, later]);
+
+    const delegatedBy = { botId: "caller", name: "Caller", sessionId: "origin", callId: "c1" };
+    const oldest = await createConversation(bot.id, { title: "Delegada 1", delegatedBy });
+    oldest.meta.startedAt = "2001-01-01T00:00:00.000Z";
+    const newest = await createConversation(bot.id, {
+      title: "Delegada 2",
+      delegatedBy: { ...delegatedBy, callId: "c2" },
+    });
+    newest.meta.startedAt = "2003-01-01T00:00:00.000Z";
+    await createConversation(bot.id, {
+      title: "Outra origem",
+      delegatedBy: { ...delegatedBy, sessionId: "elsewhere" },
+    });
+    expect(delegationConversation(bot.id, "caller", "origin")).toBe(newest);
+    expect(delegationConversation(bot.id, "nobody", "origin")).toBeUndefined();
   });
 
   test("conversationOf only returns conversations of that bot", async () => {

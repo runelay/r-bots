@@ -29,6 +29,7 @@ import { botHomePath } from "../../code/services/bot-home.service";
 import { addAllowedRepo, removeAllowedRepo, worktreesRoot } from "../../code/services/repos.service";
 import * as computer from "../../computer/services/computer.service";
 import * as handoff from "../../conversations/services/handoff.service";
+import * as reactions from "../../conversations/services/reactions.service";
 import * as threads from "../../conversations/services/threads.service";
 import { metricsText, resetTurnDurations } from "../../status/services/metrics.service";
 import * as uploads from "../../uploads/services/uploads.service";
@@ -399,12 +400,14 @@ describe("the system prompt", () => {
     });
   });
 
-  test("ignores failing canvas and blocks notes and skips recall when memory is off", async () => {
+  test("ignores failing canvas, blocks and reaction notes and skips recall when memory is off", async () => {
     const bot = await makeBot({ memory: { recall: false, capture: false } });
     const session = await newSession(bot.id);
     track(spyOn(canvas, "canvasEditNote").mockRejectedValue(new Error("sem canvas")));
     const blocks = track(spyOn(blockTools, "blocksEditNote").mockRejectedValue(new Error("sem blocos")));
+    const reacted = track(spyOn(reactions, "reactionNote").mockRejectedValue(new Error("sem reações")));
     await run(session);
+    expect(reacted).toHaveBeenCalledWith(session, bot.id);
     expect(quiet.recall).not.toHaveBeenCalled();
     expect(quiet.capture).not.toHaveBeenCalled();
     expect(blocks).toHaveBeenCalledWith(bot.id);

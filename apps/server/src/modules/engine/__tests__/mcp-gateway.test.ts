@@ -423,6 +423,11 @@ describe("connector tools", () => {
     const full = await open({ permission: "full" });
     expect((await full.call("connector_call", { tool: "solo.send_email" })).text).toBe("ok");
     expect(full.approvals).toHaveLength(1);
+    spy(runelay, "listConnections").mockRejectedValue(new Error("offline"));
+    expect((await full.call("connector_call", { tool: "solo.send_email" })).text).toBe("ok");
+    expect((await factsOfType(session, "call.requested")).at(-1)?.data).toMatchObject({
+      capability: { name: "connector:solo.send_email" },
+    });
     expect(full.decisions.at(-1)).toMatchObject({ outcome: "human", reason: "Jev desligado." });
     const fallback = await open({ permission: undefined });
     expect((await fallback.call("connector_call", { tool: "solo.update_doc" })).text).toBe("ok");
@@ -605,6 +610,25 @@ describe("computer tools", () => {
     await jev.call("files_mkdir", { path: "~/Desktop/x" });
     expect(await startedOf()).toMatchObject({ clearedBy: { decision: "jev" } });
     expect(jev.approvals).toHaveLength(0);
+  });
+
+  test("an approval for the rest of the task clears the next actions of the same turn only", async () => {
+    const computerCall = spy(computer, "callComputer");
+    computerCall.mockResolvedValue({ done: true } as never);
+    const asked: string[] = [];
+    const requestApproval = async (prompt: string) => {
+      asked.push(prompt);
+      return { choice: "approve" as const, interactionId: `int_turn_${asked.length}`, always: true };
+    };
+    const first = await open({ requestApproval, turnId: "turn_grant" });
+    await first.call("computer_type", { text: "olá" });
+    expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_turn_1" } });
+    await first.call("computer_type", { text: "de novo" });
+    expect(await startedOf()).toMatchObject({ clearedBy: { turnGrant: true } });
+    expect(asked).toHaveLength(1);
+    const next = await open({ requestApproval, turnId: "turn_other" });
+    await next.call("computer_type", { text: "outro turno" });
+    expect(asked).toHaveLength(2);
   });
 
   test("hard actions always ask and schedules cannot act", async () => {

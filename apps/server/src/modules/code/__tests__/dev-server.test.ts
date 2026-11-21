@@ -12,6 +12,7 @@ import {
   type ProcessReply,
   resetData,
 } from "../../../../test/helpers";
+import { waitFor } from "../../../../test/engine-helpers";
 import {
   devLimits,
   devServerLogs,
@@ -326,6 +327,80 @@ describe("starting dev servers", () => {
     } finally {
       child.kill("SIGKILL");
     }
+  });
+
+  test("names the outermost process of a stray server and tolerates unreadable proc entries", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "stray-tree-"));
+    const port = portBase + 96;
+    const inner = `${process.execPath} -e 'require("net").createServer().listen(${port}, "127.0.0.1")' -- --port ${port}`;
+    const shell = spawn("sh", ["-c", `${inner}; true`, "--", "--port", String(port)], {
+      cwd: dir,
+      stdio: "ignore",
+      detached: true,
+    });
+    const fs = await import("node:fs/promises");
+    const realReaddir = fs.readdir as (...args: unknown[]) => Promise<string[]>;
+    const realRead = fs.readFile as (...args: unknown[]) => Promise<unknown>;
+    const spies: { mockRestore(): void }[] = [];
+    try {
+      await waitFor(async () => (await strayServers(dir)).length > 0);
+      const listing = spyOn(fs, "readdir").mockImplementation((async (...args: unknown[]) =>
+        (await realReaddir(...args)).reverse()) as unknown as typeof fs.readdir);
+      spies.push(listing);
+      expect(await strayServers(dir)).toEqual([
+        { pid: shell.pid as number, port, command: expect.stringContaining(`--port ${port}`) },
+      ]);
+      spies.push(
+        spyOn(fs, "readFile").mockImplementation(((path: unknown, ...rest: unknown[]) =>
+          String(path).endsWith("/stat")
+            ? Promise.reject(new Error("gone"))
+            : realRead(path, ...rest)) as unknown as typeof fs.readFile),
+      );
+      const [orphan] = await strayServers(dir);
+      expect(orphan.port).toBe(port);
+      expect(orphan.pid).not.toBe(shell.pid);
+      expect(orphan.command).toContain("createServer");
+      spies.push(spyOn(fs, "readlink").mockRejectedValue(new Error("denied")));
+      expect(await strayServers(dir)).toEqual([]);
+      listing.mockRejectedValue(new Error("no proc"));
+      expect(await strayServers(dir)).toEqual([]);
+      expect(listing).toHaveBeenCalledWith("/proc");
+    } finally {
+      for (const spy of spies) spy.mockRestore();
+      process.kill(-(shell.pid as number), "SIGKILL");
+    }
+  });
+
+  test("refuses a port the command pins when it is taken", async () => {
+    await listen(portBase + 97);
+    bash(serving);
+    await expect(
+      startDevServer(workspace(), { cmd: `wrangler dev --port ${portBase + 97}` }, () => undefined),
+    ).rejects.toThrow(`A porta ${portBase + 97} do comando já está em uso.`);
+  });
+
+  test("refuses a second start in the same folder while the first is still coming up", async () => {
+    bash(serving);
+    const ws = workspace();
+    const target = { key: ws.id, kind: "workspace" as const, path: ws.path, name: ws.repoName, branch: ws.branch };
+    let release = () => undefined as void;
+    const gate = new Promise<void>((done) => {
+      release = done;
+    });
+    let entered = false;
+    const first = launchServer(target, {
+      cmd: "npm run dev",
+      before: () => {
+        entered = true;
+        return gate;
+      },
+    });
+    await waitFor(() => entered);
+    await expect(launchServer(target, { cmd: "npm run dev" })).rejects.toThrow(
+      "Já estou subindo um servidor nesta pasta.",
+    );
+    release();
+    expect((await (await first).ready).status).toBe("running");
   });
 
   test("gives up waiting for the port after the deadline", async () => {
