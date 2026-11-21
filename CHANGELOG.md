@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+- Fixed code-scanning findings: a voice hang-up regex that could backtrack exponentially (ReDoS), double decoding of HTML entities in exports, size checks that raced with the read in the code workspace, `export_create` staging files in a shared `/tmp` folder (now in the bot's data folder, 0700/0600, removed after sending), `nice` passed into a shell string, and the runner heartbeat file following symlinks.
+
 ## v0.1.8
 
 ### Server and Mac

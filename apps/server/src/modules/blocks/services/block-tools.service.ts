@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import {
@@ -408,12 +408,17 @@ export function blockTools(botId: string): BotTool[] {
         if (job.status !== "ready") throw new BlockError(job.error ?? "A exportação falhou.");
         if (input.send !== true) return job;
         const file = await exportBytes(botId, job.id);
+        await mkdir(exportsTmpDir(botId), { recursive: true, mode: 0o700 });
         const dir = join(exportsTmpDir(botId), job.id);
-        await mkdir(dir, { recursive: true });
-        const path = join(dir, file.fileName);
-        await writeFile(path, file.data);
-        const meta = await importBotFile(botId, path, file.fileName);
-        return { ...job, fileEvent: { type: "file.sent", data: { attachment: publicUpload(botId, meta) } } };
+        await mkdir(dir, { mode: 0o700 });
+        try {
+          const path = join(dir, file.fileName);
+          await writeFile(path, file.data, { flag: "wx", mode: 0o600 });
+          const meta = await importBotFile(botId, path, file.fileName);
+          return { ...job, fileEvent: { type: "file.sent", data: { attachment: publicUpload(botId, meta) } } };
+        } finally {
+          await rm(dir, { recursive: true, force: true });
+        }
       },
     },
   ];

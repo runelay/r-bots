@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
-import { createWriteStream, readdirSync, readFileSync, statSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { constants, createWriteStream, readdirSync, readFileSync, statSync } from "node:fs";
+import { type FileHandle, mkdir, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { childEnv, findBinary, run } from "@runelay-bots/providers/proc";
 import { dataDir } from "../../../config/env";
@@ -740,17 +740,25 @@ function unquote(path: string) {
   }
 }
 
+function openForRead(path: string) {
+  return open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+}
+
 async function countLines(path: string) {
+  let handle: FileHandle | undefined;
   try {
-    const info = await stat(path);
+    handle = await openForRead(path);
+    const info = await handle.stat();
     if (info.size > 2 * 1024 * 1024) return { lines: 0, binary: true };
-    const buffer = await readFile(path);
+    const buffer = await handle.readFile();
     if (buffer.includes(0)) return { lines: 0, binary: true };
     const text = buffer.toString("utf8");
     if (!text) return { lines: 0, binary: false };
     return { lines: text.split("\n").length - (text.endsWith("\n") ? 1 : 0), binary: false };
   } catch {
     return { lines: 0, binary: false };
+  } finally {
+    await handle?.close();
   }
 }
 
@@ -880,14 +888,18 @@ export async function diffTexts(before: string | null, after: string | null) {
 const maxInlineBytes = 200_000;
 
 export async function readMaybe(path: string) {
+  let handle: FileHandle | undefined;
   try {
-    const info = await stat(path);
+    handle = await openForRead(path);
+    const info = await handle.stat();
     if (!info.isFile() || info.size > 1024 * 1024) return null;
-    const buffer = await readFile(path);
+    const buffer = await handle.readFile();
     if (buffer.includes(0)) return null;
     return buffer.toString("utf8");
   } catch {
     return null;
+  } finally {
+    await handle?.close();
   }
 }
 

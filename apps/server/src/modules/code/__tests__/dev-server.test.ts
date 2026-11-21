@@ -332,12 +332,16 @@ describe("starting dev servers", () => {
   test("names the outermost process of a stray server and tolerates unreadable proc entries", async () => {
     const dir = mkdtempSync(join(tmpdir(), "stray-tree-"));
     const port = portBase + 96;
-    const inner = `${process.execPath} -e 'require("net").createServer().listen(${port}, "127.0.0.1")' -- --port ${port}`;
-    const shell = spawn("sh", ["-c", `${inner}; true`, "--", "--port", String(port)], {
-      cwd: dir,
-      stdio: "ignore",
-      detached: true,
-    });
+    const script = `require("net").createServer().listen(${port}, "127.0.0.1")`;
+    const shell = spawn(
+      "sh",
+      ["-c", '"$1" -e "$2" -- --port "$3"; true', "--", process.execPath, script, String(port), "--port", String(port)],
+      {
+        cwd: dir,
+        stdio: "ignore",
+        detached: true,
+      },
+    );
     const fs = await import("node:fs/promises");
     const realReaddir = fs.readdir as (...args: unknown[]) => Promise<string[]>;
     const realRead = fs.readFile as (...args: unknown[]) => Promise<unknown>;

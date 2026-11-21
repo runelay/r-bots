@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { checkHealth, healthCommand, writeBeat } from "../health";
 import { tempDir } from "./helpers";
 
@@ -20,6 +21,18 @@ describe("health", () => {
     writeBeat(file, Number.NaN);
     expect(checkHealth(file, 1000).ok).toBe(false);
     writeBeat(`${temp.dir}/missing/health`);
+  });
+
+  test("writes the beat private and never through a symlink", () => {
+    const file = `${temp.dir}/health`;
+    writeBeat(file, 1000);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
+    const target = `${temp.dir}/target`;
+    writeFileSync(target, "keep");
+    const link = `${temp.dir}/link`;
+    symlinkSync(target, link);
+    writeBeat(link, 2000);
+    expect(readFileSync(target, "utf8")).toBe("keep");
   });
 
   test("the health command reads RBOTS_HEALTH_FILE and exits 0 or 1", () => {
