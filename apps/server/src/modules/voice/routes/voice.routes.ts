@@ -109,7 +109,10 @@ export async function handleVoice(req: Req, res: Res, method: string, bot: BotDe
       if (!text) return sendJson(res, 400, { ok: false, error: "Mande o texto da fala.", field: "text" });
       return sendJson(res, 202, {
         ok: true,
-        ...(await onUtterance(call, text.slice(0, 4_000), body.interrupted === true)),
+        ...(await onUtterance(call, text.slice(0, 4_000), body.interrupted === true, {
+          language: typeof body.language === "string" ? body.language.slice(0, 16) : null,
+          confidence: typeof body.confidence === "number" ? body.confidence : null,
+        })),
       });
     }
     if (action === "interrupt" && method === "POST") {

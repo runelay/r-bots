@@ -67,6 +67,7 @@ final class VoiceCall {
     @ObservationIgnored private var audibleSpeech: Set<String> = []
     @ObservationIgnored private var reconnecting = false
     @ObservationIgnored private var committedAt: Date?
+    @ObservationIgnored private var heardCommits: [ScribeCommit] = []
     @ObservationIgnored private var lastVoiceAt: Date?
     @ObservationIgnored private var probeSpeech: String?
     @ObservationIgnored private var levelTick = 0
@@ -140,6 +141,7 @@ final class VoiceCall {
         }
         reconnectAttempts = 0
         turns.reset()
+        heardCommits = []
         isTalking = false
         installTalkShortcut()
         startedAt = Date()
@@ -315,9 +317,9 @@ final class VoiceCall {
                     self?.partial(text)
                 }
             }
-            scribe.onCommitted = { [weak self] text in
+            scribe.onCommitted = { [weak self] commit in
                 Task { @MainActor in
-                    self?.committed(text)
+                    self?.committed(commit)
                 }
             }
             scribe.onStarted = { [weak self] in
@@ -470,6 +472,7 @@ final class VoiceCall {
             CallDebug.log("despedida por voz: encerrando depois de \(id)")
             hangupSpeech = id
             turns.reset()
+            heardCommits = []
             hangupTask?.cancel()
             hangupTask = Task { [weak self] in
                 try? await Task.sleep(for: .seconds(7))
@@ -503,9 +506,9 @@ final class VoiceCall {
         }
     }
 
-    private func committed(_ text: String) {
+    private func committed(_ commit: ScribeCommit) {
         guard phase != .idle, !isMuted else { return }
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = commit.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             if phase == .userSpeaking, !turns.isHolding {
                 phase = .listening
@@ -513,6 +516,7 @@ final class VoiceCall {
             return
         }
         CallDebug.log("fala fechada: \(trimmed)")
+        heardCommits.append(commit)
         syncTurns()
         turns.committed(trimmed)
         if !turns.isHolding, phase == .userSpeaking {
@@ -527,11 +531,13 @@ final class VoiceCall {
         if phase != .botSpeaking {
             phase = .thinking
         }
+        let hints = ScribeCommit.merged(heardCommits)
+        heardCommits = []
         guard let api, let botID, let callID else { return }
         let store = store
         Task { [weak self] in
             do {
-                let outcome = try await api.utterance(botID: botID, callID: callID, text: trimmed, interrupted: interrupted)
+                let outcome = try await api.utterance(botID: botID, callID: callID, text: trimmed, interrupted: interrupted, language: hints?.language, confidence: hints?.confidence)
                 CallDebug.log("fala entregue: \(outcome)")
                 if case .answer(let interactionID, let optionID) = outcome {
                     store?.respond(approvalID: interactionID, optionID: optionID)
@@ -837,6 +843,7 @@ final class VoiceCall {
         audibleSpeech.removeAll()
         callID = nil
         turns.reset()
+        heardCommits = []
         isTalking = false
         removeTalkShortcut()
         probeSpeech = nil

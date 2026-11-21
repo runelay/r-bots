@@ -24,6 +24,7 @@ import {
   speakableReply,
   startCall,
   tokenLimit,
+  unclearUtterance,
   type VoiceCall,
   VoiceError,
   voiceEnabled,
@@ -282,6 +283,22 @@ describe("pure helpers", () => {
     expect(repeatsReply("Achei três emails do banco hoje cedo", "Nada novo por aqui")).toBe(false);
   });
 
+  test("unclearUtterance flags invented English, hallucinations and weak transcripts in Portuguese calls", () => {
+    expect(unclearUtterance("Thank you for watching!", "pt")).toBe(true);
+    expect(unclearUtterance("Obrigado por assistir.", "pt")).toBe(true);
+    expect(unclearUtterance("I think that is what you want to do with this.", "pt")).toBe(true);
+    expect(unclearUtterance("You.", "pt")).toBe(true);
+    expect(unclearUtterance("...", "pt")).toBe(true);
+    expect(unclearUtterance("Olha meus emails", "pt")).toBe(false);
+    expect(unclearUtterance("abre o PR do github e faz o merge", "pt")).toBe(false);
+    expect(unclearUtterance("Okay", "pt")).toBe(false);
+    expect(unclearUtterance("sim", "pt")).toBe(false);
+    expect(unclearUtterance("Olha meus emails", "pt", { language: "eng" })).toBe(true);
+    expect(unclearUtterance("Olha meus emails", "pt", { language: "por" })).toBe(false);
+    expect(unclearUtterance("Olha meus emails", "pt", { confidence: 0.2 })).toBe(true);
+    expect(unclearUtterance("I think that is what you want", "en")).toBe(false);
+  });
+
   test("classifyAnswer reads yes and no in Portuguese", async () => {
     expect(classifyAnswer("Sim, pode!")).toBe("approve");
     expect(classifyAnswer("Faça isso")).toBe("approve");
@@ -528,6 +545,18 @@ describe("calls", () => {
     call.fast.cancelAll();
     await until(() => !call.fast.busy, "cancel unstarted");
     expect(events).toEqual([]);
+  });
+
+  test("an unclear utterance asks to repeat once and never reaches the engine", async () => {
+    const { call } = await warmCall();
+    const events = listen(call);
+    const result = await onUtterance(call, "Thank you for watching.");
+    expect(result).toMatchObject({ action: "repeat" });
+    expect(deliver).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ type: "speech.done", text: "Não entendi, pode repetir?" });
+    expect(await onUtterance(call, "I think that is what you want to do.")).toMatchObject({ action: "ignored" });
+    expect(events.filter((event) => event.type === "speech.done")).toHaveLength(1);
+    expect(deliver).not.toHaveBeenCalled();
   });
 
   test("an utterance while a turn runs is a continuation without acknowledgement", async () => {

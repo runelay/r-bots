@@ -168,6 +168,8 @@ function sttUrl(token: string, language: string) {
   url.searchParams.set("language_code", language);
   url.searchParams.set("audio_format", `pcm_${sttSampleRate}`);
   url.searchParams.set("commit_strategy", "vad");
+  url.searchParams.set("include_timestamps", "true");
+  url.searchParams.set("include_language_detection", "true");
   url.searchParams.set("vad_silence_threshold_secs", String(vadSilence));
   url.searchParams.set("vad_threshold", String(vadThreshold));
   url.searchParams.set("min_speech_duration_ms", String(minSpeechMs));
@@ -462,6 +464,7 @@ export interface VoiceCall {
   lastAck: { partId: string; text: string; at: number } | null;
   language: string;
   hangup: { speechId: string; timer: NodeJS.Timeout } | null;
+  lastUnclearAt?: number;
 }
 
 const calls = new Map<string, VoiceCall>();
@@ -765,9 +768,74 @@ export function classifyAnswer(text: string): "approve" | "deny" | null {
   return null;
 }
 
-export async function onUtterance(call: VoiceCall, text: string, interrupted = false) {
+export interface TranscriptHints {
+  language?: string | null;
+  confidence?: number | null;
+}
+
+const hallucinations =
+  /\b(thanks? (you )?for (watching|listening)|please subscribe|like and subscribe|subscribe to (my|the|our) channel|see you (in the )?next (time|video)|subtitles by|captions by|amara org|transcribed by|obrigad[oa] por assistir|legendas? (pela|por)|inscreva se no canal)\b/;
+const englishWords = new Set(
+  "the you your you're i i'm it's is are was were be been this that what with have has had for and of to in on at it we they he she my me yeah yes thank thanks please just know think going gonna want like there here would could should will can't don't didn't not but about all from".split(
+    " ",
+  ),
+);
+const portugueseWords = new Set(
+  "de que o a os as e do da dos das em um uma para pra pro com nao se no na nos nas por mais eu voce isso isto ele ela tem ta esta estou como mas foi meu minha sim ai aqui la ja quero pode faz fala me te lhe vai vou tambem entao agora qual quando onde porque".split(
+    " ",
+  ),
+);
+const minConfidence = 0.45;
+const unclearCooldownMs = 4_000;
+
+function sameLanguage(detected: string, expected: string) {
+  const value = detected.toLowerCase();
+  const aliases: Record<string, string[]> = { pt: ["pt", "por"], en: ["en", "eng"], es: ["es", "spa"] };
+  return (aliases[expected] ?? [expected]).some(
+    (prefix) => value === prefix || value.startsWith(`${prefix}-`) || value.startsWith(`${prefix}_`),
+  );
+}
+
+export function unclearUtterance(text: string, language: string, hints: TranscriptHints = {}) {
+  const value = normalized(text);
+  if (!value || !/[a-z0-9]/.test(value)) return true;
+  if (hallucinations.test(value)) return true;
+  if (typeof hints.confidence === "number" && Number.isFinite(hints.confidence) && hints.confidence < minConfidence)
+    return true;
+  if (hints.language && !sameLanguage(hints.language, language)) return true;
+  if (language !== "pt") return false;
+  const raw = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}'\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+  const english = raw.filter((word) => englishWords.has(word)).length;
+  const portuguese = value.split(" ").filter((word) => portugueseWords.has(word)).length;
+  if (raw.length <= 2) return english === raw.length && portuguese === 0;
+  return english >= 2 && english > portuguese * 2;
+}
+
+function askToRepeat(call: VoiceCall, text: string) {
+  console.log(`voice ${call.botId} unclear utterance dropped (${text.length} chars)`);
+  const now = Date.now();
+  if (call.turnStarts.size > 0 || (call.lastUnclearAt && now - call.lastUnclearAt < unclearCooldownMs))
+    return { action: "ignored" as const };
+  call.lastUnclearAt = now;
+  call.fast.cancelAll();
+  const speechId = sayFixed(call, "unclear", unclearPrompts[call.language] ?? unclearPrompts.pt);
+  return { action: "repeat" as const, speechId };
+}
+
+const unclearPrompts: Record<string, string> = {
+  pt: "Não entendi, pode repetir?",
+  en: "Sorry, I didn't catch that. Can you say it again?",
+  es: "No te entendí, ¿puedes repetir?",
+};
+
+export async function onUtterance(call: VoiceCall, text: string, interrupted = false, hints: TranscriptHints = {}) {
   const startedAt = Date.now();
   if (call.hangup || (!call.ended && wantsHangup(text))) return hangUp(call);
+  if (unclearUtterance(text, call.language, hints)) return askToRepeat(call, text);
   if (call.pending?.questions) return answerSpokenQuestion(call, text);
   if (call.pending) {
     call.fast.cancelAll();

@@ -1,5 +1,39 @@
 import Foundation
 
+struct ScribeCommit: Sendable, Equatable {
+    let text: String
+    let language: String?
+    let confidence: Double?
+
+    init(text: String, language: String? = nil, confidence: Double? = nil) {
+        self.text = text
+        self.language = language
+        self.confidence = confidence
+    }
+
+    init(json: JSONValue) {
+        text = json["text"]?.stringValue ?? ""
+        let code = json["language_code"]?.stringValue ?? ""
+        language = code.isEmpty ? nil : code
+        let logprobs = (json["words"]?.arrayValue ?? []).compactMap { word -> Double? in
+            guard word["type"]?.stringValue ?? "word" == "word" else { return nil }
+            return word["logprob"]?.doubleValue
+        }
+        confidence = logprobs.isEmpty ? nil : exp(logprobs.reduce(0, +) / Double(logprobs.count))
+    }
+
+    static func merged(_ commits: [ScribeCommit]) -> ScribeCommit? {
+        guard !commits.isEmpty else { return nil }
+        let languages = Set(commits.compactMap(\.language))
+        let confidences = commits.compactMap(\.confidence)
+        return ScribeCommit(
+            text: commits.map(\.text).joined(separator: " "),
+            language: languages.count == 1 ? languages.first : nil,
+            confidence: confidences.isEmpty ? nil : confidences.reduce(0, +) / Double(confidences.count)
+        )
+    }
+}
+
 final class ScribeSocket: @unchecked Sendable {
     private let task: URLSessionWebSocketTask
     private let sampleRate: Int
@@ -8,14 +42,16 @@ final class ScribeSocket: @unchecked Sendable {
     private var started = false
 
     var onPartial: (@Sendable (String) -> Void)?
-    var onCommitted: (@Sendable (String) -> Void)?
+    var onCommitted: (@Sendable (ScribeCommit) -> Void)?
+    private var pendingPlain: [String: DispatchWorkItem] = [:]
+    private var lastCommitted: (text: String, at: Date)?
     var onStarted: (@Sendable () -> Void)?
     var onClose: (@Sendable (String) -> Void)?
 
     init(url: URL, sampleRate: Double) {
         var request = URLRequest(url: url)
         AuthStore.authorize(&request)
-        task = URLSession.shared.webSocketTask(with: request)
+        task = HTTPSessions.streaming.webSocketTask(with: request)
         self.sampleRate = Int(sampleRate)
     }
 
@@ -87,14 +123,55 @@ final class ScribeSocket: @unchecked Sendable {
         }
     }
 
+    private func committedPlain(_ commit: ScribeCommit) {
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let fire = self.lock.withLock { () -> Bool in
+                guard self.pendingPlain.removeValue(forKey: commit.text) != nil else { return false }
+                self.lastCommitted = (commit.text, Date())
+                return true
+            }
+            if fire {
+                self.onCommitted?(commit)
+            }
+        }
+        let skip = lock.withLock { () -> Bool in
+            if let last = lastCommitted, last.text == commit.text, Date().timeIntervalSince(last.at) < 3 {
+                return true
+            }
+            pendingPlain[commit.text]?.cancel()
+            pendingPlain[commit.text] = item
+            return false
+        }
+        guard !skip else { return }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.35, execute: item)
+    }
+
+    private func committedDetailed(_ commit: ScribeCommit) {
+        let fire = lock.withLock { () -> Bool in
+            if let pending = pendingPlain.removeValue(forKey: commit.text) {
+                pending.cancel()
+            } else if let last = lastCommitted, last.text == commit.text, Date().timeIntervalSince(last.at) < 3 {
+                return false
+            }
+            lastCommitted = (commit.text, Date())
+            return true
+        }
+        if fire {
+            onCommitted?(commit)
+        }
+    }
+
     private func handle(_ text: String) {
         guard let json = JSONValue.parse(text) else { return }
         let type = json["message_type"]?.stringValue ?? ""
         switch type {
         case "partial_transcript":
             onPartial?(json["text"]?.stringValue ?? "")
-        case "committed_transcript", "committed_transcript_with_timestamps":
-            onCommitted?(json["text"]?.stringValue ?? "")
+        case "committed_transcript":
+            committedPlain(ScribeCommit(json: json))
+        case "committed_transcript_with_timestamps":
+            committedDetailed(ScribeCommit(json: json))
         case "session_started":
             lock.withLock { started = true }
             onStarted?()
@@ -128,7 +205,7 @@ final class SpeechSocket: @unchecked Sendable {
     init(url: URL, speed: Double) {
         var request = URLRequest(url: url)
         AuthStore.authorize(&request)
-        task = URLSession.shared.webSocketTask(with: request)
+        task = HTTPSessions.streaming.webSocketTask(with: request)
         self.speed = speed
     }
 

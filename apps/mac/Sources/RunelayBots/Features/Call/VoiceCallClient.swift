@@ -127,8 +127,15 @@ struct VoiceCallClient: Sendable {
         return VoiceCredentials(json: json)
     }
 
-    func utterance(botID: String, callID: String, text: String, interrupted: Bool = false) async throws -> UtteranceOutcome {
-        let json = try await send("\(root(botID))/\(Self.escape(callID))/utterance", method: "POST", body: .object(["text": .string(text), "interrupted": .bool(interrupted)]))
+    func utterance(botID: String, callID: String, text: String, interrupted: Bool = false, language: String? = nil, confidence: Double? = nil) async throws -> UtteranceOutcome {
+        var body: [String: JSONValue] = ["text": .string(text), "interrupted": .bool(interrupted)]
+        if let language {
+            body["language"] = .string(language)
+        }
+        if let confidence, confidence.isFinite {
+            body["confidence"] = .number(confidence)
+        }
+        let json = try await send("\(root(botID))/\(Self.escape(callID))/utterance", method: "POST", body: .object(body))
         switch json["action"]?.stringValue {
         case "answer":
             guard let interaction = json["interactionId"]?.stringValue, let option = json["optionId"]?.stringValue else { return .message }
@@ -195,7 +202,7 @@ struct VoiceCallClient: Sendable {
                 request.timeoutInterval = 600
                 request.setValue("application/x-ndjson", forHTTPHeaderField: "Accept")
                 do {
-                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    let (bytes, response) = try await HTTPSessions.streaming.bytes(for: request)
                     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                         continuation.yield(.ended)
                         continuation.finish()
