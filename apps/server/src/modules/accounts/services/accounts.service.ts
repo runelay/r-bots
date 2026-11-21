@@ -258,8 +258,10 @@ export async function runOnAccount(
   const codeCwd = request.code ? hostPathOf(request.code.cwd) : null;
   const placement = place({ botId, provider, codeCwd, memMb: env.BOX_MEM_MB });
   if (placement.kind === "remote") {
-    const box = boxSpecFor({ request: turn, accountPath: accountPath(id) });
-    const outcome = await runRemoteTurn(placement.environmentId, { turn, botId, box, hooks }, signal, emit);
+    const mounted = accountPath(id);
+    const remoteTurn = { ...turn, configDir: turn.configDir ?? mounted };
+    const box = boxSpecFor({ request: remoteTurn, accountPath: mounted });
+    const outcome = await runRemoteTurn(placement.environmentId, { turn: remoteTurn, botId, box, hooks }, signal, emit);
     if (outcome === "ran") return;
     console.log(
       `${new Date().toISOString()} turn ${request.turnId} refused by ${placement.environmentId}, running local`,
