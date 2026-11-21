@@ -4,13 +4,10 @@
 </picture>
 
 <p align="center">
-  <img alt="self-hosted" src="https://img.shields.io/badge/self--hosted-docker-2496ED?style=flat-square&logo=docker&logoColor=white" />
-  <img alt="Claude Agent SDK" src="https://img.shields.io/badge/engine-Claude%20Agent%20SDK-d97757?style=flat-square" />
-  <img alt="Bun" src="https://img.shields.io/badge/server-bun-000000?style=flat-square&logo=bun&logoColor=white" />
-  <img alt="TypeScript strict" src="https://img.shields.io/badge/typescript-strict-3178c6?style=flat-square&logo=typescript&logoColor=white" />
-  <img alt="Coverage gate 99%" src="https://img.shields.io/badge/coverage%20gate-99%25%20per%20file-2ea44f?style=flat-square" />
-  <img alt="macOS 15" src="https://img.shields.io/badge/app-macOS%2015%20·%20SwiftUI-111111?style=flat-square&logo=apple&logoColor=white" />
-  <img alt="Tailscale" src="https://img.shields.io/badge/network-tailnet%20only-242424?style=flat-square&logo=tailscale&logoColor=white" />
+  <img alt="Self-hosted with Docker" src="https://img.shields.io/badge/self--hosted-docker-2496ED?style=flat-square&logo=docker&logoColor=white" />
+  <img alt="Mac app, macOS 15 or later" src="https://img.shields.io/badge/mac%20app-macOS%2015%2B-111111?style=flat-square&logo=apple&logoColor=white" />
+  <img alt="Works with Claude, Codex and Cursor" src="https://img.shields.io/badge/works%20with-Claude%20%C2%B7%20Codex%20%C2%B7%20Cursor-d97757?style=flat-square" />
+  <img alt="Coverage gate 99% per file" src="https://img.shields.io/badge/coverage-99%25%20per%20file-2ea44f?style=flat-square" />
 </p>
 
 <p align="center">
