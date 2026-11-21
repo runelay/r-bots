@@ -1,0 +1,117 @@
+name: infra
+
+on:
+  pull_request:
+    paths:
+      - "infra/**"
+      - ".github/workflows/infra.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: infra-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  TOFU_VERSION: 1.12.11
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        dir:
+          - infra/hetzner
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v6.1.0
+      - uses: opentofu/setup-opentofu@v2.0.2
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - run: tofu fmt -check -recursive
+      - run: tofu init -backend=false -input=false
+      - run: tofu validate
+
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6.1.0
+      - run: bash -n infra/docker/install.sh
+
+  plan:
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: infra/hetzner
+    env:
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      TF_VAR_hcloud_token: ${{ secrets.HCLOUD_TOKEN }}
+      TF_VAR_tailscale_auth_key: ${{ secrets.TAILSCALE_AUTH_KEY }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+      TF_VAR_ssh_allowed_cidrs: ${{ secrets.SSH_ALLOWED_CIDRS || '[]' }}
+      TF_VAR_repo_url: ${{ github.server_url }}/${{ github.repository }}.git
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      TOFU_STATE_BUCKET: ${{ secrets.TOFU_STATE_BUCKET }}
+    steps:
+      - id: gate
+        working-directory: .
+        run: |
+          if [ -n "$HCLOUD_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "HCLOUD_TOKEN ausente: plan ignorado."
+          fi
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@v6.1.0
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: opentofu/setup-opentofu@v2.0.2
+        with:
+          tofu_version: ${{ env.TOFU_VERSION }}
+          tofu_wrapper: false
+      - if: steps.gate.outputs.enabled == 'true'
+        run: |
+          cat > "$RUNNER_TEMP/backend.hcl" <<HCL
+          bucket                      = "$TOFU_STATE_BUCKET"
+          key                         = "selfhost/terraform.tfstate"
+          region                      = "auto"
+          use_path_style              = true
+          use_lockfile                = true
+          skip_credentials_validation = true
+          skip_region_validation      = true
+          skip_requesting_account_id  = true
+          skip_metadata_api_check     = true
+          skip_s3_checksum            = true
+          endpoints = {
+            s3 = "https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+          }
+          HCL
+          tofu init -input=false -backend-config="$RUNNER_TEMP/backend.hcl"
+      - if: steps.gate.outputs.enabled == 'true'
+        run: |
+          tofu plan -input=false -no-color -out="$RUNNER_TEMP/tfplan"
+          tofu show -no-color "$RUNNER_TEMP/tfplan" > "$RUNNER_TEMP/plan.txt"
+      - if: steps.gate.outputs.enabled == 'true'
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const fs = require("node:fs");
+            const limit = 60000;
+            const plan = fs.readFileSync(`${process.env.RUNNER_TEMP}/plan.txt`, "utf8");
+            const body = plan.length > limit ? `${plan.slice(0, limit)}\n...` : plan;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `### tofu plan · infra/hetzner\n\n\`\`\`\n${body}\n\`\`\``,
+            });

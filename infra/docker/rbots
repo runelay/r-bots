@@ -1,0 +1,598 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")"
+root_dir="$(cd "$(dirname "$self")/../.." && pwd -P)"
+mode=checkout
+app_dir=""
+if [ "$(basename "$(dirname "$root_dir")")" = releases ] && [ -L "$(dirname "$(dirname "$root_dir")")/current" ]; then
+  mode=release
+  app_dir="$(dirname "$(dirname "$root_dir")")"
+  repo_dir="$app_dir/current"
+  env_file="$app_dir/.env.local"
+else
+  repo_dir="$root_dir"
+  env_file="$repo_dir/.env.local"
+fi
+data_dir="$HOME/.local/share/runelay-bots"
+backups_dir="$HOME/.local/share/runelay-bots-backups"
+token_file="$data_dir/runner.token"
+project="${COMPOSE_PROJECT_NAME:-runelay-bots}"
+release_repo="${RBOTS_RELEASE_REPO:-runelay/r-bots}"
+api_url="${RBOTS_API_URL:-https://api.github.com}"
+keep_releases=3
+env_token="${RBOTS_GITHUB_TOKEN:-}"
+env_channel="${RBOTS_CHANNEL:-}"
+unset RBOTS_GITHUB_TOKEN RBOTS_VERSION RBOTS_CHANNEL
+work=""
+token=""
+api_error=""
+rel_tag=""
+rel_version=""
+
+usage() {
+  cat <<'EOF'
+Uso: rbots <comando>
+
+Comandos:
+  status            containers, turnos rodando e caixas dos bots
+  logs [serviço]    acompanha os logs (todos ou de um serviço: server, runner, postgres...)
+  update [opções]   atualiza; recusa com turno rodando, a não ser com --force
+  version           versão instalada e a última do canal
+  start             liga de novo o que foi parado
+  stop              para a stack sem apagar nada
+
+Opções do update:
+  --check                só mostra a versão instalada e a disponível
+  --to <versão>          vai para uma versão específica (ex.: v0.3.2)
+  --channel stable|beta  canal das versões (fica gravado no .env.local)
+  --force                atualiza mesmo com turno rodando
+  --no-backup            não faz o backup do banco antes
+  --yes                  confirma a volta para uma versão mais velha
+
+Instalado por release, o update baixa a versão pronta do GitHub. Num checkout, faz git pull e reconstrói.
+EOF
+}
+
+fail() {
+  printf 'erro: %s\n' "$1" >&2
+  exit 1
+}
+
+say() {
+  printf '%s\n' "$1"
+}
+
+env_value() {
+  [ -f "$env_file" ] || return 0
+  sed -n "s/^$1=//p" "$env_file" | tail -1
+}
+
+set_env() {
+  local tmp
+  tmp="$(mktemp "$env_file.XXXXXX")"
+  [ -f "$env_file" ] || : >"$env_file"
+  { awk -v key="$1=" 'index($0, key) != 1' "$env_file" && printf '%s=%s\n' "$1" "$2"; } >"$tmp" || {
+    rm -f "$tmp"
+    fail "não deu para gravar $1 no $env_file"
+  }
+  cat "$tmp" >"$env_file"
+  rm -f "$tmp"
+}
+
+port="$(env_value GATEWAY_PORT)"
+address="http://127.0.0.1:${port:-2000}"
+
+compose_at() {
+  local dir="$1" args=()
+  shift
+  [ -f "$dir/.env" ] && args+=(--env-file "$dir/.env")
+  [ -f "$env_file" ] && args+=(--env-file "$env_file")
+  docker compose --project-directory "$dir" -f "$dir/compose.yaml" "${args[@]}" "$@"
+}
+
+compose() {
+  compose_at "$repo_dir" "$@"
+}
+
+services_present() {
+  docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Label "com.docker.compose.service"}}'
+}
+
+profile_args() {
+  local services
+  services="$(services_present)"
+  if grep -qx -e runner -e box-image <<<"$services"; then
+    printf '%s\n' --profile sandbox
+  fi
+  if grep -qx -e prometheus -e grafana -e cadvisor <<<"$services"; then
+    printf '%s\n' --profile observability
+  fi
+}
+
+all_profiles=(--profile sandbox --profile observability)
+
+server_get() {
+  [ -r "$token_file" ] || return 1
+  curl -fsS --max-time 5 -H "Authorization: Bearer $(cat "$token_file")" "$address/$1" 2>/dev/null
+}
+
+running_turns() {
+  local body
+  body="$(server_get status)" || return 1
+  if command -v jq >/dev/null; then
+    jq -r '.turns.running // 0' <<<"$body"
+    return
+  fi
+  grep -o '"turns"[[:space:]]*:[[:space:]]*{[^}]*' <<<"$body" | grep -o '"running"[[:space:]]*:[[:space:]]*[0-9]*' | head -1 | tr -dc '0-9'
+  printf '\n'
+}
+
+ensure_idle() {
+  local turns
+  [ "$1" = 1 ] && return
+  curl -fsS -o /dev/null --max-time 3 "$address/health" 2>/dev/null || return 0
+  turns="$(running_turns)" || fail "não deu para ler o /status do servidor; para atualizar mesmo assim, use rbots update --force"
+  if [ "${turns:-0}" -gt 0 ]; then
+    fail "há $turns turno(s) rodando; espere terminar ou use rbots update --force"
+  fi
+}
+
+wait_health() {
+  local deadline=$((SECONDS + 180))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    curl -fsS -o /dev/null --max-time 3 "$address/health" 2>/dev/null && return 0
+    sleep 3
+  done
+  return 1
+}
+
+installed_version() {
+  if [ "$mode" = release ] && [ -f "$repo_dir/VERSION" ]; then
+    tr -d '[:space:]' <"$repo_dir/VERSION"
+    return
+  fi
+  printf 'dev'
+}
+
+version_lt() {
+  [ "$1" != "$2" ] || return 1
+  local a="${1//-/\~}" b="${2//-/\~}"
+  [ "$(printf '%s\n%s\n' "$a" "$b" | sort -V | head -1)" = "$a" ]
+}
+
+setup_work() {
+  [ -n "$work" ] && return
+  work="$(mktemp -d)"
+  trap 'rm -rf "$work"' EXIT
+  token="$env_token"
+  [ -n "$token" ] || token="$(env_value RBOTS_GITHUB_TOKEN)"
+  if [ -z "$token" ] && command -v gh >/dev/null; then
+    token="$(gh auth token 2>/dev/null || true)"
+  fi
+  if [ -n "$token" ]; then
+    (umask 077 && printf 'Authorization: Bearer %s\n' "$token" >"$work/auth.header")
+  fi
+}
+
+api_get() {
+  local code auth=()
+  api_error=""
+  [ -n "$token" ] && auth=(-H "@$work/auth.header")
+  code="$(curl -sSL --max-time 30 -o "$2" -w '%{http_code}' -H 'Accept: application/vnd.github+json' \
+    -H 'X-GitHub-Api-Version: 2022-11-28' "${auth[@]}" "$api_url/$1" 2>/dev/null || true)"
+  case "$code" in
+    200) return 0 ;;
+    404)
+      if [ -z "$token" ]; then
+        api_error="não achei $1 no GitHub. Se o repo $release_repo é privado, passe um token com RBOTS_GITHUB_TOKEN=... (ou no .env.local) ou entre com gh auth login"
+      else
+        api_error="não achei $1 no GitHub: a release não existe ou o token não tem acesso ao repo $release_repo"
+      fi
+      ;;
+    401) api_error="o GitHub recusou o token (401); confira RBOTS_GITHUB_TOKEN ou gh auth status" ;;
+    403 | 429) api_error="o GitHub negou a consulta ($code), talvez pelo limite sem token; passe RBOTS_GITHUB_TOKEN ou entre com gh auth login" ;;
+    000 | "") api_error="sem resposta de $api_url" ;;
+    *) api_error="o GitHub respondeu $code em $1" ;;
+  esac
+  return 1
+}
+
+json_pairs() {
+  awk '
+    { buf = buf $0 "\n" }
+    END {
+      gsub(/[][{},]/, "\n", buf)
+      n = split(buf, lines, "\n")
+      for (i = 1; i <= n; i++) {
+        l = lines[i]
+        if (l !~ /^[ \t]*"[a-z_]+"[ \t]*:/) continue
+        k = l
+        sub(/^[ \t]*"/, "", k)
+        sub(/".*/, "", k)
+        v = l
+        sub(/^[ \t]*"[a-z_]+"[ \t]*:[ \t]*/, "", v)
+        sub(/^"/, "", v)
+        sub(/"?[ \t\r]*$/, "", v)
+        print k "\t" v
+      }
+    }' "$1"
+}
+
+first_published_tag() {
+  if command -v jq >/dev/null; then
+    jq -r '[.[] | select(.draft | not)][0].tag_name // empty' "$1"
+    return
+  fi
+  json_pairs "$1" | awk -F '\t' '
+    $1 == "tag_name" { cand = $2 }
+    $1 == "draft" && $2 == "true" { cand = "" }
+    $1 == "draft" && $2 == "false" && cand != "" { print cand; exit }'
+}
+
+release_lines() {
+  if command -v jq >/dev/null; then
+    jq -r '"tag\t\(.tag_name)", (.assets[]? | "asset\t\(.name)\t\(.url)\t\(.browser_download_url)")' "$1"
+    return
+  fi
+  json_pairs "$1" | awk -F '\t' '
+    $1 == "tarball_url" { exit }
+    $1 == "tag_name" && tag == "" { tag = $2; print "tag\t" $2 }
+    $1 == "url" && $2 ~ /\/releases\/assets\/[0-9]+$/ { url = $2; name = ""; next }
+    $1 == "name" && url != "" && name == "" { name = $2; next }
+    $1 == "browser_download_url" && name != "" { print "asset\t" name "\t" url "\t" $2; url = ""; name = "" }'
+}
+
+resolve_release() {
+  local to="$1" chan="$2" tag
+  setup_work
+  if [ -n "$to" ]; then
+    api_get "repos/$release_repo/releases/tags/v${to#v}" "$work/release.json" || return 1
+  elif [ "$chan" = beta ]; then
+    api_get "repos/$release_repo/releases?per_page=30" "$work/releases.json" || return 1
+    tag="$(first_published_tag "$work/releases.json")"
+    if [ -z "$tag" ]; then
+      api_error="nenhuma release publicada em $release_repo"
+      return 1
+    fi
+    api_get "repos/$release_repo/releases/tags/$tag" "$work/release.json" || return 1
+  else
+    api_get "repos/$release_repo/releases/latest" "$work/release.json" || return 1
+  fi
+  release_lines "$work/release.json" >"$work/release.lines"
+  rel_tag="$(awk -F '\t' '$1 == "tag" { print $2; exit }' "$work/release.lines")"
+  rel_version="${rel_tag#v}"
+  case "$rel_version" in
+    "" | *[!0-9A-Za-z.+-]*)
+      api_error="a release do GitHub veio sem uma versão válida ($rel_tag)"
+      return 1
+      ;;
+  esac
+}
+
+download_asset() {
+  local api web
+  api="$(awk -F '\t' -v n="$1" '$1 == "asset" && $2 == n { print $3; exit }' "$work/release.lines")"
+  web="$(awk -F '\t' -v n="$1" '$1 == "asset" && $2 == n { print $4; exit }' "$work/release.lines")"
+  [ -n "$api" ] || fail "a release $rel_tag não tem o arquivo $1"
+  if [ -n "$token" ]; then
+    curl -fsSL --max-time 600 -H "@$work/auth.header" -H 'Accept: application/octet-stream' "$api" -o "$2" \
+      || fail "não deu para baixar $1 da release $rel_tag"
+  else
+    curl -fsSL --max-time 600 "$web" -o "$2" || fail "não deu para baixar $1 da release $rel_tag"
+  fi
+}
+
+verify_asset() {
+  awk -v n="$2" '{ f = $2; sub(/^\*/, "", f) } f == n { print $1 "  " n }' "$1/SHA256SUMS" >"$1/check.sha256"
+  [ -s "$1/check.sha256" ] || fail "o SHA256SUMS da release $rel_tag não traz $2"
+  if command -v sha256sum >/dev/null; then
+    (cd "$1" && sha256sum -c check.sha256 >/dev/null 2>&1) || fail "o $2 baixado não confere com o SHA256SUMS"
+  elif command -v shasum >/dev/null; then
+    (cd "$1" && shasum -a 256 -c check.sha256 >/dev/null 2>&1) || fail "o $2 baixado não confere com o SHA256SUMS"
+  else
+    fail "precisa de sha256sum ou shasum para conferir o download"
+  fi
+}
+
+unpack_release() {
+  local version="$1" tarball="$2" stage root entry
+  stage="$app_dir/releases/.stage-$version"
+  rm -rf "$stage"
+  mkdir -p "$stage"
+  tar -xzf "$tarball" -C "$stage" || fail "não deu para abrir o pacote da release $version"
+  root="$stage"
+  if [ ! -f "$root/compose.yaml" ]; then
+    for entry in "$stage"/*; do
+      [ -f "$entry/compose.yaml" ] && root="$entry"
+    done
+  fi
+  [ -f "$root/compose.yaml" ] && [ -f "$root/infra/docker/install.sh" ] \
+    || fail "o pacote da release $version não tem compose.yaml e infra/docker/install.sh"
+  rm -rf "${app_dir:?}/releases/$version"
+  mv "$root" "$app_dir/releases/$version"
+  rm -rf "$stage"
+  [ -f "$app_dir/releases/$version/VERSION" ] || printf '%s\n' "$version" >"$app_dir/releases/$version/VERSION"
+  ln -sfn ../../.env.local "$app_dir/releases/$version/.env.local"
+  touch "$app_dir/releases/$version"
+}
+
+point_current() {
+  ln -sfn "$1" "$app_dir/.current.new"
+  if ! mv -T "$app_dir/.current.new" "$app_dir/current" 2>/dev/null; then
+    rm -f "$app_dir/current"
+    mv "$app_dir/.current.new" "$app_dir/current"
+  fi
+}
+
+prune_releases() {
+  local active old kept=1
+  active="$(basename "$(readlink "$app_dir/current")")"
+  while IFS= read -r old; do
+    case "$old" in
+      "" | .* | "$active") continue ;;
+    esac
+    kept=$((kept + 1))
+    [ "$kept" -le "$keep_releases" ] && continue
+    rm -rf "${app_dir:?}/releases/$old"
+  done < <(ls -1t "$app_dir/releases")
+}
+
+registry_login() {
+  local user="${RBOTS_GITHUB_USER:-}"
+  [ -n "$token" ] || return 0
+  if [ -z "$user" ] && api_get user "$work/user.json"; then
+    user="$(json_pairs "$work/user.json" | awk -F '\t' '$1 == "login" { print $2; exit }')"
+  fi
+  if ! printf '%s' "$token" | docker login ghcr.io -u "${user:-rbots}" --password-stdin >/dev/null 2>&1; then
+    say "Aviso: o docker login no ghcr.io falhou; se as imagens forem privadas, o download vai falhar"
+  fi
+}
+
+backup_now() {
+  local out
+  say "Fazendo backup do banco antes de atualizar"
+  if ! out="$(compose exec -T server ./runelay-bots-server backup 2>&1)"; then
+    printf '%s\n' "$out" >&2
+    fail "o backup falhou e nada foi atualizado; para atualizar sem backup, use rbots update --no-backup"
+  fi
+  backup_path="$(printf '%s\n' "$out" | sed '/^[[:space:]]*$/d' | tail -1)"
+  backup_path="${backup_path/\/backups\//$backups_dir/}"
+  say "  backup: $backup_path"
+}
+
+current_channel() {
+  local chan="${1:-$env_channel}"
+  [ -n "$chan" ] || chan="$(env_value RBOTS_CHANNEL)"
+  chan="${chan:-stable}"
+  case "$chan" in
+    stable | beta) printf '%s' "$chan" ;;
+    *) fail "canal inválido: $chan (use stable ou beta)" ;;
+  esac
+}
+
+cmd_status() {
+  local profiles=() turns metrics runtime
+  mapfile -t profiles < <(profile_args)
+  compose "${profiles[@]}" ps
+  say ""
+  if ! curl -fsS -o /dev/null --max-time 3 "$address/health" 2>/dev/null; then
+    say "Servidor: não responde em $address"
+    return
+  fi
+  say "Servidor: de pé em $address"
+  if turns="$(running_turns)"; then
+    say "Turnos rodando: ${turns:-0}"
+  else
+    say "Turnos rodando: não deu para ler o /status (token em $token_file)"
+  fi
+  runtime="$(compose "${profiles[@]}" logs --no-log-prefix runner 2>/dev/null | grep -o 'caixas com o runtime .*' | tail -1 || true)"
+  [ -n "$runtime" ] && say "Caixas: runtime ${runtime#caixas com o runtime }"
+  metrics="$(server_get metrics || true)"
+  if [ -n "$metrics" ]; then
+    grep '^rbots_environment_boxes{' <<<"$metrics" | sed 's/^rbots_environment_boxes/  caixas/' || true
+  fi
+}
+
+cmd_logs() {
+  compose "${all_profiles[@]}" logs -f --tail 200 "$@"
+}
+
+cmd_version() {
+  local chan
+  chan="$(current_channel)"
+  if [ "$mode" = release ]; then
+    say "Instalada: $(installed_version) (release em $app_dir)"
+  else
+    say "Instalada: dev (checkout em $repo_dir)"
+  fi
+  if resolve_release "" "$chan"; then
+    say "Última do canal $chan: $rel_version"
+  else
+    say "Última do canal $chan: não deu para consultar ($api_error)"
+  fi
+}
+
+update_checkout() {
+  local force="$1" profiles=()
+  ensure_idle "$force"
+  mapfile -t profiles < <(profile_args)
+  say "Baixando o código novo"
+  git -C "$repo_dir" pull --ff-only
+  say "Reconstruindo e subindo ${profiles[*]:-sem perfis extras}"
+  compose "${profiles[@]}" up -d --build
+}
+
+update_release() {
+  local check="$1" to="$2" chan="$3" force="$4" backup="$5" yes="$6" channel_flag="$7"
+  local installed target previous_link profiles=()
+  backup_path=""
+  installed="$(installed_version)"
+  resolve_release "$to" "$chan" || fail "$api_error"
+  target="$rel_version"
+  if [ "$check" = 1 ]; then
+    say "Instalada: $installed"
+    if [ -n "$to" ]; then
+      say "Pedida: $target"
+    else
+      say "Disponível no canal $chan: $target"
+    fi
+    if [ "$installed" = "$target" ]; then
+      say "Já está nessa versão."
+    elif version_lt "$target" "$installed"; then
+      say "A $target é mais velha que a instalada; voltar pede --yes."
+    else
+      say "Para atualizar: rbots update${to:+ --to $to}"
+    fi
+    return
+  fi
+  if [ "$installed" = "$target" ]; then
+    if [ -n "$to" ]; then
+      say "Já está na versão $target."
+    else
+      say "Já está na última versão do canal $chan ($target)."
+    fi
+    if [ -n "$channel_flag" ]; then
+      set_env RBOTS_CHANNEL "$chan"
+    fi
+    return
+  fi
+  if version_lt "$target" "$installed" && [ "$yes" = 0 ]; then
+    fail "a $target é mais velha que a instalada ($installed). As migrations do banco não voltam, e a versão velha pode não ler o banco migrado. Para voltar mesmo assim, rode de novo com --yes"
+  fi
+  ensure_idle "$force"
+  if [ "$backup" = 1 ]; then
+    backup_now
+  else
+    say "Sem backup antes de atualizar (--no-backup)"
+  fi
+
+  say "Baixando o r/bots $target"
+  download_asset "r-bots-$target.tar.gz" "$work/r-bots-$target.tar.gz"
+  download_asset SHA256SUMS "$work/SHA256SUMS"
+  verify_asset "$work" "r-bots-$target.tar.gz"
+  unpack_release "$target" "$work/r-bots-$target.tar.gz"
+
+  mapfile -t profiles < <(profile_args)
+  registry_login
+  say "Baixando as imagens da $target (a stack continua na $installed)"
+  if ! RBOTS_VERSION="$target" compose_at "$app_dir/releases/$target" "${profiles[@]}" pull; then
+    printf 'Se o repo é privado, o token precisa do escopo read:packages: gh auth refresh -h github.com -s read:packages\n' >&2
+    fail "não deu para baixar as imagens da $target; nada mudou na stack"
+  fi
+
+  previous_link="$(readlink "$app_dir/current")"
+  point_current "releases/$target"
+  set_env RBOTS_VERSION "$target"
+  if [ -n "$channel_flag" ]; then
+    set_env RBOTS_CHANNEL "$chan"
+  fi
+  say "Subindo a $target ${profiles[*]:-sem perfis extras}"
+  if compose "${profiles[@]}" up -d && wait_health; then
+    prune_releases
+    say "Atualizado: $installed -> $target"
+    return
+  fi
+
+  say "O servidor não respondeu em 180 s na $target. Voltando para a $installed."
+  point_current "$previous_link"
+  set_env RBOTS_VERSION "$installed"
+  compose "${profiles[@]}" up -d || true
+  wait_health || say "O servidor também não respondeu na $installed; veja rbots logs server"
+  printf 'erro: a atualização para a %s falhou e a stack voltou para a %s.\n' "$target" "$installed" >&2
+  printf 'O banco pode já ter migrado para a %s; se a %s não funcionar direito, restaure o backup.\n' "$target" "$installed" >&2
+  if [ -n "$backup_path" ]; then
+    printf 'Backup feito antes da atualização: %s\n' "$backup_path" >&2
+  else
+    printf 'Não houve backup antes desta atualização (--no-backup).\n' >&2
+  fi
+  exit 1
+}
+
+cmd_update() {
+  local check=0 force=0 backup=1 yes=0 to="" channel_flag="" chan
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --check) check=1 ;;
+      --to)
+        [ $# -ge 2 ] || fail "--to precisa de uma versão (ex.: --to v0.3.2)"
+        to="$2"
+        shift
+        ;;
+      --to=*) to="${1#--to=}" ;;
+      --channel)
+        [ $# -ge 2 ] || fail "--channel precisa de stable ou beta"
+        channel_flag="$2"
+        shift
+        ;;
+      --channel=*) channel_flag="${1#--channel=}" ;;
+      --force) force=1 ;;
+      --no-backup) backup=0 ;;
+      --yes | -y) yes=1 ;;
+      *) fail "opção desconhecida: $1 (veja rbots --help)" ;;
+    esac
+    shift
+  done
+  case "$to" in
+    *[!0-9A-Za-z.+-]*) fail "versão inválida: $to" ;;
+  esac
+  chan="$(current_channel "$channel_flag")"
+
+  if [ "$mode" = checkout ]; then
+    [ -z "$to" ] && [ -z "$channel_flag" ] || fail "--to e --channel valem só na instalação por release; aqui é um checkout ($repo_dir), atualizado com git pull"
+    if [ "$check" = 1 ]; then
+      say "Checkout em $repo_dir (versão dev): rbots update faz git pull --ff-only e reconstrói."
+      if resolve_release "" "$chan"; then
+        say "Última release do canal $chan: $rel_version"
+      else
+        say "Última release do canal $chan: não deu para consultar ($api_error)"
+      fi
+      return
+    fi
+    update_checkout "$force"
+    return
+  fi
+  update_release "$check" "$to" "$chan" "$force" "$backup" "$yes" "$channel_flag"
+}
+
+cmd_start() {
+  local profiles=()
+  mapfile -t profiles < <(profile_args)
+  [ -n "$(services_present)" ] || fail "nada instalado ainda; rode $repo_dir/infra/docker/install.sh"
+  compose "${profiles[@]}" start
+}
+
+cmd_stop() {
+  compose "${all_profiles[@]}" stop
+}
+
+case "${1:-}" in
+  -h | --help | help | "")
+    usage
+    exit 0
+    ;;
+  version)
+    cmd_version
+    exit 0
+    ;;
+esac
+
+command -v docker >/dev/null || fail "Docker não encontrado"
+
+case "$1" in
+  status) cmd_status ;;
+  logs)
+    shift
+    cmd_logs "$@"
+    ;;
+  update)
+    shift
+    cmd_update "$@"
+    ;;
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac

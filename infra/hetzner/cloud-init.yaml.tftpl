@@ -1,0 +1,51 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - jq
+
+users:
+  - default
+  - name: ${app_user}
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "${ssh_public_key}"
+
+write_files:
+  - path: /etc/rbots/tailscale.key
+    owner: root:root
+    permissions: "0600"
+    content: "${tailscale_auth_key}"
+  - path: /usr/local/sbin/rbots-setup
+    owner: root:root
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      app_user='${app_user}'
+      app_home="/home/$app_user"
+      repo_dir="$app_home/runelay-bots"
+
+      curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+      sh /tmp/get-docker.sh
+      rm -f /tmp/get-docker.sh
+      systemctl enable --now docker
+      usermod -aG docker "$app_user"
+
+      curl -fsSL https://tailscale.com/install.sh -o /tmp/install-tailscale.sh
+      sh /tmp/install-tailscale.sh
+      rm -f /tmp/install-tailscale.sh
+      systemctl enable --now tailscaled
+      tailscale up --auth-key=file:/etc/rbots/tailscale.key --hostname='${tailscale_hostname}'
+      shred -u /etc/rbots/tailscale.key
+
+      runuser -l "$app_user" -c "test -d '$repo_dir/.git' || git clone --branch '${repo_ref}' '${repo_url}' '$repo_dir'"
+      tailscale serve --bg --https=${tailscale_serve_port} http://127.0.0.1:${gateway_port}
+      RBOTS_APP_USER="$app_user" bash "$repo_dir/infra/docker/install.sh" ${install_sandbox_runtime ? "--harden --yes " : ""}--observability
+
+runcmd:
+  - [/usr/local/sbin/rbots-setup]

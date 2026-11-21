@@ -166,12 +166,57 @@ flowchart LR
 
 ## 🚀 Quick start
 
-### Docker (production)
+### One line (Docker)
 
-The server runs in Docker on the VPS, from the repo root:
+On a machine with Docker, as your user (no `sudo`):
 
 ```sh
-git clone https://github.com/<you>/runelay-bots.git && cd runelay-bots
+curl -fsSL https://raw.githubusercontent.com/runelay/r-bots/main/install.sh | sh
+```
+
+It downloads the latest **GitHub Release** (no build on your machine): it fetches `r-bots-<version>.tar.gz`, checks it against `SHA256SUMS`, unpacks it into `~/.local/share/runelay-bots-app/releases/<version>` with `current` pointing at it, checks that you can talk to Docker without `sudo`, writes the few lines it needs into a `.env.local` shared by every version (`RBOTS_VERSION`, `BOTS_SANDBOX=docker`, `DOCKER_GID` from the Docker socket, smaller limits below 8 GB of RAM), pulls the prebuilt images from GHCR, runs `docker compose --profile sandbox up -d`, waits for `/health` and prints the address, the box runtime and the next step: open the app and create the owner. It never restarts Docker unless you ask. Running it again is safe. Your data stays in `~/.local/share/runelay-bots`.
+
+Pick a channel or a version with environment variables:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/runelay/r-bots/main/install.sh | RBOTS_CHANNEL=beta sh     # newest, pre-releases included
+curl -fsSL https://raw.githubusercontent.com/runelay/r-bots/main/install.sh | RBOTS_VERSION=0.3.2 sh   # a specific version
+```
+
+While the repo is private, fetch the script with `curl -fsSL -H "Authorization: Bearer $(gh auth token)" ...` and pass a GitHub token in `RBOTS_GITHUB_TOKEN`, or just be logged in with `gh` (the installer uses `gh auth token`). Private images also need the `read:packages` scope: `gh auth refresh -h github.com -s read:packages`. Put `RBOTS_GITHUB_TOKEN=...` in `~/.local/share/runelay-bots-app/.env.local` so `rbots update` and the server's update check find it too.
+
+Inside a checkout, `install.sh` builds from source instead (`up -d --build`); `RBOTS_FROM_SOURCE=1` clones the repo and builds, as before releases.
+
+Options go after `sh -s --` (or straight to `infra/docker/install.sh` inside a checkout):
+
+| Flag | What it does |
+|---|---|
+| `--harden` | installs Kata (with `/dev/kvm`) or gVisor for the boxes and restarts Docker; asks for `sudo` and confirms first, since the restart stops every container on the machine (`--yes` skips the question) |
+| `--observability` | also starts cAdvisor, Prometheus and Grafana (about 1 GB) |
+| `--help` | usage |
+
+`RBOTS_DIR` changes the install folder and `RBOTS_RELEASE_REPO` the repo it downloads from (default `runelay/r-bots`). Details: [infra/docker](infra/docker/README.md).
+
+Day to day, the installer links `rbots` into `~/.local/bin` when that folder is on your `PATH`:
+
+```sh
+rbots status            # containers, running turns, box runtime
+rbots logs [service]    # follow logs
+rbots version           # installed version and the latest on your channel
+rbots update --check    # installed vs available, changes nothing
+rbots update            # back up the database, download, pull, switch, wait for /health
+rbots stop              # stop without deleting anything
+rbots start             # start again
+```
+
+`rbots update [--to v0.3.2] [--channel stable|beta] [--force] [--no-backup] [--yes]` refuses while a turn is running (unless `--force`), backs up the database first (`--no-backup` skips it), pulls the new images while the old version keeps running, switches `current` and rolls back to the previous version if `/health` does not answer within 180 s. Going back to an older version asks for `--yes`, since database migrations do not run backwards. The last 3 versions stay in `releases/`. In a checkout, `rbots update` does `git pull --ff-only` and rebuilds, as before.
+
+### Docker without boxes
+
+Plain Compose still works, from the repo root; turns then run inside the server container:
+
+```sh
+git clone https://github.com/runelay/r-bots.git && cd r-bots
 docker compose up -d
 ```
 
@@ -183,7 +228,7 @@ That builds `apps/server/Dockerfile` (Bun runtime plus the Claude Code, Codex, g
 docker compose logs -f --tail 200   # logs
 docker compose ps                   # status and health
 docker compose restart              # restarts the server, not a rebuild
-curl -s 127.0.0.1:2000/status       # never restart with a bot working
+curl -s -H "Authorization: Bearer $(cat ~/.local/share/runelay-bots/runner.token)" 127.0.0.1:2000/status  # never restart with a bot working
 ```
 
 ### Bun (on the host)

@@ -126,5 +126,7 @@ ENV BOTS_APP_DIR=/app/apps/server \
     BOTS_TOOL_SANDBOX=uid \
     CLAUDE_CODE_EXECUTABLE=/app/apps/server/claude-agent \
     NAPI_RS_NATIVE_LIBRARY_PATH=/app/apps/server/native/anydoc.linux-x64-gnu.node
+ARG RBOTS_VERSION=dev
+ENV RBOTS_VERSION=$RBOTS_VERSION
 ENTRYPOINT ["/usr/local/bin/runelay-entrypoint"]
 CMD ["./runelay-bots-server"]
