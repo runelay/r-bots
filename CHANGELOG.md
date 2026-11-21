@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- New conversations on a box no longer fail with "permission denied": the server creates the conversation folder before the box starts. Before, Docker created it as root and the bot could not write to it.
+
 ## v0.1.7
 
 ### iPhone

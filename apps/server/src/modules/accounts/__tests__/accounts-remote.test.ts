@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { statSync } from "node:fs";
 import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { fakeProviders } from "../../../../test/helpers";
 import { boxHello, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
 import { env } from "../../../config/env";
+import { workDirOf } from "../../environments/services/box-spec.service";
 import { accountDir, accountPath, botIdOf, refreshAccounts, runOnAccount } from "../services/accounts.service";
 
 const account = { id: "vps:claude", provider: "claude" as const };
@@ -89,6 +91,19 @@ describe("runOnAccount placement", () => {
     runner.say({ type: "turn.end", id: "r3" });
     await finished;
     expect(fakeProviders.turns).toEqual([]);
+  });
+
+  test("creates the work dir before the box mounts it", async () => {
+    env.BOTS_SANDBOX = "docker";
+    const runner = fakeRunner(runnerDevice("box-1"));
+    runner.say(boxHello());
+    const request = { ...turnRequest("r4"), workKey: "bot-r/fresh-session" };
+    const finished = runOnAccount(account, request, new AbortController().signal, () => {}, hooks);
+    await runner.next("request");
+    expect(statSync(workDirOf(request)).isDirectory()).toBe(true);
+    runner.say({ type: "turn.event", id: "r4", event: { type: "done", ok: true } });
+    runner.say({ type: "turn.end", id: "r4" });
+    await finished;
   });
 
   test("runs locally when the runner has no room", async () => {
