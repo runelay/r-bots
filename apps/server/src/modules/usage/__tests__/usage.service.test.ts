@@ -65,6 +65,7 @@ const codexOk =
 beforeEach(async () => {
   await resetData();
   await resetUsageTables();
+  await settings.writeSetting("accounts.settings", {});
   await rm(join(home, ".claude"), { recursive: true, force: true });
   await rm(join(home, ".claude.json"), { force: true });
   await rm(join(home, ".codex"), { recursive: true, force: true });

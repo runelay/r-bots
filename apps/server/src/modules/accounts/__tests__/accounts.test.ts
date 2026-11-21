@@ -94,6 +94,7 @@ afterEach(async () => {
   delete process.env.BOTS_FAULTS_FILE;
   process.env.HOST_HOME = previousHome;
   rmSync(home, { recursive: true, force: true });
+  await writeSetting("accounts.settings", {});
   await refreshAccounts();
 });
 

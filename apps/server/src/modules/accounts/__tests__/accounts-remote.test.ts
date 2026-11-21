@@ -60,7 +60,7 @@ describe("runOnAccount placement", () => {
       op: "turn.start",
       botId: "bot-r",
       hooks: true,
-      request: { turnId: "r1", configDir: null, mcp: { url: "/mcp/bot-r/s1" } },
+      request: { turnId: "r1", configDir: accountPath(account.id), mcp: { url: "/mcp/bot-r/s1" } },
       box: { memMb: env.BOX_MEM_MB, cpus: env.BOX_CPUS },
     });
     runner.say({ type: "turn.event", id: "r1", event: { type: "done", ok: true } });
