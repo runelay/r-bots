@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v0.1.6
+
+### iPhone
+
+- New iPhone app (`apps/ios`, built with XcodeGen on top of the Mac sources): conversations, server switcher at the leading edge with the server name, settings tiles and shortcuts.
+
+### Fixes
+
+- A new session that opens the same repo for the same task takes over the worktree a previous session left with pending work (uncommitted files or unpushed commits), as long as no other session has it open. Before, it opened an empty `-2` worktree from the base branch, the box could not see the earlier work, and the bot went looking for it elsewhere.
+
 ## v0.1.5
 
 ### Fixes
