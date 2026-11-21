@@ -446,6 +446,35 @@ describe("routes", () => {
     expect((await request("/servers", { method: "POST", body: { path: repo.path, cmd: "x" } })).status).toBe(202);
   });
 
+  test("issues a one-time preview link for a running server", async () => {
+    processes();
+    const repo = await project();
+    const started = await request<{ server: { id: string } }>("/servers", {
+      method: "POST",
+      body: { path: repo.path, script: "dev", port: 5981 },
+    });
+    const id = started.body.server.id;
+    for (let i = 0; i < 100 && getServer(id)?.status !== "running"; i++) await Bun.sleep(20);
+    const live = getServer(id);
+    const link = await request<{ ok: boolean; path: string }>(`/servers/${id}/preview-link`, { method: "POST" });
+    expect(link.status).toBe(200);
+    const prefix = `/preview/${live?.workspaceId}/5981/?t=`;
+    expect(link.body.path.startsWith(prefix)).toBe(true);
+    const ticket = link.body.path.slice(prefix.length);
+    expect(ticket).toMatch(/^[\w-]{24}$/);
+    expect(ticket).not.toBe(live?.previewToken);
+    const opened = await request(link.body.path, { redirect: "manual" });
+    expect(opened.status).toBe(302);
+    expect(opened.headers.get("set-cookie")).toContain("rb_preview=");
+    expect((await request(link.body.path, { redirect: "manual" })).status).toBe(403);
+    await request(`/servers/${id}/stop`, { method: "POST" });
+    await getServer(id)?.done;
+    const stopped = await request<{ error: string }>(`/servers/${id}/preview-link`, { method: "POST" });
+    expect(stopped.status).toBe(409);
+    expect(stopped.body.error).toBe("O servidor não está no ar.");
+    expect((await request("/servers/nope/preview-link", { method: "POST" })).status).toBe(400);
+  });
+
   test("reports launch failures as 400", async () => {
     processes();
     const repo = await project();

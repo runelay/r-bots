@@ -7,6 +7,7 @@ import type { Socket } from "../../../shared/ws";
 import {
   handlePreview,
   isPreviewTraffic,
+  issuePreviewTicket,
   onPreviewHost,
   previewHost,
   previewOrigin,
@@ -107,6 +108,36 @@ describe("preview exchange", () => {
     expect((await request("/page", { headers: { cookie } })).status).toBe(200);
     clock.at += previewSessionMs;
     expect((await request("/page", { headers: { cookie } })).status).toBe(404);
+  });
+});
+
+describe("preview tickets", () => {
+  test("a ticket opens a session once, leaves the link token unused and expires after two minutes", async () => {
+    const clock = { at: 5_000_000 };
+    usePreviewClock(() => clock.at);
+    const port = upstream(() => new Response("page"));
+    const token = serveToken(port);
+    const ticket = issuePreviewTicket(token);
+    expect(ticket).toMatch(/^[\w-]{24}$/);
+    expect(ticket).not.toContain(token);
+    const redirect = await request(`/preview/ws1/${port}/app?t=${ticket}`, { redirect: "manual" });
+    expect(redirect.status).toBe(302);
+    expect(redirect.headers.get("location")).toBe("/app");
+    expect((await request("/page", { headers: { cookie: cookieOf(redirect) } })).status).toBe(200);
+    expect((await request(`/preview/ws1/${port}/?t=${ticket}`, { redirect: "manual" })).status).toBe(403);
+    expect((await request(`/preview/ws1/${port}/?t=${token}`, { redirect: "manual" })).status).toBe(302);
+    const late = issuePreviewTicket(token);
+    clock.at += 2 * 60_000;
+    expect((await request(`/preview/ws1/${port}/?t=${late}`, { redirect: "manual" })).status).toBe(403);
+    const fresh = issuePreviewTicket(token);
+    expect((await request(`/preview/ws1/${port}/?t=${fresh}`, { redirect: "manual" })).status).toBe(302);
+  });
+
+  test("a ticket for another server does not open this one", async () => {
+    const port = upstream(() => new Response("page"));
+    serveToken(port);
+    const other = issuePreviewTicket("tok-other");
+    expect((await request(`/preview/ws1/${port}/?t=${other}`, { redirect: "manual" })).status).toBe(403);
   });
 });
 

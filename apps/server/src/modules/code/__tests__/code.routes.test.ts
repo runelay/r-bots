@@ -433,6 +433,42 @@ describe("checkpoints and rewind", () => {
     expect(noWorkspace.body.checkpoints).toEqual([{ turnId: "turn_1", at: "x", workspaceId: "w", request: null }]);
   });
 
+  test("skips unreadable log lines when labeling and rewinding", async () => {
+    const { session, workspace } = await openRepo();
+    session.log.emit({ type: "turn.started", data: { turnId: "turn_0" }, scope: { turnId: "turn_0" } });
+    await createCheckpoint(session, workspace, "turn_1");
+    session.log.emit({ type: "delivery.consumed", data: { parts: [{ text: "arruma" }] }, scope: { turnId: "turn_1" } });
+    session.log.emit({ type: "turn.started", data: { turnId: "turn_1" } });
+    const lines = await session.log.lines();
+    spy(session.log, "lines").mockImplementation((async () => ["{corrompido", ...lines, '{"facts":null}']) as never);
+    const state = await request<{ checkpoints: Array<{ turnId: string; request: string | null }> }>(
+      `/bots/${bot.id}/code`,
+    );
+    expect(state.status).toBe(200);
+    expect(state.body.checkpoints).toEqual([expect.objectContaining({ turnId: "turn_1", request: "arruma" })]);
+    const rewound = await request<{ turnIds: string[]; filesRestored: boolean }>(`/bots/${bot.id}/code/rewind`, {
+      method: "POST",
+      body: { turnId: "turn_1" },
+    });
+    expect(rewound.status).toBe(200);
+    expect(rewound.body).toMatchObject({ turnIds: ["turn_1"], filesRestored: true });
+  });
+
+  test("rewinds the last workspace after the repo was closed", async () => {
+    const { session, workspace } = await openRepo();
+    await createCheckpoint(session, workspace, "turn_1");
+    session.log.emit({ type: "turn.started", data: { turnId: "turn_1" } });
+    writeFileSync(join(workspace.path, "src/a.txt"), "mudado\n");
+    expect((await request(`/bots/${bot.id}/code/workspace`, { method: "DELETE" })).status).toBe(200);
+    const rewound = await request<{ turnIds: string[]; filesRestored: boolean; removed: number }>(
+      `/bots/${bot.id}/code/rewind`,
+      { method: "POST", body: { turnId: "turn_1" } },
+    );
+    expect(rewound.status).toBe(200);
+    expect(rewound.body).toMatchObject({ turnIds: ["turn_1"], filesRestored: true, removed: 0 });
+    expect(await Bun.file(join(workspace.path, "src/a.txt")).text()).toBe("a\n");
+  });
+
   test("rewinds files and turns to a checkpoint", async () => {
     const { session, workspace } = await openRepo();
     session.log.emit({ type: "turn.started", data: { turnId: "turn_0" }, scope: { turnId: "turn_0" } });

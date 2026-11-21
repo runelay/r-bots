@@ -236,6 +236,17 @@ describe("snapshot, click, fill", () => {
     ).not.toContain("Headless");
   });
 
+  test("still returns the snapshot when the page text cannot be read", async () => {
+    fakeAgentBrowser((command) =>
+      command[0] === "get" && command[1] === "text" ? { code: 1, stderr: "detached" } : undefined,
+    );
+    const id = botId();
+    const snap = await browserSnapshot(id);
+    expect(snap.snapshot).toContain("[ref=e1]");
+    expect(snap.page).toEqual({ text: "", offset: 0, totalChars: 0 });
+    expect(await browserText(id)).toMatchObject({ text: "", totalChars: 0 });
+  });
+
   test("cuts page excerpts within bounds", () => {
     expect(pageExcerpt("abcdef", -5, 2)).toEqual({
       text: "ab",
@@ -430,6 +441,43 @@ describe("live capture", () => {
 });
 
 describe("sessions", () => {
+  test("closes a leftover session of the bot once before the first command", async () => {
+    const fake = fakeAgentBrowser();
+    const id = botId();
+    fake.page.sessions = [`runelay-${id}`, "runelay-other"];
+    await browserOpen(id, "https://a.test/");
+    expect(fake.commands.slice(0, 3)).toEqual([
+      ["session", "list", "--json"],
+      ["close"],
+      ["set", "viewport", "1280", "800"],
+    ]);
+    expect(fake.calls[1].args).toEqual(["--session", `runelay-${id}`, "close"]);
+    await browserOpen(id, "https://b.test/");
+    expect(fake.commands.filter((command) => command[0] === "session")).toHaveLength(1);
+    expect(fake.commands.filter((command) => command[0] === "close")).toHaveLength(1);
+  });
+
+  test("clears stale profile locks and keeps going when one cannot be removed", async () => {
+    fakeAgentBrowser();
+    const id = botId();
+    const profile = join(browserDir(id), "profile");
+    await mkdir(join(profile, "SingletonLock", "inner"), { recursive: true });
+    await writeFile(join(profile, "SingletonCookie"), "x");
+    const state = await browserOpen(id, "https://a.test/");
+    expect(state.url).toBe("https://a.test/");
+    expect(existsSync(join(profile, "SingletonCookie"))).toBe(false);
+    expect(existsSync(join(profile, "SingletonLock", "inner"))).toBe(true);
+  });
+
+  test("starts normally when the session list is unreadable", async () => {
+    const fake = fakeAgentBrowser((command) => (command[0] === "session" ? { stdout: "not json\n" } : undefined));
+    const id = botId();
+    const state = await browserOpen(id, "https://a.test/");
+    expect(state.url).toBe("https://a.test/");
+    expect(fake.commands[0]).toEqual(["session", "list", "--json"]);
+    expect(fake.commands.some((command) => command[0] === "close")).toBe(false);
+  });
+
   test("knows whether the bot browser is alive", async () => {
     let reply: { code?: number; stdout?: string } | undefined;
     const fake = fakeAgentBrowser((command) => (command[0] === "session" ? reply : undefined));

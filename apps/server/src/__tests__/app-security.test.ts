@@ -5,7 +5,34 @@ import type { AuthModule, Principal } from "../modules/auth";
 import { useAuthModule } from "../modules/auth/gate";
 import * as previewRoutes from "../modules/code/routes/preview.routes";
 import * as usage from "../modules/usage/routes/usage.routes";
-import { sendJson } from "../shared/http";
+import * as accounts from "../modules/accounts/routes/accounts.routes";
+import * as bots from "../modules/bots/routes/bots.routes";
+import * as code from "../modules/code/routes/code.routes";
+import * as computer from "../modules/computer/routes/computer.routes";
+import * as connectors from "../modules/connectors/routes/connectors.routes";
+import * as devices from "../modules/devices/routes/devices.routes";
+import * as mcp from "../modules/engine/routes/mcp.routes";
+import * as environments from "../modules/environments/routes/environments.routes";
+import * as github from "../modules/github/routes/github.routes";
+import * as groups from "../modules/groups/routes/groups.routes";
+import * as integrations from "../modules/integrations/routes/integrations.routes";
+import * as jobs from "../modules/jobs/routes/jobs.routes";
+import * as linear from "../modules/linear/routes/linear.routes";
+import * as providers from "../modules/providers/routes/providers.routes";
+import * as review from "../modules/review/routes/review.routes";
+import * as sections from "../modules/sections/routes/sections.routes";
+import * as serverVersion from "../modules/server-version/routes/server-version.routes";
+import * as servers from "../modules/servers/routes/servers.routes";
+import * as preferences from "../modules/settings/routes/preferences.routes";
+import * as simulators from "../modules/simulators/routes/simulators.routes";
+import * as skills from "../modules/skills/routes/skills.routes";
+import * as metrics from "../modules/status/routes/metrics.routes";
+import * as status from "../modules/status/routes/status.routes";
+import * as tests from "../modules/tests/routes/tests.routes";
+import * as tools from "../modules/tools/routes/tools.routes";
+import * as vault from "../modules/vault/routes/vault.routes";
+import * as voice from "../modules/voice/routes/voice.routes";
+import { Res, sendJson } from "../shared/http";
 
 let server: TestServer;
 const restores: Array<() => void> = [];
@@ -69,6 +96,68 @@ describe("routing through the table", () => {
     const first = await reader?.read();
     expect(new TextDecoder().decode(first?.value)).toContain('"type":"snapshot"');
     controller.abort();
+  });
+});
+
+describe("dispatch of every route entry", () => {
+  test("sends each root, method and shape to its own handler with the parsed path", async () => {
+    const routes: Array<[Record<string, unknown>, string, string, string]> = [
+      [status, "handleHealth", "GET", "/health"],
+      [code, "handleCodeRoute", "GET", "/code/repos"],
+      [status, "handleMeta", "GET", "/meta"],
+      [mcp, "handleMcp", "POST", "/mcp/bot-1/session-1"],
+      [vault, "handleVaultRoute", "GET", "/vault/secrets"],
+      [integrations, "handleIntegrations", "GET", "/integrations"],
+      [accounts, "handleAccounts", "GET", "/accounts"],
+      [accounts, "handleAccountsRefresh", "POST", "/accounts/refresh"],
+      [accounts, "handleAccountRoutes", "DELETE", "/accounts/acc-1"],
+      [devices, "handleDevices", "GET", "/devices"],
+      [usage, "handleUsageRoute", "GET", "/usage/limits"],
+      [voice, "handleVoices", "GET", "/voice/voices"],
+      [skills, "handleSkills", "GET", "/skills"],
+      [sections, "handleSections", "GET", "/sections"],
+      [groups, "handleGroups", "GET", "/groups"],
+      [github, "handleGitHub", "GET", "/github/pulls"],
+      [linear, "handleLinear", "GET", "/linear/views"],
+      [review, "handleReview", "GET", "/review"],
+      [jobs, "handleJobs", "GET", "/jobs"],
+      [preferences, "handlePreferences", "GET", "/preferences"],
+      [servers, "handleServers", "GET", "/servers"],
+      [tests, "handleTests", "GET", "/tests"],
+      [simulators, "handleSimulators", "GET", "/simulators"],
+      [status, "handleStatus", "GET", "/status"],
+      [status, "handleStatusStream", "GET", "/status/stream"],
+      [metrics, "handleMetrics", "GET", "/metrics"],
+      [environments, "handleEnvironments", "GET", "/environments"],
+      [providers, "handleProviders", "GET", "/providers/versions"],
+      [tools, "handleTools", "GET", "/tools"],
+      [serverVersion, "handleServerVersion", "GET", "/server/version"],
+      [computer, "handleComputerHealth", "GET", "/computer/health"],
+      [connectors, "handleConnectorActions", "POST", "/connectors/github/install"],
+      [connectors, "handleConnections", "GET", "/connectors"],
+      [bots, "handleBots", "GET", "/bots"],
+    ];
+    const seen: Array<{ name: string; args: unknown[] }> = [];
+    for (const [module, name] of routes) {
+      const handler = spyOn(module, name as never).mockImplementation(((...args: unknown[]) => {
+        seen.push({ name, args: args.filter((arg) => typeof arg === "string" || Array.isArray(arg)) });
+        const res = args.find((arg) => arg instanceof Res) as Res;
+        sendJson(res, 200, { route: name });
+      }) as never);
+      restores.push(() => (handler as unknown as { mockRestore(): void }).mockRestore());
+    }
+    for (const [, name, method, path] of routes) {
+      const reply = await request<{ route: string }>(path, { method });
+      expect([path, reply.status, reply.body.route]).toEqual([path, 200, name]);
+    }
+    expect(seen.map((item) => item.name)).toEqual(routes.map(([, name]) => name));
+    expect(seen.find((item) => item.name === "handleMcp")?.args).toEqual(["bot-1", "session-1"]);
+    expect(seen.find((item) => item.name === "handleAccountRoutes")?.args).toEqual(["DELETE", ["accounts", "acc-1"]]);
+    expect(seen.find((item) => item.name === "handleConnectorActions")?.args).toEqual([
+      "POST",
+      ["connectors", "github", "install"],
+    ]);
+    expect(seen.find((item) => item.name === "handleConnections")?.args).toEqual(["GET"]);
   });
 });
 
