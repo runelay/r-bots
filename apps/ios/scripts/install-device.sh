@@ -6,7 +6,7 @@ bundle="${RBOTS_BUNDLE_ID:-com.runelay.bots.ios}"
 
 device="${RBOTS_DEVICE:-}"
 if [[ -z "$device" ]]; then
-  device="$(xcrun devicectl list devices --hide-headers --hide-default-columns --columns identifier --filter "platform == 'iOS' AND state == 'available (paired)'" 2>/dev/null | head -1 | tr -d ' ')"
+  device="$(xcrun devicectl list devices --hide-headers --hide-default-columns --columns identifier --filter "platform == 'iOS' AND state == 'available (paired)'" 2>/dev/null | head -1 | awk '{print $1}')"
 fi
 [[ -n "$device" ]] || { echo "no paired iPhone found; pair it once by cable in Xcode, then enable 'Connect via network'" >&2; exit 1; }
 
