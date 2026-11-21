@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.9
+
 ### Mac
 
 - Links in conversations open in the side panel browser, with back, forward, reload and Open in browser. ⌘-click still opens your default browser.
