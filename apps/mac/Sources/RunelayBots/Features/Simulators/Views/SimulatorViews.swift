@@ -370,7 +370,7 @@ private struct OpenURLPopover: View {
 
     var body: some View {
         HStack(spacing: Spacing.s) {
-            TextField("conty://campanhas ou https://…", text: $url)
+            TextField("myapp://home ou https://…", text: $url)
                 .textFieldStyle(.plain)
                 .font(TypeScale.rowSubtitle)
                 .padding(.horizontal, Spacing.m)

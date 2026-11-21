@@ -164,7 +164,7 @@ final class ConversationScrollTests: XCTestCase {
     }
 
     func testOlderPagesKeepPositionAndJumpStaysFilled() throws {
-        let botID = ProcessInfo.processInfo.environment["RB_HARNESS_BIG"] ?? "engenheiro-de-software"
+        let botID = ProcessInfo.processInfo.environment["RB_HARNESS_BIG"] ?? "dev"
         let fixture = try fixture(botID)
         let store = try makeStore(fixture, cached: true)
         let host = HarnessHost(size: Self.size) {
@@ -225,7 +225,7 @@ final class ConversationScrollTests: XCTestCase {
     }
 
     func testLiveMessagesFollowOnlyAtEnd() throws {
-        var fixture = try fixture(ProcessInfo.processInfo.environment["RB_HARNESS_BIG"] ?? "engenheiro-de-software")
+        var fixture = try fixture(ProcessInfo.processInfo.environment["RB_HARNESS_BIG"] ?? "dev")
         fixture.withheld = 30
         FixtureURLProtocol.fixtures[fixture.sessionID] = fixture
         let store = try makeStore(fixture)
@@ -317,7 +317,7 @@ final class ConversationScrollTests: XCTestCase {
     }
 
     func testScrollFrameBudget() throws {
-        let botID = ProcessInfo.processInfo.environment["RB_HARNESS_BIG"] ?? "engenheiro-de-software"
+        let botID = ProcessInfo.processInfo.environment["RB_HARNESS_BIG"] ?? "dev"
         let fixture = try fixture(botID)
         let store = try makeStore(fixture, cached: true)
         let host = HarnessHost(size: Self.size) {
