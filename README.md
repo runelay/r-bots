@@ -9,22 +9,24 @@
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-f0a050?style=flat-square" /></a>
   <img alt="Self-hosted with Docker" src="https://img.shields.io/badge/self--hosted-docker-2496ED?style=flat-square&logo=docker&logoColor=white" />
   <img alt="Mac app, macOS 15 or later" src="https://img.shields.io/badge/mac%20app-macOS%2015%2B-111111?style=flat-square&logo=apple&logoColor=white" />
+  <img alt="iPhone app, iOS 26 or later" src="https://img.shields.io/badge/iphone%20app-iOS%2026%2B-111111?style=flat-square&logo=apple&logoColor=white" />
   <img alt="Works with Claude, Codex and Cursor" src="https://img.shields.io/badge/works%20with-Claude%20%C2%B7%20Codex%20%C2%B7%20Cursor-d97757?style=flat-square" />
   <img alt="Coverage gate 99% per file" src="https://img.shields.io/badge/coverage-99%25%20per%20file-2ea44f?style=flat-square" />
 </p>
 
 <p align="center">
   A team of bots that is <b>yours</b>: each one with its own instructions, model, tools and conversations.<br />
-  They run on <b>your</b> server with the Claude subscription you already pay for, and you talk to them from a native Mac app.
+  They run on <b>your</b> server with the Claude subscription you already pay for, and you talk to them from native Mac and iPhone apps.
 </p>
 
 <p align="center">
-  <img src="docs/media/hero.png" alt="r/bots: Boss writing a launch plan note and a budget sheet with formulas" width="100%" />
+  <img src="docs/media/hero.png" alt="r/bots: Boss writing a launch plan note and a budget sheet on the Mac, and the same bots on the iPhone app" width="100%" />
 </p>
 
 <p align="center">
   <a href="#-quick-start"><b>Quick start</b></a> ·
   <a href="#-install-the-mac-app"><b>Mac app</b></a> ·
+  <a href="#-install-the-iphone-app"><b>iPhone app</b></a> ·
   <a href="#-development"><b>Development</b></a> ·
   <a href="docs/protocol/README.md"><b>Protocol</b></a> ·
   <a href="#-security"><b>Security</b></a>
@@ -278,12 +280,32 @@ rsync -az --delete --exclude .build \
 
 Install an app that calls a new route only after the server with that route is up. Shortcuts, settings and pointing the app at another server: [apps/mac](apps/mac/README.md).
 
+## 📱 Install the iPhone app
+
+The same bots, conversations, approvals, voice messages and calls, in your pocket. There is no App Store build yet: you install it from Xcode on your own Mac, with a free Apple ID.
+
+1. **On the Mac**, install Xcode and XcodeGen: `brew install xcodegen`.
+2. **Sign in to Xcode** with your Apple ID (Xcode › Settings › Accounts) and copy your **Team ID**.
+3. **Pair the iPhone** once by cable: Window › Devices and Simulators, select it and tick **Connect via network**. Turn on **Developer Mode** on the iPhone when it asks (Settings › Privacy & Security).
+4. **Build and install** it over Wi-Fi:
+
+   ```sh
+   cd apps/ios
+   RBOTS_TEAM=<team id> ./scripts/install-device.sh
+   ```
+
+5. **Trust the app** on the iPhone: Settings › General › VPN & Device Management › your Apple ID › **Trust**.
+6. **Open r/bots** and sign in with your server address (the same one the Mac app uses) and your e-mail and password. If the server is only on your tailnet, turn on Tailscale on the iPhone first.
+
+With a free Apple ID the build expires after 7 days; run step 4 again to renew it. Simulator, bundle id and other options: [apps/ios](apps/ios/README.md).
+
 ## 🗂️ Monorepo
 
 | Path | What it is |
 |---|---|
 | [`apps/server`](apps/server/README.md) | Bun gateway: `src/{index,app}.ts`, `config/`, `db/` (Postgres + Drizzle), `shared/`, `modules/<domain>/{routes,services,repositories}` |
 | [`apps/mac`](apps/mac/README.md) | SwiftUI app: `App/`, `Features/<domain>/`, `Common/`, `Design/`, `Networking/`, `Stores/`, `Models/` |
+| [`apps/ios`](apps/ios/README.md) | SwiftUI iPhone app (XcodeGen); shares networking, models and the conversation store with `apps/mac` |
 | `packages/providers` | Claude, Codex, Cursor and Grok adapters, process tree helpers |
 | `packages/protocol` | Provider, event and turn types shared by server and providers |
 | [`docs/protocol`](docs/protocol/README.md) | The verified contract, split by topic (v1 to v30) |
@@ -298,6 +320,7 @@ Install an app that calls a new route only after the server with that route is u
 - [Contract](docs/protocol/CONTRACT.md): what the app and the server promise each other
 - [Server](apps/server/README.md): run, env, layout, engine and resource limits
 - [Mac app](apps/mac/README.md): build, settings and shortcuts
+- [iPhone app](apps/ios/README.md): build, simulator and installing on a device
 - [Hosting](docs/hosting.md): the path to a hosted, multi-user product
 
 ## 🔒 Security
