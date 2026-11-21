@@ -49,6 +49,11 @@ describe("route policy", () => {
       ["POST", "/servers"],
       ["POST", "/servers/dev_1/stop"],
       ["DELETE", "/servers/profiles/p1"],
+      ["GET", "/environments"],
+      ["GET", "/providers/versions"],
+      ["POST", "/providers/claude/update"],
+      ["POST", "/providers/codex/rollback"],
+      ["GET", "/server/version"],
     ];
     for (const [method, path] of ownerOnly) {
       expect(requiresOwner(method, split(path))).toBe(true);
@@ -82,10 +87,15 @@ describe("route policy", () => {
     for (const [method, path] of memberRoutes) expect(authorize(method, split(path), member)).toBe("allow");
   });
 
-  test("the internal token reaches only status and health", () => {
+  test("the internal token reaches only status, health and metrics", () => {
     expect(internalAllowed("GET", ["status"])).toBe(true);
     expect(authorize("GET", ["status"], internal)).toBe("allow");
     expect(authorize("GET", ["health"], internal)).toBe("allow");
+    expect(authorize("GET", ["metrics"], internal)).toBe("allow");
+    expect(authorize("POST", ["metrics"], internal)).toBe("deny-internal");
+    expect(authorize("GET", ["environments"], internal)).toBe("deny-internal");
+    expect(authorize("GET", ["providers", "versions"], internal)).toBe("deny-internal");
+    expect(authorize("GET", ["server", "version"], internal)).toBe("deny-internal");
     expect(authorize("GET", ["status", "stream"], internal)).toBe("deny-internal");
     expect(authorize("POST", ["status"], internal)).toBe("deny-internal");
     expect(authorize("GET", ["bots"], internal)).toBe("deny-internal");

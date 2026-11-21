@@ -31,11 +31,15 @@ export const ownerRoutes: OwnerRule[] = [
   { method: "write", path: ["preferences"] },
   { method: "write", path: ["tests", "**"] },
   { method: "write", path: ["simulators", "**"] },
+  { method: "*", path: ["environments"] },
+  { method: "*", path: ["providers", "**"] },
+  { method: "*", path: ["server", "**"] },
 ];
 
 export const internalRoutes: Array<{ method: string; path: string[] }> = [
   { method: "GET", path: ["status"] },
   { method: "GET", path: ["health"] },
+  { method: "GET", path: ["metrics"] },
 ];
 
 function methodMatches(rule: MethodRule, method: string) {

@@ -21,18 +21,22 @@ import { handleComputerHealth } from "./modules/computer/routes/computer.routes"
 import { handleConnections, handleConnectorActions } from "./modules/connectors/routes/connectors.routes";
 import { handleDevices } from "./modules/devices/routes/devices.routes";
 import { handleMcp } from "./modules/engine/routes/mcp.routes";
+import { handleEnvironments } from "./modules/environments/routes/environments.routes";
 import { handleGitHub } from "./modules/github/routes/github.routes";
 import { handleGroups } from "./modules/groups/routes/groups.routes";
 import { handleIntegrations } from "./modules/integrations/routes/integrations.routes";
 import { handleJobs } from "./modules/jobs/routes/jobs.routes";
 import { handleLinear } from "./modules/linear/routes/linear.routes";
+import { handleProviders } from "./modules/providers/routes/providers.routes";
 import { handleReview } from "./modules/review/routes/review.routes";
 import { handleSections } from "./modules/sections/routes/sections.routes";
+import { handleServerVersion } from "./modules/server-version/routes/server-version.routes";
 import { handleServers } from "./modules/servers/routes/servers.routes";
 import { handlePreferences } from "./modules/settings/routes/preferences.routes";
 import { handleSimulators } from "./modules/simulators/routes/simulators.routes";
 import { isTunnelUpgrade, tunnelSocket, tunnelUpgradeData } from "./modules/simulators/services/tunnel.service";
 import { handleSkills } from "./modules/skills/routes/skills.routes";
+import { handleMetrics } from "./modules/status/routes/metrics.routes";
 import { handleHealth, handleMeta, handleStatus, handleStatusStream } from "./modules/status/routes/status.routes";
 import { handleTests } from "./modules/tests/routes/tests.routes";
 import { handleUsageRoute } from "./modules/usage/routes/usage.routes";
@@ -94,6 +98,10 @@ export const routeTable: RouteEntry[] = [
   { root: "simulators", handle: (req, res, _url, method, parts) => handleSimulators(req, res, method, parts) },
   { root: "status", match: exactly("GET"), handle: (_req, res) => handleStatus(res) },
   { root: "status", match: exactly("GET", "stream"), handle: (req, res) => handleStatusStream(req, res) },
+  { root: "metrics", match: exactly("GET"), handle: (_req, res) => handleMetrics(res) },
+  { root: "environments", match: exactly("GET"), handle: (_req, res) => handleEnvironments(res) },
+  { root: "providers", handle: (req, res, _url, method, parts) => handleProviders(req, res, method, parts) },
+  { root: "server", match: exactly("GET", "version"), handle: (_req, res) => handleServerVersion(res) },
   { root: "computer", match: exactly("GET", "health"), handle: (_req, res) => handleComputerHealth(res) },
   {
     root: "connectors",

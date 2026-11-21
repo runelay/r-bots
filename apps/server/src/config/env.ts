@@ -37,6 +37,19 @@ const schema = z.object({
   DESKTOP_HOME: optionalText,
   DESKTOP_FPS: positive.optional(),
   DESKTOP_CHROME: optionalText,
+  HOST_HOME: optionalText,
+  BOTS_HOST_DATA_DIR: optionalText,
+  BOTS_SANDBOX: z.enum(["off", "docker"], { error: "use off ou docker." }).default("off"),
+  BOX_MEM_MB: positive.default(2048),
+  BOX_CPUS: positive.default(1),
+  BOTS_UPDATE_CHECKS: z.enum(["on", "off"], { error: "use on ou off." }).default("on"),
+  RBOTS_CLIS_DIR: optionalText,
+  RBOTS_VERSION: optionalText,
+  RBOTS_CHANNEL: z.enum(["stable", "beta"], { error: "use stable ou beta." }).default("stable"),
+  RBOTS_GITHUB_TOKEN: optionalText,
+  RBOTS_RELEASE_REPO: text
+    .regex(/^[\w.-]+\/[\w.-]+$/, { error: "use dono/repo, como runelay/r-bots." })
+    .default("runelay/r-bots"),
 });
 
 export type Env = z.infer<typeof schema>;
@@ -57,11 +70,14 @@ export const dataDir = env.BOTS_DATA_DIR ?? join(homedir(), ".local", "share", "
 export const host = env.GATEWAY_HOST;
 export const port = env.GATEWAY_PORT;
 export const model = env.BOTS_MODEL;
+export const hostHome = env.HOST_HOME ?? homedir();
+export const hostDataDir = env.BOTS_HOST_DATA_DIR ?? join(hostHome, ".local", "share", "runelay-bots");
 
 export const botsDir = join(dataDir, "bots");
 export const sessionsDir = join(dataDir, "sessions");
 export const threadsDir = join(dataDir, "threads");
 export const workspacesDir = join(dataDir, "workspaces");
+export const clisDir = env.RBOTS_CLIS_DIR ?? join(dataDir, "clis");
 
 export function botDir(botId: string) {
   return join(botsDir, botId);
