@@ -42,7 +42,7 @@ Unknown schedule → `404 {"ok":false,"error":"Rotina não encontrada."}`; archi
 {"id":"grp_1fbee052aa1f","name":"Time","members":["boss","davi"],"sessionBasePath":"/groups/grp_1fbee052aa1f/eve/v1","createdAt":"…","updatedAt":"…","archivedAt":null,
  "thread":{"sessionId":"wrun_01M7T3QJ7V5V1F3WEZEE43NQ54","lastMessage":null,"unread":0,"total":1,"running":false}}
 ```
-  `name` is 1–40 chars. `members` takes 2–8 active bot ids. Errors are 400 with `field`, for example `"Um grupo precisa de pelo menos dois bots."` or `"Não existe bot ativo com id \"lia\"."`.
+  `name` is 1–40 chars. `members` takes 2–8 active bot ids. Errors are 400 with `field`, for example `"Um grupo precisa de pelo menos dois bots."` or `"Não existe bot ativo com id \"nina\"."`.
 - `GET /groups` (`?archived=1`), `GET /groups/:id`, `PATCH /groups/:id {name?, members?}`, `POST /groups/:id/archive|unarchive`.
 - `GET /groups/:id/thread`, `POST /groups/:id/thread/read`, `POST /groups/:id/thread/unread`. The thread's `lastMessage.text` is prefixed with the bot name, and `lastMessage.botId` is set.
 - The session API is the same as for bots, under `sessionBasePath`: `POST …/session/:id` with `message` or `answers`, `/cancel`, `/stream`, `/events`. Creating extra sessions (`POST …/session`) gives 405: a group has only its thread.
@@ -64,4 +64,4 @@ Verified 19/11, group Boss + Davi:
 - "Davi, quantas tabelas tem no public?" → mention → Davi: `prod_query` (Jev allowed), reply "332 tabelas". Usage 4 / 148 / 4,761 / 4,875.
 - "Alguém me dá em uma linha um resumo de quem faz o quê neste time?" → Jev route `boss` (0.99, 163 ms) → Boss answered. Usage 2 / 80 / 0 / 4,426.
 - `handoff` was not exercised.
-- Lia could not join because she had been soft-deleted from the app at 14:21. The test group was archived afterwards.
+- Nina could not join because she had been soft-deleted from the app at 14:21. The test group was archived afterwards.

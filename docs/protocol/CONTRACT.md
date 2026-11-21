@@ -11,7 +11,7 @@ Base URL seen by the Mac: `https://<servidor>:10445` (tailscale serve → 127.0.
 |---|---|---|---|---|---|
 | boss | Boss | Chefe do time | indigo | delegates to the others | briefing 08:30 weekdays |
 | davi | Davi | Vigia de produção | green | `prod_query` (SELECT-only, read-only) | every 30 min 08:00–22:00 |
-| lia | Lia | QA e navegador | pink | `browser_*` (agent-browser) | none |
+| nina | Nina | QA e navegador | pink | `browser_*` (agent-browser) | none |
 
 ## Endpoints
 
@@ -36,7 +36,7 @@ If eve cannot host several root agents on one server, `sessionBasePath` may poin
   The exact field names come from the eve docs; the backend writes the real request/response bodies it verified into `docs/protocol/`.
 
 ### `GET /bots/:id/browser`
-`{ "url": "...", "title": "...", "updatedAt": "ISO", "screenshotPath": "/bots/lia/browser/latest.png" }` or 404 when the bot never opened a page.
+`{ "url": "...", "title": "...", "updatedAt": "ISO", "screenshotPath": "/bots/nina/browser/latest.png" }` or 404 when the bot never opened a page.
 
 ### `GET /bots/:id/browser/latest.png`
 Last screenshot taken by that bot's browser tools (taken automatically after every browser action).
@@ -62,7 +62,7 @@ The eve server in `server/` is replaced by `apps/server/` (Claude Agent SDK, log
 
 ## New routes
 - `POST /bots` body `{ name, role, accent, instructions, capabilities, schedules }` → 201 with the bot. `id` is a slug of the name, unique (suffix -2, -3…). 400 `{ error, field }` on validation errors (name 1–40 chars, role ≤ 60, instructions ≤ 20k, cron valid, delegate ids exist and not self).
-- `PATCH /bots/:id` partial update of the same fields → 200 with the bot. Built-in bots (boss, davi, lia) are editable too.
+- `PATCH /bots/:id` partial update of the same fields → 200 with the bot. Built-in bots (boss, davi, nina) are editable too.
 - `POST /bots/:id/archive` and `POST /bots/:id/unarchive` → 200 (no hard delete).
 - `GET /meta` → `{ "accents": [...], "capabilities": [{ "id": "browser", "label": "Navegador", "description": "..." }, { "id": "prodQuery", ... }, { "id": "delegate", ... }], "engine": "claude-agent-sdk", "model": "..." }`.
 
@@ -130,5 +130,5 @@ Goal: bots operate the user's real Mac: sites, apps, files/folders, Mail, buildi
 - Record: `record_start({display|window|region, audio?: false})` → ScreenCaptureKit recording to ~/Movies/runelay bots/<bot>-<date>.mov; `record_stop()` → path; `record_status()`.
 ## Safety
 - Every act/file/shell tool passes the Jev + human gate (same events). Always human: sending email/messages, deleting (trash) more than 10 items or anything outside allowed roots, typing into password fields (AX secure text), any purchase/payment UI, shell outside allowlist.
-- While a bot uses the computer the app shows a floating HUD (glass pill, always on top): bot character + "Lia está usando o computador" + current action + **Parar** (also global hotkey ⌃⌥⌘.), which aborts the turn and releases control. User input (mouse/keyboard) during bot control pauses the bot ("você assumiu").
+- While a bot uses the computer the app shows a floating HUD (glass pill, always on top): bot character + "Nina está usando o computador" + current action + **Parar** (also global hotkey ⌃⌥⌘.), which aborts the turn and releases control. User input (mouse/keyboard) during bot control pauses the bot ("você assumiu").
 - Executor events streamed to the session: `computer.action {tool, summary, screenshotPath?}`.

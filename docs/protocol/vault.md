@@ -22,7 +22,7 @@ O modelo nunca vê o valor. Segredos são chamados por apelido (`segredo:github-
 
 O app anuncia `"vault"` em `hello.capabilities`. Servidor → app:
 ```json
-{"type":"request","id":"…","op":"secret.resolve","body":{"name":"github-token","botId":"lia","botName":"Lia","tool":"browser_fill","domain":"github.com"}}
+{"type":"request","id":"…","op":"secret.resolve","body":{"name":"github-token","botId":"nina","botName":"Nina","tool":"browser_fill","domain":"github.com"}}
 ```
 App → servidor: `{"type":"response","id":"…","ok":true,"result":{"value":"…"}}` ou `{"type":"response","id":"…","ok":false,"code":"denied_domain|denied_bot|expired|cancelled|not_found|insecure","error":"frase em pt-BR"}`. Timeout 95 s (tempo do Touch ID). O app recusa (`insecure`) se o servidor não for https/wss. Ordem no servidor: fonte externa registrada (ponto de extensão) → Mac (se conectado com `vault`) → cópia cifrada do servidor (só com `mac+server`, e só quando o Mac está offline ou não tem o item) → erro "o Mac está offline". O servidor usa o valor e descarta; nada é gravado.
 
@@ -45,9 +45,9 @@ Todo valor resolvido entra numa lista em memória por 30 min desde o último uso
 
 `request_secret({name, reason, description?, fields?: [{id, label, secure?}], domains?, kind?: "password"|"token"|"text"})`. Com mais de um campo, cada um vira `segredo:<name>-<id>`. Exige o app aberto (senão erro pedindo para abrir). Abre uma interação:
 ```json
-{"type":"interaction.opened","data":{"interactionId":"…","request":{"kind":"secret","display":"secret_form","prompt":"Lia pediu um segredo: …","reason":"…",
+{"type":"interaction.opened","data":{"interactionId":"…","request":{"kind":"secret","display":"secret_form","prompt":"Nina pediu um segredo: …","reason":"…",
  "options":[{"id":"approve","label":"Salvar"},{"id":"deny","label":"Agora não"}],
- "secret":{"name":"github-token","names":["github-token"],"reason":"…","description":"","kind":"password","fields":[{"id":"valor","label":"Valor","secure":true}],"domains":["github.com"],"botId":"lia","botName":"Lia"}},"subject":{"callId":"call_…"}}}
+ "secret":{"name":"github-token","names":["github-token"],"reason":"…","description":"","kind":"password","fields":[{"id":"valor","label":"Valor","secure":true}],"domains":["github.com"],"botId":"nina","botName":"Nina"}},"subject":{"callId":"call_…"}}}
 ```
 O app mostra o card com `SecureField`, o motivo, os sites e "Salvar no cofre" (ligado). Ao salvar: grava no Keychain, manda só os metadados (`PUT /vault/secrets/:name`) e responde `approve` na sessão. O servidor confere que os metadados mudaram e devolve ao bot `Ok, salvo como segredo:github-token`. "Agora não" responde `deny`. A linha da ferramenta `request_secret` fica escondida (o card já conta a história); "Permitir todos" não pega formulários.
 

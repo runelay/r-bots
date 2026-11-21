@@ -10,7 +10,7 @@ Code belongs to the conversation, not to the bot. There is no `capabilities.code
 ```json
 [{"name":"my-api","path":"/home/<seu-usuário>/projects/acme/my-api","location":"acme","branch":"feat/overlays-compartilhaveis"}]
 ```
-A name can appear twice when two different clones exist (`conty-lp` under `conty-dev/` and `projects/`); resolution by name takes the first root (`conty-dev`).
+A name can appear twice when two different clones exist (`landing` under `work/` and `projects/`); resolution by name takes the first root (`work`).
 
 ### Opening a workspace
 
@@ -31,7 +31,7 @@ What happens:
 
 Events (no turn scope unless noted):
 ```json
-{"type":"code.workspace","data":{"action":"opened|reopened|closed|failed","id":"conty-lp-dev-teste-botao-hero…","repo":"/…/conty-lp","repoName":"conty-lp","path":"/…/worktrees/conty-lp-dev-teste-botao-hero…","branch":"feat/botao-hero-black-friday-garantir-meu","base":"origin/develop","task":"…","active":true,"install":{…}}}
+{"type":"code.workspace","data":{"action":"opened|reopened|closed|failed","id":"landing-dev-teste-botao-hero…","repo":"/…/landing","repoName":"landing","path":"/…/worktrees/landing-dev-teste-botao-hero…","branch":"feat/botao-hero-black-friday-garantir-meu","base":"origin/develop","task":"…","active":true,"install":{…}}}
 {"type":"code.install","data":{"workspaceId":"…","status":"running|done|failed|skipped","manager":"npm","command":"npm ci --no-audit --no-fund","durationMs":9097,"error?":"…"}}
 ```
 
@@ -71,7 +71,7 @@ hard rules (deny or person) → remembered grant for this repo → automatic rea
 - **Hard rules (person, never remembered):** `git push`, `git commit`, rebase/merge/reset --hard/clean -f/branch -D/tag/remote changes/worktree add|remove, `gh pr create|merge` and other GitHub writes, `sudo`, deploys (`wrangler deploy|secret|… --remote`, vercel/netlify/fly/…, any `deploy` script), Supabase remote/linked/push, migrations to prod, DB clients (`psql`…), package publish, `ssh/scp/nc…`, system commands (`kill`, `systemctl`, `apt`…), writes or `rm` outside the worktree (and `/tmp`), reading secret files (`.env*`, `.ssh`, `*.pw`, credentials…), editing outside the worktree.
 - **Protected paths (denied outright, even inside the worktree):** anything under `.git/` (hooks, config), `.claude/`, `.grok/`, `.cursor/*hooks|permissions|mcp.json`, `.env*` / `.dev.vars`, `data`, `.env.local`, `~/.claude*`, `~/.codex`, `~/.ssh`, `~/.config/systemd`. `git config` writes are denied too. `call.settled.error.code` is `TOOL_POLICY`.
 - **Automatic:** Read/Glob/Grep inside the worktree or under `~/projects` (not secrets), Edit/Write inside the worktree, TodoWrite, and Bash made only of read/dev commands (git status/diff/log/add…, ls/cat/rg/sed/find…, npm/pnpm/bun run/test/build, npx vitest/tsc/biome, node/tsx, curl to localhost, rm/mv/cp inside the worktree). `&` at the end is denied with "use dev_server_start".
-- **Soft (rememberable):** unknown programs (→ Jev first), `curl` to an outside host, `npm i <pkg>`, reads outside `~/projects`. The card then has a third option `{"id":"approve_always","label":"Sempre neste repositório"}` and `request.grant` = `"curl example.com em conty-lp"`. Answering `approve_always` stores the grant key in `data/code/grants.json` (per repo path); next time `decision.made` has `outcome:"granted"` and `call.started.clearedBy = {"grant":"curl example.com"}`. `GET /code/grants`, `DELETE /code/grants {"repo","key"}`.
+- **Soft (rememberable):** unknown programs (→ Jev first), `curl` to an outside host, `npm i <pkg>`, reads outside `~/projects`. The card then has a third option `{"id":"approve_always","label":"Sempre neste repositório"}` and `request.grant` = `"curl example.com em landing"`. Answering `approve_always` stores the grant key in `data/code/grants.json` (per repo path); next time `decision.made` has `outcome:"granted"` and `call.started.clearedBy = {"grant":"curl example.com"}`. `GET /code/grants`, `DELETE /code/grants {"repo","key"}`.
 - Batch: several open approvals are answered with one `answers` array (already supported); the app shows "Permitir todos / Agora não para todos".
 - Schedule turns deny anything that needs a person.
 
@@ -114,7 +114,7 @@ Tools (only while a workspace is open): `dev_server_start({cmd, port?, cwd?})`, 
 
 ### Verified 19/11 (separate instance on :2100, scratch data, schedules off, disposable repo)
 
-Disposable repo: a snapshot of conty-lp re-initialized as a new repo in `worktrees/sandbox`, with `origin` pointing to a bare repo next to it (nothing could reach the real repo).
+Disposable repo: a snapshot of landing re-initialized as a new repo in `worktrees/sandbox`, with `origin` pointing to a bare repo next to it (nothing could reach the real repo).
 1. First try: the bot opened the workspace and then called `workspace_close` because the tool told it to "end the answer". Fixed with the server-side run switch above.
 2. Second try (Sonnet 5.5, one message): `workspace_open` → `reopened` → checkpoint → Grep → Read → Bash `sed -i` (text + `bg-[color-mix(in_oklab,var(--bf-yellow)_88%,black)]`) → `dev_server_start` (`npm run dev -- --port {port}`, port 5610, after `npm ci` of 9 s) → `browser_open http://localhost:5610/pt` → screenshot → reply. `code.edit` (sweep, 2 hunks, +2 −2). `GET /code`, `/code/diff`, `GET /bots` badge and the preview proxy (302 + cookie, HTML and `/@vite/client` 200, 404 without cookie) checked with curl.
 3. "faça o commit…": the bot used `workspace_deliver`, the hard card appeared, approved → commit `a48d818` in the sandbox, no push.
@@ -126,7 +126,7 @@ The test bot was deleted, the instance stopped and the sandbox removed. Not run 
 ### v19.1 (19/11): diff ao vivo e painel novo
 
 - **Causa do "sem mudanças":** edição por Bash (`sed -i`, `python3 <<EOF`) só virava `code.edit` na varredura do fim do turno, e o app só relia `/code` ao chegar um `code.*` ou `turn.settled`. Num turno longo (tsc rodando) o app ficava com a foto de antes das edições, e o selo da barra lateral usava essa foto.
-- **Servidor (`apps/server/src/modules/code/services/live-diff.service.ts`):** depois de cada Edit/Write/MultiEdit/Bash (hook) e de cada comando/edição do Codex, roda `git diff --numstat` + untracked na worktree (≈25 ms no conty-api) e emite, para cada arquivo que mudou desde a última varredura, `code.edit` **acumulado do turno** (`before` = conteúdo no início do turno) com `cumulative:true` e `key:"<turnId>:<path>"`. Mudou o total → `code.status {workspaceId, files, added, removed}`. O fim do turno é só mais uma varredura (`source:"sweep"`). Edição fora da worktree continua com o `code.edit` antigo (sem `key`).
+- **Servidor (`apps/server/src/modules/code/services/live-diff.service.ts`):** depois de cada Edit/Write/MultiEdit/Bash (hook) e de cada comando/edição do Codex, roda `git diff --numstat` + untracked na worktree (≈25 ms no api) e emite, para cada arquivo que mudou desde a última varredura, `code.edit` **acumulado do turno** (`before` = conteúdo no início do turno) com `cumulative:true` e `key:"<turnId>:<path>"`. Mudou o total → `code.status {workspaceId, files, added, removed}`. O fim do turno é só mais uma varredura (`source:"sweep"`). Edição fora da worktree continua com o `code.edit` antigo (sem `key`).
 - **App:** `code.edit` com `key` substitui o card daquele arquivo no turno e o leva para o fim (um card por arquivo, diff acumulado; hunks vazios = card some). `code.status` atualiza a contagem na hora. Grupo de passos rodando mostra o passo atual em linguagem humana ("Checando tipos", "Rodando os testes", "Editando x.ts"), traduzido do comando no app (`CommandPhrase`).
 - **Pílula do topo:** vidro (Capsule), ícone de branch, repo, "13 · +118 −34"; branch no tooltip; spinner + brilho passando enquanto o bot trabalha. Clique abre o popover; o botão redondo ± abre o visualizador.
 - **Popover (300 pt):** repo + copiar caminho + abrir no editor (Zed/VS Code); branch (copiar); Commit ⌄ (mensagem, Commit / Commit e PR, com confirmação); Mudanças +a −r → visualizador; Safari quando há dev server; Histórico (pedido, tempo relativo, relógio ↶ no hover com confirmação); "Fechar o repositório".
@@ -226,7 +226,7 @@ Nada de variável para repositório. O compose monta o HOME do host no mesmo cam
 - Worktrees antigas continuam onde estão (o caminho absoluto existe dentro do container pelo HOME montado).
 
 ### Consulta em produção
-- Saíram `prod_query`, `capabilities.prodQuery`, `CONTY_API_DIR` e `request_capability {name:"prodQuery"}` (agora só `browser`). Campo `prodQuery` vindo do app é ignorado.
+- Saíram `prod_query`, `capabilities.prodQuery`, `PROD_API_DIR` e `request_capability {name:"prodQuery"}` (agora só `browser`). Campo `prodQuery` vindo do app é ignorado.
 - Consulta em banco vai pelo conector (ex.: Supabase) com `connector_call`. Ferramenta com `sql`/`query` no nome e argumento `query`/`sql`/`statement`: uma única instrução `SELECT`/`WITH`/`EXPLAIN SELECT` sem efeito colateral é leitura e roda direto; qualquer outra coisa é "outbound". Escrita que toca banco (`sql`, `query`, `migration`, `postgres`, `supabase.`, `database` no nome) sempre pede card, em qualquer modo menos Somente leitura (que nega). Qual projeto é produção fica na memória.
 
 ### Instalação
@@ -251,8 +251,8 @@ Nada de variável para repositório. O compose monta o HOME do host no mesmo cam
 
 ### Verificado (20/11, servidor :2000)
 - T1 (`claude-sonnet-5-5`, conta `vps:claude`), conversa nova `{"permission":"full"}`: quatro `Bash` sem `clearedBy` (sem card) → `gh auth status` exit 0, `supabase projects list` exit 0, `wrangler whoami` exit 0, `curl … https://api.github.com/zen` → `200`.
-- Davi (`claude-haiku-5-5`, Acesso total), conversa limpa com `POST /bots/davi/thread/reset`, mesmo prompt da CTY-1318 + "crie essa rotina": um `add_schedule` sem card → `{"ok":true,"summary":"Rotina \"monitor-cty-1318-prod\" criada: 0 */4 * * * (America/Sao_Paulo).","schedules":["watch","monitor-cty-1318-prod"]}`, nenhuma pergunta.
-- Davi, checagem 2 da rotina: `cd …/conty-api && supabase db query --remote --read-only "select pg_get_constraintdef(oid) …"` → `Target: project P2IA (wilmlcoeaxnakramxvpr) · production` e `UNIQUE (provider, provider_account_id, owner_type)`; o mesmo em `--remote=falggcsxytemkgxrnlxm` e `--remote=flguvsnqinfabikvypvo`, todos sem card.
+- Davi (`claude-haiku-5-5`, Acesso total), conversa limpa com `POST /bots/davi/thread/reset`, mesmo prompt da ENG-1318 + "crie essa rotina": um `add_schedule` sem card → `{"ok":true,"summary":"Rotina \"monitor-eng-1318-prod\" criada: 0 */4 * * * (America/Sao_Paulo).","schedules":["watch","monitor-eng-1318-prod"]}`, nenhuma pergunta.
+- Davi, checagem 2 da rotina: `cd …/api && supabase db query --remote --read-only "select pg_get_constraintdef(oid) …"` → `Target: project prod (<project-ref>) · production` e `UNIQUE (provider, provider_account_id, owner_type)`; o mesmo em `--remote=falggcsxytemkgxrnlxm` e `--remote=flguvsnqinfabikvypvo`, todos sem card.
 
 ## v51 (20/11): sandbox de ferramentas e endurecimento do modo código
 
@@ -340,7 +340,7 @@ $ … --timeout 2 -- 'sleep 30'   (sai em 2,0 s, código 124)
 ### Diff pela base de merge
 
 - O diff da worktree (contagem da pílula, `GET …/code/files`, `…/diff`, `code.status`, desfazer arquivo) é `merge-base(<base>, HEAD)` → árvore de trabalho, sem arquivos ignorados (`git ls-files --others --exclude-standard`). `<base>` é a ref de onde a branch saiu (`origin/develop`, `origin/main`…) ou a base do PR, quando o PR é da branch atual (`alignBase`).
-- O `baseCommit` é recalculado sempre que o `HEAD` muda (memo por worktree com `HEAD` + base). Antes ele só mudava na troca de branch: um `git reset --hard <commit antigo>` na mesma branch fazia o diff incluir ao contrário tudo o que a develop ganhou depois (caso real: conty-whitelabel com 890 arquivos +7.281 −29.974 em vez de ~60 arquivos +4,3k).
+- O `baseCommit` é recalculado sempre que o `HEAD` muda (memo por worktree com `HEAD` + base). Antes ele só mudava na troca de branch: um `git reset --hard <commit antigo>` na mesma branch fazia o diff incluir ao contrário tudo o que a develop ganhou depois (caso real: web-app com 890 arquivos +7.281 −29.974 em vez de ~60 arquivos +4,3k).
 - Base `HEAD` (repositório sem remoto nem main/develop) continua com o commit de quando abriu.
 
 ### Sessão com vários repositórios
@@ -355,7 +355,7 @@ $ … --timeout 2 -- 'sleep 30'   (sai em 2,0 s, código 124)
 ### Ferramentas
 
 - `workspace_open`: texto novo diz que abrir outro repositório não fecha o anterior; a resposta lista os que continuam abertos.
-- `workspace_close {repo?}`, `workspace_deliver {…, repo?}`, `dev_server_start {…, repo?}`, `dev_server_stop {port?, repo?}`, `dev_server_logs {…, repo?}`: `repo` é nome, id, caminho do repositório ou caminho dentro da worktree; sem `repo`, vale o principal. Repositório que não está aberto: "`<repo>` não está aberto nesta conversa. Abertos: conty-api, conty-whitelabel."
+- `workspace_close {repo?}`, `workspace_deliver {…, repo?}`, `dev_server_start {…, repo?}`, `dev_server_stop {port?, repo?}`, `dev_server_logs {…, repo?}`: `repo` é nome, id, caminho do repositório ou caminho dentro da worktree; sem `repo`, vale o principal. Repositório que não está aberto: "`<repo>` não está aberto nesta conversa. Abertos: api, web-app."
 
 ### Rotas (`?sessionId=` e `?workspaceId=` opcionais)
 
@@ -363,8 +363,8 @@ $ … --timeout 2 -- 'sleep 30'   (sai em 2,0 s, código 124)
 
 ```json
 {"workspace":{"id","repoName","branch","base","primary":true,"files":60,"added":4280,"removed":6,"pr":null,…},
- "workspaces":[{"id":"conty-api-…","repoName":"conty-api","primary":false,"files","added","removed","pr","changes":[{"path","status","added","removed","binary"}],"servers":[…]},
-               {"id":"conty-whitelabel-…","repoName":"conty-whitelabel","primary":true,…}],
+ "workspaces":[{"id":"api-…","repoName":"api","primary":false,"files","added","removed","pr","changes":[{"path","status","added","removed","binary"}],"servers":[…]},
+               {"id":"web-app-…","repoName":"web-app","primary":true,…}],
  "files":[…],"servers":[…],"checkpoints":[{"turnId","at","workspaceId","request"}],"running":false}
 ```
 
@@ -376,10 +376,10 @@ $ … --timeout 2 -- 'sleep 30'   (sai em 2,0 s, código 124)
 
 - A faixa do topo mostra uma pílula por repositório aberto, lado a lado (nome, arquivos, +/−, PR com ponto de CI). Cada pílula abre o próprio popover: branch, PR, Mudanças, Abrir o app (servidor daquele repositório), Fechar o repositório (manda `workspaceId`). O Histórico é o mesmo em todas.
 - Mudanças abre no repositório da pílula; com mais de um, o cabeçalho tem abas por repositório. "Ver no visualizador" de um diff da conversa abre no repositório que tem aquele arquivo.
-- Linha na conversa para `adopted`: "Juntou conty-api a esta conversa, na branch feat/…".
+- Linha na conversa para `adopted`: "Juntou api a esta conversa, na branch feat/…".
 
 ### Verificado (20/11, servidor :2000 com a imagem nova)
 
-- Conversa `wrun_01M7TC13GN5A38VB2QWDG5GD58` (Engenheiro de Software): linha salva antes em `runelay-bots-backups/manual/`, `meta.workspaces` gravado com a worktree da conty-api (que um `workspace_open` antigo tinha substituído) + a da conty-whitelabel, principal mantido.
-- `changedFiles` com o código novo nas worktrees reais: conty-whitelabel 60 arquivos +4280 −6 (base `6115b472`, a de merge com `origin/develop`; antes 890 +7281 −29974 contra `aabff93c`); conty-api 305 arquivos +14059 −2449 (base `8ecf5823`; 254 desses arquivos são reformatação não commitada na worktree).
+- Conversa `wrun_01M7TC13GN5A38VB2QWDG5GD58` (Dev): linha salva antes em `runelay-bots-backups/manual/`, `meta.workspaces` gravado com a worktree da api (que um `workspace_open` antigo tinha substituído) + a da web-app, principal mantido.
+- `changedFiles` com o código novo nas worktrees reais: web-app 60 arquivos +4280 −6 (base `6115b472`, a de merge com `origin/develop`; antes 890 +7281 −29974 contra `aabff93c`); api 305 arquivos +14059 −2449 (base `8ecf5823`; 254 desses arquivos são reformatação não commitada na worktree).
 - Rotas com `workspaceId`, adoção, migração do campo antigo, base de merge depois de `reset --hard` e `CodeLives` cobertos em `code.routes.test.ts`, `workspace.test.ts`, `hooks.test.ts`, `code-tools.test.ts` e `live-diff.test.ts`.

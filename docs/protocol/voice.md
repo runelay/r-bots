@@ -38,7 +38,7 @@ Portuguese voices first, then by name. `previewUrl` is a public mp3, so the app 
 
 Opens the call: ends any previous call for the bot, warms the fast layer, and mints both tokens.
 ```json
-{"callId":"call_5351d1c5176d4a57","sessionId":"wrun_…","streamPath":"/bots/lia/voice/session/call_…/stream","fastModel":"claude-haiku-5-5",
+{"callId":"call_5351d1c5176d4a57","sessionId":"wrun_…","streamPath":"/bots/nina/voice/session/call_…/stream","fastModel":"claude-haiku-5-5",
  "voice":{"voiceId":"VNaz9wbhLsh3lLuHzAVP","speed":1},
  "stt":{"url":"wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime&language_code=pt&audio_format=pcm_16000&commit_strategy=vad&vad_silence_threshold_secs=0.5&token=sutkn_…","token":"sutkn_…","modelId":"scribe_v2_realtime","sampleRate":16000,"vadSilenceSecs":0.5},
  "tts":{"url":"wss://api.elevenlabs.io/v1/text-to-speech/VNaz…/multi-stream-input?model_id=eleven_flash_v2_5&output_format=pcm_24000&language_code=pt&inactivity_timeout=180&single_use_token=sutkn_…","token":"sutkn_…","modelId":"eleven_flash_v2_5","outputFormat":"pcm_24000","sampleRate":24000}}

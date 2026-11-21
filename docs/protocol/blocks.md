@@ -19,9 +19,9 @@ Regras gerais:
 Depois do `call.settled` da ferramenta do bot (e depois de cada escrita da pessoa, com `author:"user"`), o servidor grava no stream da sessão em que a ferramenta rodou **e** na thread principal do bot:
 
 ```json
-{"type":"block.created","data":{"botId":"lia","kind":"note","id":"note_8Hq2","title":"Plano Q1","version":1,"author":"bot","action":"created","callId":"call_…","preview":{"kind":"note","folder":"Projetos","excerpt":"# Plano Q1\n\n- [ ] Fechar metas\n- [x] Revisar orçamento\n…","words":312}}}
-{"type":"block.updated","data":{"botId":"lia","kind":"note","id":"note_8Hq2","title":"Plano Q1","version":2,"author":"bot","action":"edited","callId":"call_…","preview":{…},"changed":{"lines":[[4,7]]}}}
-{"type":"block.deleted","data":{"botId":"lia","kind":"note","id":"note_8Hq2","title":"Plano Q1","version":3,"author":"bot","action":"deleted","preview":null}}
+{"type":"block.created","data":{"botId":"nina","kind":"note","id":"note_8Hq2","title":"Plano Q1","version":1,"author":"bot","action":"created","callId":"call_…","preview":{"kind":"note","folder":"Projetos","excerpt":"# Plano Q1\n\n- [ ] Fechar metas\n- [x] Revisar orçamento\n…","words":312}}}
+{"type":"block.updated","data":{"botId":"nina","kind":"note","id":"note_8Hq2","title":"Plano Q1","version":2,"author":"bot","action":"edited","callId":"call_…","preview":{…},"changed":{"lines":[[4,7]]}}}
+{"type":"block.deleted","data":{"botId":"nina","kind":"note","id":"note_8Hq2","title":"Plano Q1","version":3,"author":"bot","action":"deleted","preview":null}}
 ```
 
 - `kind`: `note` | `sheet` | `agenda`. A agenda é um bloco só por bot com `id: "agenda"`; `version` é uma revisão do servidor que sobe a cada evento criado, mudado ou apagado pelo bot ou pela pessoa.
@@ -172,7 +172,7 @@ Pedido de agenda virava página HTML (`artifact_create`) porque só criar, mudar
 
 ```json
 {"type":"call.requested","data":{"capability":{"kind":"tool","name":"agenda_list","label":"Mostrou a agenda"},"input":{"start":"2026-11-16T00:00:00-03:00","end":"2026-11-22T23:59:59-03:00"}}}
-{"type":"block.updated","data":{"kind":"agenda","id":"agenda","title":"Agenda","version":1,"author":"bot","action":"edited","preview":{"kind":"agenda","view":"week","start":"2026-11-16T03:00:00Z","end":"2026-11-23T02:59:59Z","timezone":"America/Sao_Paulo","accounts":[{"id":"google_calendar","label":"Pessoal","color":"blue"},{"id":"google_calendar_2","label":"Appconty","color":"green"}],"events":[{"id":"…","accountId":"google_calendar_2","title":"Escritório","start":"2026-11-16","end":"2026-11-17","allDay":true,"meet":false},{"id":"…","accountId":"google_calendar_2","title":"Planning Conty [Ops x Tech]","start":"2026-11-16T09:00:00-03:00","end":"2026-11-16T10:00:00-03:00","allDay":false,"meet":false},…]},"botId":"t1-4dr9hc","callId":"call_WuMaSx-w1JWG"}}
+{"type":"block.updated","data":{"kind":"agenda","id":"agenda","title":"Agenda","version":1,"author":"bot","action":"edited","preview":{"kind":"agenda","view":"week","start":"2026-11-16T03:00:00Z","end":"2026-11-23T02:59:59Z","timezone":"America/Sao_Paulo","accounts":[{"id":"google_calendar","label":"Pessoal","color":"blue"},{"id":"google_calendar_2","label":"Trabalho","color":"green"}],"events":[{"id":"…","accountId":"google_calendar_2","title":"Escritório","start":"2026-11-16","end":"2026-11-17","allDay":true,"meet":false},{"id":"…","accountId":"google_calendar_2","title":"Planning [Ops x Tech]","start":"2026-11-16T09:00:00-03:00","end":"2026-11-16T10:00:00-03:00","allDay":false,"meet":false},…]},"botId":"t1-4dr9hc","callId":"call_WuMaSx-w1JWG"}}
 ```
 
 20 eventos das duas contas, nenhum `artifact.*` no turno. A resposta do bot veio em três linhas (hoje, dia mais cheio, possível duplicidade na quinta), sem repetir a lista.

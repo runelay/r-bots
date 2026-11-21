@@ -2,7 +2,7 @@
 
 ## r/bots: verified protocol
 
-### eve session API (under `sessionBasePath`, e.g. `/bots/lia/eve/v1`)
+### eve session API (under `sessionBasePath`, e.g. `/bots/nina/eve/v1`)
 
 #### Stream
 
@@ -17,7 +17,7 @@
 Events the Mac renders, verbatim from the captures (one event per line, as it sits inside `facts` or `progress`):
 
 ```jsonl
-{"data":{"runtime":{"agentId":"lia","agentName":"lia","eveVersion":"1.1.0"}},"type":"session.started"}
+{"data":{"runtime":{"agentId":"nina","agentName":"nina","eveVersion":"1.1.0"}},"type":"session.started"}
 {"data":{"deliveryId":"8da8a830-d481-4375-a3fe-8fc403d0f476","principal":{"id":"anonymous","type":"anonymous"},"source":{"channel":"channel:eve"}},"type":"delivery.admitted"}
 {"data":{"cause":{"deliveryId":"8da8a830-d481-4375-a3fe-8fc403d0f476"},"follows":null,"turnId":"turn_0"},"type":"turn.started","scope":{"turnId":"turn_0"}}
 {"data":{"deliveryId":"8da8a830-d481-4375-a3fe-8fc403d0f476","parts":[{"kind":"text","text":"Clica no link."}],"turnId":"turn_0"},"type":"delivery.consumed","scope":{"turnId":"turn_0"}}
@@ -35,7 +35,7 @@ Events the Mac renders, verbatim from the captures (one event per line, as it si
 {"data":{"outcome":"applied","responseId":"response_6fd61b89-b3c2-40a7-bbe5-1dd6d0a8ba8e_0"},"type":"response.settled","scope":{"turnId":"turn_0"}}
 {"data":{"cause":{"responseId":"response_6fd61b89-b3c2-40a7-bbe5-1dd6d0a8ba8e_0"},"interactionId":"4WKDdxz39zyo4E6L","outcome":"accepted","response":{"optionId":"approve"}},"type":"interaction.settled","scope":{"turnId":"turn_0"}}
 {"data":{"callId":"call_probe_1","clearedBy":{"interactionId":"4WKDdxz39zyo4E6L"}},"type":"call.started","scope":{"turnId":"turn_0","runId":"run_0"}}
-{"data":{"callId":"call_probe_1","outcome":"completed","output":{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T12:18:22.831Z","screenshot":"/data/bots/lia/browser/shots/2026-11-19T12-18-22-323Z.png"}},"type":"call.settled","scope":{"turnId":"turn_0","runId":"run_0"}}
+{"data":{"callId":"call_probe_1","outcome":"completed","output":{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T12:18:22.831Z","screenshot":"/data/bots/nina/browser/shots/2026-11-19T12-18-22-323Z.png"}},"type":"call.settled","scope":{"turnId":"turn_0","runId":"run_0"}}
 {"data":{"kind":"text","partId":"run_1.0","phase":"reply","runId":"run_1","value":"Pronto, cliquei no link."},"type":"content.completed","scope":{"runId":"run_1","turnId":"turn_0"}}
 {"data":{"outcome":"completed","reply":["run_1.0"],"turnId":"turn_0"},"type":"turn.settled","scope":{"turnId":"turn_0"}}
 {"data":{"deliveryId":"6fd61b89-b3c2-40a7-bbe5-1dd6d0a8ba8e","outcome":"handled","turnId":"turn_0"},"type":"delivery.settled"}
@@ -64,7 +64,7 @@ Failed turn, real bot without credentials (what the Mac sees today):
 - Approval card: `interaction.opened` with `request.kind:"approval"`, title `request.prompt`, buttons from `request.options`. Close on `interaction.settled` with the same `interactionId` (`outcome` `accepted` or `declined`, or another outcome when withdrawn).
 - Status: working from `turn.started` until `turn.settled`; `turn.paused` means waiting for the person. A failed turn has `turn.settled.data.error.message`.
 - Tokens: sum `usage.recorded.data.usage.inputTokens` and `outputTokens`.
-- Boss delegating: the call to `davi` or `lia` shows as `call.requested` with `capability.name` `davi`/`lia`, plus `task.started` and `child.opened` (child stream path is member-relative, see Deviations 4). Approvals from Boss's Lia show up on Boss's own stream as `interaction.opened` with an `origin`, and are answered on Boss's session.
+- Boss delegating: the call to `davi` or `nina` shows as `call.requested` with `capability.name` `davi`/`nina`, plus `task.started` and `child.opened` (child stream path is member-relative, see Deviations 4). Approvals from Boss's Nina show up on Boss's own stream as `interaction.opened` with an `origin`, and are answered on Boss's session.
 
 ---
 
@@ -74,7 +74,7 @@ Failed turn, real bot without credentials (what the Mac sees today):
 
 1. `session.started.data.runtime` is `{"agentId","agentName","engine":"claude-agent-sdk","model"}` (no `eveVersion`); a thread adds `"thread":true`.
 2. Approval option labels are pt-BR: `{"id":"approve","label":"Aprovar"}`, `{"id":"deny","label":"Negar"}`. Ids unchanged.
-3. Delegation: Boss calls a subagent with the SDK `Agent` tool. It shows as `call.requested` with `capability.name` = the delegated bot id and `capability.label` `"Delegar para Davi"`; its `call.settled.output` is the subagent's final report (string). The subagent's own tool calls come on the same stream as `call.requested` with `"owner":{"callId":"<delegation callId>"}` and `"origin":{"agent":"davi"}`. There are no `task.started` / `child.opened` events and no child stream. Approvals from a delegated Lia come as `interaction.opened` with `"origin":{"agent":"lia"}` and are answered on the Boss session.
+3. Delegation: Boss calls a subagent with the SDK `Agent` tool. It shows as `call.requested` with `capability.name` = the delegated bot id and `capability.label` `"Delegar para Davi"`; its `call.settled.output` is the subagent's final report (string). The subagent's own tool calls come on the same stream as `call.requested` with `"owner":{"callId":"<delegation callId>"}` and `"origin":{"agent":"davi"}`. There are no `task.started` / `child.opened` events and no child stream. Approvals from a delegated Nina come as `interaction.opened` with `"origin":{"agent":"nina"}` and are answered on the Boss session.
 4. Messages sent while a turn runs are queued and become the next turn (no steering).
 5. `usage.recorded` comes once per turn, after the reply, and counts every model call in the turn (subagents included).
 6. `delivery.consumed.data` carries `"source":"chat"|"schedule"` and, for schedules, `"scheduleId"`. `delivery.admitted.data.source` is `{"channel":"channel:schedule","scheduleId":"watch"}` for schedule deliveries.
@@ -94,7 +94,7 @@ Davi, real turn through the subscription, `prod_query`:
 {"type":"turn.settled","data":{"outcome":"completed","turnId":"turn_0","reply":["run_1.0"]},"scope":{"turnId":"turn_0"}}
 ```
 
-Lia, real `browser_click` approval:
+Nina, real `browser_click` approval:
 ```jsonl
 {"type":"call.requested","data":{"callId":"toolu_01Gq5fMFx6YUxWbBCGNQd48K","capability":{"kind":"tool","name":"browser_click","label":"Clicar em @e1"},"input":{"ref":"@e1"},"owner":{"runId":"run_1"}},"scope":{"runId":"run_1","turnId":"turn_0"}}
 {"type":"interaction.opened","data":{"interactionId":"6XXMgieL3EQtlgGf","request":{"allowFreeform":false,"display":"confirmation","kind":"approval","options":[{"id":"approve","label":"Aprovar"},{"id":"deny","label":"Negar"}],"prompt":"Posso clicar em @e1?"},"subject":{"callId":"toolu_01Gq5fMFx6YUxWbBCGNQd48K"}},"scope":{"turnId":"turn_0"}}
@@ -104,7 +104,7 @@ Lia, real `browser_click` approval:
 {"type":"response.settled","data":{"outcome":"applied","responseId":"response_75cecc83-5891-40e2-a8fa-d1b1fd7dc8dd_0"},"scope":{"turnId":"turn_0"}}
 {"type":"interaction.settled","data":{"cause":{"responseId":"response_75cecc83-5891-40e2-a8fa-d1b1fd7dc8dd_0"},"interactionId":"6XXMgieL3EQtlgGf","outcome":"accepted","response":{"optionId":"approve"}},"scope":{"turnId":"turn_0"}}
 {"type":"call.started","data":{"callId":"toolu_01Gq5fMFx6YUxWbBCGNQd48K","clearedBy":{"interactionId":"6XXMgieL3EQtlgGf"}},"scope":{"runId":"run_1","turnId":"turn_0"}}
-{"type":"call.settled","data":{"callId":"toolu_01Gq5fMFx6YUxWbBCGNQd48K","outcome":"completed","output":{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T12:57:31.215Z","screenshot":"…/data/bots/lia/browser/shots/2026-11-19T12-57-30-712Z.png"}},"scope":{"runId":"run_1","turnId":"turn_0"}}
+{"type":"call.settled","data":{"callId":"toolu_01Gq5fMFx6YUxWbBCGNQd48K","outcome":"completed","output":{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T12:57:31.215Z","screenshot":"…/data/bots/nina/browser/shots/2026-11-19T12-57-30-712Z.png"}},"scope":{"runId":"run_1","turnId":"turn_0"}}
 ```
 
 Boss delegating to Davi (the delegation `call.settled.output` below is the cleaned report the server sends since the last restart; the capture itself still carried the SDK hand-back wrapper):

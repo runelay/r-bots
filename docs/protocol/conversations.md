@@ -11,7 +11,7 @@
 ```
 Schedule runs add `"source":"schedule"` and `"scheduleId":"watch"`. Title is the first user message, at most 80 characters.
 
-### eve session API (under `sessionBasePath`, e.g. `/bots/lia/eve/v1`)
+### eve session API (under `sessionBasePath`, e.g. `/bots/nina/eve/v1`)
 
 #### Create a session with the first message
 
@@ -45,7 +45,7 @@ A message sent while a turn runs steers that turn (default `turnPolicy: "steer"`
 
 - Unknown or ended session: `409 {"ok":false,"code":"session_not_active","error":"The session is no longer active."}`
 - Unknown body field: `400 {"ok":false,"error":"Unknown field 'text'. Accepted fields: inbox, message, answers, clientContext, outputSchema, turnPolicy, callback, forwardedPrincipal, idempotencyKey."}`
-- Bot process down: `502 {"ok":false,"error":"Lia está fora do ar.","detail":"..."}` (gateway)
+- Bot process down: `502 {"ok":false,"error":"Nina está fora do ar.","detail":"..."}` (gateway)
 
 ## v2 (19/11): Claude Agent SDK engine
 
@@ -266,7 +266,7 @@ Busca nas mensagens (texto do usuário e respostas do bot) de todas as conversas
 
 ### Verificado 19/11 (instância :2100, cópia dos dados de produção)
 
-Conversa de 1.361 eventos: stream idêntico ao da produção (mesmo md5) e as 7 páginas de `events` somam 1.361. Busca por "conty-api", "producao" e "fumaça" devolve os trechos certos.
+Conversa de 1.361 eventos: stream idêntico ao da produção (mesmo md5) e as 7 páginas de `events` somam 1.361. Busca por "api", "producao" e "fumaça" devolve os trechos certos.
 
 ## v40 (20/11): banco Postgres e busca por texto no Postgres
 
@@ -281,7 +281,7 @@ As rotas e os corpos não mudaram. O que mudou por baixo:
 
 Servidor na :2100 com o banco de produção importado (cópia):
 
-- `GET /bots/engenheiro-de-software/conversations/search?q=configuracao&limit=1` → `{"hits":[{"botId":"engenheiro-de-software","sessionId":"wrun_01M7TC13GN5A38VB2QWDG5GD58","index":13,"at":"2026-11-19T17:48:24.633Z","role":"user","snippet":"…agência).\n2. Verificar se existe campo ou [configuração] por conta/agência para texto customizado na nota…"}],"nextCursor":null}`
+- `GET /bots/dev/conversations/search?q=configuracao&limit=1` → `{"hits":[{"botId":"dev","sessionId":"wrun_01M7TC13GN5A38VB2QWDG5GD58","index":13,"at":"2026-11-19T17:48:24.633Z","role":"user","snippet":"…agência).\n2. Verificar se existe campo ou [configuração] por conta/agência para texto customizado na nota…"}],"nextCursor":null}`
 - `GET /bots/boss/notes/search?q=VENDER` → `{"items":[{"id":"note_01m7v4pnybq83j6n32ne1hnr7x","title":"Metas","folder":"","snippet":"vender mais","ranges":[[0,6]]}],"total":1,"nextCursor":null}`
 - `GET /bots/boss/notes/search?q=met&mode=title` → `{"items":[{"id":"note_01m7v4pnybq83j6n32ne1hnr7x","title":"Metas","folder":"","snippet":"","ranges":[[0,5]]}],"total":1,"nextCursor":null}`
 - Mesmos hits, na mesma ordem e com a mesma paginação da :2000 (SQLite/FTS5) em 14 buscas de 2 bots; a conversa de 1361 eventos sai idêntica nas duas.

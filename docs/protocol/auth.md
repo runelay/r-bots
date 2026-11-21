@@ -316,7 +316,7 @@ tailnet /health 200 · /bots 401
 GET /auth/setup -> 200
 {"ok":true,"needsOwner":true,"required":true,"methods":{"password":true,"passkey":true,"device":true,"invites":true,"passwordReset":false}}
 
-bots 4 (boss, davi, engenheiro-de-software, qa), uma conversa cada; banco 25 bots, 31 threads, 0 usuários (igual ao antes)
+bots 4 (boss, davi, dev, qa), uma conversa cada; banco 25 bots, 31 threads, 0 usuários (igual ao antes)
 integrações elevenlabs/jev/runelay connected; contas vps:claude, vps:codex, mac:claude, mac:codex, mac:cursor ready (igual ao antes)
 log: mac runner connected (RUNNER_TOKEN)
 

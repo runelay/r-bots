@@ -130,8 +130,8 @@ Uma entrada por conta Claude/Codex do servidor (as `missing` ficam de fora), lid
 
 ```json
 {"checkedAt":"2026-11-20T03:4…Z","accounts":[
-  {"id":"vps:claude","provider":"claude","label":"Claude AppConty","email":"fer…","plan":"team","isDefault":true,"ok":true,"error":null,"windows":[{"kind":"session","usedPercent":95,…},{"kind":"weekly","usedPercent":100,…},{"kind":"weekly_model","label":"Semanal · Fable",…}],"failover":[{"botId":"boss","botName":"Boss","to":"claude-2:claude","toLabel":"Claude Anderson"}]},
-  {"id":"claude-2:claude","provider":"claude","label":"Claude Anderson","email":"and…","plan":"team","isDefault":false,"ok":true,"error":null,"windows":[{"kind":"session","usedPercent":77,…},{"kind":"weekly","usedPercent":41,…}],"failover":[…]},
+  {"id":"vps:claude","provider":"claude","label":"Claude Trabalho","email":"voce…","plan":"team","isDefault":true,"ok":true,"error":null,"windows":[{"kind":"session","usedPercent":95,…},{"kind":"weekly","usedPercent":100,…},{"kind":"weekly_model","label":"Semanal · Fable",…}],"failover":[{"botId":"boss","botName":"Boss","to":"claude-2:claude","toLabel":"Claude Alex"}]},
+  {"id":"claude-2:claude","provider":"claude","label":"Claude Alex","email":"alex…","plan":"team","isDefault":false,"ok":true,"error":null,"windows":[{"kind":"session","usedPercent":77,…},{"kind":"weekly","usedPercent":41,…}],"failover":[…]},
   {"id":"vps:codex","provider":"codex","label":"Codex","plan":"plus","isDefault":true,"ok":true,"windows":[…],"failover":[]}
 ]}
 ```
@@ -143,7 +143,7 @@ Uma entrada por conta Claude/Codex do servidor (as `missing` ficam de fora), lid
 - `environment` saiu; `account=<id>` filtra por conta.
 - Novo `accounts: [{id, provider, label, processed, requests, sessions, costUsd}]` (sem filtro, inclui as contas sem uso com zero); `detail[].account` no lugar de `detail[].environment`; `environments` virou `scannedAt`.
 - O scanner lê `<pasta>/projects` (Claude) e `<pasta>/sessions` (Codex) de cada conta. Banco: `usage_buckets.account` (entra na chave) e `usage_sessions.account` (migração `0002_usage_accounts`, linhas antigas = `vps:<provedor>`).
-- Duas contas que apontam para a mesma pasta física de transcrições (ex.: `~/.claude-2/projects` → symlink de `~/.claude/projects`) são lidas uma vez e o uso de fora dos bots cai em `vps:claude+claude-2:claude`, `label` "Claude AppConty + Claude Anderson". Turnos dos bots vão sempre para a conta exata: o engine anota a conta de cada sessão de provider (`session` do SDK/Codex) e o scanner usa esse dono.
+- Duas contas que apontam para a mesma pasta física de transcrições (ex.: `~/.claude-2/projects` → symlink de `~/.claude/projects`) são lidas uma vez e o uso de fora dos bots cai em `vps:claude+claude-2:claude`, `label` "Claude Trabalho + Claude Alex". Turnos dos bots vão sempre para a conta exata: o engine anota a conta de cada sessão de provider (`session` do SDK/Codex) e o scanner usa esse dono.
 
 ### Verificado 20/11 (produção)
 

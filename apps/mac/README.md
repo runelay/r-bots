@@ -1,6 +1,6 @@
 # r/bots (Mac)
 
-App nativo de macOS do r/bots para conversar com o time de bots (Boss, Davi, Lia), ver o que cada um está fazendo e aprovar ações.
+App nativo de macOS do r/bots para conversar com o time de bots (Boss, Davi, Nina), ver o que cada um está fazendo e aprovar ações.
 
 ## Requisitos
 

@@ -9,7 +9,7 @@ The server is an MCP client of the user's runelay. It uses the same endpoint and
 ```json
 [{"name":"linear_server","label":"Linear","icon":"linear","status":"ok","toolCount":84,"reconnectUrl":null}, "… 16 connections"]
 ```
-- `icon` is runelay's value: a slug like `linear` or `github`, a path like `/logos/conty.png`, or `null`.
+- `icon` is runelay's value: a slug like `linear` or `github`, a path like `/logos/acme.png`, or `null`.
 - `status` is `ok`, `needs_auth` or `error`.
 - `reconnectUrl` is `RUNELAY_RECONNECT_URL` when set and the status is not ok, otherwise `null`.
 - Connection configs and headers are never exposed.
@@ -36,7 +36,7 @@ Events: `call.requested.data.capability = {"kind":"tool","name":"connector:linea
 
 Verified 19/11:
 - **Direct, no model:** 16 connections, all ok. Search "linear issue" returned `get_attachment` [read] and `create_attachment` / `delete_attachment` [write]. `linear_server.list_teams` returned the teams. Classifier checks: `save_comment` outbound, `save_issue` write, `merge_pull_request` write, `list_comments` read, `get_me` read.
-- **One real turn:** Davi with `allowed:["linear_server"]`, asked "Quais times existem no Linear?", ran `connector_search` then `connector:linear_server.list_teams` with no card, and replied "Many, Conty, Conty - Operacoes, Magalu, Conty GTM". Usage 6 / 178 / 9,526 / 6,003. No write was made to any service.
+- **One real turn:** Davi with `allowed:["linear_server"]`, asked "Quais times existem no Linear?", ran `connector_search` then `connector:linear_server.list_teams` with no card, and replied "Engenharia, Produto, Operações, Vendas, GTM". Usage 6 / 178 / 9,526 / 6,003. No write was made to any service.
 
 ---
 
@@ -48,14 +48,14 @@ The server now forwards runelay's catalog and install APIs (`/v1/catalog`, `/v1/
 
 Search runs on runelay (name, id and description, no accents). Featured items are moved out of their sections, and empty sections are dropped, as on the web.
 ```json
-{"featured":[{"id":"conty","name":"Conty","description":"Campanhas com creators, do briefing ao relatório de vendas.","icon":"/logos/conty.png","auth":"oauth","tokenUrl":null,"featured":true,"installed":true,"sourceName":"conty","status":"ok"}],
+{"featured":[{"id":"acme","name":"Acme","description":"CRM de exemplo, do lead à venda.","icon":"/logos/acme.png","auth":"oauth","tokenUrl":null,"featured":true,"installed":true,"sourceName":"acme","status":"ok"}],
  "sections":[{"id":"popular","title":"Populares","items":[{"id":"linear","name":"Linear","description":"Issues, projetos e ciclos do seu time.","icon":"linear","auth":"oauth","tokenUrl":null,"featured":false,"installed":true,"sourceName":"linear_server","status":"ok"}, "…"]},
              {"id":"dev","title":"Para desenvolver","items":["…"]},{"id":"work","title":"Trabalho e conteúdo","items":["…"]}]}
 ```
 - `id` is the catalog id. `sourceName` is the installed connection name (the one used in bot `connectors.allowed`), which can differ (`linear` → `linear_server`).
 - `auth`: `oauth`, `api_key` (needs a token, `tokenUrl` says where to make one) or `none`.
 - `status`: `ok`, `needs_auth`, `error`, `idle` or `null` when not installed.
-- `icon`: a Simple Icons slug, a web path like `/logos/conty.png`, or `null` (draw the initial).
+- `icon`: a Simple Icons slug, a web path like `/logos/acme.png`, or `null` (draw the initial).
 - The catalog URL and broker config are not exposed.
 
 ### `POST /connectors/:id/install {"token"?}` → 201

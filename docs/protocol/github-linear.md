@@ -22,7 +22,7 @@ O servidor usa o `gh` já logado no contêiner (`~/.config/gh`), com `gh api gra
 
 Filtros: `mine` = `is:pr is:open author:@me`, `review` = `review-requested:@me`, `mentions` = `involves:@me -author:@me`, `merged` = `is:merged author:@me merged:>=` 7 dias. Todos com `archived:false sort:updated-desc`.
 
-`linear` em cada PR vem da branch (`anderson/cty-1319-…` → `CTY-1319`), do título ou de `closes/fixes/linear.app/…/issue/` no corpo.
+`linear` em cada PR vem da branch (`feat/eng-1319-…` → `ENG-1319`), do título ou de `closes/fixes/linear.app/…/issue/` no corpo.
 
 Erros: 503 quando o `gh` não está logado ou instalado, 404, 403, 422 (GraphQL recusou), 502 nos outros casos, sempre `{ ok: false, error }`.
 
@@ -51,9 +51,9 @@ Cada issue traz `pr` (`{ repo, number, title, url, state, draft, ci, review }`) 
 ```json
 {
   "counts": { "mine": 17, "review": 0, "mentions": 2, "merged": 108 },
-  "repos": [{ "name": "Conty-App/conty-lp", "owner": "Conty-App", "avatarUrl": "https://avatars.githubusercontent.com/u/222265698?v=4", "count": 5 }],
+  "repos": [{ "name": "acme/landing", "owner": "acme", "avatarUrl": "https://avatars.githubusercontent.com/u/0?v=4", "count": 5 }],
   "first": {
-    "id": "PR_kwDOVVSno88AAAABQuWs7Q", "repo": "Conty-App/conty-lp", "number": 31,
+    "id": "PR_kwDOVVSno88AAAABQuWs7Q", "repo": "acme/landing", "number": 31,
     "draft": false, "state": "open", "head": "feat/hero-com-logos-reais-das-redes", "base": "main",
     "ci": "none", "review": null, "mergeable": "mergeable", "additions": 567, "deletions": 42,
     "comments": 0, "labels": [], "updatedAt": "2026-11-20T18:27:19Z", "mergedAt": null, "linear": null
@@ -67,7 +67,7 @@ Cada issue traz `pr` (`{ repo, number, title, url, state, draft, ci, review }`) 
 { "mergeState": "clean", "mergeMethods": ["squash", "merge", "rebase"], "defaultMergeMethod": "merge", "deleteBranchOnMerge": false, "viewerIsAuthor": true, "fileCount": 8, "commitCount": 8, "checks": [] }
 ```
 
-Índice de PR por issue: `CTY-1318 → { repo: "Conty-App/Conty-api", number: 1215, state: "merged", ci: "success" }`.
+Índice de PR por issue: `ENG-1318 → { repo: "acme/api", number: 1215, state: "merged", ci: "success" }`.
 
 As respostas do Linear usadas pelo servidor (`list_issues` com `fields`, `list_issue_statuses`, `get_issue`, `list_comments`) foram conferidas pelo runelay com dados reais do time CTY.
 
@@ -75,7 +75,7 @@ As respostas do Linear usadas pelo servidor (`list_issues` com `fields`, `list_i
 
 ### Linear
 
-- `GET /linear/views`: cada visão traz `icon` e `color`. Times trazem o `icon` do Linear (emoji `:nome:` ou nome de ícone como `Rocket`); o MCP do Linear não devolve cor de time nem ícone/cor de visão salva, e emoji próprio do workspace (`:many:`) não tem imagem pelo MCP, então o app mostra a inicial na cor do Linear. Nova família `project:<uuid>` com os projetos ativos (não concluídos nem cancelados), com `icon`, `color` e `summary` em `description`.
+- `GET /linear/views`: cada visão traz `icon` e `color`. Times trazem o `icon` do Linear (emoji `:nome:` ou nome de ícone como `Rocket`); o MCP do Linear não devolve cor de time nem ícone/cor de visão salva, e emoji próprio do workspace (`:acme:`) não tem imagem pelo MCP, então o app mostra a inicial na cor do Linear. Nova família `project:<uuid>` com os projetos ativos (não concluídos nem cancelados), com `icon`, `color` e `summary` em `description`.
 - `GET /linear/labels`: `{ labels: [{ id, name, color }] }`, sem etiquetas aposentadas, um nome por etiqueta.
 - `GET /linear/projects`: `{ projects: [{ id, name, icon, color, url, summary, state, stateType }] }`.
 - `GET /linear/users`: `{ users: [{ id, name, displayName, email, avatarUrl }] }` (ativos, cache de 10 min). O `list_users` do MCP traz `avatarUrl` só de quem subiu foto; as issues e comentários trazem só o nome, então o app casa pelo nome, `displayName` ou e-mail e cai nas iniciais sem foto.

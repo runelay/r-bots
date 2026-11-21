@@ -58,7 +58,7 @@ Escrita em `/simulators/**` e `/tests/**` só para o dono (v51). O token interno
 ### Execução de teste e evento `test.result`
 
 ```json
-{"id":"tst_162b61a744","kind":"maestro","title":"abre-o-app.yaml","target":"iPhone 17 Pro · iOS 26.5","status":"passed","attempt":1,"startedAt":"…","durationMs":…,"steps":[…],"error":null,"screenshot":true,"artifacts":["log.txt"],"botId":"engenheiro-de-software","sessionId":"wrun_…","path":".maestro/abre-o-app.yaml"}
+{"id":"tst_162b61a744","kind":"maestro","title":"abre-o-app.yaml","target":"iPhone 17 Pro · iOS 26.5","status":"passed","attempt":1,"startedAt":"…","durationMs":…,"steps":[…],"error":null,"screenshot":true,"artifacts":["log.txt"],"botId":"dev","sessionId":"wrun_…","path":".maestro/abre-o-app.yaml"}
 ```
 
 `status`: `running` → `passed`, `failed` ou `error` (não rodou). Cada mudança sai como `test.result` na conversa que pediu o teste (`data` = a execução). O app mostra um card por execução (id `test-<id>`): passos com ✓/✗, miniatura do print, duração, "Rodar de novo" e "Detalhes" (painel `kind:"test"` com passos, log completo, vídeo e trace). Dados em `<dados>/tests/<id>/`.
@@ -80,10 +80,10 @@ Escrita em `/simulators/**` e `/tests/**` só para o dono (v51). O token interno
 
 ### Limitações
 
-- O app precisa ser compatível com o binário que está no simulador: Expo Go só serve para projeto sem módulo nativo próprio e na mesma versão do SDK; projeto com módulos nativos (o conty3.0 usa Intercom e OneSignal) precisa de um dev client compilado do mesmo código nativo.
+- O app precisa ser compatível com o binário que está no simulador: Expo Go só serve para projeto sem módulo nativo próprio e na mesma versão do SDK; projeto com módulos nativos (o mobile-app usa Intercom e OneSignal) precisa de um dev client compilado do mesmo código nativo.
 - Android: lista e liga AVDs; sem `platform-tools` não desliga. Não há espelho nem Maestro testado no Android.
 - Dispositivo físico (fase 3) não foi feito. O caminho seria `xcrun devicectl list devices` e `devicectl device process launch` para iPhone pareado por USB ou Wi-Fi, com a ponte do Metro no Mac e o iPhone na mesma rede (ou `localhost` por `iproxy`), e espelho por QuickTime/`AVCaptureDevice` de tela do iOS.
-- Specs do conty-test não rodam por aqui: o framework de lá depende de 1Password (`op run`) e de agentes próprios.
+- Specs do e2e-tests não rodam por aqui: o framework de lá depende de 1Password (`op run`) e de agentes próprios.
 
 ### Verificado
 
@@ -95,15 +95,15 @@ Servidor de produção (`servers-6` a `servers-8`), app instalado a partir de `~
 {"devices":[{"udid":"5FBF3402-6D35-4B41-ACCF-8B61CF334724","name":"iPhone 17 Pro","runtime":"iOS 26.5","state":"Shutdown","platform":"ios"},{"udid":"avd:Medium_Phone","name":"Medium Phone","runtime":"Android","state":"Shutdown","platform":"android"}],"android":{"sdk":true,"adb":true},"maestro":{"installed":true,"version":"2.12.1"}}
 ```
 
-Turno real do Engenheiro de Software: `simulator_list` → `{"devices":2}`, `server_list`, `simulator_boot` → `{"udid":"5FBF3402-…","state":"Booted"}`, `simulator_screenshot` → `{"width":505,"height":1100}`. O primeiro `simulator_open_expo` falhou com "Simulator device failed to open conty://expo-development-client/…" porque o simulador tinha só o build Release (sem dev launcher).
+Turno real do Dev: `simulator_list` → `{"devices":2}`, `server_list`, `simulator_boot` → `{"udid":"5FBF3402-…","state":"Booted"}`, `simulator_screenshot` → `{"width":505,"height":1100}`. O primeiro `simulator_open_expo` falhou com "Simulator device failed to open myapp://expo-development-client/…" porque o simulador tinha só o build Release (sem dev launcher).
 
 Ponte: `POST /simulators/open-expo {"server":"dev_fda47f5695","client":"go"}` → `{"ok":true,"url":"exp://127.0.0.1:5310","localPort":5310,"client":"go"}`; no Mac, `lsof` mostra o app r/bots em `127.0.0.1:5310` e `curl -H "expo-platform: ios" http://127.0.0.1:5310/` devolve o manifest do Metro da VPS (`launchAsset.url` em `http://127.0.0.1:5310/…`). O Expo Go do SDK 58 recusou o projeto do SDK 57, e o do SDK 57 carregou o bundle (`iOS Bundled 31282ms … (4068 modules)`) e caiu em módulo nativo (Intercom).
 
-Com um dev client Debug compilado do commit `7067247` do conty3.0 e o Metro numa worktree desse commit (`.env` ligado do checkout principal): `{"ok":true,"url":"conty://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A5313&disableOnboarding=1","localPort":5313,"client":"dev"}`, `iOS Bundled 35160ms … (3956 modules)` sem erro de app; o app abre na splash e espera a API do `.env` (`http://localhost:8787`), que na VPS é um `workerd` de fora do r/bots.
+Com um dev client Debug compilado do commit `7067247` do mobile-app e o Metro numa worktree desse commit (`.env` ligado do checkout principal): `{"ok":true,"url":"myapp://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A5313&disableOnboarding=1","localPort":5313,"client":"dev"}`, `iOS Bundled 35160ms … (3956 modules)` sem erro de app; o app abre na splash e espera a API do `.env` (`http://localhost:8787`), que na VPS é um `workerd` de fora do r/bots.
 
-`test_maestro` pelo bot com `.maestro/abre-o-app.yaml` (`openLink` do dev client, `extendedWaitUntil` "Conty.*", `takeScreenshot`) → `test.result` `passed`, alvo "iPhone 17 Pro · iOS 26.5", `screenshot:true`. Os passos vieram vazios; o Maestro 2.12 grava `<debug>/<flow>/commands.json` e `takeScreenshot/`, e a leitura foi corrigida para procurar nas subpastas (saída real: `Open conty://… COMPLETED`, `Assert that "Conty.*" is visible… COMPLETED`, `Wait for animation to end… COMPLETED`, `Take screenshot tela-inicial… COMPLETED`).
+`test_maestro` pelo bot com `.maestro/abre-o-app.yaml` (`openLink` do dev client, `extendedWaitUntil` "MyApp.*", `takeScreenshot`) → `test.result` `passed`, alvo "iPhone 17 Pro · iOS 26.5", `screenshot:true`. Os passos vieram vazios; o Maestro 2.12 grava `<debug>/<flow>/commands.json` e `takeScreenshot/`, e a leitura foi corrigida para procurar nas subpastas (saída real: `Open myapp://… COMPLETED`, `Assert that "MyApp.*" is visible… COMPLETED`, `Wait for animation to end… COMPLETED`, `Take screenshot tela-inicial… COMPLETED`).
 
-`test_playwright` pelo bot (spec de login no conty-whitelabel, `server` do Vite) → `failed`: "Executable doesn't exist at /home/app/.cache/ms-playwright/ffmpeg-1013" (vídeo da falha). Corrigido com o ffmpeg na pasta de ferramentas. Repetido com a mesma config que o servidor gera, dentro do container: Chrome 158 abre, passo "abre o app" ok, "vê o formulário de entrada" falha com o print da tela "Alguma coisa deu errado" do whitelabel (a API do `.env.local` não responde daqui), anexos `screenshot`, `video`, `error-context` e `trace`.
+`test_playwright` pelo bot (spec de login no web-app, `server` do Vite) → `failed`: "Executable doesn't exist at /home/app/.cache/ms-playwright/ffmpeg-1013" (vídeo da falha). Corrigido com o ffmpeg na pasta de ferramentas. Repetido com a mesma config que o servidor gera, dentro do container: Chrome 158 abre, passo "abre o app" ok, "vê o formulário de entrada" falha com o print da tela "Alguma coisa deu errado" do web-app (a API do `.env.local` não responde daqui), anexos `screenshot`, `video`, `error-context` e `trace`.
 
 ## v56 (20/11): orçamento de Playwright e contexto por mensagem
 

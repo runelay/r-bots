@@ -19,7 +19,7 @@ Um servidor é um processo filho do servidor dos bots, numa porta livre a partir
 ### Objeto servidor
 
 ```json
-{"id":"dev_1746d5aba5","workspaceId":"prj_38d0fd4a71","kind":"project","name":"conty-api","branch":"feat/overlays-compartilhaveis","path":"/home/<você>/projects/conty-dev/conty-api","cwd":"","command":"npm run dev -- --enable-containers=false --port 5311 --ip 127.0.0.1","tool":"wrangler","script":null,"profileId":"api-dev","startedBy":"user","botId":null,"sessionId":null,"envKeys":["CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_CONTY","CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_MAGALU","CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_SPARK"],"port":5311,"url":"http://localhost:5311","previewPath":"/preview/prj_38d0fd4a71/5311/?t=<token>","status":"running","exitCode":null,"startedAt":"2026-11-20T03:40:28.113Z","endedAt":null}
+{"id":"dev_1746d5aba5","workspaceId":"prj_38d0fd4a71","kind":"project","name":"api","branch":"feat/overlays-compartilhaveis","path":"/home/<você>/projects/work/api","cwd":"","command":"npm run dev -- --enable-containers=false --port 5311 --ip 127.0.0.1","tool":"wrangler","script":null,"profileId":"api-dev","startedBy":"user","botId":null,"sessionId":null,"envKeys":["CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_TENANT_A","CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_TENANT_B","CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE_TENANT_C"],"port":5311,"url":"http://localhost:5311","previewPath":"/preview/prj_38d0fd4a71/5311/?t=<token>","status":"running","exitCode":null,"startedAt":"2026-11-20T03:40:28.113Z","endedAt":null}
 ```
 
 `workspaceId` é o id da tarefa (`kind:"workspace"`) ou `prj_` + hash do caminho (`kind:"project"`). A prévia continua a da v19: `GET {previewPath}` grava o cookie `rb_preview` (HttpOnly, Secure, 12 h) e redireciona para `/`; daí em diante o tráfego fora das rotas da API vai para o servidor. Token errado ou servidor parado → `403`.
@@ -68,7 +68,7 @@ Para todo bot, no MCP `bots`:
 Todas emitem `call.*` como as outras ferramentas. `server_start`, `server_logs`, `server_restart` e `server_stop` também emitem:
 
 ```json
-{"type":"server.card","data":{"serverId":"dev_…","botId":"engenheiro-de-software","server":servidor}}
+{"type":"server.card","data":{"serverId":"dev_…","botId":"dev","server":servidor}}
 ```
 
 O app mostra um card do servidor na conversa (um por servidor, id `server-<serverId>`), com o estado ao vivo vindo do `/status/stream`.
@@ -90,18 +90,18 @@ O app mostra um card do servidor na conversa (um por servidor, id `server-<serve
 
 Servidor de produção (imagem `servers-4`), repositórios reais, 20/11 03:40 UTC:
 
-`POST /servers {"profile":"whitelabel-dev"}` e `{"profile":"api-dev"}` → `202`; comandos `npm run dev -- --port 5310` (vite) e `npm run dev -- --enable-containers=false --port 5311 --ip 127.0.0.1` (wrangler). `ss -ltn`: `[::1]:5310` e `127.0.0.1:5311`.
+`POST /servers {"profile":"web-dev"}` e `{"profile":"api-dev"}` → `202`; comandos `npm run dev -- --port 5310` (vite) e `npm run dev -- --enable-containers=false --port 5311 --ip 127.0.0.1` (wrangler). `ss -ltn`: `[::1]:5310` e `127.0.0.1:5311`.
 
-`GET /servers/scripts?path=…/conty-whitelabel`:
+`GET /servers/scripts?path=…/web-app`:
 
 ```json
-{"name":"conty-whitelabel","path":"/home/<você>/projects/conty-dev/conty-whitelabel","repoPath":"/home/<você>/projects/conty-dev/conty-whitelabel","branch":"feat/desfazer-aprovacao","cwd":"","manager":"npm","scripts":[{"name":"dev","command":"vite","tool":"vite"},{"name":"build","command":"vite build && tsc --noEmit","tool":"vite"},{"name":"preview","command":"vite preview","tool":"vite"},{"name":"test","command":"vitest run","tool":"process"},{"name":"lint","command":"biome check","tool":"process"},{"name":"format","command":"biome check --write","tool":"process"},{"name":"deploy","command":"npm run build && wrangler deploy","tool":"wrangler"}],"envFiles":[".env.local"],"envKeys":["VITE_API_URL","VITE_TENANT_ID"]}
+{"name":"web-app","path":"/home/<você>/projects/work/web-app","repoPath":"/home/<você>/projects/work/web-app","branch":"feat/desfazer-aprovacao","cwd":"","manager":"npm","scripts":[{"name":"dev","command":"vite","tool":"vite"},{"name":"build","command":"vite build && tsc --noEmit","tool":"vite"},{"name":"preview","command":"vite preview","tool":"vite"},{"name":"test","command":"vitest run","tool":"process"},{"name":"lint","command":"biome check","tool":"process"},{"name":"format","command":"biome check --write","tool":"process"},{"name":"deploy","command":"npm run build && wrangler deploy","tool":"wrangler"}],"envFiles":[".env.local"],"envKeys":["VITE_API_URL","VITE_TENANT_ID"]}
 ```
 
 `GET /servers/profiles`:
 
 ```json
-{"profiles":[{"id":"api-dev","cmd":"npm run dev -- --enable-containers=false","cwd":"","name":"api dev","path":"/home/<você>/projects/conty-dev/conty-api","port":null,"script":null},{"id":"whitelabel-dev","cmd":null,"cwd":"","name":"whitelabel dev","path":"/home/<você>/projects/conty-dev/conty-whitelabel","port":null,"script":"dev"}]}
+{"profiles":[{"id":"api-dev","cmd":"npm run dev -- --enable-containers=false","cwd":"","name":"api dev","path":"/home/<você>/projects/work/api","port":null,"script":null},{"id":"web-dev","cmd":null,"cwd":"","name":"web dev","path":"/home/<você>/projects/work/web-app","port":null,"script":"dev"}]}
 ```
 
 `GET /servers/dev_1746d5aba5/logs?lines=3&query=Ready` → `{"server":{…},"lines":["\u001b[32m[wrangler:info]\u001b[39m Ready on \u001b[32mhttp://127.0.0.1:5311\u001b[39m"]}`
@@ -109,7 +109,7 @@ Servidor de produção (imagem `servers-4`), repositórios reais, 20/11 03:40 UT
 `GET /servers/dev_6fa22a0926/logs/stream?lines=2`, primeira linha:
 
 ```json
-{"type":"snapshot","server":{"id":"dev_6fa22a0926","kind":"project","name":"conty-whitelabel","tool":"vite","port":5310,"status":"running","…":"…"},"lines":["  \u001b[32m➜\u001b[39m  \u001b[1mLocal\u001b[22m:   \u001b[36mhttp://localhost:\u001b[1m5310\u001b[22m/\u001b[39m","\u001b[2m  \u001b[32m➜\u001b[39m  \u001b[1mNetwork\u001b[22m\u001b[2m: use \u001b[22m\u001b[1m--host\u001b[22m\u001b[2m to expose\u001b[22m"]}
+{"type":"snapshot","server":{"id":"dev_6fa22a0926","kind":"project","name":"web-app","tool":"vite","port":5310,"status":"running","…":"…"},"lines":["  \u001b[32m➜\u001b[39m  \u001b[1mLocal\u001b[22m:   \u001b[36mhttp://localhost:\u001b[1m5310\u001b[22m/\u001b[39m","\u001b[2m  \u001b[32m➜\u001b[39m  \u001b[1mNetwork\u001b[22m\u001b[2m: use \u001b[22m\u001b[1m--host\u001b[22m\u001b[2m to expose\u001b[22m"]}
 ```
 
 Prévia pelo tailnet: `GET https://<vps>:10447{previewPath}` → `302` para `/` com `rb_preview`; `GET /` com o cookie → HTML do Vite (`/@vite/client`); token errado → `403`. API local: `GET http://127.0.0.1:5311/` → `404` do worker, com `--> GET / 404` no log.
@@ -118,7 +118,7 @@ Erros: `GET /servers/nope` → `400 {"ok":false,"error":"Esse servidor não exis
 
 Antes dos ajustes desta versão, os dois caíram e a lista mostrou `exited` com o motivo no log: o Vite com `TypeError: Class extends value undefined` (binding do rolldown desviado pelo `NAPI_RS_NATIVE_LIBRARY_PATH`) e o wrangler com `it's necessary to set a CLOUDFLARE_API_TOKEN` (login do host fora do `XDG_CONFIG_HOME`); a primeira subida do `api dev` abriu `*:5311` e foi parada à mão, o que levou ao `--ip` por ferramenta e à trava de exposição.
 
-Bot (turno real, Engenheiro de Software, Claude): "use server_list … e server_logs …" → respondeu "Estão no ar o conty-api (wrangler, porta 5311, branch feat/overlays-compartilha…".
+Bot (turno real, Dev, Claude): "use server_list … e server_logs …" → respondeu "Estão no ar o api (wrangler, porta 5311, branch feat/overlays-compartilha…".
 
 ## v51 (20/11): servidores junto com o endurecimento de segurança
 

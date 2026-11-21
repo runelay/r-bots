@@ -2,7 +2,7 @@
 
 ## r/bots: verified protocol
 
-### eve session API (under `sessionBasePath`, e.g. `/bots/lia/eve/v1`)
+### eve session API (under `sessionBasePath`, e.g. `/bots/nina/eve/v1`)
 
 #### Answer an approval
 
@@ -102,7 +102,7 @@ Not done: the optional engine model `"auto"` (Jev picking a cheap or strong mode
 
 ### Mensagem com card de aprovação aberto (bug da resposta duplicada)
 
-Causa: na conversa do Engenheiro de Software a pessoa escreveu "não precisa, eu já alterei, só guarde na memória" enquanto o card do `save_issue` estava aberto. O app manda isso como mensagem nova (fica "na fila"); a pessoa depois clicou Negar; o turno pausado seguiu, salvou a memória e respondeu ("Você tem razão… Guardei a regra…"), e só então a fila rodou a mensagem como turno novo, que respondeu de novo ("Já está guardado…"). Não era voz nem handoff.
+Causa: na conversa do Dev a pessoa escreveu "não precisa, eu já alterei, só guarde na memória" enquanto o card do `save_issue` estava aberto. O app manda isso como mensagem nova (fica "na fila"); a pessoa depois clicou Negar; o turno pausado seguiu, salvou a memória e respondeu ("Você tem razão… Guardei a regra…"), e só então a fila rodou a mensagem como turno novo, que respondeu de novo ("Já está guardado…"). Não era voz nem handoff.
 
 Agora (`apps/server/src/modules/engine/services/engine.service.ts`): mensagem de chat só com texto que chega com o turno pausado em aprovação entra **no mesmo turno**: `delivery.consumed` com o escopo do turno e `steer:true`, cada card aberto fecha com `interaction.settled {outcome:"withdrawn", reason:"message"}` (a ferramenta volta negada), a rodada do provedor é encerrada (o mesmo `onEndRun` da troca de worktree) e o texto que ela ainda soltar é descartado. O turno continua com `resume` da sessão do provedor e o prompt "A pessoa respondeu por mensagem enquanto seu pedido de aprovação estava aberto… numa resposta só"; se o `resume` falhar, roda de novo com o resumo da conversa. Mensagem com anexo, skill, voz, grupo ou rodada de delegado continua indo para a fila. App: card mostra "Respondido por mensagem" e a fase volta para trabalhando.
 
@@ -174,7 +174,7 @@ Depois da resposta acima (`202`):
 {"type":"interaction.settled","data":{"cause":{"responseId":"response_75ff362b-5972-4b78-8b5b-dcf9d3c4832a_0"},"interactionId":"EmSo1B_TMxbuqusS","outcome":"accepted","response":{"answers":[{"questionId":"q1","title":"Qual tom você quer para a mensagem?","optionIds":["other"],"labels":[],"text":"Acolhedor, meio termo","skipped":false},{"questionId":"q2","title":"Para qual canal é a mensagem?","optionIds":["b"],"labels":["E-mail"],"skipped":false}]},"summary":"Respondeu: Acolhedor, meio termo · E-mail"},"scope":{"turnId":"turn_0"}}
 ```
 
-O turno retomou e respondeu com um e-mail ("**Assunto:** Bem-vindo(a) à Conty!…") no tom pedido; `turn.settled outcome:"completed"`. Num pedido vago sem preferência ("monta um plano de lançamento"), o bot não perguntou: decidiu, deixou os campos `[definir]` e disse em uma linha o que faltava.
+O turno retomou e respondeu com um e-mail ("**Assunto:** Bem-vindo(a) à Acme!…") no tom pedido; `turn.settled outcome:"completed"`. Num pedido vago sem preferência ("monta um plano de lançamento"), o bot não perguntou: decidiu, deixou os campos `[definir]` e disse em uma linha o que faltava.
 
 ---
 

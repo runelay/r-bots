@@ -48,10 +48,10 @@ Captured turns (usage per turn):
 | vps:claude | Davi, count tables → "332" | prod_query via MCP | 4 / 92 / 1985 / 2099 |
 | mac:codex | count tables → "332" | prod_query via tailnet MCP | 21110 / 120 / 40960 / 0 |
 | mac:cursor | "responda só: ok" → "ok" | none | 4 / 4 / 8974 / 21637 |
-| vps:claude | Lia: open example.com, snapshot, click → approval → approved → completed | browser_* via MCP, approval in the handler | 8 / 576 / 8617 / 3421 |
+| vps:claude | Nina: open example.com, snapshot, click → approval → approved → completed | browser_* via MCP, approval in the handler | 8 / 576 / 8617 / 3421 |
 | vps:codex (Boss) → vps:claude (Davi) | Boss delegates "quantas tabelas" → "332 tabelas" | `delegate` + Davi's prod_query (`owner.callId` + `origin.agent: davi`) | 16797 / 407 / 14919 / 1099 (sum of both accounts, tagged with the turn's account) |
 
-The live browser refresh was measured during the Lia turn: `/bots/lia/browser` `updatedAt` changed 22 times in 20 s (about once per second, including while the turn was paused for approval) and stopped when the turn settled.
+The live browser refresh was measured during the Nina turn: `/bots/nina/browser` `updatedAt` changed 22 times in 20 s (about once per second, including while the turn was paused for approval) and stopped when the turn settled.
 
 ## v21 (19/11): runner do Mac embutido no app
 
@@ -141,10 +141,10 @@ rm -f ~/Library/Application\ Support/runelay\ bots/runner.token
 Instância separada (`GATEWAY_PORT=2110`, `BOTS_SCHEDULES=off`, banco novo, dono criado), exposta só no tailnet, com o app de teste no Mac:
 
 ```
-POST /devices (pelo app, sessão)          -> registrou "MacBook Air de Anderson (2)", Mac17,3, 26.6.2
+POST /devices (pelo app, sessão)          -> registrou "MacBook Air de Alex", Mac17,3, 26.6.2
 log: mac runner connected (7619b352-…)
 GET /accounts?refresh=1
-  mac:claude ready  "Claude · MacBook Air de Anderson (2)"  device {id:"7619b352-…", name:"MacBook Air de Anderson (2)", connected:true}
+  mac:claude ready  "Claude · MacBook Air de Alex"  device {id:"7619b352-…", name:"MacBook Air de Alex", connected:true}
   mac:codex ready · mac:grok logged_out · mac:cursor ready
 servidor reiniciado -> o app reconectou sozinho
 turno em mac:claude (claude-haiku-5-5): call.requested computer_apps -> call.settled completed (apps do Mac)
@@ -181,9 +181,9 @@ Modelo agora só roda no servidor. Cada login do Claude Code ou do Codex vira um
 
 ```json
 [
-  {"id":"vps:claude","runner":"vps","provider":"claude","label":"Claude AppConty","name":"Claude AppConty","autoName":"Claude AppConty","email":"fer…","plan":"team","configDir":"~/.claude","isDefault":true,"added":false,"status":"ready","models":[{"id":"claude-sonnet-5-5","label":"Sonnet 5.5"}],"detail":"fer… · team","checkedAt":"2026-11-20T03:36:33.779Z"},
-  {"id":"claude-2:claude","runner":"vps","provider":"claude","label":"Claude Anderson","name":"Claude Anderson","autoName":"Claude Anderson","email":"and…","plan":"team","configDir":"~/.claude-2","isDefault":false,"added":false,"status":"ready","models":[…],"detail":"and… · team","checkedAt":"…"},
-  {"id":"vps:codex","runner":"vps","provider":"codex","label":"Codex","name":"Codex","autoName":"Codex","email":"and…","plan":"plus","configDir":"~/.codex","isDefault":true,"added":false,"status":"ready","models":[…],"detail":"Logged in using ChatGPT","checkedAt":"…"},
+  {"id":"vps:claude","runner":"vps","provider":"claude","label":"Claude Trabalho","name":"Claude Trabalho","autoName":"Claude Trabalho","email":"voce…","plan":"team","configDir":"~/.claude","isDefault":true,"added":false,"status":"ready","models":[{"id":"claude-sonnet-5-5","label":"Sonnet 5.5"}],"detail":"fer… · team","checkedAt":"2026-11-20T03:36:33.779Z"},
+  {"id":"claude-2:claude","runner":"vps","provider":"claude","label":"Claude Alex","name":"Claude Alex","autoName":"Claude Alex","email":"alex…","plan":"team","configDir":"~/.claude-2","isDefault":false,"added":false,"status":"ready","models":[…],"detail":"and… · team","checkedAt":"…"},
+  {"id":"vps:codex","runner":"vps","provider":"codex","label":"Codex","name":"Codex","autoName":"Codex","email":"alex…","plan":"plus","configDir":"~/.codex","isDefault":true,"added":false,"status":"ready","models":[…],"detail":"Logged in using ChatGPT","checkedAt":"…"},
   {"id":"vps:grok","runner":"vps","provider":"grok","label":"Grok","name":"Grok","autoName":"Grok","email":null,"plan":null,"configDir":null,"isDefault":true,"added":false,"status":"missing","models":[],"detail":"CLI não instalada nesta máquina.","checkedAt":"…"}
 ]
 ```
@@ -234,10 +234,10 @@ Ordem quando a conta do turno bate o limite **ou está fora do ar** (sem login, 
 
 ### Verificado 20/11 (produção, depois do rebuild)
 
-- `GET /accounts` → `vps:claude` "Claude AppConty" (`~/.claude`, team, padrão) e `claude-2:claude` "Claude Anderson" (`~/.claude-2`, team), `vps:codex` "Codex"; nenhuma conta `mac:*`. Os bots `proxy-codex` (`mac:codex`) e `proxy-cursor` (`mac:cursor`) migraram para `vps:codex` e `vps:claude` (Cursor não está no servidor).
-- Bot de teste em Haiku: turno em `vps:claude` → `model.started.account.label` "Claude AppConty", resposta `APPCONTY`; turno em `claude-2:claude` → "Claude Anderson", resposta `ANDERSON`.
-- Failover real: pasta `~/.claude-falha` sem login adicionada por `POST /accounts/dirs` (`status:"logged_out"`), bot apontando para ela com reserva `vps:codex` → `account.failover` `{"from":"claude-falha:claude","to":"vps:claude","line":"Claude claude-falha fora do ar · continuei com Claude AppConty"}` e resposta `FAILOVER` (foi para a outra Claude, não para o Codex). Pasta e conta removidas depois.
-- `PATCH /accounts/claude-2:claude {"name":"Pessoal"}` → `label:"Pessoal"`, `autoName:"Claude Anderson"`; `{"name":null}` volta. `PATCH /accounts/vps:grok {"isDefault":true}` → 400 `Só contas do Claude e do Codex têm padrão.`; `POST /accounts/dirs {"path":"~/nao-existe"}` → 400; `DELETE /accounts/claude-2:claude` → 400 (achada sozinha).
+- `GET /accounts` → `vps:claude` "Claude Trabalho" (`~/.claude`, team, padrão) e `claude-2:claude` "Claude Alex" (`~/.claude-2`, team), `vps:codex` "Codex"; nenhuma conta `mac:*`. Os bots `proxy-codex` (`mac:codex`) e `proxy-cursor` (`mac:cursor`) migraram para `vps:codex` e `vps:claude` (Cursor não está no servidor).
+- Bot de teste em Haiku: turno em `vps:claude` → `model.started.account.label` "Claude Trabalho", resposta `TRABALHO`; turno em `claude-2:claude` → "Claude Alex", resposta `ALEX`.
+- Failover real: pasta `~/.claude-falha` sem login adicionada por `POST /accounts/dirs` (`status:"logged_out"`), bot apontando para ela com reserva `vps:codex` → `account.failover` `{"from":"claude-falha:claude","to":"vps:claude","line":"Claude claude-falha fora do ar · continuei com Claude Trabalho"}` e resposta `FAILOVER` (foi para a outra Claude, não para o Codex). Pasta e conta removidas depois.
+- `PATCH /accounts/claude-2:claude {"name":"Pessoal"}` → `label:"Pessoal"`, `autoName:"Claude Alex"`; `{"name":null}` volta. `PATCH /accounts/vps:grok {"isDefault":true}` → 400 `Só contas do Claude e do Codex têm padrão.`; `POST /accounts/dirs {"path":"~/nao-existe"}` → 400; `DELETE /accounts/claude-2:claude` → 400 (achada sozinha).
 
 ## v51 (20/11): Mac de membro e identidade do dispositivo
 

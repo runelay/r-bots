@@ -8,7 +8,7 @@
 
 200:
 ```json
-{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T12:18:22.831Z","screenshotPath":"/bots/lia/browser/latest.png"}
+{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T12:18:22.831Z","screenshotPath":"/bots/nina/browser/latest.png"}
 ```
 404 when the bot never opened a page:
 ```json
@@ -28,7 +28,7 @@
 ```json
 {"url":"https://example.com"}
 ```
-→ `{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T13:26:08.948Z","screenshotPath":"/bots/lia/browser/latest.png"}`. No model turn. `400 {"ok":false,"error":"Use uma URL http ou https.","field":"url"}`; `409 {"ok":false,"code":"no_browser","error":"Esse bot não tem navegador."}`; `502` if agent-browser fails.
+→ `{"url":"https://example.com/","title":"Example Domain","updatedAt":"2026-11-19T13:26:08.948Z","screenshotPath":"/bots/nina/browser/latest.png"}`. No model turn. `400 {"ok":false,"error":"Use uma URL http ou https.","field":"url"}`; `409 {"ok":false,"code":"no_browser","error":"Esse bot não tem navegador."}`; `502` if agent-browser fails.
 
 While a turn runs for a bot with `capabilities.browser` (or one of its delegates) that has a page open, the server refreshes `latest.png` and `/browser` state about once per second (skipped while one is in flight), and stops when the turn ends. Every browser action still saves its own print. Poll `/bots/:id/browser` (`updatedAt`) and the PNG at ~1 s during a turn.
 
@@ -45,7 +45,7 @@ While a turn runs for a bot with `capabilities.browser` (or one of its delegates
 
 ### `GET /bots/:id/browser/live` (WebSocket)
 
-`wss://<servidor>:10447/bots/lia/browser/live` (through tailscale serve) or `ws://127.0.0.1:2000/...`. Only for bots with `capabilities.browser`, otherwise the upgrade gets 404. If the bot never opened a page, the server opens `about:blank` at 1280×800 first, so there is always a page.
+`wss://<servidor>:10447/bots/nina/browser/live` (through tailscale serve) or `ws://127.0.0.1:2000/...`. Only for bots with `capabilities.browser`, otherwise the upgrade gets 404. If the bot never opened a page, the server opens `about:blank` at 1280×800 first, so there is always a page.
 
 The server attaches to the bot's agent-browser Chrome through CDP (`agent-browser --session runelay-<botId> get cdp-url`, `Target.attachToTarget` on the open tab) and runs `Page.startScreencast {format:"jpeg", quality:70, maxWidth:1280, maxHeight:800, everyNthFrame:1}`, acking each frame. The screencast runs only while at least one client is connected; the last client leaving stops it.
 
@@ -75,7 +75,7 @@ Client → server (ignored with an `error` message unless `controller` is `"user
 
 `POST /bots/:id/browser/back`, `/forward`, `/reload` → `200 {"url","title","updatedAt","screenshotPath","controller"}` (no model turn, allowed in any control mode because the person sends it); `409 no_browser`; `502` on browser failure. `POST /bots/:id/browser/open` works as in v3 and is also never blocked by control.
 
-### Measured (19/11, no model turns, Node ws client against Lia)
+### Measured (19/11, no model turns, Node ws client against Nina)
 
 - Without control: navigate → `error` "Assuma o controle…".
 - After `control user`: navigate example.com → mouse move/down/up at the link center (633, 798) → state `https://www.iana.org/help/example-domains` "Example Domains" → `back` → `https://example.com/` with `canGoForward:true` → `forward` → iana again.
@@ -129,7 +129,7 @@ Input works only when control is `user` (`POST /bots/:id/browser/control`, share
 
 All desktop tools wait while the user has control (same 120 s rule as the browser).
 
-Verified 19/11 on a test bot `desk-teste`. Lia had been deleted from the app, so she couldn't be used.
+Verified 19/11 on a test bot `desk-teste`. Nina had been deleted from the app, so she couldn't be used.
 - **No model:** the socket gave 20 frames in the first 5 s (1280×800, ~55 KB). Input before taking control was refused. With control: `terminal` opened an xterm, then a click, then typing `echo ok | tee ~/desk-check.txt` and Enter. `/home/runelaybot/desk-check.txt` contained `ok`. 74 frames in 9.1 s = 8.2 fps.
 - **One real turn** ("tira um print, clica no meio do Chromium"): `desktop_screenshot`, then `desktop_click(640,400)`. Jev: risk 0.46, confidence 0.54, so a human card; approved, then completed. Reply: "Cliquei no meio da janela do Chromium e ela é só uma página em branco (about:blank), com avisos de "Chrome for Testing" e do flag --no-sandbox no topo." So the model saw the image. Usage 6 / 198 / 10,783 / 6,299.
 
@@ -141,7 +141,7 @@ Verified 19/11 on a test bot `desk-teste`. Lia had been deleted from the app, so
 
 - `capabilities.computer` (boolean; `/meta` lists `{"id":"computer","label":"Seu Mac",…}`).
 - `"computer":{"allowedRoots":["~/Desktop","~/Downloads","~/Documents"]}`: can be changed with PATCH; up to 10 absolute or `~/` paths, no `..`, otherwise 400 `field:"computer.allowedRoots"`. It is passed through to the executor on every call.
-- Enabled for testing only on Lia. Lia is currently soft-deleted, `deletedAt` 14:21, done in the app; I didn't restore her.
+- Enabled for testing only on Nina. Nina is currently soft-deleted, `deletedAt` 14:21, done in the app; I didn't restore her.
 
 ### Wire path
 
@@ -152,7 +152,7 @@ Bot MCP tool → server → `computer.tool` request over the app's `/runner/conn
 - `POST /tools/<tool>` with `Authorization: Bearer <executor.token>` and body `{"args":{…},"context":{"botId","botName","sessionId","allowedRoots":[…]}}`
   - success: `{"ok":true,"result":…}`. Screenshots: `result = {"imageBase64","mimeType","scale",…}`. Act tools may add `screenshotPath`.
   - failure: `{"ok":false,"code":"…","error":"pt-BR message"}`. `code` `stopped` (Parar) or `user_took_over` cancels the turn. The executor enforces roots and workspace limits too.
-- `GET /events` → NDJSON `{"type":"stop"|"user_took_over","botId?":"lia"}`. While a computer-capable bot's turn runs, the server follows this stream through the runner and cancels the turn: `turn.settled {"outcome":"cancelled","reason":"A pessoa apertou Parar."|"Você assumiu o computador."}`.
+- `GET /events` → NDJSON `{"type":"stop"|"user_took_over","botId?":"nina"}`. While a computer-capable bot's turn runs, the server follows this stream through the runner and cancels the turn: `turn.settled {"outcome":"cancelled","reason":"A pessoa apertou Parar."|"Você assumiu o computador."}`.
 
 Unavailable (app closed, no token file, executor down): the runner answers `503 {"ok":false,"code":"COMPUTER_UNAVAILABLE","error":"O app r/bots não está disponível no Mac (…)."}`. The tool returns `COMPUTER_UNAVAILABLE: …` to the model, and `call.settled` has `error.code:"COMPUTER_UNAVAILABLE"`. `GET /computer/health` on the server goes through the runner to the executor's `/health`.
 
@@ -177,7 +177,7 @@ A computer-capable bot's system prompt gets a section: prefer `computer_ui_tree`
 
 ### Status 19/11
 
-The executor isn't live yet. `~/Library/Application Support/runelay bots/` doesn't exist on the Mac and nothing listens on 4791, so `/computer/health` and `files_list ~/Downloads` both return `COMPUTER_UNAVAILABLE (sem token do executor)`. No real Lia turn was run.
+The executor isn't live yet. `~/Library/Application Support/runelay bots/` doesn't exist on the Mac and nothing listens on 4791, so `/computer/health` and `files_list ~/Downloads` both return `COMPUTER_UNAVAILABLE (sem token do executor)`. No real Nina turn was run.
 
 ---
 

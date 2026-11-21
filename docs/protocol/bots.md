@@ -14,7 +14,7 @@
   {"id":"davi","name":"Davi","role":"Vigia de produção","accent":"green","sessionBasePath":"/bots/davi/eve/v1",
    "schedules":[{"name":"watch","cron":"*/30 8-22 * * *","timezone":"America/Sao_Paulo","description":"Ronda a cada 30 minutos, das 08:00 às 22:30, procurando problemas óbvios em produção."}],
    "hasBrowser":false},
-  {"id":"lia","name":"Lia","role":"QA e navegador","accent":"pink","sessionBasePath":"/bots/lia/eve/v1",
+  {"id":"nina","name":"Nina","role":"QA e navegador","accent":"pink","sessionBasePath":"/bots/nina/eve/v1",
    "schedules":[],"hasBrowser":true}
 ]
 ```
@@ -32,12 +32,12 @@ Since 19/11 (evening) bots are only data: `data/bots/<id>.json`, created by the 
 ```json
 [{"id":"boss","name":"Boss","role":"Chefe do time","accent":"indigo","glyph":"auto","sessionBasePath":"/bots/boss/eve/v1",
   "schedules":[{"name":"briefing","description":"Briefing dos dias úteis às 08:30, com o retrato de produção do Davi.","cron":"30 8 * * 1-5","timezone":"America/Sao_Paulo","prompt":"Bom dia. Monte o briefing do dia útil. …"}],
-  "hasBrowser":false,"instructions":"# Boss\n\nVocê é o Boss, …","capabilities":{"browser":false,"prodQuery":false,"delegate":["davi","lia"]},
+  "hasBrowser":false,"instructions":"# Boss\n\nVocê é o Boss, …","capabilities":{"browser":false,"prodQuery":false,"delegate":["davi","nina"]},
   "builtIn":true,"createdAt":"2026-11-19T12:56:10.000Z","updatedAt":"2026-11-19T12:56:10.000Z","archivedAt":null,
   "thread":{"sessionId":null,"lastMessage":null,"unread":0}}]
 ```
 
-Built-in accents moved into the v2 palette: Boss `indigo`, Davi `teal` (was `green`), Lia `violet` (was `pink`). `GET /bots/:id` returns one object. `thread.sessionId` is `null` until the thread is created (`GET /bots/:id/thread` or the first schedule run).
+Built-in accents moved into the v2 palette: Boss `indigo`, Davi `teal` (was `green`), Nina `violet` (was `pink`). `GET /bots/:id` returns one object. `thread.sessionId` is `null` until the thread is created (`GET /bots/:id/thread` or the first schedule run).
 
 #### `POST /bots` → 201
 
@@ -113,7 +113,7 @@ Verified 19/11 with one turn: a new bot "Clima Teste" was created with only name
 ### v6.1 (19/11): create with name + glyph + color
 
 - `POST /bots` needs only `name`. `instructions` and `role` are optional. Without instructions, `role` is `"Novo no time"`.
-- `glyph`: any id matching `^[a-z0-9-]{1,40}$` (e.g. `face-07`, default `auto`). Pickable faces are the presets `crown`, `visor`, `antenna` plus `face-1`…`face-11`; the face never comes from the bot id (`auto` = generated from the id hash). Old names are aliases, saved and read as the preset: `boss` → `crown`, `davi` → `visor`, `lia` → `antenna`. Otherwise `400 {"ok":false,"error":"Ícone inválido: use até 40 caracteres de a-z, 0-9 e hífen.","field":"glyph"}`.
+- `glyph`: any id matching `^[a-z0-9-]{1,40}$` (e.g. `face-07`, default `auto`). Pickable faces are the presets `crown`, `visor`, `antenna` plus `face-1`…`face-11`; the face never comes from the bot id (`auto` = generated from the id hash). Old names are aliases, saved and read as the preset: `boss` → `crown`, `davi` → `visor`, `nina` → `antenna`. Otherwise `400 {"ok":false,"error":"Ícone inválido: use até 40 caracteres de a-z, 0-9 e hífen.","field":"glyph"}`.
 - `accent`: `GET /meta` now lists `["white","amber","red","orange","yellow","green","teal","blue","violet","pink","grey"]` (default `blue`). The old names `electric`, `royal`, `sky` and `indigo` are still accepted for existing bots.
 - A bot without instructions runs on a default system prompt: it is new on the team with no job yet; on the first message it introduces itself in one sentence and asks what to do; once told, it configures itself with `set_role`, `update_instructions` (replace), and `add_schedule` / `request_capability` if needed, then confirms in one line.
 - Right after creation the server writes a fixed greeting into the bot's thread, with no model call: `content.completed` `{"kind":"text","partId":"greeting.0","phase":"reply","runId":"greeting","value":"Oi! Eu sou <nome> e acabei de chegar no time. O que você quer que eu faça?","greeting":true}`. The thread's `lastMessage` is the greeting and `unread` is 1. There is no surrounding `turn.started` / `turn.settled`. The first real turn gets the greeting in its conversation summary.
@@ -153,7 +153,7 @@ O bot passa a mudar, por conversa ou voz, o que antes só a tela mudava. As ferr
 | Ferramenta | O que faz | Card |
 |---|---|---|
 | `settings_get({bot?})` | Estado completo do bot (conta e modelo com nome legível, esforço, conta reserva, `autoSwitch`, modo do bot, da conversa e efetivo, cor, rosto, seção, fixado, voz, rotinas com `paused`) e do time (contas com modelos, seções, perfis de servidor, repositórios liberados, segredos só com nome/descrição/sites, integrações, conectores, notificações e microfones, opções válidas) | nunca |
-| `bot_update({bot?, name?, role?, accent?, glyph?, account?, model?, effort?, fallback?, autoSwitch?, voice?, pinned?, section?, permission?, permissionScope?})` | Um só `PATCH` por área: `/bots/:id`, `/bots/:id/sidebar` e, para o próprio modo, a conversa atual (`permissionScope` `conversation`, padrão para o próprio bot) ou o padrão do bot (`bot`, sempre que o alvo é outro bot). Conta e modelo aceitam nome ("Claude Anderson", "Sonnet"); `effort:"auto"` volta ao padrão; `fallback:"off"` desliga a reserva; `section` que não existe é criada; `glyph` só aceita `auto`, `crown`, `visor`, `antenna`, `face-1`…`face-11` | só ao **subir** o modo |
+| `bot_update({bot?, name?, role?, accent?, glyph?, account?, model?, effort?, fallback?, autoSwitch?, voice?, pinned?, section?, permission?, permissionScope?})` | Um só `PATCH` por área: `/bots/:id`, `/bots/:id/sidebar` e, para o próprio modo, a conversa atual (`permissionScope` `conversation`, padrão para o próprio bot) ou o padrão do bot (`bot`, sempre que o alvo é outro bot). Conta e modelo aceitam nome ("Claude Alex", "Sonnet"); `effort:"auto"` volta ao padrão; `fallback:"off"` desliga a reserva; `section` que não existe é criada; `glyph` só aceita `auto`, `crown`, `visor`, `antenna`, `face-1`…`face-11` | só ao **subir** o modo |
 | `bot_archive({bot, archived})` | Arquiva ou restaura um bot | nunca |
 | `section_update({name, section?})` | Cria seção ou renomeia `section` | nunca |
 | `schedule_update({bot?, name, paused?, cron?, timezone?, prompt?, description?, rename?})` | Muda uma rotina existente. `paused:true` tira a rotina do agendador (o job some de `scheduledJobs` e `runFireJob` devolve `{skipped:"paused"}`); `false` devolve | nunca |
@@ -178,7 +178,7 @@ Tudo roda direto, inclusive mudança em outro bot. A exceção: **subir** o modo
 Cada mudança emite, na conversa onde o bot trabalhou, uma linha para o app desenhar:
 
 ```json
-{"type":"settings.changed","data":{"callId":"call_…","botId":"teste-ajustes","by":"bot","area":"bots","areas":["bots","usage"],"text":"Trocou para Claude Anderson · Sonnet 5.5","target":{"id":"teste-ajustes","name":"Teste Ajustes"},"thumbnail":{"kind":"bot","id":"teste-ajustes"},"otherBot":false,"undo":[{"method":"PATCH","path":"/bots/teste-ajustes","body":{"engine":{"account":"vps:claude","model":"claude-sonnet-5-5","effort":null,"autoSwitch":false}}}]}}
+{"type":"settings.changed","data":{"callId":"call_…","botId":"teste-ajustes","by":"bot","area":"bots","areas":["bots","usage"],"text":"Trocou para Claude Alex · Sonnet 5.5","target":{"id":"teste-ajustes","name":"Teste Ajustes"},"thumbnail":{"kind":"bot","id":"teste-ajustes"},"otherBot":false,"undo":[{"method":"PATCH","path":"/bots/teste-ajustes","body":{"engine":{"account":"vps:claude","model":"claude-sonnet-5-5","effort":null,"autoSwitch":false}}}]}}
 ```
 
 - `undo`: passos REST que voltam ao estado anterior, chamados pelo app no botão "Desfazer" com a sessão da pessoa (rotas de dono). Some quando não dá para desfazer (rodar rotina, tirar repositório, integração, conector).
@@ -227,11 +227,11 @@ Seção "Seus ajustes" no prompt de todo bot: pode se configurar e faz direto; c
 
 ### Verificado (20/11, produção, bot de teste "Teste Ajustes", Claude Sonnet 5.5)
 
-- "Em que modelo e conta você está…?" → `settings_get` e a resposta "Sonnet 5.5, conta Claude AppConty, modo Padrão".
-- "Troca para a conta Claude Anderson no Sonnet." → `bot_update {"account":"Claude Anderson","model":"Sonnet 5.5"}`, linha `Trocou para Claude Anderson · Sonnet 5.5`, `GET /bots/teste-ajustes` → `engine.account:"claude-2:claude"`. A volta para "Claude AppConty" rodou já na conta nova (`context.handoff`) e devolveu `engine.account:"vps:claude"`.
+- "Em que modelo e conta você está…?" → `settings_get` e a resposta "Sonnet 5.5, conta Claude Trabalho, modo Padrão".
+- "Troca para a conta Claude Alex no Sonnet." → `bot_update {"account":"Claude Alex","model":"Sonnet 5.5"}`, linha `Trocou para Claude Alex · Sonnet 5.5`, `GET /bots/teste-ajustes` → `engine.account:"claude-2:claude"`. A volta para "Claude Trabalho" rodou já na conta nova (`context.handoff`) e devolveu `engine.account:"vps:claude"`.
 - Rotina criada com `add_schedule` sem card; "Pausa a rotina Ronda de teste." → `schedule_update {"paused":true}`, linha `Pausou a rotina Ronda de teste`, `schedules[0].paused:true` e o log `schedules loaded` sem `schedule.teste-ajustes.Ronda%20de%20teste`; "Retoma" → a chave voltou `@2026-11-20T06:00:00.000Z`.
-- "Quais repositórios estão liberados?" → `settings_get` e a lista conty-api, perf-demo-teste, conty-whitelabel, conty3.0.
-- "Salva um perfil… conty-whitelabel, script dev, porta 4999." → `server_profile_save`, perfil `teste-ajustes-wl` em `GET /servers/profiles`. O passo do "Desfazer" (`DELETE /servers/profiles/teste-ajustes-wl`) → `200 {"ok":true}` e a lista voltou aos três perfis de antes.
+- "Quais repositórios estão liberados?" → `settings_get` e a lista api, perf-demo-teste, web-app, mobile-app.
+- "Salva um perfil… web-app, script dev, porta 4999." → `server_profile_save`, perfil `teste-ajustes-wl` em `GET /servers/profiles`. O passo do "Desfazer" (`DELETE /servers/profiles/teste-ajustes-wl`) → `200 {"ok":true}` e a lista voltou aos três perfis de antes.
 - "Quais segredos existem no cofre?" → `list_secrets` (só nomes: `x-login-senha`, `x-login-usuario`).
 - "Como estão os limites de uso?" → `usage_get` e a tabela das três contas.
 - "Muda seu nome para Teste Ajustes 2 e o rosto para a viseira, na cor verde." → `bot_update {"name":"Teste Ajustes 2","accent":"green","glyph":"visor"}`; o "Desfazer" (`PATCH` com `name`, `accent:"blue"`, `glyph:"auto"`) → 200 e o bot voltou.
