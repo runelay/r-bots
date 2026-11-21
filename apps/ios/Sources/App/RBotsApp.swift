@@ -75,7 +75,7 @@ struct RootView: View {
 }
 
 enum Route: Hashable {
-    case conversation(botID: String)
+    case conversation(botID: String, sessionID: String? = nil)
 }
 
 struct MainView: View {
@@ -88,8 +88,8 @@ struct MainView: View {
             BotListScreen(path: $path, showsSettings: $showsSettings)
                 .navigationDestination(for: Route.self) { route in
                     switch route {
-                    case .conversation(let botID):
-                        BotConversationScreen(botID: botID)
+                    case .conversation(let botID, let sessionID):
+                        BotConversationScreen(botID: botID, sessionID: sessionID)
                     }
                 }
         }
