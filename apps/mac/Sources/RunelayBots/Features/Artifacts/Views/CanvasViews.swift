@@ -342,9 +342,9 @@ struct CanvasEditorView: View {
         .onContinuousHover(coordinateSpace: .named(CanvasGeometry.space)) { phase in
             switch phase {
             case .active(let point):
-                editor.pointer = point
+                editor.hover(at: point)
             case .ended:
-                editor.pointer = nil
+                editor.hover(at: nil)
             }
         }
         .onGeometryChange(for: CGSize.self) { proxy in
@@ -374,7 +374,7 @@ struct CanvasEditorView: View {
         CanvasDotGrid(scale: editor.scale, offset: editor.offset)
             .background(Theme.background)
             .contentShape(Rectangle())
-            .pointerStyle(editor.panning ? .grabActive : nil)
+            .pointerStyle(editor.panning ? .grabActive : .grabIdle)
             .gesture(
                 DragGesture(minimumDistance: 3, coordinateSpace: .named(CanvasGeometry.space))
                     .onChanged { value in
@@ -472,7 +472,6 @@ struct CanvasNodeView: View {
 
     @Environment(\.appReduceMotion) private var reduceMotion
     @FocusState private var focused: Bool
-    @State private var hovering = false
     @State private var appeared = false
 
     var body: some View {
@@ -523,22 +522,27 @@ struct CanvasNodeView: View {
         }
         .frame(width: rect.width, height: rect.height)
         .contentShape(shape)
-        .background {
+        .overlay {
             if selected {
-                RoundedRectangle(cornerRadius: 6 * scale, style: .continuous)
-                    .stroke(Theme.brandAccent, style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
-                    .padding(-7 * scale)
+                Rectangle()
+                    .stroke(Theme.brandAccent, lineWidth: 1.5)
+                    .padding(-Self.outline)
+                    .allowsHitTesting(false)
             }
         }
         .overlay {
-            if (hovering || selected) && !editing && editor.linking == nil && editor.marquee == nil {
-                handles(size: rect.size)
+            if showsPorts(editing: editing) {
+                ports(size: rect.size)
                     .transition(.opacity)
             }
         }
-        .pointerStyle(editing ? .horizontalText : editor.draggingNodes ? .grabActive : .grabIdle)
-        .onHover { hovering = $0 }
-        .springAnimation(value: hovering)
+        .overlay {
+            if selected && editor.selection.count == 1 && !editing && editor.linking == nil && editor.marquee == nil {
+                resizeHandles(size: rect.size)
+            }
+        }
+        .pointerStyle(editing ? .horizontalText : editor.draggingNodes ? .grabActive : .link)
+        .springAnimation(value: editor.hoveredNode == node.id)
         .gesture(
             DragGesture(minimumDistance: 3, coordinateSpace: .named(CanvasGeometry.space))
                 .onChanged { value in
@@ -565,42 +569,101 @@ struct CanvasNodeView: View {
         .position(x: rect.midX, y: rect.midY)
     }
 
-    private func handles(size: CGSize) -> some View {
+    private static let outline: CGFloat = 4
+    private static let portGap: CGFloat = 20
+
+    private func showsPorts(editing: Bool) -> Bool {
+        if let link = editor.linking {
+            return link.from == node.id
+        }
+        return editor.hoveredNode == node.id && !editing && !editor.resizing && !editor.draggingNodes && editor.marquee == nil
+    }
+
+    private func ports(size: CGSize) -> some View {
+        let gap = Self.portGap
         let points = [
-            CGPoint(x: size.width / 2, y: 0),
-            CGPoint(x: size.width, y: size.height / 2),
-            CGPoint(x: size.width / 2, y: size.height),
-            CGPoint(x: 0, y: size.height / 2),
+            CGPoint(x: size.width / 2, y: -gap),
+            CGPoint(x: size.width + gap, y: size.height / 2),
+            CGPoint(x: size.width / 2, y: size.height + gap),
+            CGPoint(x: -gap, y: size.height / 2),
         ]
         return ZStack {
             ForEach(points.indices, id: \.self) { index in
-                CanvasHandle(editor: editor, nodeID: node.id, hovering: $hovering)
+                CanvasHandle(editor: editor, nodeID: node.id)
                     .position(points[index])
+            }
+        }
+        .frame(width: size.width, height: size.height)
+    }
+
+    private func resizeHandles(size: CGSize) -> some View {
+        let o = Self.outline
+        let anchors: [UnitPoint] = [.topLeading, .top, .topTrailing, .trailing, .bottomTrailing, .bottom, .bottomLeading, .leading]
+        return ZStack {
+            ForEach(anchors.indices, id: \.self) { index in
+                let anchor = anchors[index]
+                CanvasResizeHandle(editor: editor, nodeID: node.id, anchor: anchor)
+                    .position(x: -o + anchor.x * (size.width + o * 2), y: -o + anchor.y * (size.height + o * 2))
             }
         }
         .frame(width: size.width, height: size.height)
     }
 }
 
+struct CanvasResizeHandle: View {
+    let editor: CanvasEditor
+    let nodeID: String
+    let anchor: UnitPoint
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.white)
+            .overlay(Rectangle().stroke(Theme.brandAccent, lineWidth: 1.5))
+            .frame(width: 8, height: 8)
+            .frame(width: 14, height: 14)
+            .contentShape(Rectangle())
+            .pointerStyle(.frameResize(position: position))
+            .gesture(
+                DragGesture(minimumDistance: 1, coordinateSpace: .named(CanvasGeometry.space))
+                    .onChanged { value in
+                        editor.beginResize(nodeID)
+                        editor.resize(handle: anchor, by: value.translation, keepRatio: NSEvent.modifierFlags.contains(.shift))
+                    }
+                    .onEnded { _ in
+                        editor.endResize()
+                    }
+            )
+            .help("Arraste para redimensionar, Shift mantém a proporção")
+    }
+
+    private var position: FrameResizePosition {
+        switch anchor {
+        case .topLeading: .topLeading
+        case .top: .top
+        case .topTrailing: .topTrailing
+        case .trailing: .trailing
+        case .bottomTrailing: .bottomTrailing
+        case .bottom: .bottom
+        case .bottomLeading: .bottomLeading
+        default: .leading
+        }
+    }
+}
+
 struct CanvasHandle: View {
     let editor: CanvasEditor
     let nodeID: String
-    @Binding var hovering: Bool
 
     @State private var over = false
 
     var body: some View {
         Circle()
-            .fill(Theme.brandAccent)
-            .frame(width: over ? 12 : 9, height: over ? 12 : 9)
-            .frame(width: 22, height: 22)
+            .fill(Theme.background)
+            .overlay(Circle().stroke(Theme.brandAccent, lineWidth: 1.5))
+            .frame(width: over ? 10 : 7, height: over ? 10 : 7)
+            .frame(width: 16, height: 16)
             .contentShape(Circle())
-            .onHover { inside in
-                over = inside
-                if inside {
-                    hovering = true
-                }
-            }
+            .onHover { over = $0 }
             .springAnimation(value: over)
             .pointerStyle(.rectSelection)
             .gesture(
@@ -740,6 +803,7 @@ struct CanvasToolbar: View {
             }
             .disabled(!hasNodes)
             .opacity(hasNodes ? 1 : 0.4)
+            .clickable()
 
             GlassMenuButton(help: "Cor", items: {
                 [GlassMenuItem("Cor da forma", systemImage: "circle.dashed") { editor.setColor(nil) }]
@@ -753,6 +817,7 @@ struct CanvasToolbar: View {
             }
             .disabled(!hasNodes)
             .opacity(hasNodes ? 1 : 0.4)
+            .clickable()
 
             CanvasToolButton(systemImage: editor.edgesDashed == true ? "line.diagonal" : "ellipsis", help: editor.edgesDashed == true ? "Linha contínua" : "Linha tracejada") {
                 editor.setEdgeStyle(dashed: editor.edgesDashed != true)
@@ -782,6 +847,7 @@ struct CanvasToolbar: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(PressableButtonStyle())
+            .clickable()
             .disabled(editor.doc.nodes.isEmpty || editor.arranging)
             .help("Reorganizar o canvas")
 
@@ -800,6 +866,7 @@ struct CanvasToolbar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle())
+            .clickable()
             .help("Ajustar à tela (⌘0)")
             CanvasToolButton(systemImage: "plus", help: "Aumentar zoom (⌘+)") {
                 editor.zoomStep(1)
@@ -852,6 +919,7 @@ struct CanvasToolButton: View {
                 .background(hovering ? Theme.hover : Color.clear, in: Circle())
         }
         .buttonStyle(PressableButtonStyle())
+        .clickable()
         .onHover { hovering = $0 }
         .springAnimation(value: hovering)
         .help(help)

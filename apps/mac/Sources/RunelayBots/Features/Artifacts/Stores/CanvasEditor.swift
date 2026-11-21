@@ -163,6 +163,7 @@ final class CanvasEditor {
     private(set) var arranging = false
     private(set) var draggingNodes = false
     private(set) var panning = false
+    private(set) var resizing = false
 
     @ObservationIgnored private let client: BotsClient
     @ObservationIgnored private var undoStack: [CanvasDoc] = []
@@ -170,6 +171,7 @@ final class CanvasEditor {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var dragOrigins: [String: CGPoint]?
     @ObservationIgnored private var panOrigin: CGSize?
+    @ObservationIgnored private var resizeOrigin: CanvasNode?
     @ObservationIgnored private var marqueeBase: Set<String> = []
     @ObservationIgnored private var zoomBase: CGFloat?
     @ObservationIgnored private var fitted = false
@@ -206,12 +208,14 @@ final class CanvasEditor {
         var remote = remote
         for index in remote.nodes.indices {
             let node = remote.nodes[index]
-            let size = Self.size(for: node.text, shape: node.shape)
-            if abs(size.width - node.w) > 1 || abs(size.height - node.h) > 1 {
-                remote.nodes[index].w = size.width
-                remote.nodes[index].h = size.height
-                remote.nodes[index].x = (node.center.x - size.width / 2).rounded()
-                remote.nodes[index].y = (node.center.y - size.height / 2).rounded()
+            let minimum = Self.minimumSize(for: node.text, shape: node.shape)
+            if node.w < minimum.width - 1 || node.h < minimum.height - 1 {
+                let w = max(node.w, minimum.width)
+                let h = max(node.h, minimum.height)
+                remote.nodes[index].w = w
+                remote.nodes[index].h = h
+                remote.nodes[index].x = (node.center.x - w / 2).rounded()
+                remote.nodes[index].y = (node.center.y - h / 2).rounded()
             }
         }
         let change = {
@@ -466,9 +470,13 @@ final class CanvasEditor {
             if let node = doc.node(id), node.text != text {
                 mutate { doc in
                     guard let index = doc.nodes.firstIndex(where: { $0.id == id }) else { return }
+                    let current = doc.nodes[index]
+                    let auto = Self.size(for: current.text, shape: current.shape)
+                    let fitted = abs(auto.width - current.w) <= 1 && abs(auto.height - current.h) <= 1
                     doc.nodes[index].text = text
-                    let size = Self.size(for: text, shape: doc.nodes[index].shape)
-                    let center = doc.nodes[index].center
+                    let minimum = Self.minimumSize(for: text, shape: current.shape)
+                    let size = fitted ? Self.size(for: text, shape: current.shape) : CGSize(width: max(current.w, minimum.width), height: max(current.h, minimum.height))
+                    let center = current.center
                     doc.nodes[index].w = size.width
                     doc.nodes[index].h = size.height
                     doc.nodes[index].x = center.x - doc.nodes[index].w / 2
@@ -538,6 +546,24 @@ final class CanvasEditor {
             h = max(56, content.height + 28)
         }
         return CGSize(width: w.rounded(), height: h.rounded())
+    }
+
+    static func minimumSize(for text: String, shape: String) -> CGSize {
+        let content = textSize(text)
+        var w: CGFloat
+        var h: CGFloat
+        switch shape {
+        case "diamond":
+            w = content.width / 0.66
+            h = content.height / 0.6
+        case "ellipse":
+            w = content.width / 0.8
+            h = content.height / 0.8
+        default:
+            w = content.width + 32
+            h = content.height + 20
+        }
+        return CGSize(width: max(40, w.rounded(.up)), height: max(28, h.rounded(.up)))
     }
 
     func obstacles(except ids: Set<String>) -> [CGRect] {
@@ -832,6 +858,68 @@ final class CanvasEditor {
         dragOrigins = nil
         draggingNodes = false
         scheduleSave()
+    }
+
+    func beginResize(_ id: String) {
+        guard resizeOrigin == nil, let node = doc.node(id) else { return }
+        commitEditing()
+        selection = [id]
+        selectedEdges.removeAll()
+        undoStack.append(doc)
+        redoStack.removeAll()
+        refreshHistory()
+        resizeOrigin = node
+        resizing = true
+    }
+
+    func resize(handle: UnitPoint, by translation: CGSize, keepRatio: Bool) {
+        guard let origin = resizeOrigin, let index = doc.nodes.firstIndex(where: { $0.id == origin.id }) else { return }
+        let minimum = Self.minimumSize(for: origin.text, shape: origin.shape)
+        let dx = translation.width / scale
+        let dy = translation.height / scale
+        var w = origin.w
+        var h = origin.h
+        if handle.x == 0 {
+            w -= dx
+        } else if handle.x == 1 {
+            w += dx
+        }
+        if handle.y == 0 {
+            h -= dy
+        } else if handle.y == 1 {
+            h += dy
+        }
+        if keepRatio, handle.x != 0.5, handle.y != 0.5, origin.h > 0 {
+            let ratio = origin.w / origin.h
+            if w / ratio > h {
+                h = w / ratio
+            } else {
+                w = h * ratio
+            }
+        }
+        w = min(1200, max(minimum.width, w)).rounded()
+        h = min(900, max(minimum.height, h)).rounded()
+        doc.nodes[index].w = w
+        doc.nodes[index].h = h
+        doc.nodes[index].x = handle.x == 0 ? origin.x + origin.w - w : origin.x
+        doc.nodes[index].y = handle.y == 0 ? origin.y + origin.h - h : origin.y
+    }
+
+    func endResize() {
+        guard resizeOrigin != nil else { return }
+        resizeOrigin = nil
+        resizing = false
+        scheduleSave()
+    }
+
+    func hover(at point: CGPoint?) {
+        pointer = point
+        let near = point.flatMap { point in
+            doc.nodes.last { screenRect($0).insetBy(dx: -30, dy: -30).contains(point) }?.id
+        }
+        if hoveredNode != near {
+            hoveredNode = near
+        }
     }
 
     func pan(by translation: CGSize) {
