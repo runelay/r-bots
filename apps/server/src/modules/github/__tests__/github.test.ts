@@ -1,6 +1,14 @@
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { request, startTestServer, type TestServer } from "../../../../test/helpers";
-import { type GhOutput, GitHubError, graphql, rest, setGhRunner } from "../services/gh-client.service";
+import { afterAll, afterEach, beforeAll, describe, expect, type Mock, spyOn, test } from "bun:test";
+import { fakeProcesses, request, startTestServer, type TestServer } from "../../../../test/helpers";
+import {
+  fetchGitHubAsset,
+  type GhOutput,
+  GitHubError,
+  graphql,
+  isGitHubAsset,
+  rest,
+  setGhRunner,
+} from "../services/gh-client.service";
 import {
   checkOf,
   ciOf,
@@ -474,5 +482,145 @@ describe("links to Linear", () => {
     handler = () => ({ code: 1, stdout: "", stderr: "HTTP 401" });
     clearGitHubCache();
     expect(await linkForIssue("ENG-12", null)).toBeNull();
+  });
+});
+
+describe("default gh runner", () => {
+  test("runs the configured gh binary with prompts disabled and the query on stdin", async () => {
+    setGhRunner(null);
+    const processes = fakeProcesses(() => ({ stdout: JSON.stringify({ data: { viewer: { login: "me" } } }) }));
+    try {
+      expect(await graphql<{ viewer: { login: string } }>("query { viewer { login } }")).toEqual({
+        viewer: { login: "me" },
+      });
+      const [call] = processes.calls;
+      expect(call.command).toBe(process.env.CODE_GH_BIN as string);
+      expect(call.args).toEqual(["api", "graphql", "--input", "-"]);
+      expect(call.options.env).toMatchObject({ GH_PROMPT_DISABLED: "1", NO_COLOR: "1" });
+    } finally {
+      processes.restore();
+      install();
+    }
+  });
+});
+
+describe("GitHub assets", () => {
+  type AssetReply = { status: number; headers?: Record<string, string>; body?: BodyInit | null };
+  const seen: Array<{ url: string; headers: Record<string, string> }> = [];
+  let assets: (url: string) => AssetReply = () => ({ status: 404 });
+  let fetchSpy: Mock<typeof fetch> | null = null;
+  const original = globalThis.fetch;
+
+  function fakeGitHub() {
+    fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      const target = input instanceof Request ? input.url : String(input);
+      if (new URL(target).hostname === "127.0.0.1") return original(input, init);
+      seen.push({ url: target, headers: { ...(init?.headers as Record<string, string>) } });
+      const reply = assets(target);
+      return new Response(reply.body ?? null, { status: reply.status, headers: reply.headers });
+    }) as typeof fetch);
+  }
+
+  afterEach(() => {
+    fetchSpy?.mockRestore();
+    fetchSpy = null;
+    seen.length = 0;
+    assets = () => ({ status: 404 });
+  });
+
+  test("accepts only GitHub asset addresses", () => {
+    expect(isGitHubAsset("https://github.com/user-attachments/assets/abc")).toBe(true);
+    expect(isGitHubAsset("https://github.com/acme/api/assets/123/abc")).toBe(true);
+    expect(isGitHubAsset("https://raw.githubusercontent.com/acme/api/main/a.png")).toBe(true);
+    expect(isGitHubAsset("https://github.com/acme/api/pull/7")).toBe(false);
+    expect(isGitHubAsset("http://raw.githubusercontent.com/a.png")).toBe(false);
+    expect(isGitHubAsset("https://evil.example.com/a.png")).toBe(false);
+    expect(isGitHubAsset("not a url")).toBe(false);
+  });
+
+  test("serves an attachment through the route, following the signed redirect", async () => {
+    handler = (call) => (call.args[0] === "auth" ? { code: 0, stdout: "gho_secret\n", stderr: "" } : ok({}));
+    assets = (url) =>
+      url.startsWith("https://github.com/")
+        ? { status: 302, headers: { location: "https://private-user-images.githubusercontent.com/1/a.png?jwt=x" } }
+        : { status: 200, headers: { "content-type": "image/png" }, body: new Uint8Array([1, 2, 3]) };
+    fakeGitHub();
+    const target = encodeURIComponent("https://github.com/user-attachments/assets/abc");
+    const reply = await fetch(`${server.url}/github/asset?url=${target}`);
+    expect(reply.status).toBe(200);
+    expect(reply.headers.get("content-type")).toBe("image/png");
+    expect(reply.headers.get("cache-control")).toBe("private, max-age=3600");
+    expect([...new Uint8Array(await reply.arrayBuffer())]).toEqual([1, 2, 3]);
+    expect(seen.map((item) => item.url)).toEqual([
+      "https://github.com/user-attachments/assets/abc",
+      "https://private-user-images.githubusercontent.com/1/a.png?jwt=x",
+    ]);
+    expect(seen[0].headers.authorization).toBe("token gho_secret");
+    expect(seen[1].headers.authorization).toBeUndefined();
+  });
+
+  test("refuses addresses outside GitHub without fetching", async () => {
+    fakeGitHub();
+    const reply = await request<{ error: string }>(
+      `/github/asset?url=${encodeURIComponent("https://evil.example.com/a.png")}`,
+    );
+    expect(reply.status).toBe(400);
+    expect(reply.body.error).toBe("Endereço de imagem inválido.");
+    expect((await request("/github/asset")).status).toBe(400);
+    expect(seen).toHaveLength(0);
+  });
+
+  test("sends no token when gh is not logged in and follows S3 redirects", async () => {
+    handler = () => ({ code: 1, stdout: "", stderr: "not logged in" });
+    assets = (url) =>
+      url.includes("amazonaws")
+        ? { status: 200, headers: { "content-type": "video/mp4" }, body: "v" }
+        : { status: 301, headers: { location: "https://bucket.s3.amazonaws.com/v.mp4" } };
+    fakeGitHub();
+    const asset = await fetchGitHubAsset("https://github.com/user-attachments/assets/v");
+    expect(asset.type).toBe("video/mp4");
+    expect(new TextDecoder().decode(asset.data)).toBe("v");
+    expect(seen[0].headers.authorization).toBeUndefined();
+  });
+
+  test("fails when GitHub does not deliver an image", async () => {
+    const url = "https://raw.githubusercontent.com/acme/api/main/a.png";
+    fakeGitHub();
+    const cases: Array<[AssetReply | ((target: string) => AssetReply), number, string]> = [
+      [{ status: 404 }, 404, "O GitHub não entregou essa imagem."],
+      [
+        { status: 200, headers: { "content-type": "text/html" }, body: "<html>" },
+        502,
+        "O GitHub não entregou essa imagem.",
+      ],
+      [{ status: 500, headers: { "content-type": "image/png" } }, 502, "O GitHub não entregou essa imagem."],
+      [{ status: 302 }, 502, "O GitHub não entregou essa imagem."],
+      [
+        { status: 302, headers: { location: "https://evil.example.com/x.png" } },
+        502,
+        "O GitHub não entregou essa imagem.",
+      ],
+      [{ status: 302, headers: { location: "/acme/api/main/b.png" } }, 502, "O GitHub não entregou essa imagem."],
+      [
+        { status: 200, headers: { "content-type": "image/png", "content-length": String(16 * 1024 * 1024) } },
+        413,
+        "Imagem grande demais.",
+      ],
+      [
+        { status: 200, headers: { "content-type": "image/png" }, body: new Uint8Array(15 * 1024 * 1024 + 1) },
+        413,
+        "Imagem grande demais.",
+      ],
+    ];
+    for (const [reply, status, message] of cases) {
+      assets = typeof reply === "function" ? reply : () => reply;
+      const error = await fetchGitHubAsset(url).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(GitHubError);
+      expect(error).toMatchObject({ status, message });
+    }
+    expect(seen.filter((item) => item.url.endsWith("/b.png"))).toHaveLength(4);
   });
 });
