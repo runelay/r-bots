@@ -1,4 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
 import { env } from "../../../config/env";
 import { redactText } from "../../../shared/redact";
@@ -6,8 +9,15 @@ import type { Principal } from "../../auth/services/auth.middleware";
 import { authorize } from "../../auth/services/policy.service";
 import { latestFailureTtlMs, latestTtlMs } from "../../providers/constants/providers.constants";
 import { notesLimit } from "../constants/server-version.constants";
+import { updatePickupMs, updateStaleMs } from "../constants/server-version.constants";
+import {
+  parseUpdateStatus,
+  readServerUpdate,
+  requestServerUpdate,
+  useServerUpdateDeps,
+} from "../services/server-update.service";
 import { ghAuthToken, normalizeVersion, serverVersion, useServerVersionDeps } from "../services/server-version.service";
-import type { ReleaseSettings, ServerVersion, ServerVersionDeps } from "../types/server-version.types";
+import type { ReleaseSettings, ServerUpdate, ServerVersion, ServerVersionDeps } from "../types/server-version.types";
 
 interface Call {
   url: string;
@@ -17,6 +27,8 @@ interface Call {
 let calls: Call[] = [];
 let clock = 1_000_000;
 let reply: () => Response | Promise<Response> = () => Response.json({});
+let updateDir = "";
+let runningTurns = 0;
 
 const stableSettings: ReleaseSettings = { version: "0.2.0", channel: "stable", token: null, repo: "runelay/r-bots" };
 
@@ -45,17 +57,43 @@ function useFakes(settings: Partial<ReleaseSettings> = {}, overrides: Partial<Se
   });
 }
 
-afterEach(() => {
+async function useUpdateDir() {
+  updateDir = await mkdtemp(join(tmpdir(), "rbots-update-"));
+  runningTurns = 0;
+  let ids = 0;
+  useServerUpdateDeps({
+    dir: () => updateDir,
+    runningTurns: async () => runningTurns,
+    now: () => clock,
+    newId: () => `req-${++ids}`,
+  });
+}
+
+async function writeUpdate(file: string, value: unknown) {
+  await writeFile(join(updateDir, file), typeof value === "string" ? value : JSON.stringify(value));
+}
+
+async function readUpdate<T>(file: string) {
+  return JSON.parse(await readFile(join(updateDir, file), "utf8")) as T;
+}
+
+const agent = { version: "0.2.0", installedAt: "2026-11-21T10:00:00Z" };
+
+afterEach(async () => {
   calls = [];
   clock = 1_000_000;
   reply = () => Response.json({});
   useServerVersionDeps(null);
+  useServerUpdateDeps(null);
+  if (updateDir) await rm(updateDir, { recursive: true, force: true });
+  updateDir = "";
 });
 
 describe("server version", () => {
   test("reads the stable latest release and offers the update", async () => {
     reply = () => Response.json(release("v0.3.0"));
     useFakes();
+    await useUpdateDir();
     expect(await serverVersion()).toEqual({
       current: "0.2.0",
       channel: "stable",
@@ -65,6 +103,7 @@ describe("server version", () => {
       publishedAt: "2026-11-20T12:00:00Z",
       notes: "notas de v0.3.0",
       updateCommand: "rbots update",
+      update: { available: false, state: "idle" },
     });
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe("https://api.github.com/repos/runelay/r-bots/releases/latest");
@@ -233,6 +272,161 @@ describe("server version", () => {
   });
 });
 
+describe("server update", () => {
+  test("without the host agent the update is not available and the request is refused", async () => {
+    await useUpdateDir();
+    expect(await readServerUpdate()).toEqual({ available: false, state: "idle" });
+    expect(await requestServerUpdate(false)).toEqual({ ok: false, status: 422, code: "agent_missing" });
+    expect(await readdir(updateDir)).toEqual([]);
+  });
+
+  test("writes the request atomically and reports it as queued", async () => {
+    await useUpdateDir();
+    await writeUpdate("agent.json", agent);
+    expect(await readServerUpdate()).toEqual({ available: true, state: "idle" });
+    expect(await requestServerUpdate(false)).toEqual({ ok: true, update: { available: true, state: "queued" } });
+    expect(await readUpdate("request.json")).toEqual({
+      id: "req-1",
+      requestedAt: new Date(clock).toISOString(),
+      force: false,
+    });
+    expect((await readdir(updateDir)).sort()).toEqual(["agent.json", "request.json"]);
+    expect(await readServerUpdate()).toEqual({ available: true, state: "queued" });
+  });
+
+  test("refuses a second request while one is queued or running", async () => {
+    await useUpdateDir();
+    await writeUpdate("agent.json", agent);
+    const [first, second] = await Promise.all([requestServerUpdate(false), requestServerUpdate(false)]);
+    expect(first.ok).toBe(true);
+    expect(second).toEqual({ ok: false, status: 409, code: "update_in_progress" });
+    await rm(join(updateDir, "request.json"));
+    await writeUpdate("status.json", {
+      id: "req-1",
+      state: "running",
+      step: "Baixando a 0.3.0",
+      from: "0.2.0",
+      to: "0.3.0",
+      updatedAt: new Date(clock).toISOString(),
+    });
+    expect(await readServerUpdate()).toEqual({
+      available: true,
+      state: "running",
+      step: "Baixando a 0.3.0",
+      from: "0.2.0",
+      to: "0.3.0",
+    });
+    expect(await requestServerUpdate(true)).toEqual({ ok: false, status: 409, code: "update_in_progress" });
+  });
+
+  test("refuses with running turns unless forced", async () => {
+    await useUpdateDir();
+    await writeUpdate("agent.json", agent);
+    runningTurns = 2;
+    expect(await requestServerUpdate(false)).toEqual({ ok: false, status: 409, code: "turns_running", running: 2 });
+    expect(await readdir(updateDir)).toEqual(["agent.json"]);
+    expect(await requestServerUpdate(true)).toMatchObject({ ok: true });
+    expect(await readUpdate("request.json")).toMatchObject({ force: true });
+  });
+
+  test("a finished run allows a new request and a new request outranks the old status", async () => {
+    await useUpdateDir();
+    await writeUpdate("agent.json", agent);
+    await writeUpdate("status.json", {
+      id: "old",
+      state: "failed",
+      message: "não deu para baixar a imagem",
+      from: "0.2.0",
+      to: "0.3.0",
+      finishedAt: "2026-11-21T10:05:00Z",
+      updatedAt: "2026-11-21T10:05:00Z",
+    });
+    expect(await readServerUpdate()).toEqual({
+      available: true,
+      state: "failed",
+      message: "não deu para baixar a imagem",
+      from: "0.2.0",
+      to: "0.3.0",
+      finishedAt: "2026-11-21T10:05:00Z",
+    });
+    expect(await requestServerUpdate(false)).toMatchObject({ ok: true });
+    expect(await readServerUpdate()).toEqual({ available: true, state: "queued" });
+  });
+
+  test("a running status that stopped updating counts as failed and does not block", async () => {
+    await useUpdateDir();
+    await writeUpdate("agent.json", agent);
+    await writeUpdate("status.json", {
+      id: "x",
+      state: "running",
+      step: "Subindo",
+      updatedAt: new Date(clock).toISOString(),
+    });
+    clock += updateStaleMs + 1;
+    const update = await readServerUpdate();
+    expect(update).toMatchObject({ available: true, state: "failed", step: "Subindo" });
+    expect(update.message).toContain("vigia");
+    expect(await requestServerUpdate(false)).toMatchObject({ ok: true });
+  });
+
+  test("a request the agent never picked up turns into a failure and can be sent again", async () => {
+    await useUpdateDir();
+    await writeUpdate("agent.json", agent);
+    expect(await requestServerUpdate(false)).toMatchObject({ ok: true });
+    clock += updatePickupMs;
+    expect(await readServerUpdate()).toEqual({ available: true, state: "queued" });
+    clock += 1;
+    expect(await readServerUpdate()).toMatchObject({ available: true, state: "failed" });
+    expect(await requestServerUpdate(false)).toMatchObject({ ok: true });
+    expect(await readUpdate("request.json")).toMatchObject({ id: "req-2" });
+  });
+
+  test("a failed request does not jam the next one", async () => {
+    await useUpdateDir();
+    await writeUpdate("agent.json", agent);
+    useServerUpdateDeps({
+      dir: () => updateDir,
+      runningTurns: async () => {
+        throw new Error("redis fora");
+      },
+    });
+    await expect(requestServerUpdate(false)).rejects.toThrow("redis fora");
+    expect(await requestServerUpdate(true)).toMatchObject({ ok: true });
+  });
+
+  test("the defaults count the real turns, stamp the clock and use a random id", async () => {
+    await useUpdateDir();
+    await writeUpdate("agent.json", agent);
+    useServerUpdateDeps({ dir: () => updateDir });
+    await writeUpdate("status.json", { id: "x", state: "running", updatedAt: new Date(Date.now()).toISOString() });
+    expect(await readServerUpdate()).toMatchObject({ state: "running" });
+    await rm(join(updateDir, "status.json"));
+    expect(await requestServerUpdate(false)).toMatchObject({ ok: true });
+    const written = await readUpdate<{ id: string; requestedAt: string }>("request.json");
+    expect(written.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(Math.abs(Date.parse(written.requestedAt) - Date.now())).toBeLessThan(60_000);
+  });
+
+  test("parses the status written by the host and ignores garbage", async () => {
+    expect(parseUpdateStatus(null)).toBeNull();
+    expect(parseUpdateStatus([])).toBeNull();
+    expect(parseUpdateStatus({ state: "exploding" })).toBeNull();
+    expect(
+      parseUpdateStatus({ state: "succeeded", step: "  ", message: 3, to: " 0.3.0 ", updatedAt: "ontem" }),
+    ).toEqual({
+      id: null,
+      state: "succeeded",
+      to: "0.3.0",
+      updatedAt: null,
+    });
+    expect(parseUpdateStatus({ state: "failed", message: "x".repeat(900) })?.message).toHaveLength(500);
+    await useUpdateDir();
+    await writeUpdate("agent.json", agent);
+    await writeUpdate("status.json", "{ not json");
+    expect(await readServerUpdate()).toEqual({ available: true, state: "idle" });
+  });
+});
+
 describe("server version route", () => {
   let server: TestServer;
 
@@ -257,5 +451,32 @@ describe("server version route", () => {
     expect(authorize("GET", ["server", "version"], owner)).toBe("allow");
     expect(authorize("GET", ["server", "version"], { ...owner, role: "member" })).toBe("owner");
     expect(authorize("GET", ["server", "version"], { ...owner, method: "internal" })).toBe("deny-internal");
+  });
+
+  test("answers POST /server/update with the refusals and the queued request", async () => {
+    await useUpdateDir();
+    const missing = await request<{ code: string }>("/server/update", { method: "POST" });
+    expect(missing.status).toBe(422);
+    expect(missing.body).toMatchObject({ ok: false, code: "agent_missing" });
+    await writeUpdate("agent.json", agent);
+    runningTurns = 1;
+    const busy = await request("/server/update", { method: "POST", body: {} });
+    expect(busy.status).toBe(409);
+    expect(busy.body).toMatchObject({ ok: false, code: "turns_running", running: 1 });
+    expect((await request("/server/update", { method: "POST", body: { force: "yes" } })).status).toBe(400);
+    expect((await request("/server/update", { method: "POST", body: [true] })).status).toBe(400);
+    expect((await request("/server/update", { method: "POST", body: "{" })).status).toBe(400);
+    const queued = await request<{ update: ServerUpdate }>("/server/update", { method: "POST", body: { force: true } });
+    expect(queued.status).toBe(202);
+    expect(queued.body.update).toEqual({ available: true, state: "queued" });
+    const again = await request("/server/update", { method: "POST", body: { force: true } });
+    expect(again.status).toBe(409);
+    expect(again.body).toMatchObject({ code: "update_in_progress" });
+    reply = () => Response.json(release("v0.3.0"));
+    useFakes();
+    expect((await request<ServerVersion>("/server/version")).body.update).toEqual({ available: true, state: "queued" });
+    const owner: Principal = { userId: "o", email: "o@x.co", name: "O", role: "owner", method: "session" };
+    expect(authorize("POST", ["server", "update"], { ...owner, role: "member" })).toBe("owner");
+    expect(authorize("POST", ["server", "update"], { ...owner, method: "internal" })).toBe("deny-internal");
   });
 });

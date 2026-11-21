@@ -54,6 +54,7 @@ describe("route policy", () => {
       ["POST", "/providers/claude/update"],
       ["POST", "/providers/codex/rollback"],
       ["GET", "/server/version"],
+      ["POST", "/server/update"],
     ];
     for (const [method, path] of ownerOnly) {
       expect(requiresOwner(method, split(path))).toBe(true);
