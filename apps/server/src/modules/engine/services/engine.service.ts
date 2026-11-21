@@ -56,6 +56,7 @@ import { codeModeSupported } from "../../code/services/code-tools.service";
 import { devServersOf } from "../../code/services/dev-server.service";
 import { homeHooks, nativeHooks, type WorkspaceRouter } from "../../code/services/hooks.service";
 import { CodeLives } from "../../code/services/live-diff.service";
+import { allowedRepos, worktreesRoot } from "../../code/services/repos.service";
 import { killSandboxed, sandboxMarker, sandboxMode } from "../../code/services/sandbox.service";
 import {
   activeWorkspace,
@@ -282,10 +283,27 @@ function codeGuide() {
     .join("\n");
 }
 
+export function reposGuide() {
+  const repos = allowedRepos();
+  if (repos.length === 0)
+    return "Nenhum repositório liberado ainda: para ler código, peça para liberar com workspace_add(path, reason).";
+  return [
+    `Repositórios liberados, para ler direto pelo caminho (\`git -C <caminho> log\`, \`cd <caminho> && git status\`, Read, Grep): ${repos.map((repo) => `${repo.name} (${repo.path})`).join(", ")}.`,
+    `As worktrees das tarefas dos bots ficam em ${worktreesRoot}. Fora de uma tarefa esses caminhos são só leitura; para mudar código, abra com workspace_open.`,
+  ].join(" ");
+}
+
+export const scheduleNote = [
+  "## Rotina",
+  "Esta é uma rotina que roda sozinha, sem ninguém para aprovar. Use as datas do fuso acima.",
+  "Quando o pedido falar de ontem ou do dia anterior, cubra do começo daquele dia até agora, inclusive o que já aconteceu hoje, e diga o período que olhou.",
+  "Para ver o trabalho do time, use thread_list e thread_read e, nos repositórios liberados, `git -C <caminho> log --since=<data>`. Se algo falhar ou for bloqueado, diga o que não conseguiu ver em vez de concluir que não houve atividade.",
+].join("\n");
+
 function shellGuide(home: string) {
   return [
     "## Terminal na VPS",
-    `Você tem terminal de verdade na VPS: Bash, Read, Write, Edit, Glob e Grep. Seu diretório de trabalho é ${home} (use para scripts, arquivos e saídas). Repositórios liberados podem ser lidos direto pelo caminho.`,
+    `Você tem terminal de verdade na VPS: Bash, Read, Write, Edit, Glob e Grep. Seu diretório de trabalho é ${home} (use para scripts, arquivos e saídas). ${reposGuide()}`,
     "Ferramentas instaladas e já autenticadas: `gh` (GitHub), `supabase` (CLI com login), `wrangler` (Cloudflare), `curl`, `git`, `node`, `bun`, `jq`, `psql`. Nunca imprima token nem rode comando que mostre credencial.",
     '- Banco de produção, leitura: `supabase db query --remote=<ref> --read-only "<sql>"` roda direto em qualquer modo (o banco garante que é só leitura). `supabase projects list` mostra os refs; suas instruções e a memória dizem quais são de produção. O conector supabase (`connector_call` → `supabase.execute_sql`) também serve.',
     "- CI e deploy: `gh run list`, `gh pr view`, `gh api`. Logs da Cloudflare: `wrangler tail <worker> --format json` com `timeout 60` na frente (nunca deixe rodando). Saúde: `curl -s <url>`.",
@@ -1805,6 +1823,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     }
     if (delivery.voice) notes.push(voiceNote);
     notes.push(nowNote(await userTimezone()));
+    if (isSchedule) notes.push(scheduleNote);
     const contextFor = (workspace: WorkspaceState | null) =>
       turnContext([
         workspace && codeModeSupported(account.provider, account.runner) ? workspaceStatus(workspace) : "",

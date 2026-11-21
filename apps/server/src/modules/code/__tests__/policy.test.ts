@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +16,7 @@ import {
   protectedPath,
   resolveReal,
 } from "../services/policy.service";
+import { addAllowedRepo, removeAllowedRepo } from "../services/repos.service";
 import type { WorkspaceState } from "../services/workspace.service";
 
 const home = homedir();
@@ -748,5 +749,41 @@ describe("H4: hard list bypasses", () => {
     expect(fixedRuleViolation("git push origin HEAD:refs/heads/main", ws)).toBeNull();
     const deep = Array.from({ length: 8 }).reduce<string>((inner) => `bash -c ${JSON.stringify(inner)}`, "ls");
     expect(fixedRuleViolation(deep, ws)).toBeNull();
+  });
+});
+
+describe("allowed repos outside the task, read only", () => {
+  const outside = mkdtempSync("/var/tmp/rb-policy-");
+  const allowed = join(outside, "repo");
+  mkdirSync(join(allowed, "src"), { recursive: true });
+  const botHome: WorkspaceState = { ...ws, path: mkdtempSync(join(tmpdir(), "rb-policy-home-")) };
+
+  beforeAll(async () => {
+    await addAllowedRepo(allowed, "teste", null);
+  });
+
+  afterAll(async () => {
+    await removeAllowedRepo(allowed);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  test("cd or git -C into an allowed repo runs read commands", () => {
+    expect(kind(`cd ${allowed} && git log --since=yesterday --format='%h %s'`, botHome)).toBe("allow");
+    expect(kind(`git -C ${allowed} log -5`, botHome)).toBe("allow");
+    expect(kind(`cd ${allowed} && ls src && cd - && ls`, botHome)).toBe("allow");
+    expect(commandIsReadOnly(`cd ${allowed} && git status`, botHome)).toBe(true);
+  });
+
+  test("changes inside an allowed repo outside the task are denied with a hint", () => {
+    expect(denied(`cd ${allowed} && git commit -m x`, botHome)).toContain("só para leitura");
+    expect(denied(`git -C ${allowed} checkout -b x`, botHome)).toContain("workspace_open");
+    expect(human(`cd ${allowed} && rm -rf src`, botHome).reason).toBe("Fora da worktree.");
+    expect(denied(`cd ${allowed} && npm install`, botHome)).toContain("só para leitura");
+    expect(human(`cd ${allowed} && git log > out.txt`, botHome).reason).toBe("Fora da worktree.");
+  });
+
+  test("folders that are not allowed stay denied", () => {
+    expect(denied(`cd ${outside} && ls`, botHome)).toContain("fora dos repositórios liberados");
+    expect(denied(`cd ${join(allowed, "nao-existe")} && ls`, botHome)).toContain("fora dos repositórios liberados");
   });
 });

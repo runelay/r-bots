@@ -26,6 +26,7 @@ import * as blockTools from "../../blocks/services/block-tools.service";
 import { setKnownConnectors, updateBot } from "../../bots/services/bots.service";
 import * as canvas from "../../canvas/services/canvas.service";
 import { botHomePath } from "../../code/services/bot-home.service";
+import { addAllowedRepo, removeAllowedRepo, worktreesRoot } from "../../code/services/repos.service";
 import * as computer from "../../computer/services/computer.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import * as threads from "../../conversations/services/threads.service";
@@ -36,7 +37,9 @@ import {
   conversationStatus,
   isRunning,
   onStatus,
+  reposGuide,
   type StatusEvent,
+  scheduleNote,
   sessionStatuses,
   turnSummary,
 } from "../services/engine.service";
@@ -517,6 +520,22 @@ describe("the user prompt", () => {
 });
 
 describe("schedules", () => {
+  test("tells chat and routine turns where the allowed repos are", async () => {
+    expect(reposGuide()).toContain("Nenhum repositório liberado ainda");
+    const path = join(tmpdir(), "rb-guide-repo");
+    await addAllowedRepo(path, "teste", null);
+    try {
+      const guide = reposGuide();
+      expect(guide).toContain(`rb-guide-repo (${path})`);
+      expect(guide).toContain(worktreesRoot);
+      const bot = await makeBot();
+      await run(await newSession(bot.id, "thread"), { source: "schedule", scheduleId: "x", text: "Rodar." });
+      expect(lastRequest().systemPrompt).toContain(`rb-guide-repo (${path})`);
+    } finally {
+      await removeAllowedRepo(path);
+    }
+  });
+
   test("carries the last summary, triages quiet runs and notes them for the next chat", async () => {
     const bot = await makeBot({
       schedules: [{ name: "diaria", cron: "0 9 * * *", prompt: "Resumo do dia." }],
@@ -525,6 +544,8 @@ describe("schedules", () => {
     const triage = track(spyOn(decisions, "decideTriage").mockResolvedValue(decision("quiet")));
     fakeProviders.next(replyWith("Nada de novo hoje."));
     await run(session, { source: "schedule", scheduleId: "diaria", text: "Resumo do dia." });
+    expect(lastRequest().prompt).toContain("## Data e hora");
+    expect(lastRequest().prompt).toContain(scheduleNote);
     expect(triage).toHaveBeenCalledWith(bot.role, "diaria", "Resumo do dia.", "Nada de novo hoje.", null);
     expect(await settledOf(session)).toMatchObject({ outcome: "completed", quiet: true });
     expect((await factsOfType(session, "decision.made"))[0].data.outcome).toBe("quiet");

@@ -1728,6 +1728,19 @@ function cwdAllowed(workspace: WorkspaceState, path: string) {
   return (inWorkspace(workspace, path) && inWorkspace(workspace, real)) || within("/tmp", real);
 }
 
+function readCwdAllowed(path: string) {
+  const { real, exists } = resolveReal(path);
+  if (!exists || blocked(path) || blocked(real)) return false;
+  return insideAllowedArea(path) && insideAllowedArea(real);
+}
+
+function readOnlyRepoDeny(workspace: WorkspaceState, path: string, line: string): Gate {
+  return {
+    kind: "deny",
+    message: `${shownPath(workspace, path)} é um repositório liberado só para leitura fora da tarefa: ${short(line, 80)} mudaria algo nele. Para editar, abra com workspace_open.`,
+  };
+}
+
 function exportAssignments(tokens: string[]) {
   return ["export", "declare", "typeset", "local", "readonly"].includes(tokens[0] ?? "") ? tokens.slice(1) : [];
 }
@@ -1756,6 +1769,8 @@ export function gateCommand(command: string, workspace: WorkspaceState, depth = 
   }
   let cwd = workspace.path;
   let previous = cwd;
+  let readOnlyCwd = false;
+  let previousReadOnly = false;
   for (const segment of segments) {
     if (segment.opaque) return humanGate(trimmed, "Não dá para saber o que vai rodar.");
     const unwrapped = unwrap(segment.words);
@@ -1773,22 +1788,39 @@ export function gateCommand(command: string, workspace: WorkspaceState, depth = 
       }
     }
     let segmentCwd = cwd;
+    let segmentReadOnly = readOnlyCwd;
     if (unwrapped.chdir !== null) {
       segmentCwd = resolve(cwd, expand(unwrapped.chdir));
-      if (unwrapped.chdir.includes("$") || !cwdAllowed(workspace, segmentCwd))
-        return outsideDeny(workspace, segmentCwd);
+      if (unwrapped.chdir.includes("$")) return outsideDeny(workspace, segmentCwd);
+      if (cwdAllowed(workspace, segmentCwd)) segmentReadOnly = false;
+      else if (readCwdAllowed(segmentCwd)) segmentReadOnly = true;
+      else return outsideDeny(workspace, segmentCwd);
+    }
+    if (tokens[0] === "git") {
+      const call = parseGit(tokens.slice(1));
+      const dirs = call.globals.filter((_, index) => call.globals[index - 1] === "-C");
+      for (const dir of dirs) {
+        const target = resolve(segmentCwd, expand(dir));
+        if (cwdAllowed(workspace, target)) continue;
+        if (!readCwdAllowed(target)) return outsideDeny(workspace, target);
+        segmentReadOnly = true;
+      }
     }
     if (tokens[0] === "cd" || tokens[0] === "pushd") {
       const target = tokens.slice(1).find((arg) => !/^-[LPe@]+$/.test(arg)) ?? home;
       if (target.includes("$SUB") || target.startsWith("$")) return humanGate(trimmed, "Pasta montada na hora.");
       if (target === "-") {
         [cwd, previous] = [previous, cwd];
+        [readOnlyCwd, previousReadOnly] = [previousReadOnly, readOnlyCwd];
         continue;
       }
       const next = resolve(cwd, expand(target));
-      if (!cwdAllowed(workspace, next)) return outsideDeny(workspace, next);
+      const writable = cwdAllowed(workspace, next);
+      if (!writable && !readCwdAllowed(next)) return outsideDeny(workspace, next);
       previous = cwd;
+      previousReadOnly = readOnlyCwd;
       cwd = next;
+      readOnlyCwd = !writable;
       continue;
     }
     const argGate = argsGate(workspace, segmentCwd, tokens.slice(1));
@@ -1796,6 +1828,8 @@ export function gateCommand(command: string, workspace: WorkspaceState, depth = 
     const verdict = inspect(segment, tokens, segmentCwd, workspace, depth);
     if (segment.obfuscated && !("level" in verdict && verdict.level === "read")) return obfuscationDeny;
     if ("kind" in verdict) return verdict;
+    if (segmentReadOnly && (verdict.level !== "read" || !readShape(tokens)))
+      return readOnlyRepoDeny(workspace, segmentCwd, tokens.join(" "));
   }
   return { kind: "allow" };
 }
@@ -1893,7 +1927,7 @@ export function commandIsReadOnly(command: string, workspace: WorkspaceState, de
     const tokens = unwrapped.tokens;
     if (tokens[0] === "cd" || tokens[0] === "pushd") {
       const next = resolve(cwd, expand(tokens.slice(1).find((arg) => !/^-[LPe@]+$/.test(arg)) ?? home));
-      if (!cwdAllowed(workspace, next)) return false;
+      if (!cwdAllowed(workspace, next) && !readCwdAllowed(next)) return false;
       cwd = next;
       continue;
     }
