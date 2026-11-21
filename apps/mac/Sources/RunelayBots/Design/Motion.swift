@@ -99,7 +99,11 @@ struct SoftElevation: ViewModifier {
 
 struct ClickablePointer: ViewModifier {
     func body(content: Content) -> some View {
-        content.pointerStyle(.link)
+        #if os(macOS)
+            content.pointerStyle(.link)
+        #else
+            content
+        #endif
     }
 }
 

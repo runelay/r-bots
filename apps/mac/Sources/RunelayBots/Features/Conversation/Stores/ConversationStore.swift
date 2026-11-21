@@ -27,7 +27,9 @@ final class ConversationStore {
     var draft = ""
     var draftTokens: [ComposerToken] = []
     private(set) var attachmentPool: [UUID: ComposerAttachment] = [:]
-    @ObservationIgnored weak var composerEditor: ComposerEditor?
+    #if os(macOS)
+        @ObservationIgnored weak var composerEditor: ComposerEditor?
+    #endif
     @ObservationIgnored private var sendWhenReady = false
 
     private(set) var entries: [TranscriptEntry] = [] {
@@ -268,10 +270,12 @@ final class ConversationStore {
             return true
         }
         guard !accepted.isEmpty || range != nil else { return }
-        if let composerEditor {
-            composerEditor.insert(accepted, replacing: range)
-            return
-        }
+        #if os(macOS)
+            if let composerEditor {
+                composerEditor.insert(accepted, replacing: range)
+                return
+            }
+        #endif
         let text = draft as NSString
         let target = range.map { NSIntersectionRange($0, NSRange(location: 0, length: text.length)) } ?? NSRange(location: text.length, length: 0)
         let head = text.substring(to: target.location)
@@ -922,38 +926,44 @@ final class ConversationStore {
                 if !byUser {
                     append(TranscriptEntry(id: "artifact-\(fact.key)", kind: .artifact(ref)), date: currentLineDate)
                 }
-                ArtifactCenter.shared.noteChange(ref, byUser: byUser)
+                #if os(macOS)
+                    ArtifactCenter.shared.noteChange(ref, byUser: byUser)
+                #endif
             }
-        case "test.result":
-            if let runID = data["id"]?.stringValue {
-                TestStore.shared.apply(data)
-                let id = "test-\(runID)"
-                if !entries.contains(where: { $0.id == id }) {
-                    let ref = ArtifactRef(botID: bot.id, id: runID, title: data["title"]?.stringValue ?? "Teste", kind: TestStore.panelKind, version: 1)
-                    append(TranscriptEntry(id: id, kind: .artifact(ref)), date: currentLineDate)
+        #if os(macOS)
+            case "test.result":
+                if let runID = data["id"]?.stringValue {
+                    TestStore.shared.apply(data)
+                    let id = "test-\(runID)"
+                    if !entries.contains(where: { $0.id == id }) {
+                        let ref = ArtifactRef(botID: bot.id, id: runID, title: data["title"]?.stringValue ?? "Teste", kind: TestStore.panelKind, version: 1)
+                        append(TranscriptEntry(id: id, kind: .artifact(ref)), date: currentLineDate)
+                    }
                 }
-            }
-        case "server.card":
-            if let serverID = data["serverId"]?.stringValue {
-                ServerStore.shared.applyLine(.object(["server": data["server"] ?? .null]))
-                let ref = ArtifactRef(
-                    botID: data["botId"]?.stringValue ?? bot.id,
-                    id: serverID,
-                    title: data["server"]?["name"]?.stringValue ?? "Servidor",
-                    kind: ServerStore.panelKind,
-                    version: 1
-                )
-                let id = "server-\(serverID)"
-                if !entries.contains(where: { $0.id == id }) {
-                    append(TranscriptEntry(id: id, kind: .artifact(ref)), date: currentLineDate)
+            case "server.card":
+                if let serverID = data["serverId"]?.stringValue {
+                    ServerStore.shared.applyLine(.object(["server": data["server"] ?? .null]))
+                    let ref = ArtifactRef(
+                        botID: data["botId"]?.stringValue ?? bot.id,
+                        id: serverID,
+                        title: data["server"]?["name"]?.stringValue ?? "Servidor",
+                        kind: ServerStore.panelKind,
+                        version: 1
+                    )
+                    let id = "server-\(serverID)"
+                    if !entries.contains(where: { $0.id == id }) {
+                        append(TranscriptEntry(id: id, kind: .artifact(ref)), date: currentLineDate)
+                    }
                 }
-            }
+        #endif
         case "block.created", "block.updated", "block.deleted":
             if let event = BlockEvent(type: fact.type, data: data, fallbackBotID: bot.id) {
                 if event.author == .bot, event.action != "deleted" {
                     append(TranscriptEntry(id: "block-\(fact.key)", kind: .artifact(event.ref)), date: currentLineDate)
                 }
-                BlockCenter.shared.handle(event, client: client)
+                #if os(macOS)
+                    BlockCenter.shared.handle(event, client: client)
+                #endif
             }
         case "voice.call.rated":
             if let callID = data["callId"]?.stringValue {

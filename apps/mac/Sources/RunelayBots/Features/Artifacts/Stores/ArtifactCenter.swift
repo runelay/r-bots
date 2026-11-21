@@ -4,14 +4,6 @@ import Observation
 import PDFKit
 import WebKit
 
-struct ArtifactRef: Equatable, Hashable, Sendable {
-    let botID: String
-    let id: String
-    var title: String
-    let kind: String
-    var version: Int
-}
-
 struct ArtifactVersionInfo: Decodable, Equatable, Hashable, Sendable {
     let n: Int
     let createdAt: String?

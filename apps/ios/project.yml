@@ -1,0 +1,166 @@
+name: RBots
+options:
+  bundleIdPrefix: com.runelay
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  developmentLanguage: pt-BR
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "26.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    DEVELOPMENT_LANGUAGE: pt-BR
+targets:
+  RBots:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: ../mac/Sources/RunelayBots/Resources/Fonts
+        type: folder
+        buildPhase: resources
+        group: Shared
+      - path: Resources/Assets.xcassets
+      - path: ../mac/Sources/RunelayBots/Models
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Networking
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Auth/AuthClient.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Auth/WebSession.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Models/Transcript.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Models/Reaction.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Models/QuestionWizard.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Stores/ConversationStore.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Stores/LiveTextBuffer.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Stores/OpenTiming.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Stores/TranscriptCache.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Markdown/MarkdownBlocks.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Markdown/MarkdownText.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Support/ServerConfig.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Support/ErrorMessage.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Support/FriendlyError.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Support/ActionPhrase.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Support/CommandPhrase.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Support/Deadline.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Design/Motion.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Design/TypeScale.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Design/Glass.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Design/SettingsTile.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Design/BrandMark.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Design/Preferences.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Character
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Models/Attachment.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Models/ComposerToken.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Models/ConversationModels.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Models/TranscriptLayout.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Code/Models
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Vault/Vault.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Blocks/Networking/BlocksClient.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Blocks/Models/BlockModels.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Call/VoiceCallClient.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Support/ShortStamp.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Voice/VoiceInput.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Voice/VoiceSession.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Voice/FileTranscriber.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Call/CallAudio.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Call/CallSockets.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Call/TurnTaker.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Call/VoiceGate.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Call/VoiceCall.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Usage/Usage.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Vault/VaultStore.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Agenda/Stores/AgendaStore.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Profile/BotDraft.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Code/CodeClient.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Support/CronSchedule.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Features/Conversation/Views/ReadableResult.swift
+        group: Shared
+    info:
+      path: Sources/App/Info.plist
+      properties:
+        CFBundleDisplayName: r/bots
+        CFBundleDevelopmentRegion: pt-BR
+        CFBundleLocalizations: [pt-BR]
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        ITSAppUsesNonExemptEncryption: false
+        NSMicrophoneUsageDescription: O r/bots usa o microfone para ditar mensagens, gravar áudios e falar com os bots.
+        NSSpeechRecognitionUsageDescription: O r/bots transcreve sua fala no aparelho para escrever a mensagem.
+        NSCameraUsageDescription: O r/bots usa a câmera para você mandar fotos aos bots.
+        NSFaceIDUsageDescription: O r/bots usa o Face ID para abrir os segredos do cofre.
+        UIBackgroundModes: [audio]
+    postBuildScripts:
+      - name: Debug transport security
+        basedOnDependencyAnalysis: false
+        inputFiles:
+          - $(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)
+        script: |
+          if [ "$CONFIGURATION" = "Debug" ]; then
+            plist="$TARGET_BUILD_DIR/$INFOPLIST_PATH"
+            /usr/libexec/PlistBuddy -c "Delete :NSAppTransportSecurity" "$plist" 2>/dev/null || true
+            /usr/libexec/PlistBuddy -c "Add :NSAppTransportSecurity dict" -c "Add :NSAppTransportSecurity:NSAllowsArbitraryLoads bool true" "$plist"
+          fi
+    settings:
+      base:
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.runelay.bots.ios
+        PRODUCT_NAME: RBots
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO

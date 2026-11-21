@@ -1,8 +1,11 @@
 import AVFoundation
-import AppKit
 import Foundation
 import OSLog
 import Observation
+
+#if canImport(AppKit)
+    import AppKit
+#endif
 
 enum CallPhase: Equatable {
     case idle
@@ -257,8 +260,10 @@ final class VoiceCall {
     }
 
     func openMicrophoneSettings() {
-        guard let url = VoicePermission.microphone.settingsURL else { return }
-        NSWorkspace.shared.open(url)
+        #if os(macOS)
+            guard let url = VoicePermission.microphone.settingsURL else { return }
+            NSWorkspace.shared.open(url)
+        #endif
     }
 
     private func microphoneAllowed() async -> Bool {
@@ -582,32 +587,38 @@ final class VoiceCall {
     }
 
     private func installTalkShortcut() {
-        guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
-            guard let self else { return event }
-            return self.handleTalkShortcut(event)
-        }
+        #if os(macOS)
+            guard keyMonitor == nil else { return }
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+                guard let self else { return event }
+                return self.handleTalkShortcut(event)
+            }
+        #endif
     }
 
-    private func handleTalkShortcut(_ event: NSEvent) -> NSEvent? {
-        guard event.keyCode == 49, handlesTalkShortcut else { return event }
-        if event.type == .keyDown {
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            guard modifiers == .option || isTalking else { return event }
-            if !event.isARepeat {
-                beginTalk()
+    #if os(macOS)
+        private func handleTalkShortcut(_ event: NSEvent) -> NSEvent? {
+            guard event.keyCode == 49, handlesTalkShortcut else { return event }
+            if event.type == .keyDown {
+                let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+                guard modifiers == .option || isTalking else { return event }
+                if !event.isARepeat {
+                    beginTalk()
+                }
+                return nil
             }
+            guard isTalking else { return event }
+            endTalk()
             return nil
         }
-        guard isTalking else { return event }
-        endTalk()
-        return nil
-    }
+    #endif
 
     private func removeTalkShortcut() {
-        if let keyMonitor {
-            NSEvent.removeMonitor(keyMonitor)
-        }
+        #if os(macOS)
+            if let keyMonitor {
+                NSEvent.removeMonitor(keyMonitor)
+            }
+        #endif
         keyMonitor = nil
     }
 

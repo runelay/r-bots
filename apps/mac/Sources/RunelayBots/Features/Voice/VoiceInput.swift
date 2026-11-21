@@ -1,8 +1,13 @@
 import AVFoundation
-import AppKit
 import Observation
 import Speech
 import SwiftUI
+
+#if canImport(AppKit)
+    import AppKit
+#else
+    import UIKit
+#endif
 
 enum VoicePreferenceKeys {
     static let autoSend = "voiceAutoSend"
@@ -27,10 +32,14 @@ enum VoicePermission: Equatable {
     }
 
     var settingsURL: URL? {
-        switch self {
-        case .microphone: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
-        case .speech: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition")
-        }
+        #if os(iOS)
+            return URL(string: UIApplication.openSettingsURLString)
+        #else
+            switch self {
+            case .microphone: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+            case .speech: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_SpeechRecognition")
+            }
+        #endif
     }
 }
 
@@ -64,7 +73,9 @@ final class VoiceInput {
     @ObservationIgnored private let locale = Locale(identifier: "pt-BR")
 
     private init() {
-        installShortcut()
+        #if os(macOS)
+            installShortcut()
+        #endif
     }
 
     func isActive(for store: ConversationStore) -> Bool {
@@ -166,7 +177,11 @@ final class VoiceInput {
 
     func openSettings(for permission: VoicePermission) {
         guard let url = permission.settingsURL else { return }
-        NSWorkspace.shared.open(url)
+        #if os(macOS)
+            NSWorkspace.shared.open(url)
+        #else
+            UIApplication.shared.open(url)
+        #endif
     }
 
     private func begin() async {
@@ -178,6 +193,17 @@ final class VoiceInput {
         if let lost = Microphones.takeMissing() {
             failure = Microphones.lostNotice(lost)
         }
+        #if os(iOS)
+            do {
+                let audio = AVAudioSession.sharedInstance()
+                try audio.setCategory(.playAndRecord, mode: .measurement, options: [.duckOthers, .defaultToSpeaker, .allowBluetoothHFP])
+                try audio.setActive(true)
+            } catch {
+                teardown()
+                failure = "Não deu para ouvir o microfone agora."
+                return
+            }
+        #endif
         let session = VoiceSession(locale: locale)
         self.session = session
         textTask = Task { [weak self] in
@@ -316,40 +342,53 @@ final class VoiceInput {
         levels = Array(repeating: 0, count: Self.levelCount)
         listeningSince = nil
         phase = .idle
+        #if os(iOS)
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        #endif
     }
 
     private var prefersReducedMotion: Bool {
-        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        Self.systemReducesMotion
             || UserDefaults.standard.string(forKey: PreferenceKeys.motion) == MotionPreference.reduced.rawValue
     }
 
-    private func installShortcut() {
-        guard keyMonitor == nil else { return }
-        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
-            guard let self else { return event }
-            return self.handleShortcut(event)
-        }
+    private static var systemReducesMotion: Bool {
+        #if os(macOS)
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        #else
+            UIAccessibility.isReduceMotionEnabled
+        #endif
     }
 
-    private func handleShortcut(_ event: NSEvent) -> NSEvent? {
-        guard event.keyCode == 49, !VoiceCall.shared.handlesTalkShortcut else { return event }
-        switch event.type {
-        case .keyDown:
-            if isHoldingShortcut {
-                return nil
+    #if os(macOS)
+        private func installShortcut() {
+            guard keyMonitor == nil else { return }
+            keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+                guard let self else { return event }
+                return self.handleShortcut(event)
             }
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            guard modifiers == .option, !event.isARepeat, let store = focusedStore else { return event }
-            isHoldingShortcut = true
-            start(for: store)
-            return nil
-        case .keyUp:
-            guard isHoldingShortcut else { return event }
-            isHoldingShortcut = false
-            stop()
-            return nil
-        default:
-            return event
         }
-    }
+
+        private func handleShortcut(_ event: NSEvent) -> NSEvent? {
+            guard event.keyCode == 49, !VoiceCall.shared.handlesTalkShortcut else { return event }
+            switch event.type {
+            case .keyDown:
+                if isHoldingShortcut {
+                    return nil
+                }
+                let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+                guard modifiers == .option, !event.isARepeat, let store = focusedStore else { return event }
+                isHoldingShortcut = true
+                start(for: store)
+                return nil
+            case .keyUp:
+                guard isHoldingShortcut else { return event }
+                isHoldingShortcut = false
+                stop()
+                return nil
+            default:
+                return event
+            }
+        }
+    #endif
 }
