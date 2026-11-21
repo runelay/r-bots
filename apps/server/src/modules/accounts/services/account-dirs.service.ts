@@ -201,13 +201,7 @@ export function readIdentity(account: AccountDir) {
   return account.provider === "claude" ? claudeIdentity(account) : codexIdentity(account);
 }
 
-export function autoName(account: AccountDir, identity: AccountIdentity, siblings: number) {
+export function autoName(account: AccountDir, position: number) {
   const title = providerTitles[account.provider];
-  if (account.provider === "codex" && siblings <= 1) return title;
-  const who =
-    (account.provider === "claude" ? identity.name : null) ??
-    identity.organization ??
-    identity.email?.split("@")[0] ??
-    (account.cliDefault ? null : basename(account.dir).replace(/^\.+/, ""));
-  return who ? `${title} ${who}` : title;
+  return position > 0 ? `${title} ${position + 1}` : title;
 }

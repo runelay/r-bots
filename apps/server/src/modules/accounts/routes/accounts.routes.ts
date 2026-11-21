@@ -1,4 +1,5 @@
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
+import { emitSettingsChange } from "../../settings/services/settings-events.service";
 import {
   addAccountDir,
   listAccounts,
@@ -15,7 +16,14 @@ export async function handleAccounts(res: Res, url: URL) {
 
 export async function handleAccountsRefresh(req: Req, res: Res) {
   await readBody(req).catch(() => undefined);
-  return sendJson(res, 200, await refreshAccounts());
+  const accounts = await refreshAccounts();
+  emitSettingsChange(["accounts", "usage"]);
+  return sendJson(res, 200, accounts);
+}
+
+function changed(res: Res, result: unknown) {
+  emitSettingsChange(["accounts", "usage"]);
+  return sendJson(res, 200, result);
 }
 
 export async function handleAccountRoutes(req: Req, res: Res, url: URL, method: string, parts: string[]) {
@@ -23,12 +31,12 @@ export async function handleAccountRoutes(req: Req, res: Res, url: URL, method: 
     if (method === "GET" && parts.length === 2 && parts[1] === "login-guide")
       return sendJson(res, 200, await loginGuide(url.searchParams.get("provider") ?? "claude"));
     if (method === "POST" && parts.length === 2 && parts[1] === "dirs")
-      return sendJson(res, 200, await addAccountDir(await readBody(req)));
+      return changed(res, await addAccountDir(await readBody(req)));
     if (parts.length === 2 && (method === "PATCH" || method === "DELETE")) {
       const result =
         method === "PATCH" ? await updateAccount(parts[1], await readBody(req)) : await removeAccountDir(parts[1]);
       if (!result) return sendJson(res, 404, { ok: false, error: "Essa conta não existe." });
-      return sendJson(res, 200, result);
+      return changed(res, result);
     }
     return notFound(res);
   } catch (error) {

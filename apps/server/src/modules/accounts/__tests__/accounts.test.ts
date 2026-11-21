@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { fakeProviders, request, startTestServer, type TestServer, testDataDir } from "../../../../test/helpers";
 import { writeSetting } from "../../../db/settings";
+import { onSettingsChange } from "../../settings/services/settings-events.service";
 import {
   type Account,
   accountDir,
@@ -195,8 +196,8 @@ describe("accounts", () => {
     ]);
     expect(accounts[0]).toMatchObject({
       runner: "vps",
-      label: "Claude Trabalho",
-      name: "Claude Trabalho",
+      label: "Claude",
+      name: "Claude",
       email: "ferramentas@x.com",
       plan: "team",
       configDir: "~/.claude",
@@ -205,7 +206,7 @@ describe("accounts", () => {
       status: "ready",
     });
     expect(accounts[1]).toMatchObject({
-      label: "Claude Alex",
+      label: "Claude 2",
       email: "alex@x.com",
       plan: "max",
       configDir: "~/.claude-2",
@@ -235,7 +236,7 @@ describe("accounts", () => {
     expect((await refreshAccounts()).map((account) => account.id)).toEqual(accounts.map((account) => account.id));
   });
 
-  test("names accounts from the organization, the e-mail or the folder and splits equal names", async () => {
+  test("names accounts by provider and position, never by organization or e-mail", async () => {
     put(join(home, ".claude", ".credentials.json"), {});
     put(join(home, ".claude.json"), { oauthAccount: { organizationName: "Acme" } });
     put(join(home, ".claude-b", ".credentials.json"), {});
@@ -249,13 +250,14 @@ describe("accounts", () => {
     put(join(home, ".codex-x", "auth.json"), { tokens: { id_token: "a.bm90LWpzb24.c" } });
     const accounts = await refreshAccounts();
     const label = (id: string) => accounts.find((account) => account.id === id)?.label;
-    expect(label("vps:claude")).toBe("Claude Acme (claude)");
-    expect(label("claude-b:claude")).toBe("Claude Acme (claude-b)");
-    expect(label("claude-c:claude")).toBe("Claude maria");
-    expect(label("claude-d:claude")).toBe("Claude claude-d");
+    expect(label("vps:claude")).toBe("Claude");
+    expect(label("claude-b:claude")).toBe("Claude 2");
+    expect(label("claude-c:claude")).toBe("Claude 3");
+    expect(label("claude-d:claude")).toBe("Claude 4");
     expect(label("vps:codex")).toBe("Codex");
-    expect(label("codex-work:codex")).toBe("Codex ana");
-    expect(label("codex-x:codex")).toBe("Codex codex-x");
+    expect(label("codex-work:codex")).toBe("Codex 2");
+    expect(label("codex-x:codex")).toBe("Codex 3");
+    expect(accounts.some((account) => /Acme|maria|ana/.test(account.label))).toBe(false);
   });
 
   test("adds a directory outside the home, renames, picks the default and removes it", async () => {
@@ -266,14 +268,14 @@ describe("accounts", () => {
     expect(accounts.find((account) => account.id === "claude-team:claude")).toMatchObject({
       added: true,
       configDir: "~/contas/Claude Team",
-      label: "Claude Claude Team",
+      label: "Claude 3",
     });
     expect((await addAccountDir({ path: "~/contas/Claude Team" })).length).toBe(accounts.length);
     accounts = (await updateAccount("claude-team:claude", { name: "  Time  ", isDefault: true })) as Account[];
     expect(accounts.find((account) => account.id === "claude-team:claude")).toMatchObject({
       name: "Time",
       label: "Time",
-      autoName: "Claude Claude Team",
+      autoName: "Claude 3",
       isDefault: true,
     });
     expect(accounts.find((account) => account.id === "vps:claude")?.isDefault).toBe(false);
@@ -284,9 +286,9 @@ describe("accounts", () => {
       "claude-2:claude",
     ]);
     accounts = (await updateAccount("claude-team:claude", { name: null })) as Account[];
-    expect(accounts.find((account) => account.id === "claude-team:claude")?.label).toBe("Claude Claude Team");
+    expect(accounts.find((account) => account.id === "claude-team:claude")?.label).toBe("Claude 3");
     accounts = (await updateAccount("claude-team:claude", { name: "" })) as Account[];
-    expect(accounts.find((account) => account.id === "claude-team:claude")?.label).toBe("Claude Claude Team");
+    expect(accounts.find((account) => account.id === "claude-team:claude")?.label).toBe("Claude 3");
     accounts = (await removeAccountDir("claude-team:claude")) as Account[];
     expect(accounts.some((account) => account.id === "claude-team:claude")).toBe(false);
     expect(defaultAccount(accounts, "claude")?.id).toBe("vps:claude");
@@ -460,5 +462,20 @@ describe("routes", () => {
     expect(guide.body.command).toContain("CODEX_HOME=");
     expect((await request<{ dir: string }>("/accounts/login-guide")).body.dir).toBe("~/.claude-3");
     expect((await request("/accounts/x/y")).status).toBe(404);
+  });
+
+  test("tells connected apps when an account changes through the routes", async () => {
+    seedHome();
+    await refreshAccounts();
+    const seen: string[][] = [];
+    const stop = onSettingsChange((areas) => seen.push(areas));
+    await request("/accounts/claude-2:claude", { method: "PATCH", body: { name: "Pessoal" } });
+    await request("/accounts/nada:claude", { method: "PATCH", body: {} });
+    await request("/accounts/refresh", { method: "POST" });
+    stop();
+    expect(seen).toEqual([
+      ["accounts", "usage"],
+      ["accounts", "usage"],
+    ]);
   });
 });

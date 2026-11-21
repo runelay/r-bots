@@ -113,8 +113,8 @@ async function probeDirs(settings: AccountSettings) {
         readIdentity(item),
         probe(item.provider, item.cliDefault ? null : item.dir),
       ]);
-      const siblings = found.filter((other) => other.provider === item.provider).length;
-      const name = autoName(item, identity, siblings);
+      const position = found.filter((other) => other.provider === item.provider).indexOf(item);
+      const name = autoName(item, position);
       return fromProbe(
         {
           id: item.id,
