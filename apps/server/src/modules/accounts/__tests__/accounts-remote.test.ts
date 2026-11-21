@@ -80,8 +80,11 @@ describe("runOnAccount placement", () => {
     runner.say(boxHello());
     const finished = runOnAccount(account, turnRequest("r3"), new AbortController().signal, () => {}, hooks);
     const start = await runner.next("request");
-    expect(start).toMatchObject({ op: "turn.start", request: { turnId: "r3", configDir: dir } });
-    expect(start.box.mounts).toContainEqual(expect.objectContaining({ box: dir, readOnly: false }));
+    expect(start).toMatchObject({
+      op: "turn.start",
+      request: { turnId: "r3", configDir: dir },
+      box: { mounts: expect.arrayContaining([expect.objectContaining({ box: dir, readOnly: false })]) },
+    });
     runner.say({ type: "turn.event", id: "r3", event: { type: "done", ok: true } });
     runner.say({ type: "turn.end", id: "r3" });
     await finished;
