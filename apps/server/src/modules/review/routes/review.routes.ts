@@ -40,7 +40,7 @@ export async function handleReview(req: Req, res: Res, method: string, parts: st
     if (error instanceof ValidationError || error instanceof SyntaxError) return validationResponse(res, error);
     return sendJson(res, 502, {
       ok: false,
-      error: (error instanceof Error ? error.message : String(error)).slice(0, 300),
+      error: (error instanceof Error ? error.message : "Erro interno.").slice(0, 300),
     });
   }
 }

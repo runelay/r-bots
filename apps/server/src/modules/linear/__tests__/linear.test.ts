@@ -522,7 +522,10 @@ describe("routes", () => {
       ]);
       const response = await res.response;
       expect(response.status).toBe(502);
-      expect(await response.json()).toEqual({ ok: false, error: reason instanceof Error ? reason.message : reason });
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: reason instanceof Error ? reason.message : "Erro interno.",
+      });
       expect(saved).toEqual([]);
     }
   });

@@ -505,6 +505,6 @@ describe("review routes", () => {
     spies.push(spyOn(conversations, "createConversation").mockRejectedValue("x".repeat(400)) as never);
     const raw = await request<{ error: string }>("/review/run", { method: "POST", body: { presetId: "gh" } });
     expect(raw.status).toBe(502);
-    expect(raw.body.error).toBe("x".repeat(300));
+    expect(raw.body.error).toBe("Erro interno.");
   });
 });
