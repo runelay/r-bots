@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.3
+
+### Jobs
+
+- The job queue runs on BullMQ 6.7.8 with ioredis 6. Jobs and schedules already in Redis keep working after the update.
+
 ## v0.1.2
 
 ### Fixes
