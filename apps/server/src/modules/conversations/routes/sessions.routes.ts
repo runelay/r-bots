@@ -2,10 +2,19 @@ import { randomUUID } from "node:crypto";
 import { model } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
 import { notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
+import { principalOf } from "../../auth/gate";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { answer, answerQuestion, cancel, deliver } from "../../engine/services/engine.service";
 import { isQuestionAnswer } from "../../questions/services/questions.service";
 import { lineOf } from "../repositories/sessions.repository";
+import {
+  addReaction,
+  normalizeEmoji,
+  normalizeTarget,
+  ReactionTargetMissing,
+  reactionsForFacts,
+  removeReaction,
+} from "../services/reactions.service";
 import { createStoredSession, getStoredSession, type StoredSession, sessionsOf } from "../services/sessions.service";
 import { peekThread } from "../services/threads.service";
 import {
@@ -150,13 +159,42 @@ async function handleEvents(res: Res, url: URL, session: StoredSession) {
     return sendJson(res, 400, { ok: false, error: "before inválido.", field: "before" });
   const end = Math.min(total, Math.floor(beforeRaw));
   const start = Math.max(0, end - limit);
-  const events = [];
+  const events: Record<string, unknown>[] = [];
   for (const row of await session.log.rows(start, end)) {
     try {
       events.push({ index: row.seq - 1, ...(JSON.parse(lineOf(row)) as Record<string, unknown>) });
     } catch {}
   }
-  sendJson(res, 200, { events, nextBefore: start > 0 ? start : null, total });
+  const facts = events.flatMap((event) => (Array.isArray(event.facts) ? event.facts : []));
+  const reactions = await reactionsForFacts(session.meta.sessionId, facts);
+  sendJson(res, 200, { events, nextBefore: start > 0 ? start : null, total, reactions });
+}
+
+async function handleReaction(req: Req, res: Res, session: StoredSession, method: string) {
+  let body: unknown;
+  try {
+    body = await readBody(req);
+  } catch {
+    return sendJson(res, 400, { ok: false, error: "Invalid JSON body." });
+  }
+  const raw = (body ?? {}) as { target?: unknown; emoji?: unknown };
+  const author = { kind: "user" as const, id: principalOf(req.raw)?.userId ?? "local" };
+  try {
+    const target = normalizeTarget(raw.target);
+    if (method === "POST") {
+      const reactions = await addReaction(session, { target, emoji: normalizeEmoji(raw.emoji), author });
+      return sendJson(res, 200, { ok: true, target, reactions });
+    }
+    const emoji = raw.emoji === undefined ? undefined : normalizeEmoji(raw.emoji);
+    const result = await removeReaction(session, { target, author, ...(emoji ? { emoji } : {}) });
+    return sendJson(res, 200, { ok: true, target, ...result });
+  } catch (error) {
+    if (error instanceof ReactionTargetMissing)
+      return sendJson(res, 404, { ok: false, code: "message_not_found", error: error.message });
+    if (error instanceof ValidationError)
+      return sendJson(res, 400, { ok: false, error: error.message, field: error.field });
+    throw error;
+  }
 }
 
 export async function handleEve(req: Req, res: Res, url: URL, bot: BotDefinition, rest: string[]) {
@@ -200,6 +238,8 @@ export async function handleEve(req: Req, res: Res, url: URL, bot: BotDefinition
   if (action === "" && req.method === "POST") return handleSessionPost(req, res, bot, session);
   if (action === "stream" && req.method === "GET") return handleStream(req, res, url, session);
   if (action === "events" && req.method === "GET") return handleEvents(res, url, session);
+  if (action === "reactions" && (req.method === "POST" || req.method === "DELETE"))
+    return handleReaction(req, res, session, req.method);
   if (action === "cancel" && req.method === "POST") {
     await readBody(req).catch(() => undefined);
     cancel(session);

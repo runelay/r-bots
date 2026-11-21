@@ -337,3 +337,69 @@ Servidor de teste (`conversation-routes.test.ts`, `side-threads.test.ts`, `hando
 - `POST …/conversations/:id/side {"message":"roda os testes"}` → `201` com `title:"↳ Roda os testes"`, `parentSessionId` da mãe, `sessionBasePath:"/bots/<id>/eve/v1"` e `deliveryId`.
 - Filha de filha → `201`; neta → `400 {"code":"depth_limit"}`; bot arquivado → `409 {"code":"bot_archived"}`; `{"skills":[]}` → `400 {"field":"skills"}`.
 - Turno da filha com conta Claude: `resume` = sessão da mãe e `fork: true`; a mãe fica com a mesma sessão.
+
+## v59 (21/11): reações com emoji
+
+A pessoa e os bots reagem às mensagens com emoji Unicode. A reação mora na tabela `message_reactions` (migration `0004_message_reactions`): conversa, mensagem alvo, emoji, autor e data, única por (conversa, alvo, tipo do autor, autor, emoji).
+
+### Alvo
+
+O alvo é o id que a mensagem já tem no log:
+
+- mensagem da pessoa: o `deliveryId` do `delivery.consumed`;
+- resposta do bot: o `partId` do `content.completed` com `kind:"text"`.
+
+Outro item (ferramenta, card, narração em andamento) não recebe reação.
+
+### Rotas
+
+Na base da conversa (`sessionBasePath`, vale para bot e grupo):
+
+- `POST <base>/session/:sessionId/reactions` com `{target, emoji}`: adiciona a reação da pessoa logada (autor `{kind:"user", id:<id do better-auth>}`). Repetir é idempotente.
+- `DELETE <base>/session/:sessionId/reactions` com `{target, emoji?}`: tira a reação; sem `emoji` tira todas as da pessoa naquela mensagem.
+- Resposta `200 {ok, target, reactions:[…]}` (o `DELETE` traz também `removed`). Erros: `400 {field:"target"|"emoji"}` (`emoji` precisa ser um emoji só, até 32 caracteres) e `404 {code:"message_not_found"}`.
+
+Formato da reação: `{target, emoji, author:{kind:"user"|"bot", id}, at}`.
+
+As reações vêm junto:
+
+- `GET <base>/session/:id/events` ganhou `reactions`: as reações das mensagens daquela página.
+- `GET /bots/:id/thread` ganhou `reactions`: as 500 mais recentes da conversa principal.
+
+### Eventos
+
+No log da conversa (stream e histórico), sem `scope`:
+
+```json
+{"type":"reaction.added","data":{"target":"44e45c1f-…","emoji":"🎉","author":{"kind":"bot","id":"teste-reacoes"},"at":"2026-11-21T17:30:23.536Z"}}
+{"type":"reaction.removed","data":{"target":"run_0.0","emoji":"❤️","author":{"kind":"user","id":"Pus7…"},"at":"2026-11-21T17:30:37.326Z"}}
+```
+
+### Ferramentas do bot
+
+No MCP `bots`, sem aprovação, em conversa e grupo:
+
+- `react({emoji, target?})`: sem `target`, reage à mensagem que o turno está respondendo. O bot tem no máximo uma reação por mensagem: reagir de novo troca a anterior (`reaction.removed` + `reaction.added`), o que dá o 👀 → ✅.
+- `unreact({target?})`: tira a reação do bot.
+
+O system prompt ganhou o guia `## Reações`: com parcimônia, 👀 ao começar algo longo e ✅ ao terminar, 👍 para confirmar algo simples, 🎉 em conquista, nunca no lugar da resposta quando a pessoa perguntou ou pediu algo.
+
+### Sinal para o bot
+
+- No próximo turno do bot dono da resposta, o `## Contexto desta mensagem` traz as reações da pessoa às respostas dele desde o último turno (“A pessoa reagiu 👍 à sua resposta (“…”)”), marcadas em `meta.reactionsNoted[botId]`. Não abre turno.
+- 👍 ou 👎 da pessoa numa resposta do bot entra na fila de captura de memória (`memory.capture` com `feedback`), usando a última conta e modelo da conversa (`meta.lastEngine`); o Jev recebe a reação como preferência sobre o jeito de responder.
+
+### App
+
+- Ao passar o mouse no balão (da pessoa ou do bot), o botão de carinha abre um menu de vidro com 👍 ❤️ 😂 🎉 👀 ✅ e “Mais…”, que abre o seletor de emoji do sistema.
+- Reações aparecem em pílulas logo abaixo do balão (emoji, contagem e o mini personagem do bot que reagiu); a reação da pessoa fica com o acento. Clicar alterna, otimista com volta em caso de erro.
+- O cache de conversas no disco guarda as reações (`r` no arquivo da conversa).
+
+### Verificado
+
+Instância separada (porta 2191, `BOTS_SCHEDULES=off`, Postgres e Redis efêmeros, banco vazio com um bot de teste, conta `vps:claude`):
+
+- Mensagem “Acabei de ser aprovado na prova de direção!! Me dá parabéns em uma frase.” → o bot chamou `react` sozinho: `reaction.added {"target":"44e45c1f-…","emoji":"🎉","author":{"kind":"bot","id":"teste-reacoes"}}` antes da resposta em texto. `events` trouxe `reactions:[{"target":"44e45c1f-…","emoji":"🎉","author":{"kind":"bot","id":"teste-reacoes"},"at":"2026-11-21T17:30:23.536Z"}]`.
+- `POST …/reactions {"target":"run_0.0","emoji":"❤️"}` → `200 {"ok":true,"target":"run_0.0","reactions":[{"target":"run_0.0","emoji":"❤️","author":{"kind":"user","id":"Pus7nGm8XWwhAZ7ihDfn2oXRFMX1Cxml"},"at":"2026-11-21T17:30:37.326Z"}]}`; `DELETE` do ❤️ → `{"removed":1,…}`; alvo inexistente → `404 {"ok":false,"code":"message_not_found","error":"Mensagem não encontrada."}`.
+- `GET /bots/:id/thread` → `reactions` com o 🎉 do bot e o 👍 da pessoa.
+- Turno seguinte (comando de 6 s no terminal): sem reação do bot (parcimônia) e `meta.reactionsNoted` = `{"teste-reacoes":"2026-11-21T17:30:37.343Z"}`, a nota do 👍 consumida.

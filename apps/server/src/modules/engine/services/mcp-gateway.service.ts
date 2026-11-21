@@ -44,6 +44,7 @@ import {
   touchesDatabase,
 } from "../../connectors/services/runelay.service";
 import { registerThreadTools } from "../../conversations/services/handoff-tools.service";
+import { registerReactionTools } from "../../conversations/services/reaction-tools.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
 import { createGroup, listGroups, setGroupArchived, updateGroup } from "../../groups/services/groups.service";
 import {
@@ -105,6 +106,7 @@ export interface ToolContext {
   runner?: string;
   endRun?: () => void;
   permission?: PermissionMode;
+  messageId?: string;
 }
 
 const gatedTools = new Set(["browser_click", "browser_fill", "desktop_click", "desktop_open"]);
@@ -1654,6 +1656,7 @@ export function buildServer(context: ToolContext) {
   registerServerTools(server, context);
   registerSettingsTools(server, context);
   registerThreadTools(server, context);
+  registerReactionTools(server, context);
   registerSideThreadTools(server, context);
   registerQuestionTools(server, context);
   if (context.groupMembers.length > 0) {

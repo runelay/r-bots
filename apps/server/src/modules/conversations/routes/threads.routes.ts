@@ -1,6 +1,7 @@
 import { notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { isBusy, isRunning } from "../../engine/services/engine.service";
+import { sessionReactions } from "../services/reactions.service";
 import {
   ensureThread,
   markThreadRead,
@@ -13,7 +14,11 @@ import {
 
 async function threadView(bot: BotDefinition) {
   const thread = await ensureThread(bot.id);
-  return { ...publicThread(thread), running: isRunning(thread.sessionId) };
+  return {
+    ...publicThread(thread),
+    running: isRunning(thread.sessionId),
+    reactions: await sessionReactions(thread.sessionId),
+  };
 }
 
 export async function handleBotThread(req: Req, res: Res, method: string, bot: BotDefinition, tail: string) {

@@ -45,3 +45,31 @@ export const conversationEvents = pgTable(
   },
   (table) => [uniqueIndex("conversation_events_session_seq_idx").on(table.sessionId, table.seq)],
 );
+
+export const messageReactions = pgTable(
+  "message_reactions",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => conversations.sessionId, { onDelete: "cascade" }),
+    target: text("target").notNull(),
+    targetSeq: integer("target_seq").notNull(),
+    targetRole: text("target_role").notNull(),
+    targetBotId: text("target_bot_id"),
+    emoji: text("emoji").notNull(),
+    authorKind: text("author_kind").notNull(),
+    authorId: text("author_id").notNull(),
+    createdAt: timestamptz("created_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("message_reactions_unique_idx").on(
+      table.sessionId,
+      table.target,
+      table.authorKind,
+      table.authorId,
+      table.emoji,
+    ),
+    index("message_reactions_session_idx").on(table.sessionId, table.createdAt),
+  ],
+);

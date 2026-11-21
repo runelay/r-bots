@@ -42,6 +42,7 @@ export interface SessionMeta {
   providerSessions?: Record<string, string>;
   recallSeen?: Record<string, string[]>;
   pendingNotes?: string[];
+  reactionsNoted?: Record<string, string>;
   carryOver?: string | null;
   contextTokens?: number;
   workspace?: WorkspaceState;

@@ -75,6 +75,7 @@ import {
   delegationConversation,
 } from "../../conversations/services/conversations.service";
 import { handoffBlock, refreshSummary } from "../../conversations/services/handoff.service";
+import { reactionGuide, reactionNote } from "../../conversations/services/reactions.service";
 import type { EventLog, Fact, StoredSession } from "../../conversations/services/sessions.service";
 import { titleFrom } from "../../conversations/services/sessions.service";
 import { recordThreadMessage } from "../../conversations/services/threads.service";
@@ -217,6 +218,7 @@ interface PendingInteraction {
 interface Turn {
   turnId: string;
   deliveryId: string;
+  messageId: string;
   abort: AbortController;
   interactions: Map<string, PendingInteraction>;
   cancelled: boolean;
@@ -476,6 +478,7 @@ function systemPromptFor(
   if (home && !openGuide) parts.push("", shellGuide(home));
   parts.push("", permissionGuide(permission));
   parts.push("", questionGuide);
+  parts.push("", reactionGuide);
   parts.push("", canvasGuide);
   parts.push("", blocksGuide);
   parts.push("", uploadGuide);
@@ -1083,6 +1086,7 @@ async function executeProvider(run: ProviderRun) {
     provider: run.provider,
     runner: run.account.runner,
     permission,
+    messageId: turn.messageId,
     endRun: yieldRun,
     cancelTurn: (reason) => {
       if (turn.abort.signal.aborted) return;
@@ -1501,6 +1505,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
   const turn: Turn = {
     turnId,
     deliveryId: delivery.deliveryId,
+    messageId: delivery.deliveryId,
     abort: new AbortController(),
     interactions: new Map(),
     cancelled: false,
@@ -1825,6 +1830,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       notes.push(await canvasEditNote(bot.id).catch(() => ""));
       notes.push(await blocksEditNote(bot.id).catch(() => ""));
     }
+    if (!isSchedule) notes.push(await reactionNote(session, bot.id).catch(() => ""));
     if (delivery.voice) notes.push(voiceNote);
     notes.push(nowNote(await userTimezone()));
     if (isSchedule) notes.push(scheduleNote);

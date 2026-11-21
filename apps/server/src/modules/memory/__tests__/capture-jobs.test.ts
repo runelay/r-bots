@@ -102,6 +102,16 @@ describe("memory capture job", () => {
     expect(await getJobView("nada")).toBeNull();
   });
 
+  test("carries the reaction feedback through the job", async () => {
+    const capture = spyOn(memory, "capture").mockResolvedValue(undefined);
+    restores.push(() => capture.mockRestore());
+    const { value } = await input();
+    await queueCapture({ ...value, turnId: "reaction_run_0.0", feedback: "👍" });
+    await waitFor(() => capture.mock.calls.some(([call]) => call.turnId === "reaction_run_0.0"), 8000);
+    const call = capture.mock.calls.find(([item]) => item.turnId === "reaction_run_0.0")?.[0];
+    expect(call?.feedback).toBe("👍");
+  });
+
   test("captures in process while the queue is off", async () => {
     const capture = spyOn(memory, "capture").mockResolvedValue(undefined);
     restores.push(() => capture.mockRestore());

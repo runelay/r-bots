@@ -17,6 +17,7 @@ export interface CapturePayload {
   recalled: RecallItem[];
   sessionId: string;
   turnId: string;
+  feedback?: string;
 }
 
 export async function runCaptureJob(payload: CapturePayload) {
@@ -33,6 +34,7 @@ export async function runCaptureJob(payload: CapturePayload) {
     recalled: payload.recalled,
     log: session.log,
     turnId: payload.turnId,
+    ...(payload.feedback ? { feedback: payload.feedback } : {}),
   });
   await session.log.flush();
   return { skipped: false };
@@ -51,6 +53,7 @@ export async function queueCapture(input: CaptureInput & { sessionId: string }) 
     recalled: input.recalled,
     sessionId: input.sessionId,
     turnId: input.turnId,
+    ...(input.feedback ? { feedback: input.feedback } : {}),
   };
   await input.log.flush();
   await writeTransaction((tx) => enqueueInTx(tx, { type: captureJobType, payload }));

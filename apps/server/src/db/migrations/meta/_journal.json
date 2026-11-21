@@ -29,6 +29,13 @@
       "when": 1795146146718,
       "tag": "0003_devices",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795281621919,
+      "tag": "0004_message_reactions",
+      "breakpoints": true
     }
   ]
 }

@@ -96,6 +96,20 @@ describe("capture", () => {
     expect(fakeProviders.turns).toHaveLength(0);
   });
 
+  test("adds the 👍/👎 reaction to the exchange Jev judges", async () => {
+    const bodies: string[] = [];
+    fakeJev((body) => {
+      bodies.push(JSON.stringify(body));
+      return { answers: { durable: { type: "noul", noul: 0.1 }, secret: { type: "noul", noul: 0 } } };
+    });
+    await capture({ ...input(), feedback: "👎" });
+    await capture({ ...input(), feedback: "👍" });
+    await capture(input());
+    expect(bodies[0]).toContain("A pessoa reagiu 👎 a esta resposta");
+    expect(bodies[1]).toContain("A pessoa reagiu 👍 a esta resposta");
+    expect(bodies[2]).not.toContain("A pessoa reagiu");
+  });
+
   test("skips on a secret verdict, a secret in the text, or a non durable exchange", async () => {
     fakeJev(() => ({ answers: {} }));
     await capture(input());

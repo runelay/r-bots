@@ -174,12 +174,24 @@ export interface CaptureInput {
   recalled: RecallItem[];
   log: EventLog;
   turnId: string;
+  feedback?: string;
+}
+
+function feedbackLine(emoji: string) {
+  return emoji === "👎"
+    ? "A pessoa reagiu 👎 a esta resposta: não gostou do jeito ou do conteúdo. Trate como preferência sobre como responder."
+    : "A pessoa reagiu 👍 a esta resposta: aprovou o jeito e o conteúdo. Trate como preferência sobre como responder.";
 }
 
 export async function capture(input: CaptureInput) {
   const { bot, userText, replyText, log, turnId } = input;
   if (!runelayEnabled() || !jevEnabled()) return;
-  const exchange = `Pessoa: ${userText}\n${bot.name}: ${replyText}`.slice(0, 6000);
+  const exchange = [
+    `Pessoa: ${userText}\n${bot.name}: ${replyText}`.slice(0, 6000),
+    input.feedback ? feedbackLine(input.feedback) : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
   let durable = 0;
   let secret = 1;
   let latencyMs = 0;
