@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## v0.1.7
+
+### iPhone
+
+- The bot list works like the Mac sidebar: sections (Fixados, your sections, Todos), conversations as a tree with sub-threads that collapse, provider logo and state on each conversation, server-side search, the r/bots mark next to the title and a shortcuts button at the bottom right.
+- Server profiles get the Mac default names (Principal, Local, VPS) instead of the raw host, and name, address, color and icon can be edited.
+
+### Docs
+
+- The README hero shows the iPhone app next to the Mac app, with a step-by-step to install it.
+
 ### Fixes
 
 - The update notice works with a private release repo: without `RBOTS_GITHUB_TOKEN`, the server checks GitHub with its `gh` login. Before, GitHub answered 404 and the app never offered the update.
