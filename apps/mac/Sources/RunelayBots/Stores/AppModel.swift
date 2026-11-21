@@ -158,6 +158,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case vault
     case integrations
     case shortcuts
+    case versions
     case about
 
     var id: String { rawValue }
@@ -175,6 +176,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .vault: "Cofre"
         case .integrations: "Integrações"
         case .shortcuts: "Atalhos"
+        case .versions: "Versões"
         case .about: "Sobre"
         }
     }
@@ -192,6 +194,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .devices: "laptopcomputer.and.iphone"
         case .integrations: "key.horizontal"
         case .shortcuts: "command"
+        case .versions: "arrow.down.circle"
         case .about: "info.circle"
         }
     }
@@ -257,6 +260,7 @@ final class AppModel {
     var activeSheet: AppSheet?
     var codeFocusPath: String?
     let browser = BrowserStore()
+    let versions = VersionsStore()
     let tabs = BotTabs(profileID: ServerProfiles.shared.active.id)
     @ObservationIgnored private var tabsRestored = false
     @ObservationIgnored private var windowBots: [String: Int] = [:]

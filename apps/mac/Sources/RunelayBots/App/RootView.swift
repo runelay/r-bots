@@ -86,6 +86,19 @@ struct RootView: View {
             UsageStore.shared.start()
             await model.start()
         }
+        .task(id: updateCheck) {
+            guard updateCheck.isOwner, !updateCheck.paused else { return }
+            await model.versions.watch(model: model)
+        }
+    }
+
+    private var updateCheck: UpdateCheckKey {
+        UpdateCheckKey(
+            server: ServerConfig.currentURL().absoluteString,
+            userID: AuthSession.shared.user?.id,
+            isOwner: AuthSession.shared.user?.isOwner == true,
+            paused: model.settingsPresented
+        )
     }
 
     @ViewBuilder
@@ -182,6 +195,7 @@ struct TopStrip: View {
             ServerProfileSwitcher()
                 .padding(.leading, -Spacing.s)
             Spacer(minLength: Spacing.s)
+            UpdateAvailableButton()
             HeaderIconButton(
                 systemImage: "sidebar.left",
                 help: sidebarCollapsed ? "Mostrar as conversas (⌃⌘S)" : "Ocultar as conversas (⌃⌘S)",
@@ -202,6 +216,7 @@ struct TopStrip: View {
         }
         .padding(.leading, FrameMetrics.titleLeading)
         .frame(width: FrameMetrics.sidebarContentTrailing, alignment: .leading)
+        .springAnimation(value: model.versions.updateCount)
     }
 
     var body: some View {

@@ -69,7 +69,7 @@ extension SettingsSection {
         case .server, .account, .devices, .vault: .account
         case .appearance, .notifications, .shortcuts: .app
         case .bots, .aiAccounts, .computer, .integrations: .automation
-        case .about: .about
+        case .versions, .about: .about
         }
     }
 
@@ -86,6 +86,7 @@ extension SettingsSection {
         case .integrations: "puzzlepiece.extension.fill"
         case .shortcuts: "command"
         case .about: "info"
+        case .versions: "arrow.down.circle.fill"
         case .devices: "laptopcomputer.and.iphone"
         }
     }
@@ -103,6 +104,7 @@ extension SettingsSection {
         case .integrations: SettingsTint.green
         case .shortcuts: SettingsTint.graphite
         case .about: SettingsTint.graphite
+        case .versions: SettingsTint.blue
         case .devices: SettingsTint.teal
         }
     }
@@ -120,6 +122,7 @@ extension SettingsSection {
         case .integrations: ["elevenlabs", "jev", "chave", "voz", "runelay"]
         case .shortcuts: ["teclado", "voz", "microfone", "atalho"]
         case .about: ["versão", "app"]
+        case .versions: ["atualizar", "atualização", "versão", "cli", "claude code", "codex", "rbots update", "novidades"]
         case .devices: ["mac", "aparelhos", "conectar", "desconectar"]
         }
     }
@@ -132,6 +135,7 @@ extension SettingsSection {
         case .vault: "Os valores ficam no Keychain deste Mac e nunca aparecem sem Touch ID. Abrir o cofre pede confirmação e ele tranca de novo em 5 minutos ou quando o app sai da frente."
         case .integrations: "Serviços opcionais. Os bots funcionam sem eles; cada chave liga uma parte a mais. A chave fica cifrada no servidor e nunca volta para o app."
         case .notifications: "O número no ícone do Dock mostra o total de mensagens não lidas."
+        case .versions: "O r/bots atualiza com um comando no servidor. Os CLIs dos bots atualizam por aqui, sem reiniciar nada: o próximo pedido já usa a versão nova."
         default: nil
         }
     }
@@ -153,10 +157,14 @@ struct SettingsScreen: View {
     @State private var navigator = SettingsNavigator()
     @State private var query = ""
 
+    private var isOwner: Bool {
+        AuthSession.shared.user?.isOwner == true
+    }
+
     private var visibleSections: [(SettingsSectionGroup, [(SettingsSection, String?)])] {
         SettingsSectionGroup.allCases.compactMap { group in
             let items: [(SettingsSection, String?)] = SettingsSection.allCases
-                .filter { $0.group == group }
+                .filter { $0.group == group && ($0 != .versions || isOwner) }
                 .compactMap { section in
                     if query.isEmpty { return (section, nil) }
                     guard let hit = section.matches(query) else { return nil }
@@ -359,6 +367,12 @@ struct SettingsScreen: View {
             case .devices: DevicesSettings()
             case .integrations: IntegrationsSettings()
             case .shortcuts: ShortcutsSettings()
+            case .versions:
+                if isOwner {
+                    VersionsSettings()
+                } else {
+                    EmptyStateView(systemImage: "lock", title: "Só para a dona da conta", description: "Quem cuida do servidor vê e atualiza as versões por aqui.")
+                }
             case .about: AboutSettings()
             }
         }
