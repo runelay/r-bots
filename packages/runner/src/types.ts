@@ -1,5 +1,6 @@
 import type {
   BoxRuntime,
+  BoxSpec,
   BoxStatus,
   EnvironmentCapacity,
   EnvironmentHello,
@@ -31,8 +32,29 @@ export interface BoxExecHandle extends ExecHandle {
   write(line: string): void;
 }
 
+export interface EnsureOptions {
+  idle: boolean;
+}
+
 export interface BoxProvider extends SandboxProvider {
+  ensure(botId: string, spec: BoxSpec, options?: EnsureOptions): Promise<BoxStatus>;
   exec(botId: string, argv: string[], opts: ExecOptions): BoxExecHandle;
+}
+
+export interface ImageRef {
+  repository: string;
+  tag: string;
+  registry: string;
+}
+
+export interface RegistryCredentials {
+  user: string | null;
+  token: string | null;
+}
+
+export interface CleanupOptions {
+  removeAfterMs: number;
+  busy: (botId: string) => boolean;
 }
 
 export type JsonRecord = Record<string, unknown>;
@@ -124,6 +146,7 @@ export interface ConnectionOptions {
   onFrame: (frame: JsonRecord) => void;
   onClose: () => void;
   onStop: (reason: string) => void;
+  onBeat?: () => void;
   log: (line: string) => void;
 }
 
@@ -151,6 +174,7 @@ export interface RuntimeRequest {
 export interface DockerProviderOptions {
   api: DockerApi;
   image: string;
+  registryAuth?: string | null;
   choice: RuntimeChoice;
   now?: () => Date;
   log: (line: string) => void;
@@ -170,4 +194,7 @@ export interface RunnerEnv {
   stopAfterMs: number;
   reserveMb: number;
   maxBoxes: number | null;
+  registry: RegistryCredentials;
+  removeAfterMs: number;
+  healthFile: string;
 }

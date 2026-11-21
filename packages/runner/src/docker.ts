@@ -5,7 +5,11 @@ import {
   boxBotLabel,
   boxCacheVolume,
   boxCapAdd,
+  boxDataDir,
+  boxEntrypoint,
   boxExecUser,
+  boxHealthcheck,
+  boxImagesKept,
   boxKillUser,
   boxNamePrefix,
   boxPidDir,
@@ -18,12 +22,15 @@ import {
 } from "./constants";
 import { DockerDemuxer } from "./demux";
 import { type DockerApi, DockerError, type Hijacked } from "./docker-api";
+import { BoxImage } from "./image";
 import { isRecord, stringMap, stringOf } from "./json";
 import { bindsOf, specKey } from "./mounts";
 import type {
   BoxExecHandle,
   BoxProvider,
+  CleanupOptions,
   DockerProviderOptions,
+  EnsureOptions,
   ExecOptions,
   RuntimeChoice,
   RuntimeRequest,
@@ -35,7 +42,15 @@ const encoder = new TextEncoder();
 interface Inspected {
   state: BoxState;
   startedAt: string;
+  finishedAt: string;
+  image: string;
   labels: Record<string, string>;
+}
+
+interface Listed {
+  botId: string;
+  state: string;
+  imageId: string;
 }
 
 export function boxName(botId: string) {
@@ -87,10 +102,12 @@ export class DockerSandboxProvider implements BoxProvider {
   private readonly now: () => Date;
   private readonly log: (line: string) => void;
   readonly runtime: RuntimeChoice["runtime"];
+  readonly images: BoxImage;
 
-  constructor({ api, image, choice, now = () => new Date(), log }: DockerProviderOptions) {
+  constructor({ api, image, registryAuth = null, choice, now = () => new Date(), log }: DockerProviderOptions) {
     this.api = api;
     this.image = image;
+    this.images = new BoxImage(api, image, registryAuth, log);
     this.runtime = choice.runtime;
     this.engine = choice.engine;
     this.now = now;
@@ -106,6 +123,8 @@ export class DockerSandboxProvider implements BoxProvider {
     return {
       state: stateOf(stringOf(state.Status)),
       startedAt: stringOf(state.StartedAt, this.now().toISOString()),
+      finishedAt: stringOf(state.FinishedAt),
+      image: stringOf(body.Image),
       labels: stringMap(config.Labels),
     };
   }
@@ -136,6 +155,10 @@ export class DockerSandboxProvider implements BoxProvider {
     const writable = mounts.filter(({ readOnly }) => !readOnly).map(({ box }) => box);
     await this.api.expect("POST", `/containers/create?name=${boxName(botId)}`, [201], {
       Image: this.image,
+      Entrypoint: boxEntrypoint,
+      Cmd: [],
+      WorkingDir: boxDataDir,
+      Healthcheck: boxHealthcheck,
       Labels: { [boxBotLabel]: botId, [boxSpecLabel]: key },
       Env: [`${boxSandboxRootsEnv}=${writable.join(":")}`],
       HostConfig: {
@@ -153,11 +176,14 @@ export class DockerSandboxProvider implements BoxProvider {
     });
   }
 
-  async ensure(botId: string, spec: BoxSpec): Promise<BoxStatus> {
+  async ensure(botId: string, spec: BoxSpec, { idle }: EnsureOptions = { idle: true }): Promise<BoxStatus> {
     const name = boxName(botId);
     const key = specKey(spec);
+    const imageId = await this.images.ensure();
     const found = await this.inspect(name);
-    const stale = found !== null && found.labels[boxSpecLabel] !== key;
+    const outdated = idle && found !== null && found.image !== imageId;
+    if (outdated) this.log(`caixa ${botId}: criada de outra imagem, recriando com ${this.image}`);
+    const stale = found !== null && (found.labels[boxSpecLabel] !== key || outdated);
     if (stale) await this.api.expect("DELETE", `/containers/${name}?force=true`, [204, 404]);
     const current = stale ? null : found;
     if (!current) await this.create(botId, spec, key);
@@ -209,14 +235,83 @@ export class DockerSandboxProvider implements BoxProvider {
     await this.api.expect("POST", `/containers/${boxName(botId)}/stop?t=10`, [204, 304]);
   }
 
-  async list(): Promise<BoxStatus[]> {
+  private async listed(): Promise<Listed[]> {
     const filters = encodeURIComponent(JSON.stringify({ label: [boxBotLabel] }));
     const { body } = await this.api.expect("GET", `/containers/json?all=true&filters=${filters}`, [200]);
-    const ids = (Array.isArray(body) ? body : [])
-      .map((item) => (isRecord(item) ? stringOf(stringMap(item.Labels)[boxBotLabel]) : ""))
-      .filter(Boolean);
+    return (Array.isArray(body) ? body : [])
+      .filter(isRecord)
+      .map((item) => ({
+        botId: stringOf(stringMap(item.Labels)[boxBotLabel]),
+        state: stringOf(item.State),
+        imageId: stringOf(item.ImageID),
+      }))
+      .filter(({ botId }) => botId !== "");
+  }
+
+  async list(): Promise<BoxStatus[]> {
+    const ids = (await this.listed()).map(({ botId }) => botId);
     const statuses = await Promise.all(ids.map((botId) => this.statusOf(botId)));
     return statuses.filter((status): status is BoxStatus => status !== null);
+  }
+
+  async cleanup({ removeAfterMs, busy }: CleanupOptions) {
+    const current = await this.images.current().catch(() => null);
+    const removed = await this.pruneBoxes(current, removeAfterMs, busy);
+    if (current) await this.pruneImages(current);
+    return removed;
+  }
+
+  private async pruneBoxes(current: string | null, removeAfterMs: number, busy: (botId: string) => boolean) {
+    const removed: string[] = [];
+    const cutoff = this.now().getTime() - removeAfterMs;
+    for (const { botId, state } of await this.listed()) {
+      if (busy(botId) || stateOf(state) !== "stopped") continue;
+      const found = await this.inspect(boxName(botId));
+      if (!found) continue;
+      const finished = Date.parse(found.finishedAt);
+      const old = Number.isFinite(finished) && finished > 0 && finished < cutoff;
+      const outdated = current !== null && found.image !== current;
+      if (!old && !outdated) continue;
+      await this.api.expect("DELETE", `/containers/${boxName(botId)}`, [204, 404]);
+      this.log(`caixa ${botId} removida (${outdated ? "imagem antiga" : "parada há muito tempo"})`);
+      removed.push(botId);
+    }
+    return removed;
+  }
+
+  private async pruneImages(current: string) {
+    const { repository } = this.images.ref;
+    const containers = await this.api.expect("GET", "/containers/json?all=true", [200]);
+    const used = new Set(
+      (Array.isArray(containers.body) ? containers.body : []).filter(isRecord).map((item) => stringOf(item.ImageID)),
+    );
+    const tagged = await this.imagesMatching({ reference: [repository] });
+    const dangling = await this.imagesMatching({ dangling: ["true"], label: [imageProvidersLabel] });
+    const stale = (id: string) => id !== current && !used.has(id);
+    const targets = [
+      ...tagged
+        .filter(({ id }) => stale(id))
+        .sort((left, right) => right.created - left.created)
+        .slice(boxImagesKept)
+        .flatMap(({ tags }) => tags.filter((tag) => tag.startsWith(`${repository}:`))),
+      ...dangling.filter(({ id, tags }) => stale(id) && tags.length === 0).map(({ id }) => id),
+    ];
+    for (const target of targets) {
+      const { status } = await this.api.request("DELETE", `/images/${encodeURIComponent(target)}`);
+      if (status === 200) this.log(`imagem de caixa antiga removida: ${target}`);
+    }
+  }
+
+  private async imagesMatching(filters: Record<string, string[]>) {
+    const query = encodeURIComponent(JSON.stringify(filters));
+    const { body } = await this.api.expect("GET", `/images/json?filters=${query}`, [200]);
+    return (Array.isArray(body) ? body : []).filter(isRecord).map((item) => ({
+      id: stringOf(item.Id),
+      created: typeof item.Created === "number" ? item.Created : 0,
+      tags: (Array.isArray(item.RepoTags) ? item.RepoTags : []).filter(
+        (tag): tag is string => typeof tag === "string" && !tag.startsWith("<none>"),
+      ),
+    }));
   }
 
   private async killGroup(name: string, pidFile: string) {

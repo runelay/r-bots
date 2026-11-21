@@ -182,6 +182,14 @@ export interface Container {
   labels: Record<string, string>;
   config: JsonRecord;
   startedAt: string;
+  finishedAt: string;
+  image: string;
+}
+
+export interface FakeImage {
+  Id: string;
+  RepoTags: string[];
+  Created?: number;
 }
 
 interface FakeRoute {
@@ -193,12 +201,19 @@ interface FakeRoute {
 const reasons: Record<number, string> = { 101: "UPGRADED", 200: "OK", 201: "Created", 204: "No Content" };
 
 export class FakeDocker {
-  readonly requests: Array<{ method: string; path: string; body: unknown }> = [];
+  readonly requests: Array<{ method: string; path: string; body: unknown; headers: Record<string, string> }> = [];
   readonly containers = new Map<string, Container>();
   readonly execs = new Map<string, ExecRecord>();
   readonly overrides = new Map<string, FakeRoute>();
   runtimes: string[] = ["runc", "runsc"];
   imageLabels: Record<string, string> | null = { "rbots.providers": "claude,codex,bogus" };
+  imageId = "sha256:box-current";
+  pullStatus = 200;
+  pullLines: unknown[] = [{ status: "Pulling from runelay/box" }];
+  taggedImages: FakeImage[] = [];
+  danglingImages: FakeImage[] = [];
+  busyImages = new Set<string>();
+  readonly deletedImages: string[] = [];
   memoryUsage: number | null = 300 * 1024 * 1024;
   hijackStatus = 101;
   cgroupMax: string | null = null;
@@ -254,7 +269,13 @@ export class FakeDocker {
             state.buffer = state.buffer.subarray(end + 4 + length);
             const [method, target] = requestLine.split(" ");
             const body: unknown = bodyText ? JSON.parse(bodyText) : null;
-            fake.requests.push({ method, path: target, body });
+            const headers = Object.fromEntries(
+              headerLines.map((item) => {
+                const index = item.indexOf(":");
+                return [item.slice(0, index).trim().toLowerCase(), item.slice(index + 1).trim()];
+              }),
+            );
+            fake.requests.push({ method, path: target, body, headers });
             const hijack = fake.hijackFor(method, target, body);
             if (hijack && fake.hijackStatus === 0) {
               socket.end();
@@ -309,8 +330,22 @@ export class FakeDocker {
     this.temp.remove();
   }
 
-  addContainer(name: string, state: string, labels: Record<string, string>) {
-    this.containers.set(name, { name, state, labels, config: {}, startedAt: "2026-11-21T00:00:00.000Z" });
+  addContainer(
+    name: string,
+    state: string,
+    labels: Record<string, string>,
+    extra: Partial<Pick<Container, "finishedAt" | "image">> = {},
+  ) {
+    this.containers.set(name, {
+      name,
+      state,
+      labels,
+      config: {},
+      startedAt: "2026-11-21T00:00:00.000Z",
+      finishedAt: "0001-01-01T00:00:00Z",
+      image: this.imageId,
+      ...extra,
+    });
   }
 
   paths() {
@@ -339,12 +374,30 @@ export class FakeDocker {
     const path = url.pathname;
     if (method === "GET" && path === "/info")
       return { status: 200, body: { Runtimes: Object.fromEntries(this.runtimes.map((name) => [name, {}])) } };
+    if (method === "GET" && path === "/images/json") {
+      const filters = String(url.searchParams.get("filters") ?? "");
+      return { status: 200, body: filters.includes("dangling") ? this.danglingImages : this.taggedImages };
+    }
+    if (method === "POST" && path === "/images/create") return this.pull();
+    if (method === "DELETE" && path.startsWith("/images/")) {
+      const target = decodeURIComponent(path.slice("/images/".length));
+      if (this.busyImages.has(target)) return { status: 409, body: { message: "image is in use" } };
+      this.deletedImages.push(target);
+      return { status: 200, body: [{ Untagged: target }] };
+    }
     if (method === "GET" && path.startsWith("/images/"))
-      return this.imageLabels ? { status: 200, body: { Config: { Labels: this.imageLabels } } } : { status: 404 };
+      return this.imageLabels
+        ? { status: 200, body: { Id: this.imageId, Config: { Labels: this.imageLabels } } }
+        : { status: 404, body: { message: "No such image" } };
     if (method === "GET" && path === "/containers/json")
       return {
         status: 200,
-        body: [...this.containers.values()].map(({ labels, state }) => ({ Labels: labels, State: state })),
+        body: [...this.containers.values()].map(({ name, labels, state, image }) => ({
+          Names: [`/${name}`],
+          Labels: labels,
+          State: state,
+          ImageID: image,
+        })),
       };
     const container = path.match(/^\/containers\/([^/]+)(?:\/([a-z]+))?$/);
     if (method === "POST" && path === "/containers/create") {
@@ -357,6 +410,8 @@ export class FakeDocker {
         labels: typeof labels === "object" && labels !== null ? Object.fromEntries(Object.entries(labels)) : {},
         config,
         startedAt: "0001-01-01T00:00:00Z",
+        finishedAt: "0001-01-01T00:00:00Z",
+        image: this.imageId,
       });
       return { status: 201, body: { Id: name } };
     }
@@ -366,6 +421,13 @@ export class FakeDocker {
     return { status: 404, body: { message: "rota desconhecida" } };
   }
 
+  private pull(): FakeRoute {
+    if (this.pullStatus !== 200) return { status: this.pullStatus, body: { message: "pull access denied for box" } };
+    const failed = this.pullLines.some((line) => typeof line === "object" && line !== null && "error" in line);
+    if (!failed) this.imageLabels ??= {};
+    return { status: 200, raw: this.pullLines.map((line) => JSON.stringify(line)).join("\n") };
+  }
+
   private containerRoute(method: string, name: string, action: string, body: unknown): FakeRoute {
     const container = this.containers.get(name);
     if (!container) return { status: 404, body: { message: `No such container: ${name}` } };
@@ -373,7 +435,8 @@ export class FakeDocker {
       return {
         status: 200,
         body: {
-          State: { Status: container.state, StartedAt: container.startedAt },
+          State: { Status: container.state, StartedAt: container.startedAt, FinishedAt: container.finishedAt },
+          Image: container.image,
           Config: { Labels: container.labels },
           HostConfig: container.config.HostConfig ?? {},
         },

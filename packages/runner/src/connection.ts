@@ -71,14 +71,14 @@ export class RunnerConnection {
     this.options.log("runner conectado");
     const hello = await this.options.hello();
     if (socket !== this.socket) return;
-    this.send({ ...hello });
+    if (this.send({ ...hello })) this.options.onBeat?.();
     this.beat?.cancel();
     this.beat = this.options.clock.every(capacityIntervalMs, () => void this.pushCapacity());
   }
 
   private async pushCapacity() {
     const capacity = await this.options.capacity();
-    this.send({ type: "capacity", capacity });
+    if (this.send({ type: "capacity", capacity })) this.options.onBeat?.();
   }
 
   private onMessage(data: unknown) {

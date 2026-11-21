@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { hostname } from "node:os";
+import { checkHealth } from "../health";
 import { readEnv, runnerVersion, startRunner, tokenReader } from "../runner";
 import type { RunnerEnv } from "../types";
 import { boxSpec, FakeClock, FakeDocker, type FakeServer, fakeServer, tempDir, turnRequest, until } from "./helpers";
@@ -31,11 +32,14 @@ describe("readEnv", () => {
       accountRoots: [],
       runtime: null,
       socketPath: "/var/run/docker.sock",
-      image: "runelay-bots-box:latest",
+      image: "ghcr.io/runelay/r-bots:dev",
       pauseAfterMs: 120_000,
       stopAfterMs: 1_800_000,
       reserveMb: 1024,
       maxBoxes: null,
+      registry: { user: null, token: null },
+      removeAfterMs: 604_800_000,
+      healthFile: "/tmp/rbots-runner.health",
     });
     expect(
       readEnv({
@@ -50,8 +54,15 @@ describe("readEnv", () => {
         BOX_STOP_AFTER_MS: "20",
         BOX_MEM_RESERVE_MB: "30",
         RBOTS_MAX_BOXES: "4",
+        RBOTS_REGISTRY_USER: "octo",
+        RBOTS_REGISTRY_TOKEN: "ghp_x",
+        BOX_REMOVE_AFTER_MS: "40",
+        RBOTS_HEALTH_FILE: "/tmp/h",
       }),
     ).toMatchObject({
+      registry: { user: "octo", token: "ghp_x" },
+      removeAfterMs: 40,
+      healthFile: "/tmp/h",
       name: "vps-2",
       workspaceRoots: ["/a", "/b"],
       accountRoots: ["/home/u/.claude", "/home/u/.codex/"],
@@ -60,6 +71,12 @@ describe("readEnv", () => {
       reserveMb: 30,
       maxBoxes: 4,
     });
+    expect(readEnv({ RBOTS_URL: "http://x", RBOTS_DEVICE_TOKEN: "t", RBOTS_VERSION: "0.3.1" }).image).toBe(
+      "ghcr.io/runelay/r-bots:0.3.1",
+    );
+    expect(
+      readEnv({ RBOTS_URL: "http://x", RBOTS_DEVICE_TOKEN: "t", RBOTS_VERSION: "0.3.1", RBOX_IMAGE: "box:1" }).image,
+    ).toBe("box:1");
   });
 
   test("reads the token from the env or from a file that may not exist yet", async () => {
@@ -77,8 +94,8 @@ describe("readEnv", () => {
     temp.remove();
   });
 
-  test("reads the package version", async () => {
-    expect(await runnerVersion()).toMatch(/^\d+\.\d+\.\d+$/);
+  test("reads the package version", () => {
+    expect(runnerVersion()).toMatch(/^\d+\.\d+\.\d+$/);
   });
 });
 
@@ -116,6 +133,9 @@ describe("startRunner", () => {
       stopAfterMs: 1_800_000,
       reserveMb: 1024,
       maxBoxes: null,
+      registry: { user: null, token: null },
+      removeAfterMs: 604_800_000,
+      healthFile: `${temp.dir}/health`,
       ...overrides,
     };
   }
@@ -133,17 +153,19 @@ describe("startRunner", () => {
         io.exit(0);
       });
     };
+    expect(checkHealth(`${temp.dir}/health`).ok).toBe(false);
     const runner = await startRunner(config(), {
       clock,
       meminfoPath: `${temp.dir}/meminfo`,
       kvmPath: `${temp.dir}/kvm`,
     });
     const hello = await server.waitFor(({ type }) => type === "hello", "hello");
+    await until(() => checkHealth(`${temp.dir}/health`).ok, "heartbeat");
     expect(hello).toEqual({
       type: "hello",
       capabilities: ["turns", "boxes", "mcp-proxy", "hooks"],
       runner: {
-        version: await runnerVersion(),
+        version: runnerVersion(),
         name: "vps-test",
         kvm: true,
         runtime: "runc",
@@ -198,7 +220,7 @@ describe("startRunner", () => {
       log: (line) => logs.push(line),
     });
     expect(server.tokens).toEqual([]);
-    expect(clock.delays()).toEqual([5000]);
+    expect(clock.delays()).toEqual([21_600_000, 5000]);
     await Bun.write(tokenFile, "rbk_file\n");
     clock.advance(5000);
     const hello = await server.waitFor(({ type }) => type === "hello", "hello");
@@ -229,18 +251,70 @@ describe("startRunner", () => {
     ).rejects.toThrow("RBOTS_RUNTIME=runsc não está disponível");
   });
 
-  test("uses gVisor when present and stop() ends the runner", async () => {
+  test("uses gVisor when present, pulls a missing box image at boot and stop() ends the runner", async () => {
     docker.imageLabels = null;
     docker.addContainer("rbbox-old", "paused", { "rbots.bot": "old" });
-    const runner = await startRunner(config({ maxBoxes: 7 }), {
+    const logs: string[] = [];
+    const runner = await startRunner(config({ maxBoxes: 7, image: "ghcr.io/runelay/r-bots-box:0.2.0" }), {
       clock: new FakeClock(),
       meminfoPath: `${temp.dir}/meminfo`,
       kvmPath: `${temp.dir}/no-kvm`,
+      log: (line) => logs.push(line),
     });
     const hello = await server.waitFor(({ type }) => type === "hello", "hello");
     expect(hello).toMatchObject({
       runner: { runtime: "runsc", kvm: false, providers: [], capacity: { maxBoxes: 7, boxesPaused: 1 } },
     });
+    expect(docker.paths()).toContain("POST /images/create?fromImage=ghcr.io%2Frunelay%2Fr-bots-box&tag=0.2.0");
+    expect(logs).toContain("imagem da caixa ghcr.io/runelay/r-bots-box:0.2.0 pronta (sha256:box-current)");
+    runner.stop();
+    expect(await runner.stopped).toBe("stopped");
+  });
+
+  test("keeps running when the image cannot be pulled, fails turns clearly and sweeps old boxes on a timer", async () => {
+    const clock = new FakeClock();
+    const logs: string[] = [];
+    docker.imageLabels = null;
+    docker.pullStatus = 404;
+    docker.addContainer("rbbox-gone", "exited", { "rbots.bot": "gone" }, { finishedAt: "2026-01-01T00:00:00.000Z" });
+    const runner = await startRunner(config({ registry: { user: null, token: "ghp_secret" } }), {
+      clock,
+      meminfoPath: `${temp.dir}/meminfo`,
+      kvmPath: `${temp.dir}/kvm`,
+      log: (line) => logs.push(line),
+    });
+    expect(logs).toContain(
+      "Não consegui baixar a imagem da caixa runelay-bots-box:latest: pull access denied for box. Confira se RBOTS_REGISTRY_TOKEN pode ler pacotes desse registry.",
+    );
+    expect(docker.containers.has("rbbox-gone")).toBe(false);
+    expect(logs).toContain("caixa gone removida (parada há muito tempo)");
+    const pull = docker.requests.find(({ path }) => path.startsWith("/images/create"));
+    const auth = JSON.parse(Buffer.from(pull?.headers["x-registry-auth"] ?? "", "base64url").toString());
+    expect(auth).toEqual({ username: "rbots", password: "ghp_secret", serveraddress: "docker.io" });
+    await server.waitFor(({ type }) => type === "hello", "hello");
+    server.send({
+      type: "request",
+      id: "turn-1",
+      op: "turn.start",
+      turnId: "turn-1",
+      botId: "bot-1",
+      request: turnRequest(),
+      box: boxSpec(),
+      hooks: false,
+    });
+    const refusal = await server.waitFor(({ id }) => id === "turn-1", "refusal");
+    expect(refusal).toMatchObject({ ok: false, code: "box.start" });
+    expect(String(refusal.error)).toContain("Não consegui baixar a imagem da caixa runelay-bots-box:latest");
+    docker.pullStatus = 200;
+    docker.overrides.set("GET /containers/json", { status: 500, body: { message: "engine down" } });
+    clock.advance(6 * 60 * 60 * 1000);
+    await until(() => logs.some((line) => line.startsWith("limpeza")), "cleanup failure");
+    expect(logs).toContain("limpeza das caixas falhou: engine down");
+    docker.overrides.delete("GET /containers/json");
+    docker.imageLabels = {};
+    docker.addContainer("rbbox-stale", "exited", { "rbots.bot": "stale" }, { image: "sha256:box-old" });
+    clock.advance(6 * 60 * 60 * 1000);
+    await until(() => !docker.containers.has("rbbox-stale"), "outdated box removed");
     runner.stop();
     expect(await runner.stopped).toBe("stopped");
   });

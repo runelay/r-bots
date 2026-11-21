@@ -1,3 +1,4 @@
+import { readLines } from "./json";
 import type { DockerResponse } from "./types";
 
 export class DockerError extends Error {
@@ -24,15 +25,36 @@ function messageOf(body: unknown, fallback: string) {
 export class DockerApi {
   constructor(readonly socketPath: string) {}
 
-  async request(method: string, path: string, body?: unknown): Promise<DockerResponse> {
-    const response = await fetch(`http://docker${path}`, {
+  private send(method: string, path: string, body: unknown, headers: Record<string, string>) {
+    return fetch(`http://docker${path}`, {
       method,
       unix: this.socketPath,
-      headers: body === undefined ? {} : { "content-type": "application/json" },
+      headers: body === undefined ? headers : { ...headers, "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+  }
+
+  async request(
+    method: string,
+    path: string,
+    body?: unknown,
+    headers: Record<string, string> = {},
+  ): Promise<DockerResponse> {
+    const response = await this.send(method, path, body, headers);
     const text = await response.text();
     return { status: response.status, body: text ? parseBody(text) : null };
+  }
+
+  async stream(method: string, path: string, headers: Record<string, string>, onLine: (line: unknown) => void) {
+    const response = await this.send(method, path, undefined, headers);
+    if (response.status !== 200 || !response.body) {
+      const text = await response.text();
+      throw new DockerError(
+        messageOf(text ? parseBody(text) : null, `${method} ${path}: ${response.status}`),
+        response.status,
+      );
+    }
+    for await (const line of readLines(response.body)) onLine(parseBody(line));
   }
 
   async expect(method: string, path: string, ok: number[], body?: unknown) {
