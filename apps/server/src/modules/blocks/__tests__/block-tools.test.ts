@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fakeAgenda, toolCallsOf } from "../../../../test/agenda-helpers";
 import { makeBot } from "../../../../test/engine-helpers";
@@ -328,7 +328,7 @@ describe("export_create", () => {
       status: string;
       fileEvent: { type: string; data: { attachment: { name: string; url: string } } };
     };
-    await rm(join(exportsTmpDir(bot.id), job.id), { recursive: true, force: true });
+    expect(existsSync(join(exportsTmpDir(bot.id), job.id))).toBe(false);
     expect(job.status).toBe("ready");
     expect(job.fileEvent.type).toBe("file.sent");
     expect(job.fileEvent.data.attachment.name).toMatch(/\.csv$/);

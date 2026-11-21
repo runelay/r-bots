@@ -115,8 +115,9 @@ export function spawnMarked(
         "sh",
         [
           "-c",
-          `ulimit -c 0; echo 300 > /proc/self/oom_score_adj 2>/dev/null; exec nice -n ${options.nice ?? 5} "$@"`,
+          'ulimit -c 0; echo 300 > /proc/self/oom_score_adj 2>/dev/null; n="$1"; shift; exec nice -n "$n" "$@"',
           "sh",
+          String(options.nice ?? 5),
           command,
           ...args,
         ],

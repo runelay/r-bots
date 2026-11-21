@@ -173,10 +173,10 @@ function readGate(workspace: WorkspaceState, raw: unknown, cwd = workspace.path)
   if (verdict) return verdict;
   const path = resolve(cwd, expand(raw));
   const { real } = resolveReal(expand(raw), cwd);
-  const secret = inWorkspace(workspace, path)
+  const sensitive = inWorkspace(workspace, path)
     ? sensitivePath.test(relative(workspace.path, path)) || (path !== real && sensitivePath.test(real))
     : sensitivePath.test(path) || sensitivePath.test(real);
-  if (!secret) return { kind: "allow" };
+  if (!sensitive) return { kind: "allow" };
   return {
     kind: "human",
     prompt: `Ler ${shownPath(workspace, path)}? Parece um arquivo com segredo.`,
