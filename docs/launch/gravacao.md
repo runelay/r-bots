@@ -73,3 +73,85 @@ docker rm -f rbots-demo rbots-demo-postgres rbots-demo-redis && docker volume rm
 ```
 
 Para zerar e gravar o primeiro acesso de novo, apague também `~/.local/share/rbots-demo` (o banco mora dentro dela).
+
+# Sessão 2 (21/11)
+
+Mesma pasta no Mac (`~/Movies/rbots-launch/`), prefixo `v2-`. Tela inteira 2940×1664 px (1470×832 pt), 30 fps, sem áudio. Desta vez o pedido foi gravar tudo, inclusive no servidor de produção: o dado sensível será **desfocado na edição**, por isso a lista de desfoque abaixo. As regiões estão em porcentagem do quadro (x da esquerda para a direita, y de cima para baixo), então valem para qualquer escala. Os tempos são aproximados (±4 s): confirme no clipe.
+
+Cenas da demo rodaram no perfil "Demo" (`rbots-demo` pelo túnel reverso, como na sessão 1). Cenas `prod` rodaram no perfil "Principal".
+
+## Clipes
+
+| Arquivo | Duração | Cena do roteiro | Servidor | Observações |
+|---|---|---|---|---|
+| `v2-19-abertura-time-trabalhando.mov` | 88 s | 1 / 28 | demo | Agenda (planilha + nota), Pesquisa (comparação de apps) e Dev (página de estatísticas) recebem tarefas longas seguidas; depois o cursor passa pelos três com as bolinhas pulsando. Substitui o clipe 18. |
+| `v2-20-mensagem-no-meio-do-turno.mov` | 133 s | 18 | demo | Prioridade alta/média/baixa e, no meio, "só Normal e Urgente". Alternativa. |
+| `v2-20b-mensagem-no-meio-do-turno.mov` | 88 s | 18 | demo | Data de vencimento e, no meio, "formato curto e Atrasada". Alternativa. |
+| `v2-20e-mensagem-no-meio-do-turno.mov` | 113 s | 18 | demo | **Melhor tomada.** Tela de configurações e, com o turno rodando, "esquece o tamanho da fonte"; a correção entra no turno em curso. |
+| `v2-21-arte-icone-e-recorte.mov` | 120 s | 19 + 20 | demo | Bot Arte (conta Codex): pede o estilo, gera o ícone sobre fundo liso e entrega o `-recorte.png` com bordas suaves; abre a imagem no visualizador. |
+| `v2-22-pergunta-estruturada-ilha.mov` | 151 s | 19 + 16 | demo | Agenda pergunta com opções (4 perguntas, uma de múltipla escolha) com o app escondido: as respostas são dadas **pela ilha**. No fim abre a planilha criada. |
+| `v2-23-teste-playwright.mov` | 202 s | 11 | demo | Dev escreve e roda o teste no navegador; card de instalar o Playwright aprovado na tela; a 1ª execução falha, a 2ª passa; abre o detalhe do teste. Cortar a espera. |
+| `v2-24-side-thread.mov` | 85 s | 18 | demo | Dev reordenando a lista; `/side` abre a conversa secundária, pergunta como o filtro foi feito e a resposta volta ao lado. |
+| `v2-25-rotina-rodar-agora.mov` | 113 s | 21 | demo (app novo) | Tela Rotinas, "Rodar agora" com retorno na tela, e o resultado na conversa do Boss. |
+| `v2-26-navegador-wikipedia.mov` | 118 s | 14 | demo (app novo) | Pesquisa abre Sistema Solar e depois Júpiter (luas) no navegador do bot, ao vivo no painel. Carregou sem o erro da Wikimedia. |
+| `v2-27-uso-e-limites.mov` | 53 s | 27 | demo (app novo) | Anéis de uso (hover), tela Uso: Limites, Tokens, Custo e o filtro de conta só com "Claude" e "Codex", sem e-mail. |
+| `v2-28-prod-github.mov` | 177 s | 24 + 25 | prod | Lista de PRs, abas do detalhe (Descrição, Conversa, Arquivos, Checks), diálogo de merge **aberto e cancelado**, abas Para revisar/Menções/Mergeados, filtro por repo, menu Review e "Daily de hoje" (só leitura) com o resultado na conversa do Boss. |
+| `v2-29-prod-linear.mov` | 154 s | 25 | prod | Kanban, troca de visão (Produto/Tech → Conty → Minhas issues → volta), hover nos cards, abre três issues e rola o detalhe, menu Review. Nada arrastado. |
+| `v2-30-prod-launcher-e-trilho.mov` | 102 s | navegação | prod | Trilho (conversas, rotinas, GitHub, Linear), painel Atalhos, Agenda da semana, Notas e planilhas, Conectores (catálogo). |
+| `v2-31-prod-voz.mov` | 85 s | 22 | prod | Bot temporário "Demo Voz", chamada aberta, fala da pergunta, nível de voz e legenda ao vivo. A transcrição saiu ruim (ver bugs): serve só para a parte visual da chamada. |
+| `v2-32-prod-uso-do-mac.mov` | 139 s | 15 + 16 | prod (app antigo) | Demo Voz abre o TextEdit e digita uma linha; aprovação pela ilha e pelo card (uma por ação, antes do fix). |
+| `v2-33-prod-spotify-mini.mov` | 27 s | 28 | prod | Mini player na lateral com faixa instrumental neutra ("New Light", playlist Peaceful Piano), troca de faixa e pausa. |
+| `v2-34-primeiro-acesso-com-codigo.mov` | 153 s | 3 + 4 + 5 + 6 | demo zerada (app novo) | Primeiro acesso com o campo "Código de primeiro acesso" (mascarado), cria o dono "Ana Demo", onboarding inteiro: Boss, **Contas de IA sem e-mail** ("Claude · Plano Team", "Codex · ChatGPT Plano Plus"), integrações, conectores, Mac, "Tudo pronto, Ana" e a entrada no app. Substitui os clipes 02–08. |
+| `v2-35-prod-uso-do-mac-ate-o-fim.mov` | 38 s | 15 | prod (app novo) | Bot temporário "Demo Mac" abre o TextEdit e escreve a lista em várias linhas sem nenhum card: o Jev aprovou as ações sozinho, então o botão "Permitir até o fim da tarefa" não aparece neste clipe. |
+| `_descartado-v2-20c-…`, `_descartado-v2-20d-…` | 67 s, 51 s | — | demo | A mensagem digitada não foi enviada (ver bugs). |
+
+## O que desfocar
+
+Clipes da demo usam só dado de demo, com duas exceções (Pré-Visualização em 22 e o custo real em 27). Todos os clipes `prod` precisam de desfoque.
+
+| Clipe | Tempo | Região (x%, y%) | O que aparece |
+|---|---|---|---|
+| `v2-22` | ~6–30 s | x 20–80, y 16–63 | Diálogo "Abrir" da Pré-Visualização com a pasta Downloads do Mac (nomes de arquivo de trabalho) e o nome do usuário na lateral do diálogo. Alternativa: cortar esse trecho. |
+| `v2-27` | 25–53 s | x 14–90, y 20–60 | Custo real em dólar das contas do servidor (opcional, não é segredo). |
+| `v2-28` | 0–128 s | x 4–100, y 7–100 (todo o conteúdo da janela, menos o trilho) | Nomes de repositórios e orgs reais, títulos e números de PR, nomes de branch, avatares e usuários do GitHub, descrição de PR com nome de cliente. |
+| `v2-28` | 128–177 s | x 4–62, y 7–100 | Conversa "Daily de hoje" do Boss com ids de issue (CTY-…), PRs e orgs reais; lateral com os bots reais e o nome do usuário (x 4–24, y 92–98). |
+| `v2-29` | 0–4 s | x 4–100, y 7–100 | Último quadro da conversa do Boss (daily). |
+| `v2-29` | 16–28 s | x 12–40, y 12–60 | Menu de visões com nomes de times e clientes. |
+| `v2-29` | 28–124 s | x 4–100, y 14–100 | Quadro com ids e títulos reais de issues, nomes de clientes e parceiros, avatares. |
+| `v2-29` | 52–120 s | x 68–100, y 7–100 | Detalhe da issue. **Alto risco entre ~80 e ~108 s**: e-mail de funcionário, nome, e-mail e @ de uma criadora e link do Intercom. Recomendo cobrir o painel inteiro ou cortar. |
+| `v2-29` | 124–154 s | x 4–100, y 14–100 | "Minhas issues" com títulos reais. |
+| `v2-30` | 0–20 s | x 4–100, y 7–100 | Passagem rápida pela lista do GitHub e pelo Linear. |
+| `v2-30` | 20–75 s | x 4–62, y 7–100 e x 62–100, y 7–100 | Lateral com bots reais, conversa do daily (ids e PRs reais) e Agenda da semana com títulos reais de eventos. |
+| `v2-30` | 75–102 s | x 22–82, y 20–35 | Conector "Conty" em destaque no catálogo (nome da empresa). O resto do catálogo é público. |
+| `v2-31` | todo | x 14–42, y 4–7 | Abas com nomes de bots reais ("Engenheiro de Softw…", "Boss"). A conversa é só do Demo Voz. |
+| `v2-32` | ~6–35 s | x 20–80, y 16–63 | De novo o diálogo da Pré-Visualização com a pasta Downloads. |
+| `v2-32` | todo | x 14–42, y 4–7 | Abas com nomes de bots reais. |
+| `v2-33` | todo | x 4–24, y 14–92 e x 4–24, y 93–98 | Lateral com os bots reais (nomes e últimas mensagens) e o nome do usuário. |
+| `v2-35` | todo | x 14–42, y 4–7 | Abas com nomes de bots reais. |
+
+Nenhum segredo apareceu: o código de primeiro acesso e a senha do clipe 34 ficaram mascarados, e as chaves não foram abertas.
+
+## Cenas que ficaram de fora ou precisam de retomada
+
+- **Voz com conversa de verdade (22):** sem pessoa no Mac, a fala foi sintetizada pelo `say` saindo do alto-falante para o microfone interno; a transcrição veio trocada (frases em inglês inventadas). O clipe 31 serve só para mostrar a chamada abrindo e a legenda. Regravar com voz real.
+- **Botão "Permitir até o fim da tarefa":** o fix chegou no fim; na tomada 35 o Jev aprovou tudo sozinho e nenhum card apareceu. Para gravar o botão, desligar o Jev no bot de teste ou pedir uma ação que caia para a pessoa.
+- **Uso do Mac na demo:** não gravado (a demo continua na imagem anterior ao fix `fa0523c`; não recriei o contêiner).
+- **Simulador (13), commit/PR/CI na demo (12):** continuam sem projeto Expo e sem `gh` de demo; o GitHub foi gravado em prod.
+- **Arrastar issue no Linear:** não feito de propósito (issues reais).
+
+## Bugs e problemas achados
+
+1. **Mensagem não enviada no app do Mac.** Depois de vários turnos longos com stream aberto, duas vezes o texto digitado + Enter numa conversa nova (⌘N) não chegou ao servidor (nenhuma requisição no log) e o campo ficou como se nada tivesse acontecido. Voltou a funcionar só depois de fechar e abrir o app. Tomadas 20c e 20d descartadas.
+2. **Visão salva "Produto/Tech" do Linear vazia:** todas as colunas mostram 0 com "100 issues carregadas" no topo. A visão do time e "Minhas issues" carregam normalmente.
+3. **Uso do Mac pede aprovação a cada ação** (abrir app, digitar): visto no clipe 32 com o app antigo. Já corrigido em `fa0523c`/`46703a0`; no clipe 35 o Jev aprovou sozinho.
+4. **Transcrição de voz** inventou frases em inglês com áudio ruim em vez de pedir para repetir só uma vez (o bot respondeu às frases inventadas). Pode ser só o áudio sintetizado, mas vale olhar o limiar de confiança.
+5. **Primeira execução do teste Playwright falhou** no repo de demo e precisou de um segundo pedido; o Dev corrigiu o spec.
+6. **Armadilha de gravação, não do produto:** esconder o r/bots com ⌘H com a Pré-Visualização aberta sem janela traz o diálogo "Abrir" da pasta Downloads para a frente. Antes de gravar, fechar a Pré-Visualização.
+
+Conferidos e corrigidos nesta sessão (bugs 1, 3, 4, 6, 8 e 10 da sessão 1): o primeiro acesso tem o campo do código; Contas de IA sem e-mail; sem ElevenLabs o painel mostra "Conecte o ElevenLabs em Integrações" em vez do erro vermelho; "Rodar agora" dá retorno; o navegador do bot abriu a Wikipédia de primeira.
+
+## Estado deixado
+
+- A demo foi **zerada** para o clipe 34 (banco `runelay_bots` da instância de demo recriado, Redis da demo limpo). Os dados antigos (bots, conversas, worktrees, blobs) foram movidos para `~/.local/share/rbots-demo/pre-reset-0123`, não apagados. Hoje a demo tem só o dono "Ana Demo" e o Boss; Dev, Pesquisa, Arte e Agenda precisam ser recriados para as próximas cenas.
+- Bots temporários de prod ("Demo Voz", "Demo Mac") foram excluídos pelo app (ficam na lixeira de Ajustes › Bots).
+- Mac restaurado: perfil Principal, ícones da mesa e Dock de volta, apps visíveis, Não perturbe desligado, microfone padrão de volta para "Microfone Externo", Warp fechado, túnel fechado. Ficou instalado o `switchaudio-osx` (Homebrew) e o app novo do r/bots (build com o fix de aprovação).
