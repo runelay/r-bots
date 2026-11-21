@@ -1,11 +1,6 @@
 import AppKit
 import SwiftUI
 
-struct TranscriptScrollMemory: Equatable {
-    var anchorID: String
-    var anchorOffset: CGFloat
-}
-
 enum TranscriptScrollZone: Equatable {
     case atEnd
     case near

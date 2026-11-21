@@ -63,6 +63,7 @@ enum OpenTiming {
     }
 }
 
+#if os(macOS)
 @MainActor
 enum OpenBench {
     static func runIfRequested(_ model: AppModel) {
@@ -89,3 +90,4 @@ enum OpenBench {
         }
     }
 }
+#endif

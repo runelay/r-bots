@@ -205,13 +205,6 @@ struct NoticeAction {
     let run: @MainActor () -> Void
 }
 
-struct ThreadActivity: Equatable {
-    let text: String
-    let isUser: Bool
-    let date: Date?
-    var speakerID: String? = nil
-}
-
 @MainActor
 @Observable
 final class AppModel {

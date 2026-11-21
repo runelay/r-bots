@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import Foundation
 import Observation
 import UniformTypeIdentifiers
@@ -122,6 +124,7 @@ final class ComposerAttachment: Identifiable {
 }
 
 enum AttachmentPasteboard {
+    #if os(macOS)
     static let imageTypes: [NSPasteboard.PasteboardType] = [.png, .tiff]
 
     static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
@@ -147,6 +150,7 @@ enum AttachmentPasteboard {
         guard let data else { return nil }
         return writeTemporary(data, name: "Imagem colada.png")
     }
+    #endif
 
     static func writeTemporary(_ data: Data, name: String) -> URL? {
         let dir = FileManager.default.temporaryDirectory

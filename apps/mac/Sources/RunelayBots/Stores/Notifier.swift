@@ -3,14 +3,6 @@ import SwiftUI
 import Foundation
 import UserNotifications
 
-enum StoreNotification {
-    case reply(text: String, speakerID: String?, schedule: Bool)
-    case approval(id: String, prompt: String)
-    case question(id: String, title: String, sessionID: String?)
-    case failed(String)
-    case ciFailed(number: Int, check: String)
-}
-
 enum NotificationPreference: String, CaseIterable, Identifiable {
     case replies
     case approvals

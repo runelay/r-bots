@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import AVFoundation
 import Foundation
 import Observation
@@ -257,8 +259,10 @@ final class VoiceCall {
     }
 
     func openMicrophoneSettings() {
+        #if os(macOS)
         guard let url = VoicePermission.microphone.settingsURL else { return }
         NSWorkspace.shared.open(url)
+        #endif
     }
 
     private func microphoneAllowed() async -> Bool {
@@ -582,13 +586,16 @@ final class VoiceCall {
     }
 
     private func installTalkShortcut() {
+        #if os(macOS)
         guard keyMonitor == nil else { return }
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
             guard let self else { return event }
             return self.handleTalkShortcut(event)
         }
+        #endif
     }
 
+    #if os(macOS)
     private func handleTalkShortcut(_ event: NSEvent) -> NSEvent? {
         guard event.keyCode == 49, handlesTalkShortcut else { return event }
         if event.type == .keyDown {
@@ -603,11 +610,14 @@ final class VoiceCall {
         endTalk()
         return nil
     }
+    #endif
 
     private func removeTalkShortcut() {
+        #if os(macOS)
         if let keyMonitor {
             NSEvent.removeMonitor(keyMonitor)
         }
+        #endif
         keyMonitor = nil
     }
 

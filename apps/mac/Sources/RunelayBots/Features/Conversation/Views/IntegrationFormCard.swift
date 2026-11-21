@@ -1,29 +1,6 @@
 import AppKit
 import SwiftUI
 
-struct IntegrationFormRequest: Equatable {
-    let id: String
-    let name: String
-    let description: String
-    let unlocks: String
-    let keyURL: URL?
-    let needsURL: Bool
-    let url: String?
-    let reason: String
-
-    init?(_ value: JSONValue?) {
-        guard let value, let id = value["id"]?.stringValue else { return nil }
-        self.id = id
-        name = value["name"]?.stringValue ?? id
-        description = value["description"]?.stringValue ?? ""
-        unlocks = value["unlocks"]?.stringValue ?? ""
-        keyURL = value["keyUrl"]?.stringValue.flatMap(URL.init(string:))
-        needsURL = value["needsUrl"]?.boolValue ?? false
-        url = value["url"]?.stringValue
-        reason = value["reason"]?.stringValue ?? ""
-    }
-}
-
 struct IntegrationFormCard: View {
     @Environment(AppModel.self) private var model
     @Environment(\.appReduceMotion) private var reduceMotion
