@@ -46,7 +46,7 @@ async function claimPrevious(session: StoredSession, botId: string, repoInput: s
     const owner = getStoredSession(record.sessionId);
     if (activeWorkspaces(owner).some((item) => item.id === record.id)) return null;
   }
-  const head = await readHead(record.path).catch(() => null);
+  const head = await readHead(record.path);
   if (!head) return null;
   if (record.status !== "alive" && !(await pendingWork(record.path))) return null;
   const workspace = workspaceFromRecord(record);
