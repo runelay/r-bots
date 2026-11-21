@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { codeProcesses, gitSync, makeRepo, worktreesDir } from "../../../../test/code-helpers";
 import {
+  type FakeChild,
   type ProcessCall,
   type ProcessReply,
   request,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, jest, test } from "bun:test";
-import type { BoxSpec, NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import type { BoxSpec, BoxStatus, NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { boxHello, capacity, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
 import {
   macRunnerConnected,
@@ -51,7 +51,7 @@ describe("box runners in the hub", () => {
     expect(runnerEnvironments()[0]?.capacity).toEqual(capacity(8192));
     runner.say({ type: "capacity", capacity: capacity(1000) });
     runner.say({ type: "capacity", capacity: { memFreeMb: "x" } });
-    const status = { botId: "b1", state: "running", memMb: 900, startedAt: "s", lastUsedAt: "l" };
+    const status: BoxStatus = { botId: "b1", state: "running", memMb: 900, startedAt: "s", lastUsedAt: "l" };
     runner.say({ type: "boxes", boxes: [status] });
     runner.say({ type: "boxes", boxes: "broken" });
     expect(runnerEnvironments()).toEqual([

@@ -801,7 +801,7 @@ export function serversOf(workspace: WorkspaceState, port?: number) {
 
 export async function stopDevServers(workspace: WorkspaceState, port?: number) {
   const targets = serversOf(workspace, port).filter((server) => server.child);
-  return Promise.all(targets.map(stopDevServer));
+  return Promise.all(targets.map((server) => stopDevServer(server)));
 }
 
 export function rawLines(server: DevServer, lines: number, query?: string) {

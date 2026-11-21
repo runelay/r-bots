@@ -370,7 +370,9 @@ describe("usageLimits", () => {
     await discover();
     const server = fakeCodexAppServer(codexOk({ rateLimits: { planType: "plus" } }));
     restores.push(server.restore);
-    const spawn = Bun.spawn as unknown as { mock: { calls: Array<[string[], { env: Record<string, string> }]> } };
+    const spawn = Bun.spawn as unknown as {
+      mock: { calls: Array<[string[], { env: Record<string, string | undefined> }]> };
+    };
     const limits = await (await fresh()).usageLimits();
     expect(limits.map((item) => item.id)).toEqual(["vps:claude", "vps:codex", "codex-2:codex"]);
     const homes = spawn.mock.calls.map((call) => call[1].env.CODEX_HOME ?? null);

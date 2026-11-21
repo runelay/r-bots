@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { BoxStatus } from "@runelay-bots/protocol";
 import { capacity } from "../../../../test/runner-helpers";
 import {
   boxesOf,
@@ -13,7 +14,7 @@ const runner = {
   version: "1.0.0",
   name: "vps-2",
   kvm: true,
-  runtime: "runc",
+  runtime: "runc" as const,
   providers: ["claude", "nope", "codex"],
   workspaceRoots: ["/srv", "", 3],
   capacity: capacity(4096),
@@ -38,7 +39,7 @@ describe("runner frames", () => {
   });
 
   test("keeps valid boxes and drops broken ones", () => {
-    const box = { botId: "b1", state: "paused", memMb: 512, startedAt: "a", lastUsedAt: "b" };
+    const box: BoxStatus = { botId: "b1", state: "paused", memMb: 512, startedAt: "a", lastUsedAt: "b" };
     expect(boxesOf([box, { ...box, state: "gone" }, "x", { ...box, botId: "" }])).toEqual([box]);
     expect(boxesOf({})).toBeNull();
   });
