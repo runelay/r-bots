@@ -26,9 +26,9 @@ struct UpdateAvailableButton: View {
             } label: {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Theme.onAccent)
+                    .foregroundStyle(Theme.onUpdateBadge)
                     .frame(width: 24, height: 24)
-                    .background(Theme.brandAccent, in: Circle())
+                    .background(Theme.updateBadge, in: Circle())
                     .frame(width: 28, height: 28)
                     .contentShape(Circle())
             }

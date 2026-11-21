@@ -54,6 +54,8 @@ enum Theme {
     static let warning = Color.brand(light: 0xD58D25, dark: 0xEEB154)
     static let danger = Color.brand(light: 0xD33A3C, dark: 0xEF6661)
     static let merged = Color.brand(light: 0x8250DF, dark: 0xA371F7)
+    static let updateBadge = Color.dynamic(light: rgb(0x1E3A6E), dark: rgb(0x2984F6), lightAlpha: 0.88, darkAlpha: 0.28)
+    static let onUpdateBadge = Color.brand(light: 0xFFFFFF, dark: 0xFFFFFF)
     static let spotify = Color.brand(light: 0x1DB954, dark: 0x1ED760)
     static let spotifyMark = Color.brand(light: 0x000000, dark: 0x000000)
 
