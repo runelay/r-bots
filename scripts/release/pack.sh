@@ -20,4 +20,9 @@ printf '%s\n' "$version" > "$stage/$name/VERSION"
 
 tar -C "$stage" --owner=0 --group=0 --numeric-owner -czf "$out_dir/$name.tar.gz" "$name"
 cp "$root/install.sh" "$out_dir/install.sh"
-(cd "$out_dir" && sha256sum "$name.tar.gz" install.sh > SHA256SUMS)
+(
+  cd "$out_dir"
+  rm -f SHA256SUMS SHA256SUMS.sigstore.json
+  find . -maxdepth 1 -type f -printf '%P\n' | LC_ALL=C sort | xargs -r sha256sum > "$stage/SHA256SUMS"
+  mv "$stage/SHA256SUMS" SHA256SUMS
+)
