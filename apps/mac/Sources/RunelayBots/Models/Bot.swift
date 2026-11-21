@@ -166,8 +166,6 @@ enum ConnectorNames {
 
     private static let friendly: [String: String] = [
         "cloudflare_docs": "Cloudflare Docs",
-        "conty_backoffice": "Conty Backoffice",
-        "conty_ben": "Conty BEN",
         "google_calendar": "Google Calendar",
         "linear_server": "Linear",
         "meta_social_technologies": "Meta"

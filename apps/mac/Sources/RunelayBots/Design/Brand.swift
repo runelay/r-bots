@@ -379,12 +379,7 @@ struct ConnectorTile: View {
     }
 
     private var fullBleed: NSImage? {
-        if icon == "/logos/conty.png" || ConnectorNames.key(name).hasPrefix("conty") {
-            return BrandAssets.connector("conty")
-        }
-        if let icon, icon.hasPrefix("/") {
-            return BrandAssets.connector(ConnectorNames.key(icon))
-        }
-        return nil
+        guard let icon, icon.hasPrefix("/") else { return nil }
+        return BrandAssets.connector(ConnectorNames.key(icon)) ?? ConnectorLogoStore.shared.image(for: icon)
     }
 }

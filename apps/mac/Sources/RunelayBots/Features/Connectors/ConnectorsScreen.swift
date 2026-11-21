@@ -244,12 +244,6 @@ private struct AddConnectorButton: View {
 private struct FeaturedConnectorCard: View {
     let connector: CatalogConnector
 
-    private var pitch: String {
-        connector.id == "conty"
-            ? "Rode suas campanhas com creators pelo agente: briefing, convites, aprovação de vídeos, cupons e vendas."
-            : connector.description
-    }
-
     var body: some View {
         HStack(spacing: Spacing.l) {
             HStack(spacing: Spacing.m + 2) {
@@ -270,7 +264,7 @@ private struct FeaturedConnectorCard: View {
                             SourceStatusDot(status: status)
                         }
                     }
-                    Text(pitch)
+                    Text(connector.description)
                         .font(TypeScale.rowSubtitle)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -491,7 +485,7 @@ struct CatalogConnectorIcon: View {
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size.radius, style: .continuous)
-        if icon == "/logos/conty.png", let image = BrandAssets.connector("conty") {
+        if let image = remoteLogo {
             Image(nsImage: image)
                 .resizable()
                 .interpolation(.high)
@@ -518,6 +512,11 @@ struct CatalogConnectorIcon: View {
                 .background(Theme.surfaceRaised, in: shape)
                 .accessibilityHidden(true)
         }
+    }
+
+    private var remoteLogo: NSImage? {
+        guard let icon, icon.hasPrefix("/"), BrandAssets.connector(ConnectorNames.key(icon)) == nil else { return nil }
+        return ConnectorLogoStore.shared.image(for: icon)
     }
 
     private var logo: NSImage? {
