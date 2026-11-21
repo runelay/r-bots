@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.2
+
+### Fixes
+
+- Turns in a box on the default Claude or Codex account now find the account folder, so conversations started before the boxes keep resuming instead of failing with "No conversation found with session ID".
+
 ## v0.1.1
 
 ### Install and update
