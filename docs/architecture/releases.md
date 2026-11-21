@@ -15,42 +15,45 @@ O checkout continua funcionando para quem desenvolve: `compose.yaml` mantém o `
 - `package.json` da raiz ganha `"version": "0.1.0"`. Ela é a versão do produto.
 - Release = tag `v<versão>`. O workflow falha se a tag não bate com o `package.json`.
 - Tag com sufixo (`v0.2.0-beta.1`) vira pre-release (canal `beta`); sem sufixo, canal `stable`.
-- As imagens recebem `--build-arg RBOTS_VERSION=<versão>`, que vira `ENV RBOTS_VERSION` no servidor e no runner. Build local sem o arg fica `dev`.
+- A imagem recebe `--build-arg RBOTS_VERSION=<versão>`, que vira `ENV RBOTS_VERSION` (servidor, runner e caixa leem dali). Build local sem o arg fica `dev`.
 
-### R2. Imagens
+### R2. Imagem
+
+Uma imagem só desde 21/11 (antes eram três: `r-bots-server`, `r-bots-runner`, `r-bots-box`):
 
 | Imagem | Dockerfile |
 |---|---|
-| `ghcr.io/runelay/r-bots-server` | `apps/server/Dockerfile` |
-| `ghcr.io/runelay/r-bots-runner` | `packages/runner/Dockerfile` |
-| `ghcr.io/runelay/r-bots-box` | `packages/runner/box/Dockerfile` |
+| `ghcr.io/runelay/r-bots` | `Dockerfile` (raiz) |
 
-- Tags: `<versão>` sempre; `latest` só no canal stable.
-- Só `linux/amd64` nesta fase: os Dockerfiles fixam `amd64`/`x64` (repo do gh, binário do Agent SDK). arm64 fica para depois.
-- Cache de build do Actions (`type=gha`).
+- O papel sai do comando: servidor (padrão), runner (`entrypoint: rbots-runner` no compose) e caixa (o runner cria com `rbbox-init`). Ver `docker.md` › Imagem única.
+- Tags: `<versão>` sempre; `<major>.<minor>` e `latest` só no canal stable.
+- Camadas em zstd, carimbo de tempo fixo (`SOURCE_DATE_EPOCH=0`, `rewrite-timestamp=true`) para camada igual manter o digest entre releases. Cliente com Docker 23 ou mais novo.
+- Só `linux/amd64` nesta fase. arm64 fica para depois.
+- Cache de build do Actions (`type=gha`, escopo `r-bots`).
 
-`compose.yaml` passa a usar (mantendo o `build:` de cada um):
+`compose.yaml`:
 
 ```yaml
-server:   image: ${BOTS_IMAGE:-ghcr.io/runelay/r-bots-server:${RBOTS_VERSION:-dev}}
-runner:   image: ${BOTS_RUNNER_IMAGE:-ghcr.io/runelay/r-bots-runner:${RBOTS_VERSION:-dev}}
-box-image: image: ${RBOX_IMAGE:-ghcr.io/runelay/r-bots-box:${RBOTS_VERSION:-dev}}
+x-image: &image ${RBOTS_IMAGE:-${BOTS_IMAGE:-ghcr.io/runelay/r-bots:${RBOTS_VERSION:-dev}}}
+server:   image: *image      # com build: Dockerfile
+runner:   image: *image      # sem build, entrypoint rbots-runner
 ```
 
-e o `RBOX_IMAGE` do ambiente do runner usa a mesma expressão. O servidor recebe `RBOTS_VERSION`, `RBOTS_CHANNEL` e `RBOTS_GITHUB_TOKEN` no `environment:` com padrão vazio.
+e o `RBOX_IMAGE` do runner usa `${RBOX_IMAGE:-<a mesma imagem>}`. O servidor recebe `RBOTS_VERSION`, `RBOTS_CHANNEL` e `RBOTS_GITHUB_TOKEN` no `environment:` com padrão vazio.
 
 ### R3. Workflow `.github/workflows/release.yml`
 
-Disparo: push de tag `v*`. Permissões: `contents: write`, `packages: write`.
+Disparo: push de tag `v*`. Permissões por job: `packages: write` e `id-token: write` no build, `contents: write` na publicação.
 
-1. Confere tag × `package.json`.
-2. Build e push das três imagens (R2).
-3. Monta `r-bots-<versão>.tar.gz` com:
+1. Confere tag × `package.json` e roda o teste do `render-compose`.
+2. Build e push da imagem (R2) por digest, com SBOM e proveniência (`mode=max`). Trivy: relatório de HIGH/CRITICAL no resumo e falha com CRITICAL que tem correção. Confere que toda camada é zstd e escreve no resumo o número de camadas e o tamanho comprimido. Depois aplica as tags (`<versão>`, e `<major>.<minor>` e `latest` no stable) e confere que todas apontam para o digest.
+3. **cosign só com o repo público** (`if: github.event.repository.private == false`): a assinatura keyless grava o nome do repo e do workflow no Rekor, que é público. Vale para a imagem e para o `SHA256SUMS`. Com o repo privado, as notas dizem que não há assinatura e mostram só o `sha256sum -c`.
+4. Monta `r-bots-<versão>.tar.gz` com:
    - `compose.yaml` renderizado por `scripts/release/render-compose.ts`: tira todo `build:` e troca o padrão `${RBOTS_VERSION:-dev}` por `${RBOTS_VERSION:-<versão>}`;
    - `deploy/` inteiro (secrets, postgres, redis, garage, observability);
    - `infra/docker/install.sh` e `infra/docker/rbots`;
    - `VERSION` com a versão.
-4. Anexa à release: o tarball, o `install.sh` da raiz e `SHA256SUMS` dos dois. Notas geradas pelo GitHub. Pre-release quando a tag tem sufixo.
+5. Anexa à release: o tarball, o `install.sh` da raiz, `images.txt` (uma linha, `ghcr.io/runelay/r-bots@<digest>`), `SHA256SUMS` e, com o repo público, `SHA256SUMS.sigstore.json`. Notas com a imagem, o digest e as tags, mais as geradas pelo GitHub. Pre-release quando a tag tem sufixo.
 
 ### R4. Layout na máquina
 
@@ -70,6 +73,7 @@ ${RBOTS_DIR:-~/.local/share/runelay-bots-app}/
 
 - Token por `RBOTS_GITHUB_TOKEN` ou, se faltar, `gh auth token` quando o `gh` está logado.
 - Com token: API com `Authorization: Bearer`, download do asset pela URL da API com `Accept: application/octet-stream` e `docker login ghcr.io` antes do `pull`.
+- O runner não monta mais `~/.docker`: com o repo privado (o script pergunta à API, `"private": true`), o token vai para o `.env.local` persistente como `RBOTS_REGISTRY_USER`/`RBOTS_REGISTRY_TOKEN` (arquivo em 0600). Repo público: as linhas saem.
 - Sem token e com 404: mensagem dizendo que o repo é privado e como passar o token.
 - Com o repo público, nada disso é preciso.
 
@@ -79,7 +83,7 @@ ${RBOTS_DIR:-~/.local/share/runelay-bots-app}/
 - Fora: **modo release** por padrão. Consulta `/repos/<repo>/releases/latest` (ou a lista, com `RBOTS_CHANNEL=beta`, pegando a mais nova incluindo pre-release), ou a tag de `RBOTS_VERSION`; baixa tarball e `SHA256SUMS`; confere (`sha256sum -c`, ou `shasum -a 256`); monta R4; chama `current/infra/docker/install.sh`.
 - `RBOTS_FROM_SOURCE=1` mantém o modo clone de hoje.
 - Repo por `RBOTS_RELEASE_REPO`, padrão `runelay/r-bots`.
-- `infra/docker/install.sh` em modo release roda `docker compose pull` + `up -d` sem `--build`, e grava `RBOTS_VERSION=<versão>` no `.env.local` persistente (substituindo a linha, não somando).
+- `infra/docker/install.sh` em modo release roda `docker compose pull` + `up -d` sem build (num checkout, `docker compose build` + `up -d`), e grava `RBOTS_VERSION=<versão>` no `.env.local` persistente (substituindo a linha, não somando).
 
 ### R7. `rbots update`
 
@@ -95,9 +99,9 @@ Modo release:
 1. Descobre a versão alvo (última do canal, ou `--to`). `--check` só imprime atual × disponível e sai.
 2. Mesma versão: "já está na última" e sai.
 3. Recusa com turno rodando, a não ser com `--force`.
-4. Backup: `docker compose exec -T server ./runelay-bots-server backup`. Falhou, aborta (a não ser com `--no-backup`).
+4. Backup: `docker compose exec -T -u app server ./runelay-bots-server backup` (como root, deixaria arquivos que o `app` não lê). Falhou, aborta (a não ser com `--no-backup`).
 5. Baixa, confere, extrai em `releases/<alvo>`, liga o `.env.local`.
-6. `pull` das imagens novas com o compose novo (a stack ainda roda a versão velha).
+6. `pull` da imagem nova com o compose novo (a stack ainda roda a versão velha); só descem as camadas que mudaram.
 7. Troca `current`, grava `RBOTS_VERSION` e roda `up -d` com os mesmos perfis de pé.
 8. Espera `/health` até 180 s. Falhou: volta `current` e `RBOTS_VERSION`, `up -d` de novo e avisa que o banco pode ter migrado, com o caminho do backup do passo 4.
 9. Versão alvo mais velha que a atual: avisa que migrations não voltam e pede `--yes`.
@@ -130,7 +134,7 @@ Uma seção nova nos Ajustes:
 
 ### Trilha 1 · release no CI
 
-Arquivos: `.github/workflows/release.yml` (novo), `scripts/release/**` (novo), `package.json` da raiz (só `version`), `apps/server/Dockerfile` e `packages/runner/Dockerfile` (só `ARG`/`ENV RBOTS_VERSION`).
+Arquivos: `.github/workflows/release.yml` (novo), `scripts/release/**` (novo), `package.json` da raiz (só `version`), `Dockerfile` da raiz (só `ARG`/`ENV RBOTS_VERSION`).
 
 - [ ] 1.1 Workflow R3, render do compose e teste do render.
 

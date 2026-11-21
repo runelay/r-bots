@@ -68,6 +68,18 @@ env_value() {
   sed -n "s/^$1=//p" "$env_file" | tail -1
 }
 
+drop_env() {
+  local tmp
+  [ -f "$env_file" ] && grep -q "^$1=" "$env_file" || return 0
+  tmp="$(mktemp "$env_file.XXXXXX")"
+  awk -v key="$1=" 'index($0, key) != 1' "$env_file" >"$tmp" || {
+    rm -f "$tmp"
+    fail "não deu para tirar $1 do $env_file"
+  }
+  cat "$tmp" >"$env_file"
+  rm -f "$tmp"
+}
+
 set_env() {
   local tmp
   tmp="$(mktemp "$env_file.XXXXXX")"
@@ -102,7 +114,7 @@ services_present() {
 profile_args() {
   local services
   services="$(services_present)"
-  if grep -qx -e runner -e box-image <<<"$services"; then
+  if grep -qx runner <<<"$services"; then
     printf '%s\n' --profile sandbox
   fi
   if grep -qx -e prometheus -e grafana -e cadvisor <<<"$services"; then
@@ -345,14 +357,26 @@ registry_login() {
     user="$(json_pairs "$work/user.json" | awk -F '\t' '$1 == "login" { print $2; exit }')"
   fi
   if ! printf '%s' "$token" | docker login ghcr.io -u "${user:-rbots}" --password-stdin >/dev/null 2>&1; then
-    say "Aviso: o docker login no ghcr.io falhou; se as imagens forem privadas, o download vai falhar"
+    say "Aviso: o docker login no ghcr.io falhou; se a imagem for privada, o download vai falhar"
   fi
+  api_get "repos/$release_repo" "$work/repo.json" || return 0
+  case "$(json_pairs "$work/repo.json" | awk -F '\t' '$1 == "private" { print $2; exit }')" in
+    true)
+      set_env RBOTS_REGISTRY_USER "${user:-rbots}"
+      set_env RBOTS_REGISTRY_TOKEN "$token"
+      chmod 0600 "$env_file"
+      ;;
+    false)
+      drop_env RBOTS_REGISTRY_TOKEN
+      drop_env RBOTS_REGISTRY_USER
+      ;;
+  esac
 }
 
 backup_now() {
   local out
   say "Fazendo backup do banco antes de atualizar"
-  if ! out="$(compose exec -T server ./runelay-bots-server backup 2>&1)"; then
+  if ! out="$(compose exec -T -u app server ./runelay-bots-server backup 2>&1)"; then
     printf '%s\n' "$out" >&2
     fail "o backup falhou e nada foi atualizado; para atualizar sem backup, use rbots update --no-backup"
   fi
@@ -419,8 +443,10 @@ update_checkout() {
   mapfile -t profiles < <(profile_args)
   say "Baixando o código novo"
   git -C "$repo_dir" pull --ff-only
-  say "Reconstruindo e subindo ${profiles[*]:-sem perfis extras}"
-  compose "${profiles[@]}" up -d --build
+  say "Reconstruindo a imagem"
+  compose "${profiles[@]}" build
+  say "Subindo ${profiles[*]:-sem perfis extras}"
+  compose "${profiles[@]}" up -d --remove-orphans
 }
 
 update_release() {
@@ -475,10 +501,10 @@ update_release() {
 
   mapfile -t profiles < <(profile_args)
   registry_login
-  say "Baixando as imagens da $target (a stack continua na $installed)"
+  say "Baixando a imagem da $target (a stack continua na $installed)"
   if ! RBOTS_VERSION="$target" compose_at "$app_dir/releases/$target" "${profiles[@]}" pull; then
     printf 'Se o repo é privado, o token precisa do escopo read:packages: gh auth refresh -h github.com -s read:packages\n' >&2
-    fail "não deu para baixar as imagens da $target; nada mudou na stack"
+    fail "não deu para baixar a imagem da $target; nada mudou na stack"
   fi
 
   previous_link="$(readlink "$app_dir/current")"
@@ -488,7 +514,7 @@ update_release() {
     set_env RBOTS_CHANNEL "$chan"
   fi
   say "Subindo a $target ${profiles[*]:-sem perfis extras}"
-  if compose "${profiles[@]}" up -d && wait_health; then
+  if compose "${profiles[@]}" up -d --remove-orphans && wait_health; then
     prune_releases
     say "Atualizado: $installed -> $target"
     return

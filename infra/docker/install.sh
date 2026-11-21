@@ -22,6 +22,8 @@ if [ -f "$repo_dir/VERSION" ] && [ ! -e "$repo_dir/.git" ]; then
   unset RBOTS_VERSION
 fi
 github_token="${RBOTS_GITHUB_TOKEN:-}"
+release_repo="${RBOTS_RELEASE_REPO:-runelay/r-bots}"
+api_url="${RBOTS_API_URL:-https://api.github.com}"
 unset RBOTS_GITHUB_TOKEN
 harden=0
 assume_yes=0
@@ -41,7 +43,7 @@ usage() {
 Uso: infra/docker/install.sh [opções]
 
 Sobe o r/bots no Docker com as caixas dos bots ligadas, sem sudo e sem reiniciar o Docker.
-Instalado por release, baixa as imagens prontas da versão; num checkout, constrói na máquina.
+Instalado por release, baixa a imagem pronta da versão; num checkout, constrói na máquina.
 
 Opções:
   --harden          instala Kata (com /dev/kvm) ou gVisor (sem), mexe em /etc/docker/daemon.json
@@ -190,12 +192,43 @@ ensure_env() {
 }
 
 set_env() {
+  local shown="$2"
+  case "$1" in *TOKEN*) shown="(oculto)" ;; esac
   [ "$(env_value "$1")" = "$2" ] && grep -q "^$1=" "$env_file" 2>/dev/null && return
   { awk -v key="$1=" 'index($0, key) != 1' "$env_file" && printf '%s=%s\n' "$1" "$2"; } >"$env_file.rbots" \
     || fail "não deu para gravar $1 no $env_file"
   as_app tee "$env_file" <"$env_file.rbots" >/dev/null
   rm -f "$env_file.rbots"
-  say "  .env.local: $1=$2"
+  say "  .env.local: $1=$shown"
+}
+
+drop_env() {
+  grep -q "^$1=" "$env_file" 2>/dev/null || return 0
+  awk -v key="$1=" 'index($0, key) != 1' "$env_file" >"$env_file.rbots" || fail "não deu para tirar $1 do $env_file"
+  as_app tee "$env_file" <"$env_file.rbots" >/dev/null
+  rm -f "$env_file.rbots"
+  say "  .env.local: sem $1"
+}
+
+repo_private() {
+  curl -fsS --max-time 10 -H @<(printf 'Authorization: Bearer %s\n' "$1") "$api_url/repos/$release_repo" 2>/dev/null \
+    | sed -n 's/^[[:space:]]*"private"[[:space:]]*:[[:space:]]*\(true\|false\).*/\1/p' | head -1 || true
+}
+
+runner_registry() {
+  local token="$1" user="$2"
+  case "$(repo_private "$token")" in
+    true)
+      set_env RBOTS_REGISTRY_USER "$user"
+      set_env RBOTS_REGISTRY_TOKEN "$token"
+      chmod 0600 "$env_file"
+      say "Repo privado: o runner baixa a imagem com o token do GitHub (precisa de read:packages)"
+      ;;
+    false)
+      drop_env RBOTS_REGISTRY_TOKEN
+      drop_env RBOTS_REGISTRY_USER
+      ;;
+  esac
 }
 
 registry_login() {
@@ -206,18 +239,19 @@ registry_login() {
   user="${RBOTS_GITHUB_USER:-}"
   if [ -z "$user" ]; then
     user="$(curl -fsS --max-time 10 -H @<(printf 'Authorization: Bearer %s\n' "$token") \
-      "${RBOTS_API_URL:-https://api.github.com}/user" 2>/dev/null \
+      "$api_url/user" 2>/dev/null \
       | sed -n 's/.*"login"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true)"
   fi
   if printf '%s' "$token" | as_app docker login ghcr.io -u "${user:-rbots}" --password-stdin >/dev/null 2>&1; then
     say "Entrou no ghcr.io com o token do GitHub"
   else
-    say "Aviso: o docker login no ghcr.io falhou; se as imagens forem privadas, o download vai falhar"
+    say "Aviso: o docker login no ghcr.io falhou; se a imagem for privada, o download vai falhar"
   fi
+  runner_registry "$token" "${user:-rbots}"
 }
 
 pull_failed() {
-  printf 'erro: não deu para baixar as imagens da versão %s.\n' "$release_version" >&2
+  printf 'erro: não deu para baixar a imagem da versão %s.\n' "$release_version" >&2
   printf 'Se o repo é privado, o token precisa do escopo read:packages:\n' >&2
   printf '  gh auth refresh -h github.com -s read:packages\n' >&2
   printf 'ou passe um token clássico com esse escopo em RBOTS_GITHUB_TOKEN e rode de novo.\n' >&2
@@ -280,7 +314,7 @@ command -v curl >/dev/null || fail "curl não encontrado; instale e rode de novo
 if ! as_app docker info >/dev/null 2>&1; then
   printf 'erro: o usuário %s não fala com o Docker sem sudo.\n' "$app_user" >&2
   printf 'Rode o comando abaixo, saia e entre de novo na sessão (ou rode newgrp docker) e repita a instalação:\n\n' >&2
-  printf '  sudo usermod -aG docker $USER\n\n' >&2
+  printf "  sudo usermod -aG docker \$USER\n\n" >&2
   exit 1
 fi
 
@@ -295,7 +329,9 @@ as_app mkdir -p \
   "$app_home/.local/share/runelay-bots-worktrees" \
   "$app_home/.claude" "$app_home/.codex" "$app_home/.config/gh" "$app_home/.config/.wrangler" "$app_home/.supabase"
 as_app mkdir -p -m 0700 "$data_dir/runner"
-as_app bash -c 'test -f "$HOME/.claude.json" || echo "{}" > "$HOME/.claude.json"; touch "$HOME/.gitconfig"'
+as_app mkdir -p -m 0755 "$app_home/.local/share/runelay-bots-tools"
+[ -f "$app_home/.claude.json" ] || printf '{}\n' | as_app tee "$app_home/.claude.json" >/dev/null
+as_app touch "$app_home/.gitconfig"
 if [ "$observability" = 1 ]; then
   as_app mkdir -p "$data_dir/observability/prometheus" "$data_dir/observability/grafana"
 fi
@@ -323,14 +359,14 @@ fi
 
 if [ "$release_mode" = 1 ]; then
   registry_login
-  say "Baixando as imagens do r/bots $release_version"
+  say "Baixando a imagem do r/bots $release_version"
   compose --profile sandbox pull || pull_failed
-  say "Subindo a stack"
-  compose --profile sandbox up -d
 else
-  say "Subindo a stack (a primeira vez constrói as imagens e demora alguns minutos)"
-  compose --profile sandbox up -d --build
+  say "Construindo a imagem (a primeira vez demora alguns minutos)"
+  compose --profile sandbox build
 fi
+say "Subindo a stack"
+compose --profile sandbox up -d --remove-orphans
 
 port="$(env_value GATEWAY_PORT)"
 port="${port:-2000}"

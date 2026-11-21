@@ -15,7 +15,7 @@ r/bots is a self-hosted team of bots: a TypeScript server (Bun) that runs each t
 | `apps/server/src/shared/` | HTTP helpers, `ValidationError`, JSON file store, secret redaction (`redact.ts`) |
 | `apps/server/src/modules/<domain>/` | One folder per domain: `routes/` (HTTP handlers), `services/` (logic and stores), `repositories/`, `types/`, `constants/` only where needed |
 | `apps/server/bin/rb-secret-run.mjs` | Bash helper that injects vault secrets into a command and masks them in its output |
-| `apps/server/Dockerfile`, `apps/server/start.sh` | Production image and entrypoint |
+| `Dockerfile`, `apps/server/docker-entrypoint.sh` | The single production image (server, runner and box roles) and the server entrypoint |
 | `apps/server/test/` | Shared test helpers: `setup.ts`, fakes (`fake-providers`, `fake-process`, `fake-runelay`, `fake-s3`) and helpers per area (`engine-`, `engine-turn-`, `browser-`, `code-`, `media-`, `voice-`, `usage-helpers`) |
 | `apps/mac/` | SwiftUI app (SwiftPM, macOS 15, Swift 6): `Sources/RunelayBots/{App,Common,Design,Features/<domain>,Models,Networking,Stores,Support,Resources}` |
 | `apps/mac/scripts/` | `make-app.sh` (package, sign, install), `render-icon.swift`, `voice-e2e/` |

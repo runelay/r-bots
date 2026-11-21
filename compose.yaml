@@ -1,15 +1,50 @@
 name: runelay-bots
 
+x-image: &image ${RBOTS_IMAGE:-${BOTS_IMAGE:-ghcr.io/runelay/r-bots:${RBOTS_VERSION:-dev}}}
+
+x-bun-image: &bun-image ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a}
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+x-long-running: &long-running
+  restart: unless-stopped
+  logging: *logging
+
+x-job: &job
+  <<: *hardened
+  image: *bun-image
+  restart: "no"
+  logging: *logging
+  read_only: true
+  tmpfs:
+    - /tmp:mode=1777
+  mem_limit: 256m
+  memswap_limit: 256m
+  cpus: 0.5
+  pids_limit: 64
+
+x-job-env: &job-env
+  BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0"
+
 services:
   server:
+    <<: *long-running
     build:
       context: .
-      dockerfile: apps/server/Dockerfile
-    image: ${BOTS_IMAGE:-ghcr.io/runelay/r-bots-server:${RBOTS_VERSION:-dev}}
-    container_name: ${BOTS_CONTAINER_NAME:-runelay-bots}
+      dockerfile: Dockerfile
+    image: *image
     network_mode: host
     init: true
-    restart: unless-stopped
     depends_on:
       storage:
         condition: service_healthy
@@ -24,6 +59,7 @@ services:
     memswap_limit: ${BOTS_MEM_LIMIT:-6g}
     cpus: ${BOTS_CPUS:-3}
     pids_limit: 4096
+    stop_grace_period: 30s
     ulimits:
       core: 0
     cap_drop:
@@ -60,6 +96,7 @@ services:
       - ${HOME}:${HOME}
       - ${HOME}/.local/share/runelay-bots:/data
       - ${HOME}/.local/share/runelay-bots-backups:/backups
+      - ${HOME}/.local/share/runelay-bots-tools:/opt/rbots-tools
       - ${HOME}/.claude:/home/app/.claude
       - ${HOME}/.claude.json:/home/app/.claude.json
       - ${HOME}/.codex:/home/app/.codex
@@ -75,28 +112,28 @@ services:
       retries: 3
       start_period: 20s
     logging:
-      driver: json-file
+      <<: *logging
       options:
         max-size: 20m
         max-file: "5"
 
   data-secrets:
-    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a}
+    <<: *job
     command: ["bun", "/bootstrap/bootstrap.ts"]
-    security_opt:
-      - no-new-privileges:true
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    environment:
+      <<: *job-env
     volumes:
       - ./deploy/secrets:/bootstrap:ro
       - ${HOME}/.local/share/runelay-bots:/data
-    restart: "no"
 
   postgres:
+    <<: [*long-running, *hardened]
     image: ${BOTS_POSTGRES_IMAGE:-postgres:17-bookworm@sha256:837bed18782820fe967067cb5328b02b0d9992c1be9a37ee0c9c492cfc03af3b}
-    container_name: ${BOTS_POSTGRES_CONTAINER_NAME:-runelay-bots-postgres}
     user: "1000:1000"
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp:mode=1777
@@ -117,6 +154,8 @@ services:
     shm_size: 256mb
     mem_limit: ${BOTS_POSTGRES_MEM_LIMIT:-1g}
     memswap_limit: ${BOTS_POSTGRES_MEM_LIMIT:-1g}
+    cpus: ${BOTS_POSTGRES_CPUS:-2}
+    pids_limit: 512
     stop_grace_period: 60s
     volumes:
       - ${HOME}/.local/share/runelay-bots/postgres:/var/lib/postgresql/data
@@ -128,19 +167,11 @@ services:
       timeout: 5s
       retries: 12
       start_period: 10s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
 
   redis:
+    <<: [*long-running, *hardened]
     image: ${BOTS_REDIS_IMAGE:-redis:7.4-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe}
-    container_name: ${BOTS_REDIS_CONTAINER_NAME:-runelay-bots-redis}
     user: "1000:1000"
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp:uid=1000,gid=1000,mode=0700
@@ -154,6 +185,8 @@ services:
       - 127.0.0.1:${BOTS_REDIS_PORT:-6379}:6379
     mem_limit: ${BOTS_REDIS_MEM_LIMIT:-512m}
     memswap_limit: ${BOTS_REDIS_MEM_LIMIT:-512m}
+    cpus: 1
+    pids_limit: 128
     stop_grace_period: 30s
     volumes:
       - ./deploy/redis/redis.conf:/etc/redis/redis.conf:ro
@@ -166,29 +199,24 @@ services:
       timeout: 5s
       retries: 12
       start_period: 5s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
 
   storage-secrets:
-    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a}
+    <<: *job
     command: ["bun", "/bootstrap/bootstrap.ts", "secrets"]
-    security_opt:
-      - no-new-privileges:true
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    environment:
+      <<: *job-env
     volumes:
       - ./deploy/garage:/bootstrap:ro
       - ${HOME}/.local/share/runelay-bots/storage:/var/lib/garage
-    restart: "no"
 
   storage:
+    <<: [*long-running, *hardened]
     image: ${BOTS_STORAGE_IMAGE:-dxflrs/garage:v2.5.0@sha256:677e5b758e4425a325b811c425c026bf35a4bf42f7ddbaa773de3f4fd779a5a5}
-    container_name: ${BOTS_STORAGE_CONTAINER_NAME:-runelay-bots-storage}
     user: "1000:1000"
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp:uid=1000,gid=1000,mode=0700
@@ -199,6 +227,9 @@ services:
       - 127.0.0.1:3900:3900
     mem_limit: ${BOTS_STORAGE_MEM_LIMIT:-256m}
     memswap_limit: ${BOTS_STORAGE_MEM_LIMIT:-256m}
+    cpus: 1
+    pids_limit: 256
+    stop_grace_period: 30s
     volumes:
       - ./deploy/garage/garage.toml:/etc/garage.toml:ro
       - ${HOME}/.local/share/runelay-bots/storage:/var/lib/garage
@@ -208,23 +239,21 @@ services:
       timeout: 5s
       retries: 6
       start_period: 5s
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
 
   storage-init:
-    image: ${BOTS_BUN_IMAGE:-oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a}
+    <<: *job
     command: ["bun", "/bootstrap/bootstrap.ts", "setup"]
-    security_opt:
-      - no-new-privileges:true
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
     depends_on:
       storage:
         condition: service_healthy
       data-secrets:
         condition: service_completed_successfully
     environment:
+      <<: *job-env
       GARAGE_ADMIN_URL: http://storage:3903
       BOTS_SECRETS_DIR: /data/secrets
       GARAGE_CAPACITY_GB: ${BOTS_STORAGE_CAPACITY_GB:-100}
@@ -232,14 +261,63 @@ services:
       - ./deploy/garage:/bootstrap:ro
       - ${HOME}/.local/share/runelay-bots/storage/secrets:/var/lib/garage/secrets:ro
       - ${HOME}/.local/share/runelay-bots/secrets:/data/secrets
-    restart: "no"
+
+  runner:
+    <<: [*long-running, *hardened]
+    image: *image
+    entrypoint: ["/usr/local/bin/rbots-runner"]
+    profiles: ["sandbox"]
+    network_mode: host
+    init: true
+    user: "1000:1000"
+    depends_on:
+      server:
+        condition: service_healthy
+    group_add:
+      - "${DOCKER_GID:-999}"
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
+    mem_limit: ${BOTS_RUNNER_MEM_LIMIT:-256m}
+    memswap_limit: ${BOTS_RUNNER_MEM_LIMIT:-256m}
+    cpus: 0.5
+    pids_limit: 256
+    stop_grace_period: 30s
+    environment:
+      HOME: /tmp
+      NODE_ENV: production
+      RBOTS_HEALTH_FILE: /tmp/rbots-runner.health
+      RBOTS_URL: http://127.0.0.1:${GATEWAY_PORT:-2000}
+      RBOTS_DEVICE_TOKEN_FILE: /run/rbots-runner/box-runner.token
+      RBOTS_RUNNER_NAME: ${BOTS_RUNNER_NAME:-local-runner}
+      RBOTS_WORKSPACE_ROOTS: ${HOME}/.local/share/runelay-bots:${HOME}/.local/share/runelay-bots-worktrees:${HOME}/.local/share/runelay-bots-tools
+      RBOTS_ACCOUNT_ROOTS: ${HOME}/.claude:${HOME}/.claude-2:${HOME}/.codex
+      RBOTS_RUNTIME: ${RBOTS_RUNTIME:-}
+      RBOX_IMAGE: ${RBOX_IMAGE:-${RBOTS_IMAGE:-${BOTS_IMAGE:-ghcr.io/runelay/r-bots:${RBOTS_VERSION:-dev}}}}
+      RBOTS_REGISTRY_USER: ${RBOTS_REGISTRY_USER:-}
+      RBOTS_REGISTRY_TOKEN: ${RBOTS_REGISTRY_TOKEN:-}
+      DOCKER_SOCKET: /var/run/docker.sock
+      BOX_PAUSE_AFTER_MS: ${BOX_PAUSE_AFTER_MS:-120000}
+      BOX_STOP_AFTER_MS: ${BOX_STOP_AFTER_MS:-1800000}
+      BOX_MEM_RESERVE_MB: ${BOX_MEM_RESERVE_MB:-1024}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOME}/.local/share/runelay-bots/runner:/run/rbots-runner:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/rbots-runner", "health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
 
   cadvisor:
-    image: ${BOTS_CADVISOR_IMAGE:-gcr.io/cadvisor/cadvisor:v0.49.1}
-    container_name: ${BOTS_CADVISOR_CONTAINER_NAME:-runelay-bots-cadvisor}
+    <<: *long-running
+    image: ${BOTS_CADVISOR_IMAGE:-gcr.io/cadvisor/cadvisor:v0.49.1@sha256:3cde6faf0791ebf7b41d6f8ae7145466fed712ea6f252c935294d2608b1af388}
     profiles: ["observability"]
-    restart: unless-stopped
     privileged: true
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
     devices:
       - /dev/kmsg
     command:
@@ -253,31 +331,30 @@ services:
     mem_limit: ${BOTS_CADVISOR_MEM_LIMIT:-256m}
     memswap_limit: ${BOTS_CADVISOR_MEM_LIMIT:-256m}
     cpus: 0.5
+    pids_limit: 256
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker:/var/lib/docker:ro
       - /dev/disk:/dev/disk:ro
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   prometheus:
-    image: ${BOTS_PROMETHEUS_IMAGE:-prom/prometheus:v3.1.0}
-    container_name: ${BOTS_PROMETHEUS_CONTAINER_NAME:-runelay-bots-prometheus}
+    <<: [*long-running, *hardened]
+    image: ${BOTS_PROMETHEUS_IMAGE:-prom/prometheus:v3.1.0@sha256:6559acbd5d770b15bb3c954629ce190ac3cbbdb2b7f1c30f0385c4e05104e218}
     profiles: ["observability"]
     network_mode: host
     user: "1000:1000"
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
     read_only: true
     depends_on:
       cadvisor:
-        condition: service_started
+        condition: service_healthy
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -287,28 +364,32 @@ services:
     mem_limit: ${BOTS_PROMETHEUS_MEM_LIMIT:-512m}
     memswap_limit: ${BOTS_PROMETHEUS_MEM_LIMIT:-512m}
     cpus: 0.5
+    pids_limit: 256
+    stop_grace_period: 30s
     volumes:
       - ./deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ${HOME}/.local/share/runelay-bots/runner.token:/etc/prometheus/runner.token:ro
       - ${HOME}/.local/share/runelay-bots/observability/prometheus:/prometheus
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   grafana:
-    image: ${BOTS_GRAFANA_IMAGE:-grafana/grafana:11.4.0}
-    container_name: ${BOTS_GRAFANA_CONTAINER_NAME:-runelay-bots-grafana}
+    <<: [*long-running, *hardened]
+    image: ${BOTS_GRAFANA_IMAGE:-grafana/grafana:11.4.0@sha256:d8ea37798ccc41061a62ab080f2676dda6bf7815558499f901bdb0f533a456fb}
     profiles: ["observability"]
     network_mode: host
     user: "1000:1000"
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777
     depends_on:
       prometheus:
-        condition: service_started
+        condition: service_healthy
     environment:
       GF_SERVER_HTTP_ADDR: 127.0.0.1
       GF_SERVER_HTTP_PORT: "3300"
@@ -320,81 +401,26 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
       GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_PATHS_LOGS: /tmp/grafana-logs
+      GF_LOG_MODE: console
     mem_limit: ${BOTS_GRAFANA_MEM_LIMIT:-256m}
     memswap_limit: ${BOTS_GRAFANA_MEM_LIMIT:-256m}
     cpus: 0.5
+    pids_limit: 256
+    stop_grace_period: 30s
     volumes:
       - ./deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/observability/grafana/dashboards:/etc/grafana/dashboards:ro
       - ${HOME}/.local/share/runelay-bots/secrets/grafana-admin.password:/run/secrets/grafana-admin.password:ro
       - ${HOME}/.local/share/runelay-bots/observability/grafana:/var/lib/grafana
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
-
-  box-image:
-    build:
-      context: .
-      dockerfile: packages/runner/box/Dockerfile
-    image: ${RBOX_IMAGE:-ghcr.io/runelay/r-bots-box:${RBOTS_VERSION:-dev}}
-    profiles: ["sandbox"]
-    network_mode: none
-    command: ["true"]
-    restart: "no"
-
-  runner:
-    build:
-      context: .
-      dockerfile: packages/runner/Dockerfile
-      args:
-        DOCKER_GID: ${DOCKER_GID:-999}
-    image: ${BOTS_RUNNER_IMAGE:-ghcr.io/runelay/r-bots-runner:${RBOTS_VERSION:-dev}}
-    container_name: ${BOTS_RUNNER_CONTAINER_NAME:-runelay-bots-runner}
-    profiles: ["sandbox"]
-    network_mode: host
-    init: true
-    restart: unless-stopped
-    depends_on:
-      server:
-        condition: service_healthy
-      box-image:
-        condition: service_completed_successfully
-    group_add:
-      - "${DOCKER_GID:-999}"
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777
-    mem_limit: ${BOTS_RUNNER_MEM_LIMIT:-256m}
-    memswap_limit: ${BOTS_RUNNER_MEM_LIMIT:-256m}
-    cpus: 0.5
-    pids_limit: 256
-    environment:
-      RBOTS_URL: http://127.0.0.1:${GATEWAY_PORT:-2000}
-      RBOTS_DEVICE_TOKEN_FILE: /run/rbots-runner/box-runner.token
-      RBOTS_RUNNER_NAME: ${BOTS_RUNNER_NAME:-local-runner}
-      RBOTS_WORKSPACE_ROOTS: ${HOME}/.local/share/runelay-bots:${HOME}/.local/share/runelay-bots-worktrees
-      RBOTS_ACCOUNT_ROOTS: ${HOME}/.claude:${HOME}/.claude-2:${HOME}/.codex
-      RBOTS_RUNTIME: ${RBOTS_RUNTIME:-}
-      RBOX_IMAGE: ${RBOX_IMAGE:-ghcr.io/runelay/r-bots-box:${RBOTS_VERSION:-dev}}
-      DOCKER_SOCKET: /var/run/docker.sock
-      BOX_PAUSE_AFTER_MS: ${BOX_PAUSE_AFTER_MS:-120000}
-      BOX_STOP_AFTER_MS: ${BOX_STOP_AFTER_MS:-1800000}
-      BOX_MEM_RESERVE_MB: ${BOX_MEM_RESERVE_MB:-1024}
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - ${HOME}/.local/share/runelay-bots/runner:/run/rbots-runner:ro
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3300/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   desktop-home:
