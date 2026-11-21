@@ -231,6 +231,21 @@ describe("preview proxy", () => {
       expect(forwarded[name]).toBeUndefined();
   });
 
+  test("passes an answer without body through uncompressed", async () => {
+    const methods: string[] = [];
+    const port = upstream((incoming) => {
+      methods.push(incoming.method);
+      return new Response("<p>page</p>", { headers: { "content-type": "text/html" } });
+    });
+    const token = serveToken(port);
+    const cookie = cookieOf(await request(`/preview/ws1/${port}/?t=${token}`, { redirect: "manual" }));
+    const head = await request("/page", { method: "HEAD", headers: { cookie, "accept-encoding": "gzip" } });
+    expect(head.status).toBe(200);
+    expect(head.text).toBe("");
+    expect(head.headers.get("content-encoding")).toBeNull();
+    expect(methods).toEqual(["HEAD"]);
+  });
+
   test("never shadows API routes, refuses service worker scripts and unknown cookies", async () => {
     const port = upstream(() => new Response("page"));
     const token = serveToken(port);

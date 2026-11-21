@@ -654,26 +654,20 @@ async function rewriteAll(sheetId: string, rewrite: (input: string, ownTab: stri
   }
 }
 
-async function tabResult(_botId: string, sheet: SheetRow, tab: TabRow | null, author: BlockAuthor) {
+async function sheetResult(sheet: SheetRow, author: BlockAuthor, tabId?: string) {
   const next = await bump(sheet, author, null);
+  const sheetPublic = await sheetOf(next);
   return {
-    sheet: await sheetOf(next),
-    tab: tab
-      ? publicTab(
-          await requireTabRow(tab.id),
-          (await tabsOf(sheet.id)).findIndex((item) => item.id === tab.id),
-        )
-      : null,
-    event: blockEvent(
-      "sheet",
-      sheet.id,
-      sheet.title,
-      next.version,
-      author,
-      "edited",
-      await previewOf(sheet.id, tab?.id),
-    ),
+    sheet: sheetPublic,
+    event: blockEvent("sheet", sheet.id, sheet.title, next.version, author, "edited", await previewOf(sheet.id, tabId)),
   };
+}
+
+async function tabResult(_botId: string, sheet: SheetRow, tab: TabRow, author: BlockAuthor) {
+  const base = await sheetResult(sheet, author, tab.id);
+  const row = await requireTabRow(tab.id);
+  const index = (await tabsOf(sheet.id)).findIndex((item) => item.id === tab.id);
+  return { sheet: base.sheet, tab: publicTab(row, index), event: base.event };
 }
 
 async function requireTabRow(tabId: string) {
@@ -760,7 +754,8 @@ export async function deleteTab(botId: string, sheetId: string, tabId: string, a
       .set({ deletedAt: nowIso(), position: -1 - Date.now() })
       .where(eq(sheetTabs.id, tab.id));
     await recalc(sheet.id);
-    return await tabResult(botId, sheet, null, author);
+    const base = await sheetResult(sheet, author);
+    return { sheet: base.sheet, tab: null, event: base.event };
   });
 }
 
@@ -797,7 +792,7 @@ export async function structure(
     await refreshBounds(tab.id);
     await recalc(sheet.id);
     const result = await tabResult(botId, sheet, tab, author);
-    return { version: result.sheet.version, tab: result.tab!, event: result.event, sheet: result.sheet };
+    return { version: result.sheet.version, tab: result.tab, event: result.event, sheet: result.sheet };
   });
 }
 

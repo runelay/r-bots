@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import { fakeProviders, resetData } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import { ValidationError } from "../../../shared/errors";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import type { WorkspaceState } from "../../code/services/workspace.service";
@@ -9,9 +10,9 @@ import { loadConversationRows } from "../repositories/sessions.repository";
 import {
   archiveConversation,
   autoTitle,
-  childConversations,
   ConversationError,
   type ConversationEvent,
+  childConversations,
   conversationOf,
   conversationSessions,
   createConversation,
@@ -125,9 +126,9 @@ describe("publicConversation", () => {
 
   test("describes the main thread with its live title and counters", async () => {
     const state = await ensureThread(bot.id);
-    const session = (await listConversations(bot.id)).find((item) => item.main)!;
+    const session = must((await listConversations(bot.id)).find((item) => item.main));
     expect(session.title).toBe("Nova conversa");
-    const stored = conversationOf(bot.id, state.sessionId)!;
+    const stored = must(conversationOf(bot.id, state.sessionId));
     stored.log.emit({ type: "delivery.consumed", data: { source: "schedule", parts: [{ kind: "text", text: "x" }] } });
     stored.log.emit({ type: "delivery.consumed", data: { source: "chat", parts: [{ kind: "file" }] } });
     stored.log.emit({ type: "delivery.consumed", data: { source: "chat" } });
@@ -279,7 +280,7 @@ describe("updateConversation", () => {
 describe("archive, read and move", () => {
   test("the main thread cannot be archived or moved", async () => {
     const state = await ensureThread(bot.id);
-    const main = conversationOf(bot.id, state.sessionId)!;
+    const main = must(conversationOf(bot.id, state.sessionId));
     await expect(archiveConversation(main, true)).rejects.toMatchObject({ status: 400, code: "main_conversation" });
     await expect(moveConversation(main, "x")).rejects.toMatchObject({ status: 400, code: "main_conversation" });
   });

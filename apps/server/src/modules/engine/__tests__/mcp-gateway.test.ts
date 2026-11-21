@@ -14,6 +14,7 @@ import {
   toolContext,
 } from "../../../../test/engine-helpers";
 import { fakeRunelay, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import { ValidationError } from "../../../shared/errors";
 import * as bots from "../../bots/services/bots.service";
 import { type BotDefinition, getBot } from "../../bots/services/bots.service";
@@ -251,7 +252,7 @@ describe("self configuration", () => {
     expect(decisions[0]).toMatchObject({ outcome: "human", tool: "request_connector" });
     const again = await call("request_connector", { name: "linear_server", reason: "issues" });
     expect(again).toMatchObject({ isError: true, text: "Já tenho acesso a linear_server." });
-    const current = getBot(bot.id)!;
+    const current = must(getBot(bot.id));
     current.capabilities = { ...current.capabilities, browser: false };
     expect((await call("request_capability", { name: "browser", reason: "ver" })).text).toContain(
       "Capacidade navegador liberada.",
@@ -280,7 +281,7 @@ describe("team tools", () => {
       accent: "teal",
       instructions: "Vende.",
     });
-    const created = bots.listBots().find((item) => item.name === "Nova Pessoa")!;
+    const created = must(bots.listBots().find((item) => item.name === "Nova Pessoa"));
     expect(made.text).toBe(`Criei o bot Nova Pessoa (${created.id}).`);
     expect(created).toMatchObject({ role: "Vendas", accent: "teal", instructions: "Vende." });
     expect(settled[0]).toBe(`create_bot(Nova Pessoa) → ${created.id}`);
@@ -300,7 +301,7 @@ describe("team tools", () => {
     const { call } = await open();
     const made = await call("create_group", { name, members: [ana.id, beto.name.toUpperCase(), "beto grupo"] });
     expect(made.text).toBe(`Criei o grupo ${name} com 3 bots.`);
-    const group = listGroups().find((item) => item.name === name)!;
+    const group = must(listGroups().find((item) => item.name === name));
     expect(group.members).toEqual([ana.id, beto.id]);
     const missing = await call("create_group", { name: "Outro", members: ["ninguem-aqui-xyz"] });
     expect(missing).toMatchObject({ isError: true, text: 'Não achei o bot "ninguem-aqui-xyz".' });

@@ -1194,7 +1194,7 @@ const cutoutImageFile = /\.(png|jpe?g|webp)$/i;
 async function cutoutSource(botId: string, input: Record<string, unknown>) {
   if (typeof input.uploadId === "string" && input.uploadId) {
     const meta = await readUpload(botId, input.uploadId);
-    if (!meta || meta.kind !== "image") throw new Error("Anexo de imagem não encontrado.");
+    if (meta?.kind !== "image") throw new Error("Anexo de imagem não encontrado.");
     return { path: uploadPath(botId, meta), name: meta.name, dir: join(outboxDir(botId), "imagens") };
   }
   const raw = typeof input.path === "string" ? input.path.trim() : "";

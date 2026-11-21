@@ -52,11 +52,16 @@ export async function handleGroups(req: Req, res: Res, url: URL, method: string,
       return handleEve(req, res, url, owner, parts.slice(3));
     }
     if (tail === "" && method === "GET") return sendJson(res, 200, await publicGroup(group));
-    if (tail === "" && method === "PATCH")
-      return sendJson(res, 200, await publicGroup((await updateGroup(group.id, await readBody(req)))!));
+    if (tail === "" && method === "PATCH") {
+      const updated = await updateGroup(group.id, await readBody(req));
+      if (!updated) return sendJson(res, 404, { ok: false, error: "Grupo não encontrado." });
+      return sendJson(res, 200, await publicGroup(updated));
+    }
     if ((tail === "archive" || tail === "unarchive") && method === "POST") {
       await readBody(req).catch(() => undefined);
-      return sendJson(res, 200, await publicGroup((await setGroupArchived(group.id, tail === "archive"))!));
+      const updated = await setGroupArchived(group.id, tail === "archive");
+      if (!updated) return sendJson(res, 404, { ok: false, error: "Grupo não encontrado." });
+      return sendJson(res, 200, await publicGroup(updated));
     }
     if (tail === "thread" && method === "GET") return sendJson(res, 200, (await publicGroup(group)).thread);
     if (tail === "thread/read" && method === "POST") {

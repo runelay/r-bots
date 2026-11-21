@@ -129,18 +129,18 @@ function filterResponse(answer: Response, acceptEncoding: string | null) {
   const headers = new Headers(answer.headers);
   for (const name of strippedResponseHeaders) headers.delete(name);
   const compress =
-    answer.body !== null &&
     wantsGzip(acceptEncoding) &&
     !headers.has("content-encoding") &&
     compressibleTypes.test(headers.get("content-type") ?? "") &&
     !/event-stream/i.test(headers.get("content-type") ?? "") &&
     answer.status !== 204 &&
     answer.status !== 304;
-  if (!compress) return new Response(answer.body, { status: answer.status, statusText: answer.statusText, headers });
+  if (!compress || !answer.body)
+    return new Response(answer.body, { status: answer.status, statusText: answer.statusText, headers });
   headers.delete("content-length");
   headers.set("content-encoding", "gzip");
   headers.append("vary", "accept-encoding");
-  return new Response(answer.body!.pipeThrough(new CompressionStream("gzip")), {
+  return new Response(answer.body.pipeThrough(new CompressionStream("gzip")), {
     status: answer.status,
     statusText: answer.statusText,
     headers,

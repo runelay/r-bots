@@ -4,6 +4,7 @@ import { request, resetData, startTestServer, type TestServer } from "../../../.
 import * as botCode from "../../code/services/bot-code.service";
 import { createSection } from "../../sections/services/sections.service";
 import { postGreeting, publicBot } from "../services/bot-view.service";
+import * as botsService from "../services/bots.service";
 import { getBot } from "../services/bots.service";
 
 interface PublicBot {
@@ -139,6 +140,31 @@ describe("single bot", () => {
     });
     expect(badSidebar.status).toBe(400);
     expect(badSidebar.body.field).toBe("sectionId");
+  });
+
+  test("answers 404 when the bot disappears during a write", async () => {
+    const bot = await makeBot();
+    const mocks = [
+      spyOn(botsService, "updateBot").mockResolvedValue(null),
+      spyOn(botsService, "setDeleted").mockResolvedValue(null),
+      spyOn(botsService, "updateSidebar").mockResolvedValue(null),
+      spyOn(botsService, "setArchived").mockResolvedValue(null),
+    ];
+    const writes: [string, "PATCH" | "POST", unknown][] = [
+      [`/bots/${bot.id}`, "PATCH", { role: "Revisor" }],
+      [`/bots/${bot.id}/delete`, "POST", {}],
+      [`/bots/${bot.id}/sidebar`, "PATCH", { pinned: true }],
+      [`/bots/${bot.id}/archive`, "POST", {}],
+    ];
+    try {
+      for (const [path, method, body] of writes) {
+        const answer = await request<{ error: string }>(path, { method, body });
+        expect(answer.status).toBe(404);
+        expect(answer.body.error).toBe("Bot não encontrada.");
+      }
+    } finally {
+      for (const mock of mocks) mock.mockRestore();
+    }
   });
 
   test("unknown bot and unknown route", async () => {

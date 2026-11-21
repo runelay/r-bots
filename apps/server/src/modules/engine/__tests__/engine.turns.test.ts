@@ -19,6 +19,7 @@ import {
   usageOf,
 } from "../../../../test/engine-turn-helpers";
 import { fakeProviders, replyWith } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import * as accounts from "../../accounts/services/accounts.service";
 import { clearLimit, limitOf, markLimited } from "../../accounts/services/limits.service";
 import * as decisions from "../../approvals/services/decisions.service";
@@ -231,7 +232,7 @@ describe("a chat turn", () => {
     });
     track(
       spyOn(accounts, "findAccount").mockImplementation(async (id: string) => ({
-        ...(await accounts.listAccounts()).find((item) => item.id === "vps:claude")!,
+        ...must((await accounts.listAccounts()).find((item) => item.id === "vps:claude")),
         id,
         status: "offline",
         detail: "caiu",

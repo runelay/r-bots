@@ -66,8 +66,8 @@ describe("parseSecretCommand", () => {
       "curl 'open",
       'curl "open',
       "curl $HOME",
-      'curl "${SEGREDO_TOKEN:0:4}"',
-      "curl ${SEGREDO_TOKEN#x}",
+      `curl "\${SEGREDO_TOKEN:0:4}"`,
+      `curl \${SEGREDO_TOKEN#x}`,
       "curl $",
       "curl $SEGREDO_GHOST",
     ])

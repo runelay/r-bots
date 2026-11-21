@@ -225,6 +225,12 @@ function setCenter(node: CanvasNode, x: number, y: number) {
   node.y = Math.round(y - node.h / 2);
 }
 
+function entry<K, V>(map: Map<K, V>, key: K): V {
+  const value = map.get(key);
+  if (value === undefined) throw new Error(`canvas layout: missing entry ${String(key)}`);
+  return value;
+}
+
 function branchBias(edge: CanvasEdge) {
   const label = (edge.label ?? "").trim().toLowerCase();
   if (!label) return 0;
@@ -254,7 +260,7 @@ function layered(doc: CanvasDoc) {
   for (const id of ids) if (!incoming.has(id) && !state.has(id)) visit(id);
   for (const id of ids) if (!state.has(id)) visit(id);
   const realParents = new Map<string, string[]>(ids.map((id) => [id, []]));
-  for (const edge of forward) realParents.get(edge.to)!.push(edge.from);
+  for (const edge of forward) entry(realParents, edge.to).push(edge.from);
   const layer = new Map<string, number>();
   const depth = (id: string, trail: Set<string>): number => {
     const known = layer.get(id);
@@ -274,12 +280,12 @@ function layered(doc: CanvasDoc) {
   const parents = new Map<string, string[]>(ids.map((id) => [id, []]));
   const children = new Map<string, string[]>(ids.map((id) => [id, []]));
   const link = (from: string, to: string) => {
-    children.get(from)!.push(to);
-    parents.get(to)!.push(from);
+    entry(children, from).push(to);
+    entry(parents, to).push(from);
   };
   forward.forEach((edge, index) => {
-    const from = layer.get(edge.from)!;
-    const to = layer.get(edge.to)!;
+    const from = entry(layer, edge.from);
+    const to = entry(layer, edge.to);
     const lean = branchBias(edge);
     let previous = edge.from;
     for (let level = from + 1; level < to; level++) {
@@ -331,7 +337,7 @@ function layered(doc: CanvasDoc) {
       const row = layers[index];
       if (!row) continue;
       const scores = new Map(row.map((id) => [id, barycenter(id, down ? parents : children)]));
-      row.sort((a, b) => scores.get(a)! - scores.get(b)!);
+      row.sort((a, b) => entry(scores, a) - entry(scores, b));
       refresh();
     }
   }
@@ -342,12 +348,12 @@ function layered(doc: CanvasDoc) {
   let top = 0;
   layers.forEach((row, index) => {
     if (!row) return;
-    const rowHeight = Math.max(24, ...row.map((id) => height.get(id)!));
-    const total = row.reduce((sum, id) => sum + width.get(id)!, 0) + gapX * (row.length - 1);
+    const rowHeight = Math.max(24, ...row.map((id) => entry(height, id)));
+    const total = row.reduce((sum, id) => sum + entry(width, id), 0) + gapX * (row.length - 1);
     let left = -total / 2;
     for (const id of row) {
-      xs.set(id, left + width.get(id)! / 2);
-      left += width.get(id)! + gapX;
+      xs.set(id, left + entry(width, id) / 2);
+      left += entry(width, id) + gapX;
     }
     tops[index] = top;
     for (const id of row) {
@@ -364,12 +370,13 @@ function layered(doc: CanvasDoc) {
       if (!row) continue;
       const wanted = row.map((id) => {
         const list = neighbors.get(id) ?? [];
-        return list.length ? list.reduce((sum, item) => sum + xs.get(item)!, 0) / list.length : xs.get(id)!;
+        return list.length ? list.reduce((sum, item) => sum + entry(xs, item), 0) / list.length : entry(xs, id);
       });
       const placed: number[] = [];
       row.forEach((id, index) => {
         let x = wanted[index];
-        if (index > 0) x = Math.max(x, placed[index - 1] + width.get(row[index - 1])! / 2 + gapX + width.get(id)! / 2);
+        if (index > 0)
+          x = Math.max(x, placed[index - 1] + entry(width, row[index - 1]) / 2 + gapX + entry(width, id) / 2);
         placed.push(x);
       });
       const shift = (wanted.reduce((a, b) => a + b, 0) - placed.reduce((a, b) => a + b, 0)) / row.length;
@@ -379,8 +386,8 @@ function layered(doc: CanvasDoc) {
     }
   }
   for (const id of ids) {
-    const node = byId.get(id)!;
-    node.x = Math.round(xs.get(id)! - node.w / 2);
+    const node = entry(byId, id);
+    node.x = Math.round(entry(xs, id) - node.w / 2);
   }
 }
 
@@ -442,12 +449,13 @@ function radial(doc: CanvasDoc) {
   const children = new Map<string, string[]>();
   const level = new Map<string, number>([[root.id, 0]]);
   const queue = [root.id];
-  while (queue.length) {
-    const id = queue.shift()!;
+  for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
     for (const next of adjacency.get(id) ?? []) {
       if (level.has(next)) continue;
-      level.set(next, level.get(id)! + 1);
-      (children.get(id) ?? children.set(id, []).get(id)!).push(next);
+      level.set(next, entry(level, id) + 1);
+      const list = children.get(id) ?? [];
+      children.set(id, list);
+      list.push(next);
       queue.push(next);
     }
   }
@@ -466,10 +474,10 @@ function radial(doc: CanvasDoc) {
     const list = children.get(id) ?? [];
     let cursor = start;
     for (const child of list) {
-      const share = ((end - start) * leaves.get(child)!) / leaves.get(id)!;
+      const share = ((end - start) * entry(leaves, child)) / entry(leaves, id);
       const angle = cursor + share / 2;
-      const radius = ring * level.get(child)!;
-      setCenter(byId.get(child)!, Math.cos(angle) * radius * 1.25, Math.sin(angle) * radius);
+      const radius = ring * entry(level, child);
+      setCenter(entry(byId, child), Math.cos(angle) * radius * 1.25, Math.sin(angle) * radius);
       place(child, cursor, cursor + share);
       cursor += share;
     }
@@ -513,12 +521,12 @@ function placeNew(doc: CanvasDoc, pending: Set<string>) {
   while (pending.size && progress) {
     progress = false;
     for (const id of [...pending]) {
-      const node = byId.get(id)!;
+      const node = entry(byId, id);
       const link = doc.edges.find(
         (edge) => (edge.to === id && !pending.has(edge.from)) || (edge.from === id && !pending.has(edge.to)),
       );
       if (!link) continue;
-      const anchor = byId.get(link.to === id ? link.from : link.to)!;
+      const anchor = entry(byId, link.to === id ? link.from : link.to);
       const base = center(anchor);
       let dx = 0;
       let dy = 1;
@@ -545,7 +553,7 @@ function placeNew(doc: CanvasDoc, pending: Set<string>) {
     }
   }
   for (const id of pending) {
-    const node = byId.get(id)!;
+    const node = entry(byId, id);
     const others = placed();
     const right = others.length ? Math.max(...others.map((item) => item.x + item.w)) + 80 : 0;
     const top = others.length ? Math.min(...others.map((item) => item.y)) : 0;
@@ -624,7 +632,10 @@ function describeChanges(before: CanvasDoc | null, after: CanvasDoc) {
   const now = new Map(after.nodes.map((node) => [node.id, node]));
   const added = after.nodes.filter((node) => !old.has(node.id));
   const removed = before.nodes.filter((node) => !now.has(node.id));
-  const renamed = after.nodes.filter((node) => old.has(node.id) && old.get(node.id)!.text !== node.text);
+  const renamed = after.nodes.filter((node) => {
+    const prior = old.get(node.id);
+    return prior !== undefined && prior.text !== node.text;
+  });
   const moved = after.nodes.filter((node) => {
     const prior = old.get(node.id);
     return (
@@ -642,9 +653,10 @@ function describeChanges(before: CanvasDoc | null, after: CanvasDoc) {
   const newEdges = new Map(after.edges.map((edge) => [key(edge), edge]));
   const addedEdges = after.edges.filter((edge) => !oldEdges.has(key(edge)));
   const removedEdges = before.edges.filter((edge) => !newEdges.has(key(edge)));
-  const relabeled = after.edges.filter(
-    (edge) => oldEdges.has(key(edge)) && (oldEdges.get(key(edge))!.label ?? "") !== (edge.label ?? ""),
-  );
+  const relabeled = after.edges.filter((edge) => {
+    const prior = oldEdges.get(key(edge));
+    return prior !== undefined && (prior.label ?? "") !== (edge.label ?? "");
+  });
   const quote = (text: string) => `"${text.replace(/\s+/g, " ").slice(0, 40)}"`;
   const parts: string[] = [];
   if (added.length)
@@ -665,7 +677,7 @@ function describeChanges(before: CanvasDoc | null, after: CanvasDoc) {
     parts.push(
       `${renamed.length} ${renamed.length === 1 ? "caixa renomeada" : "caixas renomeadas"} (${renamed
         .slice(0, 5)
-        .map((node) => `${quote(old.get(node.id)!.text)} → ${quote(node.text)}`)
+        .map((node) => `${quote(old.get(node.id)?.text ?? "")} → ${quote(node.text)}`)
         .join(", ")})`,
     );
   if (addedEdges.length)

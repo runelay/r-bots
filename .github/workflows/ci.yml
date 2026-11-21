@@ -46,7 +46,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - run: bunx biome ci .
+      - run: bunx biome ci --error-on-warnings .
       - run: bun run typecheck
       - name: Test postgres settings
         env:

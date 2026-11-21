@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, type Mock, spyOn, test } from "bun:test";
 import { factsOfType, makeBot } from "../../../../test/engine-helpers";
 import { request, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import * as canvas from "../../canvas/services/canvas.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
@@ -262,7 +263,7 @@ describe("artifacts routes", () => {
     expect(saved.body.version).toBe(2);
     expect(saved.body.versions[1].author).toBe("user");
     const thread = await ensureThread(bot.id);
-    const events = await factsOfType(getStoredSession(thread.sessionId)!, "artifact.updated");
+    const events = await factsOfType(must(getStoredSession(thread.sessionId)), "artifact.updated");
     expect(events.at(-1)?.data).toMatchObject({ artifactId: meta.id, version: 2, author: "user", botId: bot.id });
 
     const { meta: other } = await canvas.createCanvas(bot.id, "Velho", { nodes: [{ id: "a", text: "a" }], edges: [] });

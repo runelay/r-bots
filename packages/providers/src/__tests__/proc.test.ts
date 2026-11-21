@@ -112,7 +112,7 @@ describe("proc", () => {
   test("run without env passes the allowlisted environment only", async () => {
     process.env.RB_SECRET_LEAK = "leak";
     process.env.TZ = "UTC";
-    const result = await run("sh", ["-c", "echo ${RB_SECRET_LEAK:-none}-$TZ"]);
+    const result = await run("sh", ["-c", `echo \${RB_SECRET_LEAK:-none}-$TZ`]);
     delete process.env.RB_SECRET_LEAK;
     delete process.env.TZ;
     expect(result.stdout.trim()).toBe("none-UTC");

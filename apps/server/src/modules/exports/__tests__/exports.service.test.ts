@@ -5,6 +5,7 @@ import { inflateRawSync } from "node:zlib";
 import { eq } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { fakeProcesses, type ProcessCall, resetData } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import { getDb } from "../../../db";
 import { exports, noteLinks, notes, sheetCells, sheets, sheetTabs } from "../../../db/tables";
 import { BlockError } from "../../blocks/services/blocks.shared";
@@ -90,8 +91,8 @@ function fakeChrome(options: { write?: boolean; hang?: boolean } = {}) {
     spawned = resolve;
   });
   const fake = fakeProcesses((call: ProcessCall) => {
-    const output = call.args.find((arg) => arg.startsWith("--print-to-pdf="))!.slice("--print-to-pdf=".length);
-    const input = call.args.at(-1)!.replace("file://", "");
+    const output = must(call.args.find((arg) => arg.startsWith("--print-to-pdf="))).slice("--print-to-pdf=".length);
+    const input = must(call.args.at(-1)).replace("file://", "");
     pages.push(readFileSync(input, "utf8"));
     if (options.write !== false) writeFileSync(output, "%PDF-1.4 fake");
     spawned();
@@ -270,10 +271,10 @@ describe("note pdf isolation", () => {
     let mode = 0;
     let dirMode = 0;
     const fake = fakeProcesses((call: ProcessCall) => {
-      const input = call.args.at(-1)!.replace("file://", "");
+      const input = must(call.args.at(-1)).replace("file://", "");
       mode = statSync(input).mode & 0o777;
       dirMode = statSync(dirname(input)).mode & 0o777;
-      writeFileSync(call.args.find((arg) => arg.startsWith("--print-to-pdf="))!.slice(15), "%PDF-1.4 fake");
+      writeFileSync(must(call.args.find((arg) => arg.startsWith("--print-to-pdf="))).slice(15), "%PDF-1.4 fake");
       return { code: 0 };
     });
     const job = await createExport(bot, { kind: "note", id: note.id, format: "pdf" });
@@ -338,9 +339,9 @@ describe("sheet exports", () => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load((await sheetXlsx(bot, sheet.id)).buffer as ArrayBuffer);
     expect(workbook.worksheets.map((ws) => ws.name)).toEqual(["Dados", "Vazia"]);
-    const ws = workbook.getWorksheet("Dados")!;
+    const ws = must(workbook.getWorksheet("Dados"));
     expect(ws.views[0]).toMatchObject({ state: "frozen", ySplit: 1, xSplit: 0 });
-    expect(workbook.getWorksheet("Vazia")!.views ?? []).toEqual([]);
+    expect(must(workbook.getWorksheet("Vazia")).views ?? []).toEqual([]);
     expect(ws.getColumn("A").width).toBe(20);
     expect(ws.getCell("A1").value).toBe("Produto");
     expect(ws.getCell("B1")).toMatchObject({ value: 1234.5, numFmt: '"R$" #,##0.00' });
@@ -375,7 +376,7 @@ describe("sheet exports", () => {
     expect(tab).toBeTruthy();
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load((await sheetXlsx(bot, sheet.id)).buffer as ArrayBuffer);
-    const ws = workbook.getWorksheet("Dados")!;
+    const ws = must(workbook.getWorksheet("Dados"));
     expect(ws.getCell("A1").value).toEqual({ error: "#N/A" });
     expect(ws.getCell("H1").value).toEqual({ formula: "D1+1", result: 46024 });
   });
@@ -528,8 +529,8 @@ describe("export jobs", () => {
     expect(await readExport(bot, job.id)).toEqual(job);
     expect((await errorOf(async () => await readExport("other", job.id))).status).toBe(404);
     expect((await errorOf(() => exportFile("other", job.id))).status).toBe(404);
-    const row = (await getDb().select().from(exports).where(eq(exports.id, job.id)).limit(1))[0]!;
-    await getBlobStore().delete(row.blobKey!);
+    const row = must((await getDb().select().from(exports).where(eq(exports.id, job.id)).limit(1))[0]);
+    await getBlobStore().delete(must(row.blobKey));
     const gone = await errorOf(() => exportFile(bot, job.id));
     expect(gone).toMatchObject({ status: 404, message: "Arquivo da exportação não encontrado." });
     await getDb().update(exports).set({ fileName: null, size: null }).where(eq(exports.id, job.id));

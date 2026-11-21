@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { waitFor } from "../../../../test/engine-helpers";
 import {
   type FakeChild,
   fakeProcesses,
@@ -12,7 +13,6 @@ import {
   type ProcessReply,
   resetData,
 } from "../../../../test/helpers";
-import { waitFor } from "../../../../test/engine-helpers";
 import {
   devLimits,
   devServerLogs,
@@ -383,7 +383,7 @@ describe("starting dev servers", () => {
     bash(serving);
     const ws = workspace();
     const target = { key: ws.id, kind: "workspace" as const, path: ws.path, name: ws.repoName, branch: ws.branch };
-    let release = () => undefined as void;
+    let release: () => void = () => undefined;
     const gate = new Promise<void>((done) => {
       release = done;
     });
