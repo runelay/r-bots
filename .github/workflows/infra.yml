@@ -80,7 +80,7 @@ jobs:
           if [ -n "$HCLOUD_TOKEN" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "HCLOUD_TOKEN ausente: plan ignorado."
+            echo "HCLOUD_TOKEN missing: skipping plan."
           fi
       - if: steps.gate.outputs.enabled == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

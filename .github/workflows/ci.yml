@@ -60,6 +60,7 @@ jobs:
           docker exec "$PG" psql -U runelay_bots -d runelay_bots -tAc "show max_connections"
       - run: docker pull "$TEST_REDIS_IMAGE"
       - run: bun run test
+      - run: bun test scripts/release
 
   shellcheck:
     runs-on: ubuntu-24.04
