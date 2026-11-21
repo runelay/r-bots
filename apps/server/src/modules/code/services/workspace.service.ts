@@ -625,6 +625,14 @@ export function publicWorkspace(workspace: WorkspaceState) {
   };
 }
 
+export function taskSlug(session: StoredSession, task: string) {
+  return slugify(task || session.meta.title || "tarefa");
+}
+
+export function taskWorktreeId(repoName: string, botId: string, slug: string) {
+  return `${repoName}-${slugify(botId, 20)}-${slug}`.replace(/[^\w.-]/g, "-");
+}
+
 async function reusable(session: StoredSession, repoPath: string) {
   const same = workspacesOf(session).filter((item) => item.repo === repoPath);
   const ordered = [...same.filter((item) => item.active), ...same.filter((item) => !item.active).reverse()];
@@ -652,9 +660,9 @@ export async function openWorkspace(session: StoredSession, botId: string, repoI
   const hasOrigin = (await git(repo.path, ["remote", "get-url", "origin"])).code === 0;
   if (hasOrigin) await git(repo.path, ["fetch", "--quiet", "origin"], 45_000);
   const { base, commit } = await pickBase(repo.path);
-  const slug = slugify(task || session.meta.title || "tarefa");
+  const slug = taskSlug(session, task);
   const botSlug = slugify(botId, 20);
-  let id = `${repo.name}-${botSlug}-${slug}`.replace(/[^\w.-]/g, "-");
+  let id = taskWorktreeId(repo.name, botId, slug);
   let branch = `feat/${slug}`;
   const root = join(worktreesRoot, repo.name);
   for (let attempt = 2; (await exists(join(root, id))) || (await branchExists(repo.path, branch)); attempt++) {

@@ -1,10 +1,11 @@
 import { join } from "node:path";
 import { childEnv, run } from "@runelay-bots/providers/proc";
-import type { StoredSession } from "../../conversations/services/sessions.service";
+import { getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import { recordWorktree, touchWorktree, worktreeById } from "../repositories/code.repository";
 import { stopDevServers } from "./dev-server.service";
 import {
   activeWorkspace,
+  activeWorkspaces,
   addWorkspace,
   baseContent,
   CodeError,
@@ -18,15 +19,50 @@ import {
   publicWorkspace,
   readHead,
   readMaybe,
+  resolveRepo,
   shareWithSandbox,
+  taskSlug,
+  taskWorktreeId,
   type WorkspaceState,
   workspaceAt,
   workspaceById,
   workspaceFromRecord,
+  workspacesOf,
   worktreeIdAt,
 } from "./workspace.service";
 
+async function pendingWork(path: string) {
+  if ((await git(path, ["status", "--porcelain"])).stdout.trim()) return true;
+  const upstream = await git(path, ["rev-list", "--count", "@{u}..HEAD"]);
+  return upstream.code === 0 && upstream.stdout.trim() !== "0";
+}
+
+async function claimPrevious(session: StoredSession, botId: string, repoInput: string, task: string) {
+  const repo = await resolveRepo(repoInput);
+  if (workspacesOf(session).some((item) => item.repo === repo.path)) return null;
+  const record = await worktreeById(taskWorktreeId(repo.name, botId, taskSlug(session, task)));
+  if (!record || record.botId !== botId || record.repo !== repo.path || record.status === "removed") return null;
+  if (record.sessionId !== session.meta.sessionId) {
+    const owner = getStoredSession(record.sessionId);
+    if (activeWorkspaces(owner).some((item) => item.id === record.id)) return null;
+  }
+  const head = await readHead(record.path);
+  if (!head) return null;
+  if (record.status !== "alive" && !(await pendingWork(record.path))) return null;
+  const workspace = workspaceFromRecord(record);
+  if (head.branch) workspace.branch = head.branch;
+  workspace.task = task.slice(0, 300);
+  addWorkspace(session, workspace, true);
+  await session.save();
+  await shareWithSandbox(workspace);
+  session.log.emit({ type: "code.workspace", data: { action: "adopted", ...publicWorkspace(workspace) } });
+  await touchWorktree(record.id, { status: "alive", sessionId: session.meta.sessionId });
+  return workspace;
+}
+
 export async function openTaskWorkspace(session: StoredSession, botId: string, repo: string, task: string) {
+  const previous = await claimPrevious(session, botId, repo, task);
+  if (previous) return { workspace: previous, created: false };
   const result = await openWorkspace(session, botId, repo, task);
   await recordWorktree(result.workspace, botId, session.meta.sessionId, "alive");
   return result;
