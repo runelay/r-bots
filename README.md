@@ -19,7 +19,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/features/teaser.webp" alt="r/bots in action: code preview, questions, the bot's browser, images and spreadsheets" width="100%" />
+  <img src="docs/media/hero.png" alt="The r/bots Mac app: a sidebar with the Boss, Dev and Pesquisa bots, the Dev bot's conversation with a live diff and a summary of its work, and the running app in the preview panel" width="100%" />
 </p>
 
 <p align="center">
