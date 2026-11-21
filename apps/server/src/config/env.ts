@@ -44,6 +44,8 @@ const schema = z.object({
   BOX_CPUS: positive.default(1),
   BOTS_UPDATE_CHECKS: z.enum(["on", "off"], { error: "use on ou off." }).default("on"),
   RBOTS_CLIS_DIR: optionalText,
+  RBOTS_TOOLS_DIR: optionalText,
+  RBOTS_HOST_TOOLS_DIR: optionalText,
   RBOTS_VERSION: optionalText,
   RBOTS_CHANNEL: z.enum(["stable", "beta"], { error: "use stable ou beta." }).default("stable"),
   RBOTS_GITHUB_TOKEN: optionalText,
@@ -78,6 +80,8 @@ export const sessionsDir = join(dataDir, "sessions");
 export const threadsDir = join(dataDir, "threads");
 export const workspacesDir = join(dataDir, "workspaces");
 export const clisDir = env.RBOTS_CLIS_DIR ?? join(dataDir, "clis");
+export const toolsDir = env.RBOTS_TOOLS_DIR ?? "/opt/rbots-tools";
+export const hostToolsDir = env.RBOTS_HOST_TOOLS_DIR ?? join(hostHome, ".local", "share", "runelay-bots-tools");
 
 export function botDir(botId: string) {
   return join(botsDir, botId);

@@ -16,7 +16,6 @@ import {
 import { and, eq } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { type Lexer, Marked, marked, type Token, type Tokens } from "marked";
-import { env } from "../../../config/env";
 import { getDb } from "../../../db";
 import { exports } from "../../../db/tables";
 import { BlockError, newId, nowIso } from "../../blocks/services/blocks.shared";
@@ -25,8 +24,7 @@ import { requireNote } from "../../notes/services/notes.service";
 import { address, colLetters, excelSerial, toEngineFormula } from "../../sheets/services/formula";
 import { bookFor, cellOf } from "../../sheets/services/sheets.service";
 import { getBlobStore, putBlob, safeName } from "../../storage/services/storage.service";
-
-const chromeBinary = env.DESKTOP_CHROME ?? "/opt/runelay-chrome/chrome";
+import { ensureTool } from "../../tools/services/tools.service";
 
 const mimes: Record<ExportFormat, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -267,7 +265,7 @@ export async function htmlToPdf(html: string) {
     await writeFile(input, html, { mode: 0o600 });
     const proc = Bun.spawn(
       [
-        chromeBinary,
+        await ensureTool("chrome"),
         ...pdfChromeFlags,
         `--user-data-dir=${join(dir, "profile")}`,
         `--print-to-pdf=${output}`,

@@ -3,6 +3,7 @@ import { childEnv, runBytes, run as runProcess } from "@runelay-bots/providers/p
 import type { Subprocess } from "bun";
 import { env } from "../../../config/env";
 import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
+import { ensureTool } from "../../tools/services/tools.service";
 import { controllerOf, onControllerChange, waitForBotControl } from "./control.service";
 
 const width = 1280;
@@ -11,7 +12,6 @@ const fps = env.DESKTOP_FPS ?? 8;
 const idleMs = 10 * 60_000;
 const desktopUser = env.DESKTOP_USER ?? "runelaybot";
 const desktopHome = env.DESKTOP_HOME ?? `/home/${desktopUser}`;
-const chromeBinary = env.DESKTOP_CHROME ?? "/opt/runelay-chrome/chrome";
 
 type Json = Record<string, unknown>;
 
@@ -93,6 +93,7 @@ class Desktop {
   private streamer: Subprocess<"ignore", "pipe", "ignore"> | null = null;
   private starting: Promise<void> | null = null;
   private lastFrame: Json | null = null;
+  private chrome = "";
   lastUsed = Date.now();
   title = "";
 
@@ -107,6 +108,7 @@ class Desktop {
     if (this.running) return;
     if (this.starting) return this.starting;
     this.starting = (async () => {
+      this.chrome = await ensureTool("chrome");
       this.display = freeDisplay();
       const xvfb = asUser(this.display, [
         "Xvfb",
@@ -133,7 +135,7 @@ class Desktop {
 
   private launchChrome(url: string) {
     return asUser(this.display, [
-      chromeBinary,
+      this.chrome,
       "--no-sandbox",
       "--no-first-run",
       "--no-default-browser-check",

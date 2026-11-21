@@ -33,6 +33,7 @@ export const ownerRoutes: OwnerRule[] = [
   { method: "write", path: ["simulators", "**"] },
   { method: "*", path: ["environments"] },
   { method: "*", path: ["providers", "**"] },
+  { method: "*", path: ["tools", "**"] },
   { method: "*", path: ["server", "**"] },
 ];
 

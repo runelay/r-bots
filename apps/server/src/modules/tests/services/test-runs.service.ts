@@ -9,6 +9,7 @@ import { macDeviceCall } from "../../accounts/services/mac-runner.service";
 import { getServer, listServers } from "../../code/services/dev-server.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import { resolveProject } from "../../servers/services/projects.service";
+import { optionalTool } from "../../tools/services/tools.service";
 
 export type TestKind = "maestro" | "playwright";
 export type TestStatus = "running" | "passed" | "failed" | "error";
@@ -305,7 +306,7 @@ async function runPlaywright(run: TestRun, signal?: AbortSignal) {
   await writeFile(join(work, basename(file)), await readFile(file, "utf8"));
   await writeFile(
     join(work, "playwright.config.mjs"),
-    playwrightConfig(work, baseURL, output, await agentBrowserChrome()),
+    playwrightConfig(work, baseURL, output, (await optionalTool("chrome")) ?? (await agentBrowserChrome())),
   );
   const args = ["playwright", "test", "--config", join(work, "playwright.config.mjs")];
   if (run.input.grep) args.push("--grep", run.input.grep);

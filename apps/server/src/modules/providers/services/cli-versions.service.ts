@@ -172,7 +172,7 @@ export function listVersions() {
   return Promise.all(providers.map(versionOf));
 }
 
-function pointLink(root: string, name: string, target: string) {
+export function pointLink(root: string, name: string, target: string) {
   const staging = join(root, `${name}${tmpSuffix}`);
   rmSync(staging, { force: true });
   symlinkSync(target, staging);

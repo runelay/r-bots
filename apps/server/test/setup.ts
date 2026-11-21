@@ -36,6 +36,7 @@ const testEnv: Record<string, string> = {
   DESKTOP_HOME: join(root, "desktop"),
   DESKTOP_CHROME: join(root, "bin", "chrome"),
   HOST_HOME: root,
+  RBOTS_TOOLS_DIR: join(root, "tools"),
   CODE_TEST_LOCK: join(root, "tests.lock"),
   CODE_GH_BIN: join(root, "bin", "gh"),
   CODE_DEV_SERVER_SETTLE_MS: "0",

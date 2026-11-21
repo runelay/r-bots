@@ -1,6 +1,7 @@
 import { rename, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { rootDir } from "../../../config/env";
+import { ensureTool } from "../../tools/services/tools.service";
 
 export interface CutoutStats {
   width: number;
@@ -13,8 +14,11 @@ export interface CutoutStats {
 const timeoutMs = 180_000;
 let running: Promise<unknown> = Promise.resolve();
 
-function pythonBinary() {
-  return process.env.IMAGE_CUTOUT_PYTHON || "/opt/runelay-cutout/bin/python";
+export async function cutoutRuntime() {
+  const python = process.env.IMAGE_CUTOUT_PYTHON;
+  if (python) return { python, env: undefined };
+  const dir = await ensureTool("cutout");
+  return { python: join(dir, "bin", "python"), env: { ...process.env, IMAGE_CUTOUT_MODELS: join(dir, "models") } };
 }
 
 export function cutoutScript() {
@@ -23,7 +27,9 @@ export function cutoutScript() {
 
 async function spawnCutout(input: string, output: string, trim: boolean, signal: AbortSignal) {
   const partial = `${output}.part.png`;
-  const child = Bun.spawn([pythonBinary(), "-I", cutoutScript(), input, partial, ...(trim ? ["--trim"] : [])], {
+  const runtime = await cutoutRuntime();
+  const child = Bun.spawn([runtime.python, "-I", cutoutScript(), input, partial, ...(trim ? ["--trim"] : [])], {
+    env: runtime.env,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
