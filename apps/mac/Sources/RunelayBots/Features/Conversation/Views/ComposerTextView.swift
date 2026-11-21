@@ -24,6 +24,7 @@ final class ComposerNSTextView: NSTextView {
     var onFocusChange: ((Bool) -> Void)?
     var copySelection: ((NSRange) -> (plain: String, clip: Data?))?
     var pasteClip: ((Data) -> Bool)?
+    var pasteAttachments: ((NSPasteboard) -> Bool)?
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
@@ -66,7 +67,20 @@ final class ComposerNSTextView: NSTextView {
         if let data = NSPasteboard.general.data(forType: ComposerClip.type), pasteClip?(data) == true {
             return
         }
+        if pasteAttachments?(NSPasteboard.general) == true {
+            return
+        }
         pasteAsPlainText(sender)
+    }
+
+    override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(paste(_:)), pasteAttachments != nil, isEditable {
+            let pasteboard = NSPasteboard.general
+            if AttachmentPasteboard.hasImage(pasteboard) || !AttachmentPasteboard.fileURLs(from: pasteboard).isEmpty {
+                return true
+            }
+        }
+        return super.validateUserInterfaceItem(item)
     }
 
     override func pasteAsRichText(_ sender: Any?) {
@@ -105,6 +119,7 @@ struct ComposerTextView: NSViewRepresentable {
     let focusRequest: Int
     let placeholder: String
     var onFocusChange: (Bool) -> Void
+    var onPasteAttachments: (NSPasteboard) -> Bool
     var onCommand: (ComposerCommand) -> Bool
 
     static let verticalInset = Spacing.s
@@ -166,6 +181,9 @@ struct ComposerTextView: NSViewRepresentable {
         }
         textView.pasteClip = { [weak coordinator] data in
             coordinator?.paste(data) ?? false
+        }
+        textView.pasteAttachments = { [weak coordinator] pasteboard in
+            coordinator?.parent.onPasteAttachments(pasteboard) ?? false
         }
 
         let scrollView = ComposerScrollView()
