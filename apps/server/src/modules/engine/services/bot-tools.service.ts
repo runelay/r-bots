@@ -23,6 +23,7 @@ import { waitForBotControl } from "../../browser/services/control.service";
 import { getDesktop } from "../../browser/services/desktop.service";
 import { canvasTools } from "../../canvas/services/canvas.service";
 import { uploadTools } from "../../uploads/services/uploads.service";
+import { speechTools } from "../../voice/services/speech-tools.service";
 
 export interface BotTool {
   name: string;
@@ -293,6 +294,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
   tools.push(...artifactTools(bot.id));
   tools.push(...canvasTools(bot.id));
   tools.push(...uploadTools(bot.id));
+  tools.push(...speechTools(bot));
   tools.push(...blockTools(bot.id));
   return tools;
 }

@@ -133,6 +133,7 @@ Todos os provedores recebem as ferramentas do bot pelo mesmo endpoint MCP HTTP, 
 - blocos: `note_*`, `sheet_*`, `agenda_*`, `export_create`, `artifact_*`, `canvas_*`
 - conectores: `connector_call` para as ferramentas do runelay
 - imagens: `image_cutout`
+- áudio: `speech_create` (TTS da ElevenLabs com a chave da integração)
 
 ## Modo código
 
