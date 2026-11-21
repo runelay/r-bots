@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## v0.1.4
+
+### Voice
+
+- Bots generate spoken audio with the new `speech_create` tool: the ElevenLabs key saved in Settings › Integrations makes an MP3 with the bot's voice, attached to the conversation with a player. The key never reaches the model, and the generated audio is not transcribed again.
+
 ## v0.1.3
 
 ### Jobs
