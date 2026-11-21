@@ -178,8 +178,9 @@ describe("GET /skills", () => {
     }
     const enabled = spyOn(runelay, "runelayEnabled").mockReturnValue(false);
     try {
-      const off = await request("/skills");
+      const off = await request<{ code: string }>("/skills");
       expect(off.status).toBe(503);
+      expect(off.body.code).toBe("not_configured");
     } finally {
       enabled.mockRestore();
     }

@@ -73,6 +73,7 @@ export class VoiceError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -80,7 +81,8 @@ export class VoiceError extends Error {
 
 function apiKey() {
   const key = integrationSecret("elevenlabs");
-  if (!key) throw new VoiceError("Conecte o ElevenLabs em Configurações › Integrações para usar a voz.", 503);
+  if (!key)
+    throw new VoiceError("Conecte o ElevenLabs em Configurações › Integrações para usar a voz.", 503, "not_configured");
   return key;
 }
 

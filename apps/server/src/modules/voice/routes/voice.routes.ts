@@ -60,7 +60,8 @@ export async function handleVoices(res: Res, url: URL) {
   try {
     return sendJson(res, 200, await listVoices(url.searchParams.get("refresh") === "1"));
   } catch (error) {
-    if (error instanceof VoiceError) return sendJson(res, error.status, { ok: false, error: error.message });
+    if (error instanceof VoiceError)
+      return sendJson(res, error.status, { ok: false, error: error.message, ...(error.code ? { code: error.code } : {}) });
     return sendJson(res, 502, {
       ok: false,
       error: `ElevenLabs não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),

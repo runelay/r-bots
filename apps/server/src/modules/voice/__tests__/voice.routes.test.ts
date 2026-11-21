@@ -78,7 +78,9 @@ describe("GET /voice/voices", () => {
     expect(refused.body).toEqual({ ok: false, error: "ElevenLabs não listou as vozes (503)." });
 
     delete process.env.ELEVENLABS_API_KEY;
-    expect((await request("/voice/voices?refresh=1")).status).toBe(503);
+    const missing = await request<{ code: string }>("/voice/voices?refresh=1");
+    expect(missing.status).toBe(503);
+    expect(missing.body.code).toBe("not_configured");
 
     process.env.ELEVENLABS_API_KEY = "route-key";
     process.env.ELEVENLABS_API_URL = "http://127.0.0.1:9";
