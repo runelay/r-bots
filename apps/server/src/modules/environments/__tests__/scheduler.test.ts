@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PlacementInput, TurnRequest } from "@runelay-bots/protocol";
 import { boxHello, capacity, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
@@ -134,6 +135,28 @@ describe("box spec", () => {
     ]);
     const home = { ...request, code: { cwd: "/home/app/.claude" } };
     expect(boxSpecFor({ request: home, accountPath: "/home/app/.claude" }).mounts).toHaveLength(2);
+  });
+
+  test("mounts folders the account links to outside itself, so sessions survive a new box", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-account-")));
+    try {
+      const account = join(root, ".claude-2");
+      const shared = join(root, ".claude", "projects");
+      mkdirSync(join(account, "inner"), { recursive: true });
+      mkdirSync(shared, { recursive: true });
+      writeFileSync(join(root, "CLAUDE.md"), "x");
+      symlinkSync(shared, join(account, "projects"));
+      symlinkSync(join(root, "CLAUDE.md"), join(account, "CLAUDE.md"));
+      symlinkSync(join(account, "inner"), join(account, "inner-link"));
+      symlinkSync(join(root, "missing"), join(account, "dangling"));
+      expect(boxSpecFor({ request, accountPath: account }).mounts.slice(1)).toEqual([
+        { host: account, box: account, readOnly: false },
+        { host: shared, box: shared, readOnly: false },
+      ]);
+      expect(boxSpecFor({ request, accountPath: join(root, "absent") }).mounts).toHaveLength(2);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("mounts the managed clis read-only at the same path once the folder exists", () => {

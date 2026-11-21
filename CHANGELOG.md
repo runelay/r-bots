@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- Boxes also mount the folders an account links to outside itself (like `~/.claude-2/projects` pointing to `~/.claude/projects`). Before, Claude saved those sessions inside the box and lost them whenever the box was recreated (update, new worktree), and the next turn failed with "No conversation found with session ID".
+
 ## v0.1.4
 
 ### Voice
