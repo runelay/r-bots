@@ -12,6 +12,7 @@ import {
   browserOpen,
   browserScreenshot,
   browserSnapshot,
+  browserText,
   cropPreview,
   elementPreview,
   elementTarget,
@@ -100,11 +101,29 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
       {
         name: "browser_snapshot",
         description:
-          "Lê a árvore de acessibilidade da página atual com as referências dos elementos interativos (@e1, @e2...).",
+          "Lê a página atual: as referências dos elementos interativos (@e1, @e2...) e, em page, o começo do texto da página. Quando a página é longa, page.more diz o offset para continuar com browser_text. Ao responder com o que leu, cite a página (título e URL). Se a página não abriu ou veio uma página de erro, diga isso à pessoa em vez de responder de memória.",
         shape: {},
         approval: null,
         label: () => "Ler a página",
         run: (_input, signal) => browserSnapshot(bot.id, signal),
+      },
+      {
+        name: "browser_text",
+        description:
+          "Lê o texto da página atual em trechos, a partir de offset (em caracteres). Use para páginas longas, seguindo o nextOffset que cada trecho devolve. Cite a página (título e URL) ao usar o conteúdo.",
+        shape: {
+          offset: z.number().int().min(0).optional(),
+          length: z.number().int().min(500).max(12_000).optional(),
+        },
+        approval: null,
+        label: () => "Ler o texto da página",
+        run: (input, signal) =>
+          browserText(
+            bot.id,
+            Number(input.offset ?? 0),
+            input.length === undefined ? undefined : Number(input.length),
+            signal,
+          ),
       },
       {
         name: "browser_click",

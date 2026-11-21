@@ -22,8 +22,14 @@ export function browserProfileDir(botId: string) {
 
 const staleLocks = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
 
+export const defaultUserAgent =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36";
+
 function launchEnv(botId: string) {
-  return childEnv({ AGENT_BROWSER_PROFILE: browserProfileDir(botId) });
+  return childEnv({
+    AGENT_BROWSER_PROFILE: browserProfileDir(botId),
+    AGENT_BROWSER_USER_AGENT: process.env.BROWSER_USER_AGENT?.trim() || defaultUserAgent,
+  });
 }
 
 export function browserStateFile(botId: string) {
@@ -43,6 +49,38 @@ const viewportReady = new Set<string>();
 const actionInFlight = new Set<string>();
 const lastSnapshots = new Map<string, string>();
 const lastRefs = new Map<string, Record<string, { name?: string; role?: string }>>();
+const lastTexts = new Map<string, string>();
+export const snapshotLimit = 16_000;
+export const textLimit = 12_000;
+
+export function pageExcerpt(text: string, offset = 0, length = textLimit) {
+  const start = Math.max(0, Math.min(Math.floor(offset), text.length));
+  const end = Math.min(text.length, start + Math.max(1, Math.min(Math.floor(length), textLimit)));
+  return {
+    text: text.slice(start, end),
+    offset: start,
+    totalChars: text.length,
+    ...(end < text.length
+      ? { more: `Tem mais texto. Leia o resto com browser_text e offset ${end}.`, nextOffset: end }
+      : {}),
+  };
+}
+
+function clipSnapshot(snapshot: string) {
+  if (snapshot.length <= snapshotLimit) return snapshot;
+  const cut = snapshot.lastIndexOf("\n", snapshotLimit);
+  return `${snapshot.slice(0, cut > 0 ? cut : snapshotLimit)}\n… (${snapshot.length - snapshotLimit} caracteres cortados; use browser_text para o texto da página)`;
+}
+
+async function readPageText(botId: string, signal?: AbortSignal) {
+  const data = await run(botId, ["get", "text", "body"], signal, 30_000).catch(() => ({}) as Record<string, unknown>);
+  const text = String(data.text ?? "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  lastTexts.set(botId, text);
+  return text;
+}
 
 export interface ApprovalTarget {
   label: string;
@@ -326,10 +364,19 @@ export async function browserSnapshot(botId: string, signal?: AbortSignal) {
   await waitForBotControl(botId, signal);
   await ensureViewport(botId, signal);
   const data = await run(botId, ["snapshot", "-i"], signal);
-  lastSnapshots.set(botId, String(data.snapshot ?? ""));
+  const snapshot = String(data.snapshot ?? "");
+  lastSnapshots.set(botId, snapshot);
   lastRefs.set(botId, (data.refs as Record<string, { name?: string; role?: string }> | undefined) ?? {});
+  const text = await readPageText(botId, signal);
   const page = await captureAfterAction(botId, signal);
-  return { ...page, snapshot: String(data.snapshot ?? "") };
+  return { ...page, snapshot: clipSnapshot(snapshot), page: pageExcerpt(text) };
+}
+
+export async function browserText(botId: string, offset = 0, length = textLimit, signal?: AbortSignal) {
+  await waitForBotControl(botId, signal);
+  const text = offset > 0 && lastTexts.has(botId) ? (lastTexts.get(botId) ?? "") : await readPageText(botId, signal);
+  const state = await readBrowserState(botId);
+  return { url: state?.url ?? "", title: state?.title ?? "", ...pageExcerpt(text, offset, length) };
 }
 
 export function browserClick(botId: string, ref: string, signal?: AbortSignal) {

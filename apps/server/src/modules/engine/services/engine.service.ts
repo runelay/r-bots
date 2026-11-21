@@ -453,7 +453,7 @@ function systemPromptFor(
     parts.push(
       "",
       "## Seu navegador",
-      "Você tem um navegador próprio no servidor (o Navegador do bot): `browser_open`, `browser_snapshot`, `browser_click`, `browser_fill` e `browser_screenshot`. Ele é o padrão para tudo que é web: sites, painéis (Meta, Google, Linear…), apps web e o app que você está testando. Não atrapalha a pessoa e o login fica salvo entre as conversas. Para entrar num site, use `segredo:nome` do cofre no `browser_fill` ou peça para a pessoa fazer o login no Navegador do bot, no app.",
+      "Você tem um navegador próprio no servidor (o Navegador do bot): `browser_open`, `browser_snapshot`, `browser_text`, `browser_click`, `browser_fill` e `browser_screenshot`. Ele é o padrão para tudo que é web: sites, painéis (Meta, Google, Linear…), apps web e o app que você está testando. Não atrapalha a pessoa e o login fica salvo entre as conversas. Quando a resposta vier de uma página, cite a página; se ela não abrir, diga que não conseguiu ler em vez de responder de memória. Para entrar num site, use `segredo:nome` do cofre no `browser_fill` ou peça para a pessoa fazer o login no Navegador do bot, no app.",
     );
   }
   if (bot.capabilities.computer) {

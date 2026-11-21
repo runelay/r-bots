@@ -71,6 +71,13 @@ describe("toolsFor", () => {
     const snapshot = find(tools, "browser_snapshot");
     expect(snapshot.label({})).toBe("Ler a página");
     expect(await snapshot.run({}, signal)).toBe("snap");
+    const reader = spy(browser, "browserText").mockResolvedValue("text" as never);
+    const textTool = find(tools, "browser_text");
+    expect(textTool.label({})).toBe("Ler o texto da página");
+    expect(await textTool.run({}, signal)).toBe("text");
+    expect(reader).toHaveBeenLastCalledWith(bot.id, 0, undefined, signal);
+    await textTool.run({ offset: 12_000, length: 4000 }, signal);
+    expect(reader).toHaveBeenLastCalledWith(bot.id, 12_000, 4000, signal);
     const clicker = find(tools, "browser_click");
     expect(clicker.approval?.({ ref: "@e1" })).toBe("Posso clicar em “Salvar”?");
     expect(clicker.approval?.({ ref: "@e9" })).toBe("Posso clicar em um elemento da página?");

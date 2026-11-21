@@ -13,10 +13,12 @@ import {
   browserScreenshot,
   browserSnapshot,
   browserStateFile,
+  browserText,
   captureAfterAction,
   cdpUrl,
   closeIdleBrowsers,
   cropPreview,
+  defaultUserAgent,
   elementPreview,
   elementTarget,
   elementText,
@@ -25,7 +27,9 @@ import {
   latestScreenshotFile,
   liveCapture,
   markBrowserViewed,
+  pageExcerpt,
   readBrowserState,
+  snapshotLimit,
   startLiveView,
   viewport,
 } from "../services/browser.service";
@@ -196,6 +200,51 @@ describe("snapshot, click, fill", () => {
     expect(elementTarget(id, "e9")).toBeNull();
     expect(elementText(id, "e2")).toBe('- textbox "Senha" [ref=e2]');
     expect(elementText("unknown-bot", "e1")).toBe("");
+  });
+
+  test("clips a long snapshot, returns a page excerpt and reads the rest in ranges", async () => {
+    const long = "Sistema Solar. ".repeat(2000);
+    const fake = fakeAgentBrowser((command) =>
+      command[0] === "get" && command[1] === "text"
+        ? { stdout: `${JSON.stringify({ success: true, data: { text: `${long}  \n\n\n\nfim` } })}\n` }
+        : undefined,
+    );
+    fake.page.snapshot = Array.from({ length: 2000 }, (_, index) => `- link "Item ${index}" [ref=e${index}]`).join(
+      "\n",
+    );
+    const id = botId();
+    await browserOpen(id, "https://pt.wikipedia.org/wiki/Sistema_Solar");
+    const snap = await browserSnapshot(id);
+    expect(snap.snapshot.length).toBeLessThan(snapshotLimit + 200);
+    expect(snap.snapshot).toContain("use browser_text");
+    expect(snap.page.text.startsWith("Sistema Solar.")).toBe(true);
+    expect(snap.page.totalChars).toBe(long.length + 4);
+    expect(snap.page.nextOffset).toBe(12_000);
+    const rest = await browserText(id, snap.page.nextOffset, 50_000);
+    expect(rest).toMatchObject({ url: "https://pt.wikipedia.org/wiki/Sistema_Solar", offset: 12_000 });
+    expect(rest.nextOffset).toBe(24_000);
+    const last = await browserText(id, 24_000);
+    expect(last.text.endsWith("fim")).toBe(true);
+    expect(last.more).toBeUndefined();
+    const fresh = await browserText(id);
+    expect(fresh.offset).toBe(0);
+    expect((fake.calls.at(-1)?.options.env as Record<string, string> | undefined)?.AGENT_BROWSER_USER_AGENT).toBe(
+      defaultUserAgent,
+    );
+    expect(
+      (fake.calls.at(-1)?.options.env as Record<string, string> | undefined)?.AGENT_BROWSER_USER_AGENT,
+    ).not.toContain("Headless");
+  });
+
+  test("cuts page excerpts within bounds", () => {
+    expect(pageExcerpt("abcdef", -5, 2)).toEqual({
+      text: "ab",
+      offset: 0,
+      totalChars: 6,
+      more: "Tem mais texto. Leia o resto com browser_text e offset 2.",
+      nextOffset: 2,
+    });
+    expect(pageExcerpt("abc", 99)).toEqual({ text: "", offset: 3, totalChars: 3 });
   });
 
   test("handles a snapshot without text or refs", async () => {
