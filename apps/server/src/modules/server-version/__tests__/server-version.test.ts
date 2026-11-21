@@ -6,7 +6,7 @@ import type { Principal } from "../../auth/services/auth.middleware";
 import { authorize } from "../../auth/services/policy.service";
 import { latestFailureTtlMs, latestTtlMs } from "../../providers/constants/providers.constants";
 import { notesLimit } from "../constants/server-version.constants";
-import { normalizeVersion, serverVersion, useServerVersionDeps } from "../services/server-version.service";
+import { ghAuthToken, normalizeVersion, serverVersion, useServerVersionDeps } from "../services/server-version.service";
 import type { ReleaseSettings, ServerVersion, ServerVersionDeps } from "../types/server-version.types";
 
 interface Call {
@@ -40,6 +40,7 @@ function useFakes(settings: Partial<ReleaseSettings> = {}, overrides: Partial<Se
     },
     now: () => clock,
     settings: () => ({ ...stableSettings, ...settings }),
+    ghToken: async () => null,
     ...overrides,
   });
 }
@@ -86,6 +87,25 @@ describe("server version", () => {
     await serverVersion();
     expect(calls[0].headers.authorization).toBe("Bearer ghp_releasetoken123456");
     expect(redactText("token ghp_releasetoken123456")).not.toContain("ghp_releasetoken123456");
+  });
+
+  test("falls back to the gh login when no token is configured", async () => {
+    reply = () => Response.json(release("v0.3.0"));
+    useFakes({}, { ghToken: async () => "gho_fromghlogin123456" });
+    await serverVersion();
+    expect(calls[0].headers.authorization).toBe("Bearer gho_fromghlogin123456");
+  });
+
+  test("reads the gh token and ignores a missing or failing gh", async () => {
+    const reply = (code: number, stdout: string) => async () => ({ code, stdout, stderr: "" });
+    expect(await ghAuthToken(reply(0, "gho_token\n"))).toBe("gho_token");
+    expect(await ghAuthToken(reply(0, "  "))).toBeNull();
+    expect(await ghAuthToken(reply(1, "gho_token"))).toBeNull();
+    expect(
+      await ghAuthToken(async () => {
+        throw new Error("gh not found");
+      }),
+    ).toBeNull();
   });
 
   test("dev never has an update", async () => {
