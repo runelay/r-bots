@@ -2,6 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import { managedBinary } from "./managed";
 import { accountEnv, childEnv, findBinary, parseJson, runLines } from "./proc";
 
 const disabledFeatures = [
@@ -51,7 +52,7 @@ export async function runCodex(
   signal: AbortSignal,
   emit: (event: ProviderEvent) => void,
 ) {
-  const bin = findBinary(["codex"]);
+  const bin = managedBinary("codex") ?? findBinary(["codex"]);
   if (!bin) return emit({ type: "done", ok: false, message: "Codex CLI não está instalado." });
   const code = request.code ?? null;
   const disabled =

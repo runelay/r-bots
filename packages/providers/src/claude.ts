@@ -12,6 +12,7 @@ import {
   type SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { LiveInbox, LiveMessage, NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import { managedBinary } from "./managed";
 import { accountEnv, childEnv } from "./proc";
 import { spawnMarked } from "./proc-tree";
 
@@ -184,6 +185,7 @@ export async function runClaude(
   let contextTokens: number | null = null;
   let result: Extract<SDKMessage, { type: "result" }> | null = null;
   const cleared: Cleared = new Map();
+  const executable = managedBinary("claude") ?? Bun.env.CLAUDE_CODE_EXECUTABLE;
   const env = childEnv({
     ...accountEnv("claude", request.configDir),
     CLAUDE_AGENT_SDK_CLIENT_APP: "runelay-bots/3.0.0",
@@ -234,7 +236,7 @@ export async function runClaude(
       includePartialMessages: true,
       abortController,
       env,
-      ...(Bun.env.CLAUDE_CODE_EXECUTABLE ? { pathToClaudeCodeExecutable: Bun.env.CLAUDE_CODE_EXECUTABLE } : {}),
+      ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
       ...(process.platform === "linux"
         ? {
             spawnClaudeCodeProcess: (spawnOptions: SpawnOptions) => {

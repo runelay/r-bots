@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -106,6 +106,29 @@ describe("runClaude", () => {
     expect(options.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("200000");
     expect(options.env?.BASH_MAX_OUTPUT_LENGTH).toBe("12000");
     expect(options.env?.MAX_MCP_OUTPUT_TOKENS).toBe("10000");
+  });
+
+  test("a managed claude in RBOTS_CLIS_DIR wins over CLAUDE_CODE_EXECUTABLE", async () => {
+    const dir = process.env.RBOTS_CLIS_DIR ?? "";
+    const saved = Bun.env.CLAUDE_CODE_EXECUTABLE;
+    Bun.env.CLAUDE_CODE_EXECUTABLE = "/opt/rbots/claude-agent";
+    replay([success]);
+    await runClaude(turnRequest(), fakeCli.home, signal(), () => {});
+    expect(fakeSdk.calls.at(-1)?.options?.pathToClaudeCodeExecutable).toBe("/opt/rbots/claude-agent");
+    mkdirSync(join(dir, "claude", "2.1.330", "bin"), { recursive: true });
+    writeFileSync(join(dir, "claude", "2.1.330", "bin", "claude"), "");
+    symlinkSync("2.1.330", join(dir, "claude", "current"));
+    replay([success]);
+    await runClaude(turnRequest(), fakeCli.home, signal(), () => {});
+    expect(fakeSdk.calls.at(-1)?.options?.pathToClaudeCodeExecutable).toBe(
+      join(dir, "claude", "current", "bin", "claude"),
+    );
+    rmSync(join(dir, "claude"), { recursive: true, force: true });
+    delete Bun.env.CLAUDE_CODE_EXECUTABLE;
+    replay([success]);
+    await runClaude(turnRequest(), fakeCli.home, signal(), () => {});
+    expect(fakeSdk.calls.at(-1)?.options).not.toHaveProperty("pathToClaudeCodeExecutable");
+    if (saved !== undefined) Bun.env.CLAUDE_CODE_EXECUTABLE = saved;
   });
 
   test("context budget env follows the server overrides", () => {

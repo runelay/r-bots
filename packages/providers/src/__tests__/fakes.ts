@@ -24,6 +24,7 @@ beforeEach(() => {
 });
 process.env.GATEWAY_PORT = `test${process.pid}`;
 process.env.RB_FAKE_DIR = stateDir;
+process.env.RBOTS_CLIS_DIR = join(root, "clis");
 process.env.PATH = `${binDir}:/usr/bin:/bin`;
 for (const key of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "CURSOR_API_KEY", "XAI_API_KEY"])
   delete process.env[key];

@@ -21,6 +21,20 @@ describe("runCodex", () => {
     expect(events).toEqual([{ type: "done", ok: false, message: "Codex CLI não está instalado." }]);
   });
 
+  test("prefers the managed codex in RBOTS_CLIS_DIR", async () => {
+    const dir = process.env.RBOTS_CLIS_DIR ?? "";
+    const bin = join(dir, "codex", "0.171.0", "bin");
+    fs.mkdirSync(bin, { recursive: true });
+    fs.renameSync(fakeCli.install("codex"), join(bin, "codex"));
+    fs.symlinkSync("0.171.0", join(dir, "codex", "current"));
+    fakeCli.lines("codex", [{ type: "thread.started", thread_id: "managed" }, { type: "turn.completed" }]);
+    const { events, emit } = recorder();
+    await runCodex(turnRequest({ provider: "codex" }), fakeCli.home, signal(), emit);
+    fs.rmSync(join(dir, "codex"), { recursive: true, force: true });
+    expect(events[0]).toEqual({ type: "session", id: "managed" });
+    expect(events.at(-1)).toEqual({ type: "done", ok: true });
+  });
+
   test("builds a read-only chat invocation and streams events", async () => {
     fakeCli.reply("codex", {
       stdout: [
