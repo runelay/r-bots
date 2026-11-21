@@ -25,10 +25,10 @@ describe("review presets", () => {
   test("composes a compact message", () => {
     const [daily] = builtInPresets();
     const message = composeMessage(daily, { since: "2026-11-20T00:00:00-03:00", day: "2026-11-20", label: "hoje" }, [
-      "## Linear\n\n- CTY-1 Algo · Em progresso",
+      "## Linear\n\n- ENG-1 Algo · Em progresso",
     ]);
     expect(message.startsWith(daily.prompt)).toBe(true);
     expect(message).toContain("Período: hoje (desde 2026-11-20).");
-    expect(message).toContain("- CTY-1 Algo · Em progresso");
+    expect(message).toContain("- ENG-1 Algo · Em progresso");
   });
 });

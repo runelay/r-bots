@@ -198,20 +198,20 @@ describe("a mentioned repository", () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);
     const mentioned = track(
-      spyOn(actions, "mentionedRepo").mockResolvedValue({ name: "conty-api", path: "/repos/conty-api" } as never),
+      spyOn(actions, "mentionedRepo").mockResolvedValue({ name: "api", path: "/repos/api" } as never),
     );
     const opening = track(spyOn(actions, "openTaskWorkspace").mockRejectedValue(new Error("repo sujo")));
-    await run(session, { text: "@conty-api arruma o login" });
-    expect(mentioned.mock.calls[0][0]).toBe("@conty-api arruma o login");
+    await run(session, { text: "@api arruma o login" });
+    expect(mentioned.mock.calls[0][0]).toBe("@api arruma o login");
     expect(mentioned.mock.calls[0][1]).toContain(bot.id);
-    expect(opening).toHaveBeenCalledWith(session, bot.id, "/repos/conty-api", "@conty-api arruma o login");
+    expect(opening).toHaveBeenCalledWith(session, bot.id, "/repos/api", "@api arruma o login");
     expect((await factsOfType(session, "code.workspace"))[0].data).toEqual({
       action: "failed",
-      repo: "conty-api",
+      repo: "api",
       error: "repo sujo",
     });
     opening.mockRejectedValue("cru");
-    await run(session, { text: "@conty-api de novo" });
+    await run(session, { text: "@api de novo" });
     expect((await factsOfType(session, "code.workspace"))[1].data.error).toBe("cru");
   });
 

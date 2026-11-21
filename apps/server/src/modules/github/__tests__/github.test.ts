@@ -42,13 +42,13 @@ function install() {
 const rawPull = {
   id: "PR_1",
   number: 7,
-  title: "feat: add board CTY-12",
+  title: "feat: add board ENG-12",
   url: "https://github.com/acme/api/pull/7",
   isDraft: false,
   state: "OPEN",
   updatedAt: "2026-11-20T10:00:00Z",
   mergedAt: null,
-  headRefName: "anderson/cty-12-board",
+  headRefName: "feat/eng-12-board",
   baseRefName: "main",
   additions: 10,
   deletions: 2,
@@ -71,7 +71,7 @@ function detailRepo(overrides: Record<string, unknown> = {}) {
       viewerDefaultMergeMethod: "SQUASH",
       pullRequest: {
         ...rawPull,
-        body: "Closes CTY-12",
+        body: "Closes ENG-12",
         headRefOid: "abc123",
         isCrossRepository: false,
         mergeStateStatus: "CLEAN",
@@ -170,9 +170,9 @@ afterEach(() => {
 
 describe("pure helpers", () => {
   test("finds the Linear key in branch, title or body", () => {
-    expect(linearKeyOf("anderson/cty-1319-redesign", "x")).toBe("CTY-1319");
-    expect(linearKeyOf("feat/thing", "MAN-12: fix")).toBe("MAN-12");
-    expect(linearKeyOf("feat/thing", "SHA-256 update", "Fixes cty-9")).toBe("CTY-9");
+    expect(linearKeyOf("feat/eng-1319-redesign", "x")).toBe("ENG-1319");
+    expect(linearKeyOf("feat/thing", "ENG-77: fix")).toBe("ENG-77");
+    expect(linearKeyOf("feat/thing", "SHA-256 update", "Fixes eng-9")).toBe("ENG-9");
     expect(linearKeyOf("feat/thing", "plain", "see https://linear.app/acme/issue/OPS-4/x")).toBe("OPS-4");
     expect(linearKeyOf("utf-8-fix", "nothing")).toBeNull();
   });
@@ -338,7 +338,7 @@ describe("routes", () => {
   test("returns a pull detail and maps errors", async () => {
     handler = () => ok(detailRepo());
     const reply = await request<{ pull: Record<string, unknown> }>("/github/repos/acme/api/pulls/7");
-    expect(reply.body.pull).toMatchObject({ number: 7, linear: "CTY-12", mergeState: "clean" });
+    expect(reply.body.pull).toMatchObject({ number: 7, linear: "ENG-12", mergeState: "clean" });
     expect(calls[0].variables).toEqual({ owner: "acme", name: "api", number: 7 });
     handler = () => ok({ repository: null });
     expect((await request("/github/repos/acme/api/pulls/8")).status).toBe(404);
@@ -370,7 +370,7 @@ describe("routes", () => {
     const mutation = calls.find((call) => call.query.includes("mergePullRequest"));
     expect(mutation?.variables).toEqual({ id: "PR_1", method: "SQUASH", oid: "abc123" });
     expect(
-      calls.some((call) => call.args.join(" ") === "api -X DELETE repos/acme/api/git/refs/heads/anderson/cty-12-board"),
+      calls.some((call) => call.args.join(" ") === "api -X DELETE repos/acme/api/git/refs/heads/feat/eng-12-board"),
     ).toBe(true);
   });
 
@@ -462,17 +462,17 @@ describe("links to Linear", () => {
         ? ok({ list: { nodes: [rawPull, { ...rawPull, number: 5 }, { ...rawPull, headRefName: "x", title: "y" }] } })
         : ok({ list: { nodes: [{ ...rawPull, number: 40, state: "MERGED" }] } });
     const links = await pullsByLinearKey();
-    expect(links.get("CTY-12")).toMatchObject({ number: 7, ci: "failure", review: "review_required" });
+    expect(links.get("ENG-12")).toMatchObject({ number: 7, ci: "failure", review: "review_required" });
     expect(links.size).toBe(1);
-    expect(await linkForIssue("cty-12", null)).toMatchObject({ number: 7 });
-    expect(await linkForIssue("CTY-99", null)).toBeNull();
-    expect(await linkForIssue("CTY-99", "anderson/cty-99-x")).toMatchObject({ number: 40, state: "merged" });
+    expect(await linkForIssue("eng-12", null)).toMatchObject({ number: 7 });
+    expect(await linkForIssue("ENG-99", null)).toBeNull();
+    expect(await linkForIssue("ENG-99", "feat/eng-99-x")).toMatchObject({ number: 40, state: "merged" });
     handler = (call) =>
       call.variables.q?.toString().startsWith("is:pr head:") ? ok({ list: { nodes: [] } }) : ok({ list: {} });
     clearGitHubCache();
-    expect(await linkForIssue("CTY-99", "b")).toBeNull();
+    expect(await linkForIssue("ENG-99", "b")).toBeNull();
     handler = () => ({ code: 1, stdout: "", stderr: "HTTP 401" });
     clearGitHubCache();
-    expect(await linkForIssue("CTY-12", null)).toBeNull();
+    expect(await linkForIssue("ENG-12", null)).toBeNull();
   });
 });

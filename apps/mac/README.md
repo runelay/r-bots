@@ -71,7 +71,7 @@ Sources/RunelayBots/
   Networking/     BotsClient (REST) e SessionStream (NDJSON com reconexão)
   Stores/         AppModel, Notifier e BrandIconStore (@Observable, @MainActor)
   Support/        cron, formatação, mensagens de erro
-  Resources/      fontes (Anton, DM Sans, JetBrains Mono, licença OFL) e o logo oficial da Conty em SVG
+  Resources/      fontes (Anton, DM Sans, JetBrains Mono, licença OFL) e os logos de provedores e conectores
 ```
 
 As fontes vão junto no pacote e são registradas ao abrir o app. Se o registro falhar, o app usa a fonte do sistema.

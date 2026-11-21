@@ -34,7 +34,7 @@ function workspace(install: Partial<InstallState> = {}): WorkspaceState {
   return {
     id: "ws_tools",
     repo: "/srv/rb-tools/origin",
-    repoName: "conty-lp",
+    repoName: "landing",
     path: "/srv/rb-tools/worktree",
     branch: "feat/task",
     base: "develop",
@@ -221,7 +221,7 @@ describe("without an open workspace", () => {
 
   test("workspace_open needs the conversation", async () => {
     const { call, settled } = harness();
-    const result = await call("workspace_open", { repo: "a/conty-lp", task: "x" });
+    const result = await call("workspace_open", { repo: "a/landing", task: "x" });
     expect(result).toEqual({ content: [{ type: "text", text: "Conversa não encontrada." }], isError: true });
     expect(settled().at(-1)).toMatchObject({ outcome: "failed" });
   });
@@ -232,17 +232,17 @@ describe("without an open workspace", () => {
     const open = stub(actions, "openTaskWorkspace").mockResolvedValue({ workspace: opened } as never);
     const endRun = mock(() => undefined);
     const { call, events } = harness({ current: stored, endRun });
-    const result = await call("workspace_open", { repo: "conty-lp", task: "hero" });
-    expect(open).toHaveBeenCalledWith(stored, "bot1", "conty-lp", "hero");
+    const result = await call("workspace_open", { repo: "landing", task: "hero" });
+    expect(open).toHaveBeenCalledWith(stored, "bot1", "landing", "hero");
     expect(textOf(result)).toBe(
       [
-        `Workspace aberto: conty-lp em ${opened.path}, branch feat/task (a partir de develop).`,
+        `Workspace aberto: landing em ${opened.path}, branch feat/task (a partir de develop).`,
         "Dependências instalando em segundo plano (pnpm i). dev_server_start espera a instalação terminar.",
         "Continuando já dentro da worktree, com as ferramentas de código.",
       ].join("\n"),
     );
     expect(endRun).toHaveBeenCalledTimes(1);
-    expect(events[0].data.capability).toMatchObject({ label: "Abrir conty-lp" });
+    expect(events[0].data.capability).toMatchObject({ label: "Abrir landing" });
   });
 
   test("workspace_open tells unsupported models to switch and reports install states", async () => {
@@ -254,7 +254,7 @@ describe("without an open workspace", () => {
     for (const [install, line] of cases) {
       stub(actions, "openTaskWorkspace").mockResolvedValue({ workspace: workspace(install) } as never);
       const { call } = harness({ current: session(null).stored, provider: "grok" });
-      const text = textOf(await call("workspace_open", { repo: "conty-lp", task: "x" }));
+      const text = textOf(await call("workspace_open", { repo: "landing", task: "x" }));
       expect(text).toContain(line);
       expect(text).toContain("Diga à pessoa para escolher um modelo Claude ou Codex");
       for (const spy of spies.splice(0)) spy.mockRestore();
@@ -266,12 +266,12 @@ describe("without an open workspace", () => {
     stub(actions, "openTaskWorkspace").mockResolvedValue({ workspace: current } as never);
     const endRun = mock(() => undefined);
     const { call } = harness({ current: session(current).stored, endRun });
-    expect(textOf(await call("workspace_open", { repo: "conty-lp", task: "x" }))).not.toContain("Continuando");
+    expect(textOf(await call("workspace_open", { repo: "landing", task: "x" }))).not.toContain("Continuando");
     expect(endRun).not.toHaveBeenCalled();
     for (const spy of spies.splice(0)) spy.mockRestore();
     stub(actions, "openTaskWorkspace").mockResolvedValue({ workspace: { ...current, id: "other" } } as never);
     const second = harness({ current: session(current).stored });
-    expect(textOf(await second.call("workspace_open", { repo: "conty-lp", task: "x" }))).not.toContain("Continuando");
+    expect(textOf(await second.call("workspace_open", { repo: "landing", task: "x" }))).not.toContain("Continuando");
   });
 
   test("workspace_open reports failures", async () => {
@@ -588,18 +588,18 @@ describe("with an open workspace", () => {
 
 describe("pickWorkspace", () => {
   test("picks an open repo by name, id, path or folder and refuses one that is not open", () => {
-    const api = { ...workspace(), id: "ws_api", repoName: "conty-api", path: "/srv/w/api", repo: "/srv/api" };
+    const api = { ...workspace(), id: "ws_api", repoName: "api", path: "/srv/w/api", repo: "/srv/api" };
     const web = workspace();
     const { stored } = session(web);
     stored.meta.workspaces = [api, web];
     expect(pickWorkspace(stored, undefined, api)).toBe(web);
-    expect(pickWorkspace(stored, "conty-api", web)).toBe(api);
-    expect(pickWorkspace(stored, "CONTY-API", web)).toBe(api);
+    expect(pickWorkspace(stored, "api", web)).toBe(api);
+    expect(pickWorkspace(stored, "API", web)).toBe(api);
     expect(pickWorkspace(stored, "ws_api", web)).toBe(api);
     expect(pickWorkspace(stored, "/srv/api", web)).toBe(api);
     expect(pickWorkspace(stored, "/srv/w/api/src", web)).toBe(api);
     expect(() => pickWorkspace(stored, "other", web)).toThrow(
-      "other não está aberto nesta conversa. Abertos: conty-api, conty-lp.",
+      "other não está aberto nesta conversa. Abertos: api, landing.",
     );
     expect(() => pickWorkspace(undefined, "other", web)).toThrow("Abertos: nenhum.");
   });

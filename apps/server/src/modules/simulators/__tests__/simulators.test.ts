@@ -126,7 +126,7 @@ describe("simulators service", () => {
     codeProcesses();
     const repo = await makeRepo(`scheme-${++counter}`, {
       files: {
-        "a/app.json": JSON.stringify({ expo: { scheme: "conty" } }),
+        "a/app.json": JSON.stringify({ expo: { scheme: "myapp" } }),
         "b/app.config.json": JSON.stringify({ expo: { scheme: ["many", "x"] } }),
         "c/app.config.ts": 'type X = { scheme: string };\nexport default { scheme: "spark" };\n',
         "d/app.json": "{",
@@ -134,28 +134,28 @@ describe("simulators service", () => {
         "f/package.json": "{",
       },
     });
-    expect(await expoScheme(repo.path, "a")).toBe("conty");
+    expect(await expoScheme(repo.path, "a")).toBe("myapp");
     expect(await expoScheme(repo.path, "b")).toBe("many");
     expect(await expoScheme(repo.path, "c")).toBe("spark");
     expect(await expoScheme(repo.path, "d")).toBeNull();
     expect(await hasDevClient(repo.path, "e")).toBe(true);
     expect(await hasDevClient(repo.path, "f")).toBe(false);
     expect(expoUrl(8081, "go", null)).toBe("exp://127.0.0.1:8081");
-    expect(expoUrl(8081, "dev", "conty")).toBe(
-      "conty://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1",
+    expect(expoUrl(8081, "dev", "myapp")).toBe(
+      "myapp://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A8081&disableOnboarding=1",
     );
     expect(expoUrl(8081, "dev", null)).toBe("exp://127.0.0.1:8081");
   });
 
   test("opens an Expo server through the Mac tunnel", async () => {
     const { id } = await expoServer({
-      "app.json": JSON.stringify({ expo: { scheme: "conty" } }),
+      "app.json": JSON.stringify({ expo: { scheme: "myapp" } }),
       "package.json": JSON.stringify({ scripts: { start: "expo start" }, dependencies: { "expo-dev-client": "1" } }),
     });
     const calls = deviceCalls((op) => (op === "sim.tunnel" ? { localPort: 19000 } : { url: "ok" }));
     const opened = await openExpo({ serverId: id, udid: "U1" });
     expect(opened).toEqual({
-      url: "conty://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A19000&disableOnboarding=1",
+      url: "myapp://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A19000&disableOnboarding=1",
       localPort: 19000,
       client: "dev",
       bridged: [],
@@ -176,7 +176,7 @@ describe("simulators service", () => {
     const other = await expoServer({});
     const otherPort = getServer(other.id)?.port as number;
     const { id } = await expoServer({
-      ".env": `EXPO_PUBLIC_API_URL=http://localhost:${apiPort}\nEXPO_PUBLIC_X=http://127.0.0.1:${otherPort}/v1\nEXPO_PUBLIC_SITE=https://conty.com\nSECRET_URL=http://localhost:1\n`,
+      ".env": `EXPO_PUBLIC_API_URL=http://localhost:${apiPort}\nEXPO_PUBLIC_X=http://127.0.0.1:${otherPort}/v1\nEXPO_PUBLIC_SITE=https://example.com\nSECRET_URL=http://localhost:1\n`,
       ".env.local": "EXPO_PUBLIC_DOWN=http://localhost:65000\n",
     });
     const metroPort = getServer(id)?.port as number;
@@ -347,7 +347,7 @@ describe("simulator tools and routes", () => {
     expect((await call("simulator_list")).content[0].text).toContain("U1");
     expect((await call("simulator_boot", { udid: "U1" })).content[0].text).toContain("Ligado");
     expect((await call("simulator_shutdown", { udid: "U1" })).content[0].text).toBe("Desligado.");
-    expect((await call("simulator_open_url", { url: "conty://x" })).content[0].text).toBe("Aberto.");
+    expect((await call("simulator_open_url", { url: "myapp://x" })).content[0].text).toBe("Aberto.");
     const shot = await call("simulator_screenshot", {});
     expect(shot.content[0]).toEqual({ type: "image", data: "aW1n", mimeType: "image/jpeg" });
     expect((await call("simulator_tap", { text: "Entrar" })).content[0].text).toBe("Tocado.");

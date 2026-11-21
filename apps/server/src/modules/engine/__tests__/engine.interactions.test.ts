@@ -65,8 +65,8 @@ describe("approvals", () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);
     const ask = asking("Posso rodar o deploy?", {
-      grant: { kind: "repo", repo: "conty-api" },
-      target: "conty-api",
+      grant: { kind: "repo", repo: "api" },
+      target: "api",
       previewImage: "data:image/png;base64,AA",
       reason: "Pediu deploy.",
     } as never);
@@ -77,7 +77,7 @@ describe("approvals", () => {
       kind: "approval",
       display: "confirmation",
       prompt: "Posso rodar o deploy?",
-      target: "conty-api",
+      target: "api",
       previewImage: "data:image/png;base64,AA",
       reason: "Pediu deploy.",
     });

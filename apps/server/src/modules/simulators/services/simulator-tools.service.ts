@@ -72,7 +72,7 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
   );
   tool(
     "simulator_open_url",
-    "Abre uma URL ou deep link (ex.: conty://campanhas) no simulador ligado.",
+    "Abre uma URL ou deep link (ex.: myapp://home) no simulador ligado.",
     { url: z.string().min(1).max(2000), udid },
     (args) => `Abrir ${String(args.url).slice(0, 60)} no simulador`,
     async (args) => {

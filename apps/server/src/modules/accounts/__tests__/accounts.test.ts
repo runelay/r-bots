@@ -55,11 +55,11 @@ function put(path: string, value: unknown) {
 function seedHome() {
   put(join(home, ".claude", ".credentials.json"), { claudeAiOauth: { accessToken: "t", subscriptionType: "team" } });
   put(join(home, ".claude.json"), {
-    oauthAccount: { displayName: "AppConty", emailAddress: "ferramentas@x.com", organizationName: "Conty" },
+    oauthAccount: { displayName: "Trabalho", emailAddress: "ferramentas@x.com", organizationName: "Acme" },
   });
   put(join(home, ".claude-2", ".credentials.json"), { claudeAiOauth: { accessToken: "t", subscriptionType: "max" } });
   put(join(home, ".claude-2", ".claude.json"), {
-    oauthAccount: { displayName: "Anderson", emailAddress: "anderson@x.com" },
+    oauthAccount: { displayName: "Alex", emailAddress: "alex@x.com" },
   });
   mkdirSync(join(home, ".claude-old"), { recursive: true });
   put(join(home, ".codex", "auth.json"), {
@@ -195,8 +195,8 @@ describe("accounts", () => {
     ]);
     expect(accounts[0]).toMatchObject({
       runner: "vps",
-      label: "Claude AppConty",
-      name: "Claude AppConty",
+      label: "Claude Trabalho",
+      name: "Claude Trabalho",
       email: "ferramentas@x.com",
       plan: "team",
       configDir: "~/.claude",
@@ -205,8 +205,8 @@ describe("accounts", () => {
       status: "ready",
     });
     expect(accounts[1]).toMatchObject({
-      label: "Claude Anderson",
-      email: "anderson@x.com",
+      label: "Claude Alex",
+      email: "alex@x.com",
       plan: "max",
       configDir: "~/.claude-2",
       isDefault: false,
@@ -237,9 +237,9 @@ describe("accounts", () => {
 
   test("names accounts from the organization, the e-mail or the folder and splits equal names", async () => {
     put(join(home, ".claude", ".credentials.json"), {});
-    put(join(home, ".claude.json"), { oauthAccount: { organizationName: "Conty" } });
+    put(join(home, ".claude.json"), { oauthAccount: { organizationName: "Acme" } });
     put(join(home, ".claude-b", ".credentials.json"), {});
-    put(join(home, ".claude-b", ".claude.json"), { oauthAccount: { organizationName: "Conty" } });
+    put(join(home, ".claude-b", ".claude.json"), { oauthAccount: { organizationName: "Acme" } });
     put(join(home, ".claude-c", ".credentials.json"), {});
     put(join(home, ".claude-c", ".claude.json"), { oauthAccount: { emailAddress: "maria@x.com" } });
     put(join(home, ".claude-d", ".credentials.json"), "{broken");
@@ -249,8 +249,8 @@ describe("accounts", () => {
     put(join(home, ".codex-x", "auth.json"), { tokens: { id_token: "a.bm90LWpzb24.c" } });
     const accounts = await refreshAccounts();
     const label = (id: string) => accounts.find((account) => account.id === id)?.label;
-    expect(label("vps:claude")).toBe("Claude Conty (claude)");
-    expect(label("claude-b:claude")).toBe("Claude Conty (claude-b)");
+    expect(label("vps:claude")).toBe("Claude Acme (claude)");
+    expect(label("claude-b:claude")).toBe("Claude Acme (claude-b)");
     expect(label("claude-c:claude")).toBe("Claude maria");
     expect(label("claude-d:claude")).toBe("Claude claude-d");
     expect(label("vps:codex")).toBe("Codex");

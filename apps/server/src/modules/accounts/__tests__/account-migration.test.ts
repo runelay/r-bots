@@ -47,7 +47,7 @@ function account(id: string, extra: Partial<Account> = {}): Account {
 
 const list = [
   account("vps:claude", { email: "ferramentas@x.com", isDefault: true }),
-  account("claude-2:claude", { email: "anderson@x.com" }),
+  account("claude-2:claude", { email: "alex@x.com" }),
   account("vps:codex", { isDefault: true }),
   account("vps:cursor", { status: "missing" }),
 ];
@@ -67,7 +67,7 @@ function connected(probes: AccountProbe[] | Error | "hang") {
 
 describe("bot migration off the Mac", () => {
   test("moves a Mac account to the server account with the same e-mail, then the default", () => {
-    const hints = { claude: "anderson@x.com" };
+    const hints = { claude: "alex@x.com" };
     expect(replacementFor({ account: "mac:claude", model: "m" }, list, hints)).toEqual({
       account: "claude-2:claude",
       model: "m",
@@ -112,10 +112,10 @@ describe("bot migration off the Mac", () => {
   test("reads e-mail hints from a connected Mac and gives up quietly", async () => {
     expect(await macEmailHints()).toEqual({});
     connected([
-      { provider: "claude", status: "ready", detail: "Anderson@x.com · max", models: [] },
+      { provider: "claude", status: "ready", detail: "Alex@x.com · max", models: [] },
       { provider: "codex", status: "ready", detail: "Logged in using ChatGPT", models: [] },
     ]);
-    expect(await macEmailHints()).toEqual({ claude: "anderson@x.com" });
+    expect(await macEmailHints()).toEqual({ claude: "alex@x.com" });
     for (const spy of restores.splice(0)) spy.mockRestore();
     connected(new Error("caiu"));
     expect(await macEmailHints()).toEqual({});
@@ -126,7 +126,7 @@ describe("bot migration off the Mac", () => {
 
   test("rewrites the bots that still point at the Mac", async () => {
     track(spyOn(accounts, "listAccounts").mockResolvedValue(list));
-    connected([{ provider: "claude", status: "ready", detail: "anderson@x.com · team", models: [] }]);
+    connected([{ provider: "claude", status: "ready", detail: "alex@x.com · team", models: [] }]);
     const mac = await makeBot();
     mac.engine = { account: "mac:claude", model: "claude-opus-5-5", effort: "high" };
     const reserve = await makeBot();

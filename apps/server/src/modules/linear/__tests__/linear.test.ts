@@ -47,7 +47,7 @@ function issue(id: string, extra: Record<string, unknown> = {}) {
     labels: ["Produto"],
     assignee: "Ana",
     teamId: "team-1",
-    team: "Conty",
+    team: "Acme",
     parentId: null,
     project: null,
     ...extra,
@@ -56,7 +56,7 @@ function issue(id: string, extra: Record<string, unknown> = {}) {
 
 function register() {
   tools.set("linear_server.list_teams", () => ({
-    teams: [{ id: "team-1", key: "CTY", name: "Conty" }, { name: "sem id" }],
+    teams: [{ id: "team-1", key: "ENG", name: "Acme" }, { name: "sem id" }],
     hasNextPage: false,
   }));
   tools.set("linear_server.list_custom_views", (args) =>
@@ -73,12 +73,12 @@ function register() {
   );
   tools.set("linear_server.list_issue_statuses", () => states);
   tools.set("linear_server.list_issues", (args) => {
-    if (args.parentId) return { issues: [issue("CTY-3", { status: "A fazer", statusType: "unstarted" })] };
-    if (args.state === "started") return { issues: [{ id: "CTY-1" }], hasNextPage: true };
+    if (args.parentId) return { issues: [issue("ENG-3", { status: "A fazer", statusType: "unstarted" })] };
+    if (args.state === "started") return { issues: [{ id: "ENG-1" }], hasNextPage: true };
     return {
       issues: [
-        issue("CTY-1"),
-        issue("CTY-2", {
+        issue("ENG-1"),
+        issue("ENG-2", {
           status: "Triagem",
           statusType: "triage",
           assignee: null,
@@ -91,10 +91,10 @@ function register() {
     };
   });
   tools.set("linear_server.get_issue", (args) => {
-    if (args.id === "CTY-404") return {};
-    if (args.id === "CTY-8") return issue("CTY-8", { teamId: null });
+    if (args.id === "ENG-404") return {};
+    if (args.id === "ENG-8") return issue("ENG-8", { teamId: null });
     return {
-      ...issue(String(args.id), { assigneeId: args.id === "CTY-1" ? "u1" : null }),
+      ...issue(String(args.id), { assigneeId: args.id === "ENG-1" ? "u1" : null }),
       description:
         'Veja <pull-request id="1" label="acme/api#7" href="https://github.com/acme/api/pull/7" /> <issue-mention x="1" />',
       createdBy: "Ana",
@@ -183,7 +183,7 @@ describe("helpers", () => {
     ).toBe("x \n\n![print.png](https://uploads.linear.app/a/b?signature=s)\n\n y");
     expect(cleanDescription('<linear-mention>{"attrs":{"label":"Ana"}}</linear-mention>')).toBe("Ana");
     expect(cleanDescription("<linear-x>{broken</linear-x>ok")).toBe("ok");
-    const card = cardOf({ id: "CTY-5", priority: 4, labels: ["a", 1], assignee: { name: "Ana" } }, new Map());
+    const card = cardOf({ id: "ENG-5", priority: 4, labels: ["a", 1], assignee: { name: "Ana" } }, new Map());
     expect(card).toMatchObject({
       priority: 4,
       priorityName: "Sem prioridade",
@@ -212,7 +212,7 @@ describe("routes", () => {
                 number: 7,
                 title: "feat",
                 url: "u",
-                headRefName: "me/cty-1-x",
+                headRefName: "me/eng-1-x",
                 state: "OPEN",
                 repository: { nameWithOwner: "acme/api" },
               },
@@ -267,10 +267,10 @@ describe("routes", () => {
   });
 
   test("returns the issue detail with comments, children and pull", async () => {
-    const reply = await request<{ issue: Record<string, unknown> }>("/linear/issues/CTY-1");
+    const reply = await request<{ issue: Record<string, unknown> }>("/linear/issues/ENG-1");
     expect(reply.status).toBe(200);
     expect(reply.body.issue).toMatchObject({
-      id: "CTY-1",
+      id: "ENG-1",
       description: "Veja [acme/api#7](https://github.com/acme/api/pull/7)",
       createdBy: "Ana",
       pr: null,
@@ -281,40 +281,40 @@ describe("routes", () => {
     expect((reply.body.issue.children as unknown[]).length).toBe(1);
     expect((reply.body.issue.attachments as unknown[]).length).toBe(1);
     expect((reply.body.issue.states as unknown[]).length).toBe(6);
-    expect((await request("/linear/issues/CTY-404")).status).toBe(404);
+    expect((await request("/linear/issues/ENG-404")).status).toBe(404);
     expect((await request("/linear/issues/not an id")).status).toBe(400);
   });
 
   test("moves, assigns and starts issues", async () => {
-    const moved = await request("/linear/issues/CTY-1/state", {
+    const moved = await request("/linear/issues/ENG-1/state", {
       method: "POST",
       body: { column: "started:Em review" },
     });
-    expect(moved.body).toEqual({ id: "CTY-1", state: "Em review", stateType: "started", column: "started:Em review" });
-    expect(saved.at(-1)).toEqual({ id: "CTY-1", state: "s-review" });
-    expect((await request("/linear/issues/CTY-1/state", { method: "POST", body: { column: "x:Nada" } })).status).toBe(
+    expect(moved.body).toEqual({ id: "ENG-1", state: "Em review", stateType: "started", column: "started:Em review" });
+    expect(saved.at(-1)).toEqual({ id: "ENG-1", state: "s-review" });
+    expect((await request("/linear/issues/ENG-1/state", { method: "POST", body: { column: "x:Nada" } })).status).toBe(
       400,
     );
-    expect((await request("/linear/issues/CTY-1/state", { method: "POST", body: {} })).status).toBe(400);
-    expect((await request("/linear/issues/CTY-8/state", { method: "POST", body: { column: "a" } })).status).toBe(422);
-    expect((await request("/linear/issues/CTY-1/assign", { method: "POST" })).body).toEqual({
-      id: "CTY-1",
+    expect((await request("/linear/issues/ENG-1/state", { method: "POST", body: {} })).status).toBe(400);
+    expect((await request("/linear/issues/ENG-8/state", { method: "POST", body: { column: "a" } })).status).toBe(422);
+    expect((await request("/linear/issues/ENG-1/assign", { method: "POST" })).body).toEqual({
+      id: "ENG-1",
       assigned: true,
     });
-    expect(saved.at(-1)).toEqual({ id: "CTY-1", assignee: "me" });
-    const started = await request("/linear/issues/CTY-2/start", { method: "POST" });
-    expect(started.body).toMatchObject({ state: "Em progresso", branch: "me/cty-2-x" });
-    expect(saved.at(-1)).toEqual({ id: "CTY-2", state: "s-progress", assignee: "me" });
-    await request("/linear/issues/CTY-1/start", { method: "POST" });
-    expect(saved.at(-1)).toEqual({ id: "CTY-1", state: "s-progress" });
-    expect((await request("/linear/issues/CTY-8/start", { method: "POST" })).status).toBe(422);
+    expect(saved.at(-1)).toEqual({ id: "ENG-1", assignee: "me" });
+    const started = await request("/linear/issues/ENG-2/start", { method: "POST" });
+    expect(started.body).toMatchObject({ state: "Em progresso", branch: "me/eng-2-x" });
+    expect(saved.at(-1)).toEqual({ id: "ENG-2", state: "s-progress", assignee: "me" });
+    await request("/linear/issues/ENG-1/start", { method: "POST" });
+    expect(saved.at(-1)).toEqual({ id: "ENG-1", state: "s-progress" });
+    expect((await request("/linear/issues/ENG-8/start", { method: "POST" })).status).toBe(422);
     tools.set("linear_server.list_issue_statuses", () => ({
       statuses: [{ id: "b", name: "Backlog", type: "backlog" }],
     }));
     clearLinearCache();
-    expect((await request("/linear/issues/CTY-1/start", { method: "POST" })).status).toBe(422);
-    expect((await request("/linear/issues/CTY-1/other", { method: "POST" })).status).toBe(404);
-    expect((await request("/linear/issues/CTY-1/assign", { method: "POST", body: [1] })).status).toBe(400);
+    expect((await request("/linear/issues/ENG-1/start", { method: "POST" })).status).toBe(422);
+    expect((await request("/linear/issues/ENG-1/other", { method: "POST" })).status).toBe(404);
+    expect((await request("/linear/issues/ENG-1/assign", { method: "POST", body: [1] })).status).toBe(400);
     expect((await request("/linear/nothing")).status).toBe(404);
   });
 
@@ -341,7 +341,7 @@ describe("routes", () => {
     tools.set("linear_server.get_issue", () => {
       throw new Error("Entity not found");
     });
-    expect((await request("/linear/issues/CTY-1/assign", { method: "POST" })).status).toBe(200);
-    expect((await request("/linear/issues/CTY-1/start", { method: "POST" })).status).toBe(404);
+    expect((await request("/linear/issues/ENG-1/assign", { method: "POST" })).status).toBe(200);
+    expect((await request("/linear/issues/ENG-1/start", { method: "POST" })).status).toBe(404);
   });
 });

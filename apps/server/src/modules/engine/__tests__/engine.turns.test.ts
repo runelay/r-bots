@@ -61,7 +61,7 @@ function withSecondClaude() {
       return main
         ? [
             ...list,
-            { ...main, id: "claude-2:claude", label: "Claude Anderson", name: "Claude Anderson", isDefault: false },
+            { ...main, id: "claude-2:claude", label: "Claude Alex", name: "Claude Alex", isDefault: false },
           ]
         : list;
     }),
@@ -620,7 +620,7 @@ describe("usage limits", () => {
     await run(session);
     const failover = (await factsOfType(session, "account.failover"))[0].data;
     expect(failover).toMatchObject({ from: "vps:claude", to: "claude-2:claude", toModel: "m" });
-    expect(failover.line).toBe("Limite do Claude acabou · continuei com Claude Anderson");
+    expect(failover.line).toBe("Limite do Claude acabou · continuei com Claude Alex");
     expect(failover.until).toBeNull();
     expect(lastRequest()).toMatchObject({ provider: "claude", model: "m", effort: "high" });
     expect((await settledOf(session))?.outcome).toBe("completed");
@@ -661,7 +661,7 @@ describe("usage limits", () => {
     );
     await run(session, { text: "faz" });
     const failover = (await factsOfType(session, "account.failover"))[0].data;
-    expect(failover.line).toBe("Claude fora do ar · continuei com Claude Anderson");
+    expect(failover.line).toBe("Claude fora do ar · continuei com Claude Alex");
     expect(failover.reason).toBe("Claude fora do ar");
     expect(carry.mock.calls.at(-1)?.[1].reason).toContain("o Claude caiu");
     expect(await repliesOf(session)).toEqual(["Segui na outra conta."]);
@@ -682,7 +682,7 @@ describe("usage limits", () => {
     await run(session);
     const failover = (await factsOfType(session, "account.failover"))[0].data;
     expect(failover).toMatchObject({ from: "vps:claude", to: "claude-2:claude" });
-    expect(failover.line).toBe("Claude fora do ar · continuei com Claude Anderson");
+    expect(failover.line).toBe("Claude fora do ar · continuei com Claude Alex");
     expect((await settledOf(session))?.outcome).toBe("completed");
   });
 

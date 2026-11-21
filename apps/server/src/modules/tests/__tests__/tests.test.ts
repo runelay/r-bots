@@ -234,7 +234,7 @@ describe("parsers", () => {
     expect(failing.attachments).toEqual([{ name: "screenshot", path: "/x.png" }]);
     expect(playwrightSteps({}).error).toBeNull();
     expect(isLocalUrl("http://localhost:5310")).toBe(true);
-    expect(isLocalUrl("https://app.conty.com")).toBe(false);
+    expect(isLocalUrl("https://app.example.com")).toBe(false);
     expect(isLocalUrl("nada")).toBe(false);
     expect(playwrightConfig("/t", "http://localhost:1", "/o", null)).toContain("launchOptions: {}");
     expect(playwrightConfig("/t", "http://localhost:1", "/o", "/c")).toContain(
@@ -550,9 +550,9 @@ describe("tools", () => {
     await tools.call("test_playwright", {
       path: "e2e/login.spec.ts",
       project: project.name,
-      baseUrl: "https://app.conty.com",
+      baseUrl: "https://app.example.com",
     });
-    expect(tools.prompts.at(-1)).toContain("https://app.conty.com");
+    expect(tools.prompts.at(-1)).toContain("https://app.example.com");
     expect(tools.events.some((event) => event.type === "call.settled")).toBe(true);
 
     for (const item of spies.splice(0)) item.mockRestore();

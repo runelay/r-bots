@@ -50,8 +50,8 @@ const claude: accounts.Account = {
   id: "vps:claude",
   runner: "vps",
   provider: "claude",
-  label: "Claude AppConty",
-  name: "Claude AppConty",
+  label: "Claude Trabalho",
+  name: "Claude Trabalho",
   autoName: "Claude",
   email: null,
   plan: null,
@@ -66,11 +66,11 @@ const claude: accounts.Account = {
   detail: "",
   checkedAt: "",
 };
-const anderson: accounts.Account = {
+const alex: accounts.Account = {
   ...claude,
   id: "claude-2:claude",
-  label: "Claude Anderson",
-  name: "Claude Anderson",
+  label: "Claude Alex",
+  name: "Claude Alex",
   isDefault: false,
 };
 const codex: accounts.Account = {
@@ -103,7 +103,7 @@ beforeEach(async () => {
   bot = await makeBot({ engine: { account: "vps:claude", model: "claude-opus-5-5" } });
   session = await newSession(bot.id);
   changes.length = 0;
-  spy(accounts, "listAccounts").mockResolvedValue([claude, anderson, codex]);
+  spy(accounts, "listAccounts").mockResolvedValue([claude, alex, codex]);
 });
 
 afterEach(async () => {
@@ -141,8 +141,8 @@ describe("helpers", () => {
     expect(findBot("revisora agil", bot).id).toBe(other.id);
     expect(findBot("revis", bot).id).toBe(other.id);
     expect(() => findBot("ninguém", bot)).toThrow('Não achei o bot "ninguém".');
-    expect(resolveAccount([claude, anderson], "claude anderson").id).toBe("claude-2:claude");
-    expect(() => resolveAccount([claude], "grok")).toThrow("Contas: Claude AppConty (vps:claude).");
+    expect(resolveAccount([claude, alex], "claude alex").id).toBe("claude-2:claude");
+    expect(() => resolveAccount([claude], "grok")).toThrow("Contas: Claude Trabalho (vps:claude).");
     expect(resolveModel(claude, "sonnet")).toBe("claude-sonnet-5-5");
     expect(resolveModel(undefined, "qualquer")).toBe("qualquer");
     expect(() => resolveModel(codex, "opus")).toThrow("Modelos: GPT 5.6.");
@@ -176,9 +176,9 @@ describe("settings_get", () => {
       id: bot.id,
       self: true,
       engine: {
-        accountName: "Claude AppConty",
+        accountName: "Claude Trabalho",
         modelLabel: "Opus 5.5",
-        fallback: { accountName: "Claude Anderson" },
+        fallback: { accountName: "Claude Alex" },
         autoSwitch: false,
       },
       permission: { bot: "default", conversation: null, effective: "edit" },
@@ -239,15 +239,15 @@ describe("failures", () => {
 describe("bot_update", () => {
   test("switches account and model and offers undo", async () => {
     const { call, approvals } = await open();
-    const result = await call("bot_update", { account: "Claude Anderson", model: "sonnet" });
-    expect(result.text).toBe("Trocou para Claude Anderson · Sonnet 5.5. Vale a partir da próxima mensagem.");
+    const result = await call("bot_update", { account: "Claude Alex", model: "sonnet" });
+    expect(result.text).toBe("Trocou para Claude Alex · Sonnet 5.5. Vale a partir da próxima mensagem.");
     expect(getBot(bot.id)?.engine).toMatchObject({ account: "claude-2:claude", model: "claude-sonnet-5-5" });
     expect(approvals).toHaveLength(0);
     const [line] = await lines();
     expect(line).toMatchObject({
       area: "bots",
       areas: ["bots", "usage"],
-      text: "Trocou para Claude Anderson · Sonnet 5.5",
+      text: "Trocou para Claude Alex · Sonnet 5.5",
       thumbnail: { kind: "bot", id: bot.id },
       otherBot: false,
       by: "bot",
@@ -268,9 +268,9 @@ describe("bot_update", () => {
     });
     expect(changes.at(-1)).toEqual(["bots", "usage"]);
     const back = await call("bot_update", { account: "vps:claude", model: "claude-opus-5-5" });
-    expect(back.text).toBe("Trocou para Claude AppConty · Opus 5.5. Vale a partir da próxima mensagem.");
+    expect(back.text).toBe("Trocou para Claude Trabalho · Opus 5.5. Vale a partir da próxima mensagem.");
     const modelOnly = await call("bot_update", { model: "sonnet" });
-    expect(modelOnly.text).toBe("Trocou para Claude AppConty · Sonnet 5.5. Vale a partir da próxima mensagem.");
+    expect(modelOnly.text).toBe("Trocou para Claude Trabalho · Sonnet 5.5. Vale a partir da próxima mensagem.");
     const bad = await call("bot_update", { model: "gpt" });
     expect(bad.isError).toBe(true);
     expect(bad.text).toContain("Modelos: Opus 5.5, Sonnet 5.5.");
@@ -307,8 +307,8 @@ describe("bot_update", () => {
       "Esforço: automático · Sem conta reserva · Só troca de modelo quando pedirem. Vale a partir da próxima mensagem.",
     );
     expect(getBot(bot.id)?.engine?.autoSwitch).toBeUndefined();
-    const reserve = await call("bot_update", { fallback: { account: "anderson", model: "sonnet" } });
-    expect(reserve.text).toBe("Reserva: Claude Anderson · Sonnet 5.5. Vale a partir da próxima mensagem.");
+    const reserve = await call("bot_update", { fallback: { account: "alex", model: "sonnet" } });
+    expect(reserve.text).toBe("Reserva: Claude Alex · Sonnet 5.5. Vale a partir da próxima mensagem.");
     expect((await call("bot_update", { fallback: "off" })).text).toBe(
       "Sem conta reserva. Vale a partir da próxima mensagem.",
     );
@@ -613,7 +613,7 @@ describe("usage, accounts, integrations, connectors and preferences", () => {
       {
         id: "vps:claude",
         provider: "claude",
-        label: "Claude AppConty",
+        label: "Claude Trabalho",
         email: null,
         plan: null,
         isDefault: true,
@@ -639,7 +639,7 @@ describe("usage, accounts, integrations, connectors and preferences", () => {
     expect(result.json).toEqual([
       {
         account: "vps:claude",
-        name: "Claude AppConty",
+        name: "Claude Trabalho",
         provider: "claude",
         isDefault: true,
         ok: false,
@@ -652,14 +652,14 @@ describe("usage, accounts, integrations, connectors and preferences", () => {
   test("account_update renames and sets the default with undo", async () => {
     const update = spy(accounts, "updateAccount").mockResolvedValue([]);
     const { call } = await open();
-    const result = await call("account_update", { account: "anderson", name: "Pessoal", isDefault: true });
+    const result = await call("account_update", { account: "alex", name: "Pessoal", isDefault: true });
     expect(result.text).toBe("Renomeou a conta para Pessoal · Pessoal virou a conta padrão.");
     expect(update).toHaveBeenCalledWith("claude-2:claude", { name: "Pessoal", isDefault: true });
     expect((await lines())[0]).toMatchObject({
       thumbnail: { kind: "provider", id: "claude" },
       areas: ["accounts", "usage", "bots"],
       undo: [
-        { method: "PATCH", path: "/accounts/claude-2:claude", body: { name: "Claude Anderson" } },
+        { method: "PATCH", path: "/accounts/claude-2:claude", body: { name: "Claude Alex" } },
         { method: "PATCH", path: "/accounts/vps:claude", body: { isDefault: true } },
       ],
     });
