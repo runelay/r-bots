@@ -26,6 +26,7 @@ struct SlashMenu: View {
     let skills: [SkillSummary]
     let isLoading: Bool
     let failed: Bool
+    var unavailable = false
     let selection: Int
     let hover: (Int) -> Void
     let select: (SlashItem) -> Void
@@ -41,8 +42,12 @@ struct SlashMenu: View {
     private static let visibleRows: CGFloat = 8
     private static let shape = RoundedRectangle(cornerRadius: Radius.medium, style: .continuous)
 
+    private var showsSkills: Bool {
+        !unavailable || !skills.isEmpty || commands.isEmpty
+    }
+
     private var skillPlaceholderRows: Int {
-        guard skills.isEmpty else { return 0 }
+        guard showsSkills, skills.isEmpty else { return 0 }
         if failed {
             return 1
         }
@@ -50,7 +55,7 @@ struct SlashMenu: View {
     }
 
     private var contentHeight: CGFloat {
-        let headers = (commands.isEmpty ? 0 : Self.headerHeight) + Self.headerHeight
+        let headers = (commands.isEmpty ? 0 : Self.headerHeight) + (showsSkills ? Self.headerHeight : 0)
         let rows = CGFloat(commands.count + skills.count + skillPlaceholderRows)
         return Self.inset * 2 + headers + rows * Self.rowHeight
     }
@@ -69,9 +74,18 @@ struct SlashMenu: View {
                             row(index: index, item: .command(command), title: command.title, subtitle: command.subtitle, systemImage: command.systemImage)
                         }
                     }
-                    header("Skills")
-                    if skills.isEmpty {
-                        if failed {
+                    if showsSkills {
+                        header("Skills")
+                    }
+                    if showsSkills && skills.isEmpty {
+                        if unavailable {
+                            Text("Sem skills. Conecte o runelay em Integrações para usar as suas.")
+                                .font(TypeScale.rowSubtitle)
+                                .foregroundStyle(Theme.textTertiary)
+                                .lineLimit(1)
+                                .padding(.horizontal, Spacing.s)
+                                .frame(height: Self.rowHeight)
+                        } else if failed {
                             failureRow
                         } else if isLoading {
                             ForEach(0..<3, id: \.self) { index in

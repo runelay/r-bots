@@ -1388,10 +1388,21 @@ final class AppModel {
         guard !runningSchedules.contains(key) else { return }
         runningSchedules.insert(key)
         let client = client
+        let botID = bot.id
         Task {
             do {
-                try await client.runSchedule(botID: bot.id, name: schedule.name)
-                try? await Task.sleep(for: .seconds(4))
+                let sessionID = try await client.runSchedule(botID: botID, name: schedule.name)
+                showNotice(
+                    "\(bot.name) está rodando \u{201C}\(schedule.name)\u{201D} agora…",
+                    action: NoticeAction(title: "Abrir conversa") { [weak self] in
+                        self?.openConversation(botID, sessionID: sessionID)
+                    }
+                )
+                try? await Task.sleep(for: .seconds(3))
+                let deadline = Date().addingTimeInterval(600)
+                while Date() < deadline, [.working, .awaitingApproval].contains(serverStatus(for: botID)) {
+                    try? await Task.sleep(for: .seconds(2))
+                }
                 runningSchedules.remove(key)
             } catch {
                 runningSchedules.remove(key)

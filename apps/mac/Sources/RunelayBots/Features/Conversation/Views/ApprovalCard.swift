@@ -189,7 +189,7 @@ struct ActionApprovalCard: View {
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .help(phrase.plain)
+                .help(phrase.tooltip ?? phrase.plain)
             if let reason = approval.reason {
                 Text(reason)
                     .font(TypeScale.caption)

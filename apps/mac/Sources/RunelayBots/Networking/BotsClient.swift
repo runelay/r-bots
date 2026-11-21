@@ -33,6 +33,11 @@ struct BotsClient: Sendable {
 
     let baseURL: URL
 
+    static func isNotConfigured(_ error: any Error) -> Bool {
+        if case ClientError.http(503, _) = error { return true }
+        return false
+    }
+
     func bots(archived: Bool = false, hidden: Bool = false) async throws -> [Bot] {
         var flags: [String] = []
         if archived {
@@ -379,13 +384,16 @@ struct BotsClient: Sendable {
         )
     }
 
-    func runSchedule(botID: String, name: String) async throws {
-        _ = try await botMutation(
-            "/bots/\(Self.escape(botID))/schedules/\(Self.escape(name))/run",
-            method: "POST",
-            body: nil,
-            decodeBot: false
-        )
+    func runSchedule(botID: String, name: String) async throws -> String? {
+        var urlRequest = try request(path: "/bots/\(Self.escape(botID))/schedules/\(Self.escape(name))/run")
+        urlRequest.httpMethod = "POST"
+        let (data, response) = try await perform(urlRequest)
+        if response.statusCode == 404 || response.statusCode == 405 {
+            throw ClientError.unsupported
+        }
+        try validate(response, data: data)
+        let json = try? JSONDecoder().decode(JSONValue.self, from: data)
+        return json?["sessionId"]?.stringValue
     }
 
     func archiveBot(id: String) async throws {

@@ -463,6 +463,7 @@ struct VoiceSettingsForm: View {
     @State private var settings: BotVoiceSettings?
     @State private var speed: Double = 1
     @State private var loadError: String?
+    @State private var voicesUnavailable = false
     @State private var saveTask: Task<Void, Never>?
     private let preview = VoicePreviewPlayer.shared
 
@@ -471,6 +472,26 @@ struct VoiceSettingsForm: View {
     private static let speeds: [Double] = [0.8, 0.9, 1.0, 1.1, 1.2]
 
     var body: some View {
+        Group {
+            if voicesUnavailable {
+                Label("Conecte o ElevenLabs em Integrações para escolher vozes.", systemImage: "waveform")
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+            } else {
+                form
+            }
+        }
+        .task(id: botID) {
+            await load()
+        }
+        .onDisappear {
+            preview.stop()
+        }
+    }
+
+    private var form: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             settingRow("Voz") {
                 Button {
@@ -505,12 +526,6 @@ struct VoiceSettingsForm: View {
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.danger)
             }
-        }
-        .task(id: botID) {
-            await load()
-        }
-        .onDisappear {
-            preview.stop()
         }
     }
 
@@ -590,15 +605,22 @@ struct VoiceSettingsForm: View {
     private func load() async {
         let api = VoiceCallClient(client: model.client)
         loadError = nil
+        async let list = api.voices()
+        async let current = api.voiceSettings(botID: botID)
         do {
-            async let list = api.voices()
-            async let current = api.voiceSettings(botID: botID)
-            let (fetched, value) = try await (list, current)
-            voices = fetched
+            voices = try await list
+            voicesUnavailable = false
+        } catch where BotsClient.isNotConfigured(error) {
+            voicesUnavailable = true
+        } catch {
+            loadError = "Não consegui carregar as vozes. Tenta de novo."
+        }
+        do {
+            let value = try await current
             settings = value
             speed = value.speed
         } catch {
-            loadError = "Não consegui carregar as vozes. Tenta de novo."
+            if !voicesUnavailable { loadError = "Não consegui carregar as vozes. Tenta de novo." }
         }
     }
 

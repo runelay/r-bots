@@ -9,6 +9,7 @@ final class SkillCatalog {
     private(set) var query: String?
     private(set) var isLoading = false
     private(set) var failed = false
+    private(set) var unavailable = false
     private var cache: [String: (at: Date, items: [SkillSummary])] = [:]
     private var task: Task<Void, Never>?
     private var prefetchTask: Task<Void, Never>?
@@ -48,6 +49,7 @@ final class SkillCatalog {
         prefetchTask = nil
         cache = [:]
         results = []
+        unavailable = false
     }
 
     func close() {
@@ -83,6 +85,11 @@ final class SkillCatalog {
             case .success(let items):
                 self.cache[term] = (Date(), items)
                 self.results = items
+                self.unavailable = false
+            case .failure(let error) where BotsClient.isNotConfigured(error):
+                self.cache[term] = (Date(), [])
+                self.results = []
+                self.unavailable = true
             case .failure:
                 self.results = []
                 self.failed = true

@@ -259,7 +259,7 @@ private struct AccountRow: View {
     }
 
     private var subtitle: String? {
-        let parts = [account.email, account.planLabel, account.configDir].compactMap { $0 }.filter { !$0.isEmpty }
+        let parts = [hovering ? account.email : nil, account.planLabel, account.configDir].compactMap { $0 }.filter { !$0.isEmpty }
         if !parts.isEmpty { return parts.joined(separator: " · ") }
         return account.friendlyDetail
     }

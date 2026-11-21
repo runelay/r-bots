@@ -18,6 +18,7 @@ struct ActionPhrase: Equatable {
     var bundleID: String?
     var surface: Surface
     var symbol: String
+    var tooltip: String?
 
     var host: String? { url?.host().map(SiteName.bareHost) }
 
@@ -52,6 +53,14 @@ struct ActionPhrase: Equatable {
         self.bundleID = bundleID
         self.surface = surface
         self.symbol = symbol
+    }
+
+    static func repoParts(_ path: String) -> (name: String, parent: String?) {
+        var trimmed = path
+        while trimmed.count > 1 && trimmed.hasSuffix("/") { trimmed.removeLast() }
+        let name = (trimmed as NSString).lastPathComponent
+        let parent = (trimmed as NSString).deletingLastPathComponent
+        return (name.isEmpty ? trimmed : name, parent.isEmpty ? nil : parent)
     }
 
     init(call: ToolCall, target: ApprovalTarget? = nil) {
@@ -192,6 +201,15 @@ struct ActionPhrase: Equatable {
             } else {
                 verb = Self.humanizeIdentifier(call.name)
             }
+        }
+        if name.hasSuffix("workspace_add") {
+            let shown = target.flatMap { $0.label.isEmpty ? nil : $0.label } ?? input["path"]?.stringValue ?? ""
+            let parts = Self.repoParts(shown)
+            verb = "Liberar o repositório"
+            object = parts.name
+            place = parts.parent.map { "em \($0)" }
+            tooltip = input["path"]?.stringValue ?? shown
+            symbol = "arrow.triangle.branch"
         }
         if name.hasSuffix("add_schedule"), let cron = input["cron"]?.stringValue {
             verb = "Criar rotina"

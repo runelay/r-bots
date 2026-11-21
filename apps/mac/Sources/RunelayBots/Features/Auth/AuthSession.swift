@@ -105,13 +105,39 @@ final class AuthSession: NSObject {
         try await finish(token: token)
     }
 
-    func setupOwner(name: String, email: String, password: String) async throws {
-        let token = try await client.setupOwner(
-            name: name.trimmingCharacters(in: .whitespaces),
-            email: email.trimmingCharacters(in: .whitespaces).lowercased(),
-            password: password
-        )
-        try await finish(token: token)
+    var setupTokenRequired: Bool { needsOwner && status?.setupTokenRequired == true }
+
+    func setupOwner(name: String, email: String, password: String, setupToken: String) async throws {
+        let code = setupToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let token = try await client.setupOwner(
+                name: name.trimmingCharacters(in: .whitespaces),
+                email: email.trimmingCharacters(in: .whitespaces).lowercased(),
+                password: password,
+                setupToken: code.isEmpty ? nil : code
+            )
+            try await finish(token: token)
+        } catch SetupFailure.ownerExists {
+            ownerCreatedElsewhere()
+            throw SetupFailure.ownerExists
+        }
+    }
+
+    func refreshSetupStatus() async {
+        guard needsOwner, let fetched = try? await client.setupStatus() else { return }
+        status = fetched
+        if !fetched.needsOwner { ownerCreatedElsewhere() }
+    }
+
+    private func ownerCreatedElsewhere() {
+        if let current = status {
+            status = SetupStatus(
+                needsOwner: false,
+                passwordReset: current.passwordReset,
+                passkey: current.passkey
+            )
+        }
+        state = .signedOut(needsOwner: false)
     }
 
     func acceptInvite(code: String, name: String, email: String, password: String) async throws {

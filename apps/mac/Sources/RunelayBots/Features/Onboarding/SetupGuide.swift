@@ -716,7 +716,9 @@ private struct SetupAccountsList: View {
     @Environment(AppModel.self) private var model
 
     private func setupDetail(_ account: AIAccount) -> String? {
-        let parts = [account.email, account.planLabel].compactMap { $0 }.filter { !$0.isEmpty }
+        let provider = ModelNames.providerName(account.id)
+        let parts = [provider == account.name ? nil : provider, account.planLabel.map { "Plano \($0)" }]
+            .compactMap { $0 }
         return parts.isEmpty ? account.friendlyDetail : parts.joined(separator: " · ")
     }
 

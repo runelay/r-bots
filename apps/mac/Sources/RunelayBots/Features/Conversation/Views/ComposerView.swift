@@ -171,6 +171,7 @@ struct ComposerView: View {
                     skills: skillCatalog.results,
                     isLoading: skillCatalog.isLoading,
                     failed: skillCatalog.failed,
+                    unavailable: skillCatalog.unavailable,
                     selection: slashSelection,
                     hover: { index in slashSelection = index },
                     select: { item in chooseSlash(item) },

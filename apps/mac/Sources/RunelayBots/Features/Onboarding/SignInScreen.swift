@@ -58,6 +58,7 @@ private struct SignInFormPane: View {
         case name
         case email
         case code
+        case setupToken
         case password
     }
 
@@ -67,6 +68,7 @@ private struct SignInFormPane: View {
     @State private var name = ""
     @State private var email = ""
     @State private var code = ""
+    @State private var setupToken = ""
     @State private var password = ""
     @State private var remember = true
     @State private var busy = false
@@ -86,7 +88,9 @@ private struct SignInFormPane: View {
     private var canSubmit: Bool {
         guard !busy, email.contains("@") else { return false }
         switch variant {
-        case .setup: return !name.trimmingCharacters(in: .whitespaces).isEmpty && password.count >= 8
+        case .setup:
+            return !name.trimmingCharacters(in: .whitespaces).isEmpty && password.count >= 8
+                && (!session.setupTokenRequired || !setupToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         case .invite: return !name.trimmingCharacters(in: .whitespaces).isEmpty && !code.isEmpty && password.count >= 8
         case .signin: return !password.isEmpty
         }
@@ -127,6 +131,14 @@ private struct SignInFormPane: View {
         .animation(Motion.animation(reduceMotion: reduceMotion), value: session.pendingUserCode)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: session.providers)
         .onAppear { focus = asksName ? .name : .email }
+        .task(id: variant) {
+            guard variant == .setup else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled, !busy else { continue }
+                await session.refreshSetupStatus()
+            }
+        }
     }
 
     private var topBar: some View {
@@ -287,7 +299,13 @@ private struct SignInFormPane: View {
             }
             SignInField(label: "E-mail", systemImage: "envelope", text: $email, prompt: "voce@exemplo.com", content: .username)
                 .focused($focus, equals: .email)
-                .onSubmit { focus = variant == .invite ? .code : .password }
+                .onSubmit {
+                    switch variant {
+                    case .invite: focus = .code
+                    case .setup where session.setupTokenRequired: focus = .setupToken
+                    default: focus = .password
+                    }
+                }
             if variant == .invite {
                 SignInField(
                     label: "Código do convite",
@@ -299,6 +317,26 @@ private struct SignInFormPane: View {
                 )
                 .focused($focus, equals: .code)
                 .onSubmit { focus = .password }
+                .transition(.onboarding(reduceMotion: reduceMotion))
+            }
+            if variant == .setup && session.setupTokenRequired {
+                VStack(alignment: .leading, spacing: Spacing.xs) {
+                    SignInField(
+                        label: "Código de primeiro acesso",
+                        systemImage: "key",
+                        text: $setupToken,
+                        prompt: "Conteúdo do arquivo setup.token",
+                        content: .oneTimeCode,
+                        secure: true,
+                        mono: true
+                    )
+                    .focused($focus, equals: .setupToken)
+                    .onSubmit { focus = .password }
+                    Text("Fica no arquivo setup.token, na pasta de dados do servidor. Só quem tem acesso ao servidor consegue ler.")
+                        .font(TypeScale.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 .transition(.onboarding(reduceMotion: reduceMotion))
             }
             SignInField(
@@ -355,13 +393,19 @@ private struct SignInFormPane: View {
             do {
                 switch current {
                 case .setup:
-                    try await session.setupOwner(name: name, email: email, password: password)
+                    try await session.setupOwner(name: name, email: email, password: password, setupToken: setupToken)
+                    setupToken = ""
                 case .invite:
                     try await session.acceptInvite(code: code, name: name, email: email, password: password)
                 case .signin:
                     try await session.signIn(email: email, password: password, remember: remember)
                 }
                 password = ""
+            } catch SetupFailure.ownerExists {
+                setupToken = ""
+                password = ""
+                notice = SetupFailure.ownerExists.errorDescription
+                focus = .password
             } catch {
                 self.error = error.localizedDescription
             }

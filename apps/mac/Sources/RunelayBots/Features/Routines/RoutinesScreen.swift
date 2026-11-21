@@ -178,9 +178,13 @@ private struct RoutineTimelineRow: View {
             model.runNow(item.schedule, of: item.bot)
         } label: {
             HStack(spacing: Spacing.xs) {
-                Image(systemName: running ? "circle.dotted" : "play.fill")
-                    .font(.system(size: 9, weight: .bold))
-                    .symbolEffect(.pulse, options: .repeating, isActive: running)
+                if running {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 9, weight: .bold))
+                }
                 Text(running ? "Rodando…" : "Rodar agora")
                     .font(TypeScale.captionStrong)
                     .contentTransition(.opacity)

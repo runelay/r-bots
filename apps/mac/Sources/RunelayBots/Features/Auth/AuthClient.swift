@@ -23,6 +23,7 @@ struct AuthProfile: Sendable {
 
 struct SetupStatus: Equatable, Sendable {
     let needsOwner: Bool
+    var setupTokenRequired = false
     let passwordReset: Bool
     let passkey: Bool
 }
@@ -63,6 +64,28 @@ enum AuthFailure: LocalizedError, Equatable {
     }
 }
 
+enum SetupFailure: LocalizedError, Equatable {
+    case ownerExists
+    case invalidSetupToken
+
+    init?(status: Int, code: String?) {
+        switch (status, code) {
+        case (409, _), (_, "setup_closed"): self = .ownerExists
+        case (403, _), (_, "setup_token_required"): self = .invalidSetupToken
+        default: return nil
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .ownerExists:
+            return "Este servidor já tem dono. Entre com o seu e-mail e senha."
+        case .invalidSetupToken:
+            return "Esse código não confere. Copie de novo o conteúdo do arquivo setup.token, na pasta de dados do servidor."
+        }
+    }
+}
+
 struct AuthClient: Sendable {
     static let clientID = "runelay-bots-mac"
     let baseURL: URL
@@ -86,20 +109,25 @@ struct AuthClient: Sendable {
         _ method: String,
         _ path: String,
         body: [String: String]? = nil,
-        token: String? = nil
+        token: String? = nil,
+        headers: [String: String] = [:]
     ) async throws -> (Data, HTTPURLResponse) {
-        try await send(method, path, json: body?.mapValues { JSONValue.string($0) }, token: token)
+        try await send(method, path, json: body?.mapValues { JSONValue.string($0) }, token: token, headers: headers)
     }
 
     private func send(
         _ method: String,
         _ path: String,
         json body: [String: JSONValue]?,
-        token: String? = nil
+        token: String? = nil,
+        headers: [String: String] = [:]
     ) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: try url(path))
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        for (name, value) in headers {
+            request.setValue(value, forHTTPHeaderField: name)
+        }
         if let origin = AuthStore.origin(of: baseURL) {
             request.setValue(origin, forHTTPHeaderField: "Origin")
         }
@@ -144,6 +172,7 @@ struct AuthClient: Sendable {
         let methods = body["methods"] as? [String: Any] ?? [:]
         return SetupStatus(
             needsOwner: body["needsOwner"] as? Bool ?? false,
+            setupTokenRequired: body["setupTokenRequired"] as? Bool ?? false,
             passwordReset: methods["passwordReset"] as? Bool ?? false,
             passkey: methods["passkey"] as? Bool ?? true
         )
@@ -227,8 +256,19 @@ struct AuthClient: Sendable {
         throw AuthFailure.server(response.statusCode, "O servidor não devolveu a sessão.")
     }
 
-    func setupOwner(name: String, email: String, password: String) async throws -> String {
-        let (data, response) = try await send("POST", "/auth/setup", body: ["name": name, "email": email, "password": password])
+    static let setupTokenHeader = "x-setup-token"
+
+    func setupOwner(name: String, email: String, password: String, setupToken: String?) async throws -> String {
+        let headers = setupToken.map { [Self.setupTokenHeader: $0] } ?? [:]
+        let (data, response) = try await send(
+            "POST",
+            "/auth/setup",
+            body: ["name": name, "email": email, "password": password],
+            headers: headers
+        )
+        if let failure = SetupFailure(status: response.statusCode, code: Self.object(data)["code"] as? String) {
+            throw failure
+        }
         try Self.ensure(data, response)
         guard let token = Self.object(data)["token"] as? String else {
             throw AuthFailure.server(response.statusCode, "O servidor não devolveu a sessão.")
