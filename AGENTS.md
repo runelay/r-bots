@@ -65,6 +65,7 @@ Mac app (on the Mac, inside `apps/mac`):
 
 ```sh
 swift build                 # debug build
+swift format -i -r -p Sources Tests Package.swift  # format with .swift-format (CI lints it with --strict)
 swift run                   # run from the terminal
 ./scripts/make-app.sh       # release build, icon, sign with "runelay bots Local", install ~/Applications/rbots.app
 ```

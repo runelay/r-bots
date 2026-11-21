@@ -12,7 +12,7 @@ cd apps/server
 env -u CLAUDE_CONFIG_DIR GATEWAY_PORT=2100 BOTS_DATA_DIR=/path/to/data-copy BOTS_SCHEDULES=off bun src/index.ts
 ```
 
-Use your own port and a copy of the data dir, never a production instance. The engine needs a logged-in Claude Code on the machine; API keys are unset at boot on purpose. The Mac app builds with `swift build` inside `apps/mac` (macOS 15, Swift 6).
+Use your own port and a copy of the data dir, never a production instance. The engine needs a logged-in Claude Code on the machine; API keys are unset at boot on purpose. The Mac app builds with `swift build` inside `apps/mac` (macOS 15, Swift 6) and is formatted with `swift format -i -r -p Sources Tests Package.swift`.
 
 ## Before opening a PR
 
@@ -24,7 +24,7 @@ bun run test        # bun:test with the coverage gate
 
 `bun run test` starts a throwaway Postgres on `127.0.0.1:55432` (`TEST_DATABASE_URL` points elsewhere) and the queue tests start their own Redis. The gate is 99% lines and 99% functions per file: new or changed code ships with its tests, and the threshold is never lowered.
 
-CI runs the same three steps on every pull request.
+CI runs the same three steps on every pull request, plus shellcheck, CodeQL (once the repo is public) and, when `apps/mac` changes, `swift format lint --strict` and `swift build`.
 
 ## Pull requests
 
