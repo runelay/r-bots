@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Observation
 
 @MainActor
@@ -16,7 +16,9 @@ final class BlockPresentation {
         static let treeVisible = "blocks.treeVisible"
     }
 
-    private(set) var fullScreen = false
+    private(set) var fullScreen = false {
+        didSet { fullScreen ? startEscapeMonitor() : stopEscapeMonitor() }
+    }
     private(set) var dragging = false
     private(set) var preferredWidth: CGFloat
     var treeVisible: Bool {
@@ -24,6 +26,7 @@ final class BlockPresentation {
     }
 
     @ObservationIgnored private var dragStart: CGFloat?
+    @ObservationIgnored private var escapeMonitor: Any?
 
     private init() {
         let stored = UserDefaults.standard.double(forKey: Keys.width)
@@ -51,6 +54,35 @@ final class BlockPresentation {
 
     func exitFullScreen() {
         fullScreen = false
+    }
+
+    private func startEscapeMonitor() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.keyCode == 53, self.escapeExits(event) else { return event }
+            self.exitFullScreen()
+            return nil
+        }
+    }
+
+    private func stopEscapeMonitor() {
+        if let escapeMonitor {
+            NSEvent.removeMonitor(escapeMonitor)
+        }
+        escapeMonitor = nil
+    }
+
+    private func escapeExits(_ event: NSEvent) -> Bool {
+        guard let window = event.window, window === NSApp.mainWindow, window.attachedSheet == nil else { return false }
+        if (window.firstResponder as? NSTextInputClient)?.hasMarkedText() == true { return false }
+        if ArtifactCenter.shared.presenting { return false }
+        let blocks = BlockCenter.shared
+        if !(blocks.noteEditor?.suggestions.isEmpty ?? true) || (blocks.sheetEditor?.editing ?? false) { return false }
+        if let canvas = ArtifactCenter.shared.canvas,
+           canvas.editingNode != nil || canvas.editingEdge != nil || !canvas.selection.isEmpty || !canvas.selectedEdges.isEmpty {
+            return false
+        }
+        return true
     }
 
     func close() {

@@ -142,12 +142,6 @@ struct BlockPanelShortcuts: View {
     private var center: BlockCenter { .shared }
     private var presentation: BlockPresentation { .shared }
 
-    private var escapeFree: Bool {
-        let linking = !(center.noteEditor?.suggestions.isEmpty ?? true)
-        let editingCell = center.sheetEditor?.editing ?? false
-        return !linking && !editingCell
-    }
-
     var body: some View {
         ZStack {
             Button("Tela cheia") {
@@ -158,12 +152,6 @@ struct BlockPanelShortcuts: View {
                 center.goBack()
             }
             .keyboardShortcut("[", modifiers: .command)
-            if presentation.fullScreen, escapeFree {
-                Button("Sair da tela cheia") {
-                    presentation.exitFullScreen()
-                }
-                .keyboardShortcut(.cancelAction)
-            }
         }
         .opacity(0)
         .frame(width: 0, height: 0)
