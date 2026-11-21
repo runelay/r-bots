@@ -41,7 +41,8 @@ export async function synthesizeSpeech(
   signal?: AbortSignal,
 ) {
   const key = integrationSecret("elevenlabs");
-  if (!key) throw new Error("A ElevenLabs não está conectada. Peça para a pessoa conectar em Configurações › Integrações.");
+  if (!key)
+    throw new Error("A ElevenLabs não está conectada. Peça para a pessoa conectar em Configurações › Integrações.");
   const voice = voiceOf(bot);
   const voiceId = input.voiceId ?? voice.voiceId;
   const url = new URL(`${apiBase()}/v1/text-to-speech/${voiceId}`);
@@ -83,7 +84,8 @@ export function speechTools(bot: BotDefinition): BotTool[] {
           .optional(),
       },
       approval: null,
-      label: (input) => (typeof input.title === "string" && input.title ? `Gerar áudio: ${input.title}` : "Gerar áudio"),
+      label: (input) =>
+        typeof input.title === "string" && input.title ? `Gerar áudio: ${input.title}` : "Gerar áudio",
       run: async (input, signal) => {
         const { meta, path } = await synthesizeSpeech(
           bot,
