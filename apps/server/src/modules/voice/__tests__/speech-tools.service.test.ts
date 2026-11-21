@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
+import { z } from "zod";
 import { fakeProcesses, resetData } from "../../../../test/helpers";
 import { mediaTools } from "../../../../test/media-helpers";
 import { getDb, tables } from "../../../db";
@@ -125,8 +126,10 @@ describe("speech_create", () => {
     expect(await tool().label({ title: "Nota" })).toBe("Gerar áudio: Nota");
     expect(await tool().label({})).toBe("Gerar áudio");
     expect(tool().approval).toBeNull();
-    expect(tool().shape.text.safeParse("x".repeat(maxSpeechChars + 1)).success).toBe(false);
-    expect(tool().shape.voiceId.safeParse("bad id").success).toBe(false);
+    const shape = z.object(tool().shape);
+    expect(shape.safeParse({ text: "x".repeat(maxSpeechChars + 1) }).success).toBe(false);
+    expect(shape.safeParse({ text: "ok", voiceId: "bad id" }).success).toBe(false);
+    expect(shape.safeParse({ text: "ok", voiceId: "GoodVoice1234" }).success).toBe(true);
     expect(tool().description).toContain("http_request");
     expect(uploadGuide).toContain("speech_create");
   });
