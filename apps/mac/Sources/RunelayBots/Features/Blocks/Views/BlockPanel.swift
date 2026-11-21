@@ -28,6 +28,8 @@ struct BlockStage: View {
                                         SimulatorPanel(ref: ref)
                                     } else if ref.kind == TestStore.panelKind {
                                         TestPanel(ref: ref)
+                                    } else if ref.kind == WebPageStore.panelKind {
+                                        WebPagePanel(ref: ref)
                                     } else {
                                         ServerPanel(ref: ref)
                                     }

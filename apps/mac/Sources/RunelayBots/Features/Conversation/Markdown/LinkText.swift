@@ -243,11 +243,41 @@ final class LinkTextView: NSTextView {
     }
 
     override func clicked(onLink link: Any, at charIndex: Int) {
-        if let url = link as? URL {
-            NSWorkspace.shared.open(url)
-        } else if let string = link as? String, let url = URL(string: string) {
-            NSWorkspace.shared.open(url)
+        guard let url = Self.url(from: link) else { return }
+        WebPageStore.shared.openLink(url)
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let menu = super.menu(for: event) ?? NSMenu()
+        guard let range = linkRange(at: convert(event.locationInWindow, from: nil)),
+            let link = textStorage?.attribute(.link, at: range.location, effectiveRange: nil),
+            let url = Self.url(from: link)
+        else { return menu }
+        var items: [NSMenuItem] = []
+        if WebPageStore.isWebURL(url) {
+            items.append(LinkMenuItem("Abrir aqui no app") { WebPageStore.shared.openHere(url) })
         }
+        items.append(LinkMenuItem("Abrir no navegador") { NSWorkspace.shared.open(url) })
+        items.append(
+            LinkMenuItem("Copiar link") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(url.absoluteString, forType: .string)
+            })
+        items.append(.separator())
+        for (index, item) in items.enumerated() {
+            menu.insertItem(item, at: index)
+        }
+        return menu
+    }
+
+    private static func url(from link: Any) -> URL? {
+        if let url = link as? URL {
+            return url
+        }
+        if let string = link as? String {
+            return URL(string: string)
+        }
+        return nil
     }
 
     private func updateHover(at point: NSPoint) {
@@ -279,6 +309,26 @@ final class LinkTextView: NSTextView {
             layout.addTemporaryAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, forCharacterRange: range)
         }
         hoveredRange = range
+    }
+}
+
+@MainActor
+final class LinkMenuItem: NSMenuItem {
+    private let handler: @MainActor () -> Void
+
+    init(_ title: String, handler: @escaping @MainActor () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError()
+    }
+
+    @objc private func run() {
+        handler()
     }
 }
 
@@ -326,7 +376,7 @@ struct SystemLinkLine: View {
 
     var body: some View {
         Button {
-            NSWorkspace.shared.open(link.url)
+            WebPageStore.shared.openLink(link.url)
         } label: {
             HStack(spacing: Spacing.s) {
                 Image(systemName: symbol)
@@ -348,13 +398,14 @@ struct SystemLinkLine: View {
         .onHover { isHovering = $0 }
         .help(link.url.absoluteString)
         .contextMenu {
+            Button("Abrir aqui no app") { WebPageStore.shared.openHere(link.url) }
             Button("Abrir no navegador") { NSWorkspace.shared.open(link.url) }
             Button("Copiar link") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(link.url.absoluteString, forType: .string)
             }
         }
-        .accessibilityLabel("\(link.label). Abrir no navegador")
+        .accessibilityLabel("\(link.label). Abrir")
         .frame(maxWidth: .infinity)
         .padding(.vertical, Spacing.xs)
     }

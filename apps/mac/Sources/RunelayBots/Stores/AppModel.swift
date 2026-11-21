@@ -2571,6 +2571,10 @@ final class AppModel {
         showNotice(ErrorMessage.describe(error))
     }
 
+    func openLink(_ url: URL) {
+        WebPageStore.shared.openLink(url, botID: selectedBotID)
+    }
+
     func showNotice(_ message: String, action: NoticeAction? = nil) {
         sidebarNotice = message
         noticeAction = action

@@ -39,6 +39,13 @@ struct MarkdownBlockView: View, Equatable {
     var body: some View {
         content
             .textSelection(.enabled)
+            .environment(
+                \.openURL,
+                OpenURLAction { url in
+                    WebPageStore.shared.openLink(url)
+                    return .handled
+                }
+            )
     }
 
     @ViewBuilder
