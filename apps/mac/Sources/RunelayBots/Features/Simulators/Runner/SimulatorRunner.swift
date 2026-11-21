@@ -254,7 +254,10 @@ enum SimulatorRunner {
         let scale = min(1, maxHeight / CGFloat(cg.height))
         let width = Int(CGFloat(cg.width) * scale)
         let height = Int(CGFloat(cg.height) * scale)
-        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
+        guard
+            let context = CGContext(
+                data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else {
             throw SimulatorError.message("Não consegui reduzir o print.")
         }
         context.interpolationQuality = .high

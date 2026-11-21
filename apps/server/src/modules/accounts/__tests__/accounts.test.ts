@@ -94,6 +94,7 @@ afterEach(async () => {
   delete process.env.BOTS_FAULTS_FILE;
   process.env.HOST_HOME = previousHome;
   rmSync(home, { recursive: true, force: true });
+  await writeSetting("accounts.settings", {});
   await refreshAccounts();
 });
 
@@ -313,6 +314,14 @@ describe("accounts", () => {
     const ids = (await refreshAccounts()).map((account) => account.id);
     expect(ids.filter((id) => id.startsWith("claude-2"))).toHaveLength(2);
     expect(ids.find((id) => id.startsWith("claude-2-"))).toMatch(/^claude-2-[0-9a-f]{6}:claude$/);
+  });
+
+  test("skips an added folder that no longer exists without breaking the list", async () => {
+    seedHome();
+    await writeSetting("accounts.settings", { dirs: ["~/sumiu-claude", join(home, "apagada", ".codex-9")] });
+    const ids = (await refreshAccounts()).map((account) => account.id);
+    expect(ids).toContain("claude-2:claude");
+    expect(ids.some((id) => id.startsWith("sumiu-claude") || id.startsWith("codex-9"))).toBe(false);
   });
 
   test("detects the provider of an added folder by its files or name", async () => {

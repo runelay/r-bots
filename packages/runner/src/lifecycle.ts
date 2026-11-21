@@ -91,7 +91,7 @@ export class BoxLifecycle {
     try {
       const warm = box.key === key && box.state !== "stopped";
       if (!warm) await this.admit(botId, spec.memMb);
-      const status = await this.options.provider.ensure(botId, spec);
+      const status = await this.options.provider.ensure(botId, spec, { idle: box.busy === 1 });
       Object.assign(box, { state: "running", key, lastUsedAt: Date.now() });
       this.publish();
       return status;
@@ -99,6 +99,10 @@ export class BoxLifecycle {
       this.release(botId);
       throw error;
     }
+  }
+
+  isBusy(botId: string) {
+    return (this.boxes.get(botId)?.busy ?? 0) > 0;
   }
 
   release(botId: string) {

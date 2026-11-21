@@ -100,14 +100,18 @@ export function redactDeep<T>(value: T): T {
 }
 
 let consolePatched = false;
+const redactingWrites = new WeakSet<object>();
 
 function patchStream(stream: NodeJS.WriteStream) {
+  if (redactingWrites.has(stream.write)) return;
   const write = stream.write.bind(stream) as (chunk: unknown, ...rest: unknown[]) => boolean;
-  stream.write = ((chunk: unknown, ...rest: unknown[]) => {
+  const redacting = ((chunk: unknown, ...rest: unknown[]) => {
     if (patterns.length === 0) return write(chunk, ...rest);
     const text = typeof chunk === "string" ? chunk : Buffer.isBuffer(chunk) ? chunk.toString("utf8") : null;
     return write(text === null ? chunk : redactText(text), ...rest);
   }) as typeof stream.write;
+  redactingWrites.add(redacting);
+  stream.write = redacting;
 }
 
 const consoleMethods = ["log", "info", "warn", "error", "debug", "trace"] as const;
@@ -123,9 +127,9 @@ function patchConsole() {
 }
 
 export function installConsoleRedaction() {
-  if (consolePatched) return;
-  consolePatched = true;
   patchStream(process.stdout);
   patchStream(process.stderr);
+  if (consolePatched) return;
+  consolePatched = true;
   patchConsole();
 }

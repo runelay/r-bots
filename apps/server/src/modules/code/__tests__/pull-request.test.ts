@@ -10,9 +10,9 @@ import { watchApp } from "../../status/services/viewers.service";
 import { listWorktrees, recordWorktree } from "../repositories/code.repository";
 import { CodeLive } from "../services/live-diff.service";
 import {
+  choosePr,
   classifyFile,
   discoverPr,
-  choosePr,
   failedLog,
   fetchPr,
   finishWorkspace,

@@ -195,10 +195,14 @@ final class AccessibilityTools {
 
     private func walk(_ element: AXUIElement, depth: Int, budget: inout Int, store: SessionElements) -> [JSONValue] {
         guard budget > 0, depth <= maxDepth else { return [] }
-        let attributes = [kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXEnabledAttribute, kAXFocusedAttribute, kAXChildrenAttribute, kAXIdentifierAttribute, kAXPlaceholderValueAttribute]
+        let attributes = [
+            kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXValueAttribute, kAXDescriptionAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXEnabledAttribute, kAXFocusedAttribute,
+            kAXChildrenAttribute, kAXIdentifierAttribute, kAXPlaceholderValueAttribute,
+        ]
         var raw: CFArray?
         guard AXUIElementCopyMultipleAttributeValues(element, attributes as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &raw) == .success,
-              let values = raw as? [AnyObject], values.count == attributes.count else { return [] }
+            let values = raw as? [AnyObject], values.count == attributes.count
+        else { return [] }
         func value(_ index: Int) -> AnyObject? {
             let item = values[index]
             if CFGetTypeID(item) == AXValueGetTypeID(), AXValueGetType(item as! AXValue) == .axError {
@@ -236,7 +240,8 @@ final class AccessibilityTools {
         if let placeholder { node["placeholder"] = .string(placeholder) }
         if let identifier = clean(value(10)) { node["identifier"] = .string(identifier) }
         if let positionValue = value(5), let sizeValue = value(6),
-           CFGetTypeID(positionValue) == AXValueGetTypeID(), CFGetTypeID(sizeValue) == AXValueGetTypeID() {
+            CFGetTypeID(positionValue) == AXValueGetTypeID(), CFGetTypeID(sizeValue) == AXValueGetTypeID()
+        {
             var point = CGPoint.zero
             var size = CGSize.zero
             AXValueGetValue(positionValue as! AXValue, .cgPoint, &point)

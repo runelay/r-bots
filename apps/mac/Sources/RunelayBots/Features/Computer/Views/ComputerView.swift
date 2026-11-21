@@ -111,26 +111,26 @@ struct ComputerView: View {
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                HStack(spacing: Spacing.xxs) {
-                    RoundIconButton(systemImage: "arrow.backward", help: "Voltar página", size: 28) {
-                        live?.command("back")
+                    HStack(spacing: Spacing.xxs) {
+                        RoundIconButton(systemImage: "arrow.backward", help: "Voltar página", size: 28) {
+                            live?.command("back")
+                        }
+                        .disabled(!(isLive && live?.canGoBack == true))
+                        RoundIconButton(systemImage: "arrow.forward", help: "Avançar página", size: 28) {
+                            live?.command("forward")
+                        }
+                        .disabled(!(isLive && live?.canGoForward == true))
+                        RoundIconButton(
+                            systemImage: live?.loading == true ? "xmark" : "arrow.clockwise",
+                            help: live?.loading == true ? "Parar" : "Recarregar",
+                            size: 28
+                        ) {
+                            live?.command(live?.loading == true ? "stop" : "reload")
+                        }
+                        .disabled(!isLive)
                     }
-                    .disabled(!(isLive && live?.canGoBack == true))
-                    RoundIconButton(systemImage: "arrow.forward", help: "Avançar página", size: 28) {
-                        live?.command("forward")
-                    }
-                    .disabled(!(isLive && live?.canGoForward == true))
-                    RoundIconButton(
-                        systemImage: live?.loading == true ? "xmark" : "arrow.clockwise",
-                        help: live?.loading == true ? "Parar" : "Recarregar",
-                        size: 28
-                    ) {
-                        live?.command(live?.loading == true ? "stop" : "reload")
-                    }
-                    .disabled(!isLive)
-                }
 
-                addressField
+                    addressField
                 }
 
                 Circle()

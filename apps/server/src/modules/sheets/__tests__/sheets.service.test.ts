@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { resetData } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import { getDb } from "../../../db";
 import { sheetCells, sheets, sheetTabs } from "../../../db/tables";
 import { BlockError } from "../../blocks/services/blocks.shared";
@@ -239,7 +240,7 @@ describe("read and write", () => {
       .update(sheetCells)
       .set({ value: "cru", format: { bold: true } })
       .where(eq(sheetCells.row, 1));
-    const row = (await getDb().select().from(sheetCells).where(eq(sheetCells.row, 1)).limit(1))[0]!;
+    const row = must((await getDb().select().from(sheetCells).where(eq(sheetCells.row, 1)).limit(1))[0]);
     expect(cellOf(row).format).toEqual({ type: "general", bold: true });
     expect(cellOf(row)).toMatchObject({ a: "B2", v: "cru" });
     await patchTab(bot, sheet.id, tab, { colWidths: { A: 200 } }, "bot");

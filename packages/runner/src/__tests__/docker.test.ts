@@ -91,6 +91,10 @@ describe("DockerSandboxProvider", () => {
     const config = docker.containers.get("rbbox-bot-1")?.config;
     expect(config).toEqual({
       Image: "runelay-bots-box:latest",
+      Entrypoint: ["/usr/local/bin/rbbox-init"],
+      Cmd: [],
+      WorkingDir: "/data",
+      Healthcheck: { Test: ["NONE"] },
       Labels: { "rbots.bot": "bot-1", "rbots.spec": specKey(spec) },
       Env: ["RBOX_SANDBOX_ROOTS=/data/work/x"],
       HostConfig: {
@@ -188,6 +192,107 @@ describe("DockerSandboxProvider", () => {
     await box.ensure("bot-1", spec);
     expect(docker.paths()).toContain("DELETE /containers/rbbox-bot-1?force=true");
     expect(docker.containers.get("rbbox-bot-1")?.labels["rbots.spec"]).toBe(specKey(spec));
+  });
+
+  test("recreates an idle box made from another image and keeps a busy one", async () => {
+    const logs: string[] = [];
+    const box = provider((line) => logs.push(line));
+    const spec = boxSpec();
+    const labels = { "rbots.bot": "bot-1", "rbots.spec": specKey(spec) };
+    docker.addContainer("rbbox-bot-1", "running", labels, { image: "sha256:box-old" });
+    await box.ensure("bot-1", spec, { idle: false });
+    expect(docker.containers.get("rbbox-bot-1")?.image).toBe("sha256:box-old");
+    expect(docker.paths().some((path) => path.startsWith("DELETE"))).toBe(false);
+    await box.ensure("bot-1", spec);
+    expect(docker.paths()).toContain("DELETE /containers/rbbox-bot-1?force=true");
+    expect(docker.containers.get("rbbox-bot-1")).toMatchObject({ image: "sha256:box-current", state: "running" });
+    expect(logs).toContain("caixa bot-1: criada de outra imagem, recriando com runelay-bots-box:latest");
+  });
+
+  test("pulls the image before creating a box when it is missing", async () => {
+    docker.imageLabels = null;
+    await provider().ensure("bot-1", boxSpec());
+    expect(docker.paths().slice(0, 3)).toEqual([
+      "GET /images/runelay-bots-box%3Alatest/json",
+      "POST /images/create?fromImage=runelay-bots-box&tag=latest",
+      "GET /images/runelay-bots-box%3Alatest/json",
+    ]);
+    expect(docker.containers.get("rbbox-bot-1")?.state).toBe("running");
+  });
+
+  test("cleanup removes stopped boxes that are old or outdated, never busy or running ones", async () => {
+    const logs: string[] = [];
+    const box = provider((line) => logs.push(line));
+    const old = { finishedAt: "2026-11-01T00:00:00.000Z" };
+    docker.addContainer("rbbox-old", "exited", { "rbots.bot": "old" }, old);
+    docker.addContainer("rbbox-fresh", "exited", { "rbots.bot": "fresh" }, { finishedAt: "2026-11-21T01:00:00.000Z" });
+    docker.addContainer("rbbox-never", "created", { "rbots.bot": "never" });
+    docker.addContainer("rbbox-outdated", "exited", { "rbots.bot": "outdated" }, { image: "sha256:box-old" });
+    docker.addContainer("rbbox-busy", "exited", { "rbots.bot": "busy" }, old);
+    docker.addContainer("rbbox-live", "running", { "rbots.bot": "live" }, { ...old, image: "sha256:box-old" });
+    docker.addContainer("rbbox-ghost", "exited", { "rbots.bot": "ghost" }, old);
+    docker.overrides.set("GET /containers/rbbox-ghost/json", { status: 404 });
+    const removed = await box.cleanup({ removeAfterMs: 24 * 60 * 60 * 1000, busy: (botId) => botId === "busy" });
+    expect(removed).toEqual(["old", "outdated"]);
+    expect([...docker.containers.keys()].sort()).toEqual([
+      "rbbox-busy",
+      "rbbox-fresh",
+      "rbbox-ghost",
+      "rbbox-live",
+      "rbbox-never",
+    ]);
+    expect(logs).toEqual(["caixa old removida (parada há muito tempo)", "caixa outdated removida (imagem antiga)"]);
+  });
+
+  test("cleanup removes unused box images of the same repository and keeps the current one", async () => {
+    const logs: string[] = [];
+    const repo = "ghcr.io/runelay/r-bots-box";
+    const box = new DockerSandboxProvider({
+      api,
+      image: `${repo}:0.2.0`,
+      choice: gvisor,
+      now: fixed,
+      log: (line) => logs.push(line),
+    });
+    docker.addContainer("rbbox-a", "running", { "rbots.bot": "a" }, { image: "sha256:box-used" });
+    docker.taggedImages = [
+      { Id: "sha256:box-current", RepoTags: [`${repo}:0.2.0`, `${repo}:latest`], Created: 50 },
+      { Id: "sha256:box-used", RepoTags: [`${repo}:0.1.0`], Created: 40 },
+      { Id: "sha256:box-previous", RepoTags: [`${repo}:0.1.9`], Created: 30 },
+      { Id: "sha256:box-before", RepoTags: [`${repo}:0.1.8`], Created: 20 },
+      { Id: "sha256:box-locked", RepoTags: [`${repo}:dev`], Created: 10 },
+      { Id: "sha256:box-old", RepoTags: [`${repo}:0.0.9`, "mirror.local/box:0.0.9"] },
+    ];
+    docker.danglingImages = [
+      { Id: "sha256:dangling", RepoTags: ["<none>:<none>"] },
+      { Id: "sha256:box-current", RepoTags: [] },
+      { Id: "sha256:named", RepoTags: ["x:1"] },
+    ];
+    docker.busyImages.add(`${repo}:dev`);
+    expect(await box.cleanup({ removeAfterMs: 1, busy: () => false })).toEqual([]);
+    expect(docker.deletedImages).toEqual([`${repo}:0.0.9`, "sha256:dangling"]);
+    expect(docker.paths()).toContain(`DELETE /images/${encodeURIComponent(`${repo}:dev`)}`);
+    expect(logs).toEqual([
+      `imagem de caixa antiga removida: ${repo}:0.0.9`,
+      "imagem de caixa antiga removida: sha256:dangling",
+    ]);
+    docker.deletedImages.length = 0;
+    docker.overrides.set("GET /images/json", {
+      status: 200,
+      body: [1, { Id: "sha256:a", Created: 3 }, { Id: "sha256:b", Created: 2 }, { Id: "sha256:odd", RepoTags: "nope" }],
+    });
+    docker.overrides.set("GET /containers/json", { status: 200, body: "nope" });
+    await box.cleanup({ removeAfterMs: 1, busy: () => false });
+    expect(docker.deletedImages).toEqual(["sha256:a", "sha256:b", "sha256:odd"]);
+    docker.overrides.set("GET /images/json", { status: 200, body: "nope" });
+    await box.cleanup({ removeAfterMs: 1, busy: () => false });
+    docker.imageLabels = null;
+    docker.overrides.delete("GET /containers/json");
+    docker.addContainer("rbbox-b", "exited", { "rbots.bot": "b" }, { image: "sha256:whatever" });
+    expect(await box.cleanup({ removeAfterMs: 1e15, busy: () => false })).toEqual([]);
+    expect(docker.paths().filter((path) => path.startsWith("GET /images/json"))).toHaveLength(6);
+    docker.overrides.set("GET /images/ghcr.io%2Frunelay%2Fr-bots-box%3A0.2.0/json", { status: 500 });
+    expect(await box.cleanup({ removeAfterMs: 1e15, busy: () => false })).toEqual([]);
   });
 
   test("fails when the box cannot be inspected or vanishes", async () => {

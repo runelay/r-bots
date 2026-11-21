@@ -447,8 +447,8 @@ final class MiddleClickView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let event = NSApp.currentEvent,
-              event.type == .otherMouseDown || event.type == .otherMouseUp,
-              event.buttonNumber == 2
+            event.type == .otherMouseDown || event.type == .otherMouseUp,
+            event.buttonNumber == 2
         else { return nil }
         return super.hitTest(point)
     }

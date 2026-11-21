@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { childEnv, runBytes, run as runProcess } from "@runelay-bots/providers/proc";
 import { botDir, env } from "../../../config/env";
 import { readJson, writeJson } from "../../../shared/json-file";
+import { ensureTool } from "../../tools/services/tools.service";
 import { assertBrowsable, browserLaunchArgs } from "./browser-guard.service";
 import { waitForBotControl } from "./control.service";
 
@@ -25,8 +26,9 @@ const staleLocks = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
 export const defaultUserAgent =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36";
 
-function launchEnv(botId: string) {
+async function launchEnv(botId: string) {
   return childEnv({
+    AGENT_BROWSER_EXECUTABLE_PATH: await ensureTool("chrome"),
     AGENT_BROWSER_PROFILE: browserProfileDir(botId),
     AGENT_BROWSER_USER_AGENT: process.env.BROWSER_USER_AGENT?.trim() || defaultUserAgent,
   });
@@ -222,7 +224,7 @@ async function run(botId: string, args: string[], signal?: AbortSignal, timeoutM
   const { code, stdout, stderr } = await runProcess(
     "agent-browser",
     ["--session", `runelay-${botId}`, "--args", launch, "--json", ...args],
-    { timeoutMs, signal, env: launchEnv(botId) },
+    { timeoutMs, signal, env: await launchEnv(botId) },
   );
   const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "";
   let parsed: { success?: boolean; data?: Record<string, unknown>; error?: string | null } = {};
@@ -398,7 +400,7 @@ async function runFillStdin(botId: string, ref: string, text: string, signal?: A
     {
       timeoutMs: 60_000,
       signal,
-      env: launchEnv(botId),
+      env: await launchEnv(botId),
       stdin: JSON.stringify([
         ["fill", normalizeRef(ref), text],
         ["eval", mask],

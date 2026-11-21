@@ -4,6 +4,9 @@
 </picture>
 
 <p align="center">
+  <a href="https://github.com/runelay/r-bots/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/runelay/r-bots/ci.yml?branch=main&style=flat-square&label=ci" /></a>
+  <a href="https://github.com/runelay/r-bots/releases"><img alt="Release" src="https://img.shields.io/github/v/release/runelay/r-bots?include_prereleases&sort=semver&style=flat-square" /></a>
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-f0a050?style=flat-square" /></a>
   <img alt="Self-hosted with Docker" src="https://img.shields.io/badge/self--hosted-docker-2496ED?style=flat-square&logo=docker&logoColor=white" />
   <img alt="Mac app, macOS 15 or later" src="https://img.shields.io/badge/mac%20app-macOS%2015%2B-111111?style=flat-square&logo=apple&logoColor=white" />
   <img alt="Works with Claude, Codex and Cursor" src="https://img.shields.io/badge/works%20with-Claude%20%C2%B7%20Codex%20%C2%B7%20Cursor-d97757?style=flat-square" />
@@ -171,7 +174,7 @@ On a machine with Docker, as your user (no `sudo`):
 curl -fsSL https://raw.githubusercontent.com/runelay/r-bots/main/install.sh | sh
 ```
 
-It downloads the latest **GitHub Release** (no build on your machine): it fetches `r-bots-<version>.tar.gz`, checks it against `SHA256SUMS`, unpacks it into `~/.local/share/runelay-bots-app/releases/<version>` with `current` pointing at it, checks that you can talk to Docker without `sudo`, writes the few lines it needs into a `.env.local` shared by every version (`RBOTS_VERSION`, `BOTS_SANDBOX=docker`, `DOCKER_GID` from the Docker socket, smaller limits below 8 GB of RAM), pulls the prebuilt images from GHCR, runs `docker compose --profile sandbox up -d`, waits for `/health` and prints the address, the box runtime and the next step: open the app and create the owner. It never restarts Docker unless you ask. Running it again is safe. Your data stays in `~/.local/share/runelay-bots`.
+It downloads the latest **GitHub Release** (no build on your machine): it fetches `r-bots-<version>.tar.gz`, checks it against `SHA256SUMS`, unpacks it into `~/.local/share/runelay-bots-app/releases/<version>` with `current` pointing at it, checks that you can talk to Docker without `sudo`, writes the few lines it needs into a `.env.local` shared by every version (`RBOTS_VERSION`, `BOTS_SANDBOX=docker`, `DOCKER_GID` from the Docker socket, smaller limits below 8 GB of RAM), pulls the prebuilt image from GHCR (`ghcr.io/runelay/r-bots`, one image for the server, the runner and the bot boxes), runs `docker compose --profile sandbox up -d`, waits for `/health` and prints the address, the box runtime and the next step: open the app and create the owner. It never restarts Docker unless you ask. Running it again is safe. Your data stays in `~/.local/share/runelay-bots`.
 
 Pick a channel or a version with environment variables:
 
@@ -180,7 +183,7 @@ curl -fsSL https://raw.githubusercontent.com/runelay/r-bots/main/install.sh | RB
 curl -fsSL https://raw.githubusercontent.com/runelay/r-bots/main/install.sh | RBOTS_VERSION=0.3.2 sh   # a specific version
 ```
 
-While the repo is private, fetch the script with `curl -fsSL -H "Authorization: Bearer $(gh auth token)" ...` and pass a GitHub token in `RBOTS_GITHUB_TOKEN`, or just be logged in with `gh` (the installer uses `gh auth token`). Private images also need the `read:packages` scope: `gh auth refresh -h github.com -s read:packages`. Put `RBOTS_GITHUB_TOKEN=...` in `~/.local/share/runelay-bots-app/.env.local` so `rbots update` and the server's update check find it too.
+While the repo is private, fetch the script with `curl -fsSL -H "Authorization: Bearer $(gh auth token)" ...` and pass a GitHub token in `RBOTS_GITHUB_TOKEN`, or just be logged in with `gh` (the installer uses `gh auth token`). The private image also needs the `read:packages` scope: `gh auth refresh -h github.com -s read:packages`; the scripts also save that token as `RBOTS_REGISTRY_TOKEN` in the persistent `.env.local` (mode 600) so the runner can pull the box image. Put `RBOTS_GITHUB_TOKEN=...` in `~/.local/share/runelay-bots-app/.env.local` so `rbots update` and the server's update check find it too.
 
 Inside a checkout, `install.sh` builds from source instead (`up -d --build`); `RBOTS_FROM_SOURCE=1` clones the repo and builds, as before releases.
 
@@ -206,7 +209,7 @@ rbots stop              # stop without deleting anything
 rbots start             # start again
 ```
 
-`rbots update [--to v0.3.2] [--channel stable|beta] [--force] [--no-backup] [--yes]` refuses while a turn is running (unless `--force`), backs up the database first (`--no-backup` skips it), pulls the new images while the old version keeps running, switches `current` and rolls back to the previous version if `/health` does not answer within 180 s. Going back to an older version asks for `--yes`, since database migrations do not run backwards. The last 3 versions stay in `releases/`. In a checkout, `rbots update` does `git pull --ff-only` and rebuilds, as before.
+`rbots update [--to v0.3.2] [--channel stable|beta] [--force] [--no-backup] [--yes]` refuses while a turn is running (unless `--force`), backs up the database first (`--no-backup` skips it), pulls the new image (only the changed layers, zstd) while the old version keeps running, switches `current` and rolls back to the previous version if `/health` does not answer within 180 s. Going back to an older version asks for `--yes`, since database migrations do not run backwards. The last 3 versions stay in `releases/`. In a checkout, `rbots update` does `git pull --ff-only` and rebuilds, as before.
 
 ### Docker without boxes
 
@@ -219,7 +222,7 @@ docker compose up -d
 
 No `.env` and no variable to set: data in `~/.local/share/runelay-bots`, backups in `~/.local/share/runelay-bots-backups`, your Claude Code, Codex, gh and supabase logins mounted from `$HOME`, the vault key created in the data dir. The container adapts to the uid of your HOME. Bots only touch repositories you allow: when you ask for work in a new repo, the bot asks with a card (`workspace_add`) and remembers what the repo is.
 
-That builds `apps/server/Dockerfile` (Bun runtime plus the Claude Code, Codex, gh, supabase, agent-browser and `pg_dump` CLIs), starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `~/.local/share/runelay-bots`, outside the code. Next to it run Postgres 17 (`127.0.0.1:5432`, data in `<data>/postgres`) and Redis 7 for the job queue (`127.0.0.1:6379`, AOF, data in `<data>/redis`); their passwords are generated on first boot into `<data>/secrets/` (mode 600) and the server reads them from there. Service keys are not files: ElevenLabs (voice), Jev (automatic approvals) and runelay (connectors, memory, skills) are pasted in the app under **Settings › Integrations**, validated on the spot and stored encrypted on the server. All three are optional; without one, that part turns off and everything else works. The runner token and the session secret are generated on first boot into the data dir. `tailscale serve` exposes the port on the tailnet at `:10447`.
+That builds the root `Dockerfile` (one image for the server, the runner and the bot boxes: Bun runtime plus the Claude Code, Codex, gh, supabase, agent-browser and `pg_dump` CLIs), starts the `runelay-bots` container on the host network at `127.0.0.1:2000` and keeps the bots in `~/.local/share/runelay-bots`, outside the code. Next to it run Postgres 17 (`127.0.0.1:5432`, data in `<data>/postgres`) and Redis 7 for the job queue (`127.0.0.1:6379`, AOF, data in `<data>/redis`); their passwords are generated on first boot into `<data>/secrets/` (mode 600) and the server reads them from there. Service keys are not files: ElevenLabs (voice), Jev (automatic approvals) and runelay (connectors, memory, skills) are pasted in the app under **Settings › Integrations**, validated on the spot and stored encrypted on the server. All three are optional; without one, that part turns off and everything else works. The runner token and the session secret are generated on first boot into the data dir. `tailscale serve` exposes the port on the tailnet at `:10447`.
 
 ```sh
 docker compose logs -f --tail 200   # logs
@@ -311,6 +314,14 @@ Install an app that calls a new route only after the server with that route is u
 - Break the remaining import cycle between the engine, conversations and the MCP gateway
 - Bring every server module and package under the 99% coverage gate
 - Measure scrolling in long conversations in fps
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) for the setup, tests and PR checklist, and follow the [code of conduct](CODE_OF_CONDUCT.md). Report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
+
+## 📄 License
+
+[MIT](LICENSE)
 
 <br />
 

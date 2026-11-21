@@ -117,7 +117,8 @@ extension JSONValue {
         case .number(let value):
             return JSONValue.format(value)
         case .string(let value):
-            let collapsed = value
+            let collapsed =
+                value
                 .replacingOccurrences(of: "\n", with: " ")
                 .trimmingCharacters(in: .whitespaces)
             return collapsed.count > 140 ? String(collapsed.prefix(140)) + "…" : collapsed

@@ -142,11 +142,11 @@ export async function resetThread(botId: string) {
 
 export async function restoreThread(botId: string, archiveId: string) {
   const archived = await readArchivedThread(botId, archiveId);
-  if (!archived || !getStoredSession(archived.state.sessionId)) return null;
+  const restored = archived ? getStoredSession(archived.state.sessionId) : undefined;
+  if (!archived || !restored) return null;
   const current = await load(botId);
   const replacedArchiveId = current && hasMessages(current) ? await archiveState(botId, current) : null;
   const summaries = current ? getStoredSession(current.sessionId)?.meta.scheduleSummaries : undefined;
-  const restored = getStoredSession(archived.state.sessionId)!;
   if (summaries) {
     restored.meta.scheduleSummaries = { ...restored.meta.scheduleSummaries, ...summaries };
     await restored.save();

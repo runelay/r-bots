@@ -51,8 +51,8 @@ struct ModelPickerEntry: Identifiable, Hashable {
     var id: String { ModelFavorites.key(account: account.id, model: model.id) }
 }
 
-private extension AIAccount {
-    var railBadge: String {
+extension AIAccount {
+    fileprivate var railBadge: String {
         let words = shortName.split(whereSeparator: { !$0.isLetter && !$0.isNumber })
         if words.count >= 2 {
             return String(words.prefix(2).compactMap(\.first)).uppercased()
@@ -60,9 +60,9 @@ private extension AIAccount {
         return String(shortName.filter { $0.isLetter || $0.isNumber }.prefix(2)).uppercased()
     }
 
-    var railTitle: String { name }
+    fileprivate var railTitle: String { name }
 
-    var railHelp: String {
+    fileprivate var railHelp: String {
         guard !isReady else { return railTitle }
         let base = "\(railTitle) · \(statusLabel)"
         guard let detail, !detail.isEmpty else { return base }
@@ -504,7 +504,9 @@ struct ModelPickerPanel: View {
                 help: "Se acabar o limite",
                 edge: .trailing
             )
-            .help("Quando a conta principal bater no limite ou cair, o pedido continua primeiro na outra conta do mesmo provedor e depois nesta, com o contexto da conversa. Volta sozinho quando a principal libera.")
+            .help(
+                "Quando a conta principal bater no limite ou cair, o pedido continua primeiro na outra conta do mesmo provedor e depois nesta, com o contexto da conversa. Volta sozinho quando a principal libera."
+            )
         }
         .padding(.horizontal, Spacing.l)
         .frame(height: 44)

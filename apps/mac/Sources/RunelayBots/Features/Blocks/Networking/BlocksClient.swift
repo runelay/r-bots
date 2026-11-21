@@ -162,11 +162,13 @@ struct RemoteBlocksClient: BlocksClient {
     }
 
     func agendaEvents(botID: String, start: Date, end: Date, accounts: [String]?) async throws -> AgendaList {
-        try await get("/bots/\(botID)/agenda/events", query: [
-            "start": BlockDates.string(start),
-            "end": BlockDates.string(end),
-            "accounts": accounts?.joined(separator: ","),
-        ])
+        try await get(
+            "/bots/\(botID)/agenda/events",
+            query: [
+                "start": BlockDates.string(start),
+                "end": BlockDates.string(end),
+                "accounts": accounts?.joined(separator: ","),
+            ])
     }
 
     func createEvent(botID: String, draft: AgendaEventDraft) async throws -> AgendaEvent {

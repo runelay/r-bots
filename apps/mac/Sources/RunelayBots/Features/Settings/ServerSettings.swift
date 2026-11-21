@@ -317,10 +317,13 @@ struct ServerProfileEditor: View {
                 }
                 if let original {
                     SettingsRow(title: "Abrir com este servidor", icon: SettingsIcon("star.fill", SettingsTint.amber), info: "O app abre neste servidor quando você inicia.") {
-                        SettingsToggle(title: "Abrir com este servidor", isOn: Binding(
-                            get: { profiles.book.defaultID == original.id },
-                            set: { if $0 { profiles.setDefault(original.id) } }
-                        ))
+                        SettingsToggle(
+                            title: "Abrir com este servidor",
+                            isOn: Binding(
+                                get: { profiles.book.defaultID == original.id },
+                                set: { if $0 { profiles.setDefault(original.id) } }
+                            )
+                        )
                         .disabled(profiles.book.defaultID == original.id)
                     }
                 }

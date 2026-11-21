@@ -90,7 +90,8 @@ final class AuthSession: NSObject {
 
     private func cachedSignedIn() -> AuthState {
         if let data = UserDefaults.standard.data(forKey: cachedUserKey),
-           let user = try? JSONDecoder().decode(AuthUser.self, from: data) {
+            let user = try? JSONDecoder().decode(AuthUser.self, from: data)
+        {
             return .signedIn(user)
         }
         return .signedOut(needsOwner: false)

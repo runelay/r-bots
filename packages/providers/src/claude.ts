@@ -273,10 +273,15 @@ export async function runClaude(
       }
       if (message.type === "result") {
         result = message;
-        const usage = (message as { usage?: Record<string, number> }).usage;
+        const usage = message.usage;
         if (usage) {
           const sum: Record<string, number> = totals ?? {};
-          for (const key of ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"])
+          for (const key of [
+            "input_tokens",
+            "output_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+          ] as const)
             sum[key] = (sum[key] ?? 0) + (usage[key] ?? 0);
           totals = sum;
         }

@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { PlacementInput, TurnRequest } from "@runelay-bots/protocol";
 import { boxHello, capacity, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
-import { clisDir, dataDir, env, hostDataDir, hostHome } from "../../../config/env";
+import { clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
 import { boxSpecFor, hostPathOf, workDirOf } from "../services/box-spec.service";
 import { containsPath, decidePlacement } from "../services/placement.service";
 import { place } from "../services/scheduler.service";
@@ -116,6 +116,7 @@ describe("box spec", () => {
     expect(hostPathOf(dataDir)).toBe(hostDataDir);
     expect(hostPathOf("/home/app/.claude")).toBe(`${hostHome}/.claude`);
     expect(hostPathOf("/srv/repo")).toBe("/srv/repo");
+    expect(hostPathOf(join(toolsDir, "chrome"))).toBe(join(hostToolsDir, "chrome"));
     expect(workDirOf(request)).toBe(join(dataDir, "work", "b1/s_1"));
   });
 
@@ -145,6 +146,19 @@ describe("box spec", () => {
       ]);
     } finally {
       rmSync(clisDir, { recursive: true, force: true });
+    }
+  });
+
+  test("mounts the downloaded tools read-only at the same path once the folder exists", () => {
+    expect(hostToolsDir).toBe(join(hostHome, ".local", "share", "runelay-bots-tools"));
+    mkdirSync(toolsDir, { recursive: true });
+    try {
+      expect(boxSpecFor({ request, accountPath: null }).mounts).toEqual([
+        { host: join(hostDataDir, "work", "b1/s_1"), box: join(dataDir, "work", "b1/s_1"), readOnly: false },
+        { host: hostToolsDir, box: toolsDir, readOnly: true },
+      ]);
+    } finally {
+      rmSync(toolsDir, { recursive: true, force: true });
     }
   });
 });

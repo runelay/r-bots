@@ -205,9 +205,9 @@ final class ArtifactCenter {
     func loadLibrary(botID: String, client: BotsClient) async {
         self.client = self.client ?? client
         guard let request = try? client.request(path: "/bots/\(botID)/artifacts"),
-              let result = try? await URLSession.shared.data(for: request),
-              (result.1 as? HTTPURLResponse)?.statusCode == 200,
-              let items = try? JSONDecoder().decode([ArtifactSummary].self, from: result.0)
+            let result = try? await URLSession.shared.data(for: request),
+            (result.1 as? HTTPURLResponse)?.statusCode == 200,
+            let items = try? JSONDecoder().decode([ArtifactSummary].self, from: result.0)
         else { return }
         libraries[botID] = items
     }
@@ -220,7 +220,8 @@ final class ArtifactCenter {
             let (data, response) = try await URLSession.shared.data(from: url)
             var html = String(decoding: data, as: UTF8.self)
             if let policy = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Security-Policy"),
-               let head = html.range(of: "<head[^>]*>", options: [.regularExpression, .caseInsensitive]) {
+                let head = html.range(of: "<head[^>]*>", options: [.regularExpression, .caseInsensitive])
+            {
                 html.insert(contentsOf: "<meta http-equiv=\"Content-Security-Policy\" content=\"\(policy)\">", at: head.upperBound)
             }
             let file = try Self.downloadsFile(name: current.title, ext: "html")
@@ -251,8 +252,8 @@ final class ArtifactCenter {
     func exportCanvas(pdf: Bool) {
         guard let current, let canvas else { return }
         guard let data = pdf ? CanvasExporter.pdf(canvas.doc) : CanvasExporter.png(canvas.doc),
-              let file = try? Self.downloadsFile(name: current.title, ext: pdf ? "pdf" : "png"),
-              (try? data.write(to: file)) != nil
+            let file = try? Self.downloadsFile(name: current.title, ext: pdf ? "pdf" : "png"),
+            (try? data.write(to: file)) != nil
         else {
             flash(pdf ? "Não consegui exportar o PDF" : "Não consegui exportar a imagem")
             return
@@ -277,11 +278,11 @@ final class ArtifactCenter {
 
     private func loadVersions() async {
         guard let current, let client,
-              let request = try? client.request(path: "/bots/\(current.botID)/artifacts/\(current.id)"),
-              let result = try? await URLSession.shared.data(for: request),
-              (result.1 as? HTTPURLResponse)?.statusCode == 200,
-              let summary = try? JSONDecoder().decode(ArtifactSummary.self, from: result.0),
-              self.current?.id == summary.id
+            let request = try? client.request(path: "/bots/\(current.botID)/artifacts/\(current.id)"),
+            let result = try? await URLSession.shared.data(for: request),
+            (result.1 as? HTTPURLResponse)?.statusCode == 200,
+            let summary = try? JSONDecoder().decode(ArtifactSummary.self, from: result.0),
+            self.current?.id == summary.id
         else { return }
         versions = summary.versions
         self.current?.title = summary.title
@@ -307,7 +308,8 @@ final class ArtifactCenter {
 
     private static func downloadsFile(name: String, ext: String) throws -> URL {
         let folder = try FileManager.default.url(for: .downloadsDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-        let cleaned = name
+        let cleaned =
+            name
             .components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>\n\r\t"))
             .joined(separator: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)

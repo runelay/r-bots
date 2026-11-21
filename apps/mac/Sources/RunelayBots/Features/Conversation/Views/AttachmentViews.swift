@@ -68,11 +68,14 @@ struct MessageAttachments: View {
                 AudioAttachmentPlayer(ref: ref)
             }
             ForEach(attachments.filter { $0.kind == .file }) { ref in
-                FileAttachmentCard(ref: ref, loading: opening == ref.id || saving == ref.id, open: {
-                    open(ref, among: [ref])
-                }, save: {
-                    save(ref)
-                })
+                FileAttachmentCard(
+                    ref: ref, loading: opening == ref.id || saving == ref.id,
+                    open: {
+                        open(ref, among: [ref])
+                    },
+                    save: {
+                        save(ref)
+                    })
             }
         }
         .frame(maxWidth: BubbleShape.maxWidth, alignment: trailing ? .trailing : .leading)

@@ -345,19 +345,21 @@ struct SimulatorPanel: View {
             items.append(GlassMenuItem("Girar", systemImage: "rotate.right") { mirror.rotate() })
             items.append(GlassMenuItem("Abrir URL ou deep link", systemImage: "link") { openingURL = true })
             if let server = expoServer {
-                items.append(GlassMenuItem("Abrir \(server.name)", systemImage: "play") {
-                    SimulatorStore.shared.openExpo(server: server, client: model.client)
-                })
+                items.append(
+                    GlassMenuItem("Abrir \(server.name)", systemImage: "play") {
+                        SimulatorStore.shared.openExpo(server: server, client: model.client)
+                    })
             }
         }
-        items.append(GlassMenuItem(device.booted ? "Desligar" : "Ligar", systemImage: "power", destructive: device.booted, startsSection: device.booted) {
-            if device.booted {
-                mirror.stop()
-                store.toggle(device)
-            } else {
-                Task { await mirror.boot(device) }
-            }
-        })
+        items.append(
+            GlassMenuItem(device.booted ? "Desligar" : "Ligar", systemImage: "power", destructive: device.booted, startsSection: device.booted) {
+                if device.booted {
+                    mirror.stop()
+                    store.toggle(device)
+                } else {
+                    Task { await mirror.boot(device) }
+                }
+            })
         return items
     }
 }

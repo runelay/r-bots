@@ -24,7 +24,7 @@ struct BotDraft: Equatable {
         .object([
             "name": .string(trimmedName),
             "accent": .string(accent),
-            "glyph": .string(glyph)
+            "glyph": .string(glyph),
         ])
     }
 

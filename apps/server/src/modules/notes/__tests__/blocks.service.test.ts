@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { resetData } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import { getDb } from "../../../db";
 import { notes, sheets } from "../../../db/tables";
 import { blocksEditNote } from "../../blocks/services/block-tools.service";
@@ -118,7 +119,7 @@ describe("sheets", () => {
     const ExcelJS = (await import("exceljs")).default;
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load((await exportBytes(bot, job.id)).data.buffer as ArrayBuffer);
-    const cell = workbook.getWorksheet("Resumo")!.getCell("B2").value as { formula: string; result: number };
+    const cell = must(workbook.getWorksheet("Resumo")).getCell("B2").value as { formula: string; result: number };
     expect(cell).toMatchObject({ formula: "SUM(Dados!A2:A3)", result: 35 });
     const csv = await createExport(bot, { kind: "sheet", id: sheet.id, format: "csv", tabId: resumo.id });
     expect(new TextDecoder().decode((await exportBytes(bot, csv.id)).data)).toContain("35");

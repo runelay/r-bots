@@ -71,7 +71,7 @@ export function createAccessService(auth: Auth, db: AuthDatabase, options: Acces
     return (await userCount()) === 0;
   }
 
-  async function findOwner() {
+  async function findOwner(): Promise<{ id: string; name: string; email: string } | null> {
     const [row] = await db
       .select({ id: user.id, name: user.name, email: user.email })
       .from(user)

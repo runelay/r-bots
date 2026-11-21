@@ -104,6 +104,11 @@ function labelOf(name: string) {
 
 let cache: { at: number; list: Connection[] } | null = null;
 
+export function clearConnectionsCache() {
+  cache = null;
+  setKnownConnectors([]);
+}
+
 onIntegrationChange((id) => {
   if (id !== "runelay") return;
   const previous = client;

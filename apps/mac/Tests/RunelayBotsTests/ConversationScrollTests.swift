@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+
 @testable import RunelayBots
 
 @MainActor
@@ -102,53 +103,53 @@ final class ConversationScrollTests: XCTestCase {
         let modes = (ProcessInfo.processInfo.environment["RB_HARNESS_MODES"] ?? "cache,network").split(separator: ",").map(String.init)
         let pages = Int(ProcessInfo.processInfo.environment["RB_HARNESS_PAGES"] ?? "4") ?? 4
         for mode in modes {
-        for fixture in fixtures {
-            TranscriptCache.shared.forgetMemory()
-            let store = try makeStore(fixture, cached: mode == "cache")
-            let host = HarnessHost(size: Self.size) {
-                ConversationView(store: store, bot: store.bot, focusToken: 0)
-            }
-            store.start()
-            let label = "[\(mode)] \(fixture.botID)/\(fixture.sessionID.suffix(6))"
-            let open = openReport(host, store: store, label: label)
-            if let final = open.final {
-                if final.distanceToBottom > 2 { failures.append("\(label): abriu a \(Int(final.distanceToBottom))pt do fim") }
-                if final.inkRatio <= 0.01 { failures.append("\(label): abriu em branco") }
-            } else {
-                failures.append("\(label): sem scroll view")
-            }
-            if open.moved > 2 { failures.append("\(label): moveu \(Int(open.moved))pt depois de aparecer") }
+            for fixture in fixtures {
+                TranscriptCache.shared.forgetMemory()
+                let store = try makeStore(fixture, cached: mode == "cache")
+                let host = HarnessHost(size: Self.size) {
+                    ConversationView(store: store, bot: store.bot, focusToken: 0)
+                }
+                store.start()
+                let label = "[\(mode)] \(fixture.botID)/\(fixture.sessionID.suffix(6))"
+                let open = openReport(host, store: store, label: label)
+                if let final = open.final {
+                    if final.distanceToBottom > 2 { failures.append("\(label): abriu a \(Int(final.distanceToBottom))pt do fim") }
+                    if final.inkRatio <= 0.01 { failures.append("\(label): abriu em branco") }
+                } else {
+                    failures.append("\(label): sem scroll view")
+                }
+                if open.moved > 2 { failures.append("\(label): moveu \(Int(open.moved))pt depois de aparecer") }
 
-            let scrollable = (open.final?.documentHeight ?? 0) > Self.size.height * 2
-            if scrollable {
-                for _ in 0..<pages {
-                    host.scrollUp(by: 2400)
-                    host.pump(0.6)
+                let scrollable = (open.final?.documentHeight ?? 0) > Self.size.height * 2
+                if scrollable {
+                    for _ in 0..<pages {
+                        host.scrollUp(by: 2400)
+                        host.pump(0.6)
+                    }
+                    host.pump(1.0)
+                    let up = host.measure(ink: true)
+                    log("\(label) after scroll up \(up.map(String.init(describing:)) ?? "nil") entries=\(store.entries.count)")
+                    let pressed = host.pressJump()
+                    if !pressed {
+                        failures.append("\(label): botão ir para o fim não apareceu")
+                    }
+                    var samples: [ScrollSample] = []
+                    host.pump(1.5) { samples.append($0) }
+                    let blank = samples.filter { $0.inkRatio <= 0.01 }
+                    let final = host.measure(ink: true)
+                    log("\(label) after jump pressed=\(pressed) final=\(final.map(String.init(describing:)) ?? "nil") blankFrames=\(blank.count)/\(samples.count)")
+                    for sample in samples.suffix(4) {
+                        log("  \(sample)")
+                    }
+                    if let final {
+                        if final.distanceToBottom > 2 { failures.append("\(label): ↓ parou a \(Int(final.distanceToBottom))pt do fim") }
+                        if final.inkRatio <= 0.01 { failures.append("\(label): ↓ deixou a tela em branco") }
+                    }
+                    if blank.count > 0 { failures.append("\(label): ↓ teve \(blank.count) quadros em branco") }
                 }
-                host.pump(1.0)
-                let up = host.measure(ink: true)
-                log("\(label) after scroll up \(up.map(String.init(describing:)) ?? "nil") entries=\(store.entries.count)")
-                let pressed = host.pressJump()
-                if !pressed {
-                    failures.append("\(label): botão ir para o fim não apareceu")
-                }
-                var samples: [ScrollSample] = []
-                host.pump(1.5) { samples.append($0) }
-                let blank = samples.filter { $0.inkRatio <= 0.01 }
-                let final = host.measure(ink: true)
-                log("\(label) after jump pressed=\(pressed) final=\(final.map(String.init(describing:)) ?? "nil") blankFrames=\(blank.count)/\(samples.count)")
-                for sample in samples.suffix(4) {
-                    log("  \(sample)")
-                }
-                if let final {
-                    if final.distanceToBottom > 2 { failures.append("\(label): ↓ parou a \(Int(final.distanceToBottom))pt do fim") }
-                    if final.inkRatio <= 0.01 { failures.append("\(label): ↓ deixou a tela em branco") }
-                }
-                if blank.count > 0 { failures.append("\(label): ↓ teve \(blank.count) quadros em branco") }
+                store.stop()
+                host.close()
             }
-            store.stop()
-            host.close()
-        }
         }
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
@@ -190,7 +191,9 @@ final class ConversationScrollTests: XCTestCase {
             }
             let after = host.viewportY(of: anchor)
             let sample = host.measure(ink: true)
-            log("older round \(round) entries \(entriesBefore)→\(store.entries.count) anchor \(anchor.suffix(10)) y \(Int(before))→\(after.map { String(Int($0)) } ?? "nil") worst=\(Int(worst)) \(sample.map(String.init(describing:)) ?? "")")
+            log(
+                "older round \(round) entries \(entriesBefore)→\(store.entries.count) anchor \(anchor.suffix(10)) y \(Int(before))→\(after.map { String(Int($0)) } ?? "nil") worst=\(Int(worst)) \(sample.map(String.init(describing:)) ?? "")"
+            )
             if worst > 2 { failures.append("rodada \(round): conteúdo pulou \(Int(worst))pt ao carregar antigas") }
             if (sample?.inkRatio ?? 0) <= 0.01 { failures.append("rodada \(round): em branco depois de carregar antigas") }
         }
@@ -203,7 +206,9 @@ final class ConversationScrollTests: XCTestCase {
             RunLoop.main.run(until: Date().addingTimeInterval(0.001))
         }
         let perStep = Date().timeIntervalSince(start) / Double(steps) * 1000
-        log("scroll step \(String(format: "%.2f", perStep))ms entries=\(store.entries.count) doc=\(Int(scroll.documentView?.frame.height ?? 0)) cpu=\(String(format: "%.2f", cpuSeconds() - cpuStart))s")
+        log(
+            "scroll step \(String(format: "%.2f", perStep))ms entries=\(store.entries.count) doc=\(Int(scroll.documentView?.frame.height ?? 0)) cpu=\(String(format: "%.2f", cpuSeconds() - cpuStart))s"
+        )
         if perStep > 16 { failures.append("rolagem lenta: \(String(format: "%.1f", perStep))ms por passo") }
         _ = host.pressJump()
         var samples: [ScrollSample] = []
@@ -253,7 +258,9 @@ final class ConversationScrollTests: XCTestCase {
         FixtureURLProtocol.release(sessionID: fixture.sessionID, events: Array(tail.suffix(15)))
         host.pump(1.5)
         let after = anchor.flatMap { host.viewportY(of: $0) }
-        log("live scrolled entries \(entries1)→\(store.entries.count) offset \(Int(offset))→\(Int(scroll.contentView.bounds.origin.y)) anchorY \(before.map { String(Int($0)) } ?? "nil")→\(after.map { String(Int($0)) } ?? "nil")")
+        log(
+            "live scrolled entries \(entries1)→\(store.entries.count) offset \(Int(offset))→\(Int(scroll.contentView.bounds.origin.y)) anchorY \(before.map { String(Int($0)) } ?? "nil")→\(after.map { String(Int($0)) } ?? "nil")"
+        )
         if let before, let after, abs(after - before) > 2 { failures.append("mensagem nova com você em cima moveu \(Int(after - before))pt") }
         if store.entries.count == entries1 { failures.append("o stream não trouxe entradas novas") }
         store.stop()
@@ -361,7 +368,10 @@ final class ConversationScrollTests: XCTestCase {
             let over8 = times.filter { $0 > 8.3 }.count
             log(String(format: "frames %@ n=%d mean=%.2fms p95=%.2fms p99=%.2fms worst=%.2fms >16.6ms=%d >8.3ms=%d blank=%d", label, times.count, mean, p95, p99, sorted.last ?? 0, over, over8, blank))
             let cpuSorted = cpu.sorted()
-            log(String(format: "cpu %@ mean=%.2fms p95=%.2fms p99=%.2fms worst=%.2fms >8.3ms=%d", label, cpu.reduce(0, +) / Double(cpu.count), cpuSorted[Int(Double(cpuSorted.count - 1) * 0.95)], cpuSorted[Int(Double(cpuSorted.count - 1) * 0.99)], cpuSorted.last ?? 0, cpu.filter { $0 > 8.3 }.count))
+            log(
+                String(
+                    format: "cpu %@ mean=%.2fms p95=%.2fms p99=%.2fms worst=%.2fms >8.3ms=%d", label, cpu.reduce(0, +) / Double(cpu.count), cpuSorted[Int(Double(cpuSorted.count - 1) * 0.95)],
+                    cpuSorted[Int(Double(cpuSorted.count - 1) * 0.99)], cpuSorted.last ?? 0, cpu.filter { $0 > 8.3 }.count))
             if (cpuSorted.last ?? 0) > 16.6 { failures.append(String(format: "rolando para %@: pior quadro da main thread %.1fms", label, cpuSorted.last ?? 0)) }
             if blank > 0 { failures.append("rolando para \(label): \(blank) quadros em branco") }
         }

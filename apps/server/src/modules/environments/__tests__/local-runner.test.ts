@@ -62,7 +62,13 @@ describe("local runner token", () => {
       { name: "Dona", email: "dona@example.com", password: "correct horse battery" },
       readFileSync(mod.setupToken.issue(), "utf8").trim(),
     );
-    owner = { ...created.user, role: "owner", method: "session" };
+    owner = {
+      userId: created.user.id,
+      email: created.user.email,
+      name: created.user.name,
+      role: "owner",
+      method: "session",
+    };
     expect(await watch.settled).toBe("written");
     expect(log.mock.calls.flat().join(" ")).toContain(`sandbox: local runner token in ${tokenPath}`);
     log.mockRestore();

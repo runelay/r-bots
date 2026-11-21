@@ -36,6 +36,7 @@ const testEnv: Record<string, string> = {
   DESKTOP_HOME: join(root, "desktop"),
   DESKTOP_CHROME: join(root, "bin", "chrome"),
   HOST_HOME: root,
+  RBOTS_TOOLS_DIR: join(root, "tools"),
   CODE_TEST_LOCK: join(root, "tests.lock"),
   CODE_GH_BIN: join(root, "bin", "gh"),
   CODE_DEV_SERVER_SETTLE_MS: "0",
@@ -70,6 +71,7 @@ process.env.DATABASE_URL = urlFor(mainDatabase);
 process.env.TEST_DATABASE_TEMPLATE = template;
 useDb(await openDatabase({ migrate: false, settings: settingsFor(mainDatabase) }));
 const { forgetSecretValue } = await import("../src/shared/redact");
+const { clearConnectionsCache } = await import("../src/modules/connectors/services/runelay.service");
 forgetSecretValue("database");
 
 const realFetch = globalThis.fetch;
@@ -100,6 +102,7 @@ afterEach(() => {
   restoreProcessFakes();
   fakeProviders.reset();
   fakeRunelay.reset();
+  clearConnectionsCache();
 });
 
 afterAll(async () => {

@@ -75,10 +75,7 @@ describe("computerHealth", () => {
       error: "Mac desconectado: abra o app r/bots nele.",
     });
     const error = await caught(callComputer("computer_apps", {}, context));
-    expect([error.code, error.message]).toEqual([
-      "COMPUTER_UNAVAILABLE",
-      "Mac desconectado: abra o app r/bots nele.",
-    ]);
+    expect([error.code, error.message]).toEqual(["COMPUTER_UNAVAILABLE", "Mac desconectado: abra o app r/bots nele."]);
   });
 
   test("GET /computer/health answers with the health", async () => {

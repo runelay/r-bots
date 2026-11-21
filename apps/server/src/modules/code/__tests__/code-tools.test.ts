@@ -232,6 +232,24 @@ describe("without an open workspace", () => {
     expect(asked).not.toHaveBeenCalled();
   });
 
+  test("workspace_add confirms a repo that is already allowed and refuses a protected path", async () => {
+    const { path } = await makeRepo("tools-add-known");
+    const { call } = harness({ permission: "full" });
+    const result = await call("workspace_add", { path, reason: "de novo" });
+    expect(textOf(result)).toBe(
+      `Já estava liberado: tools-add-known (${path}). Abra com workspace_open usando "tools-add-known".`,
+    );
+    stub(repos, "gitRepoAt").mockResolvedValue("/srv/rb-tools/.claude/repo");
+    const asked = mock(async () => ({ choice: "approve" as const, interactionId: "i5" }));
+    const guarded = harness({ permission: "full" });
+    guarded.context.requestApproval = asked as unknown as ToolContext["requestApproval"];
+    const refused = await guarded.call("workspace_add", { path: "/srv/rb-tools/.claude/repo", reason: "x" });
+    expect(refused.isError).toBe(true);
+    expect(textOf(refused)).toContain("é um caminho protegido e não pode ser liberado.");
+    expect(asked).not.toHaveBeenCalled();
+    expect(allowedRepoFor("/srv/rb-tools/.claude/repo")).toBeNull();
+  });
+
   test("workspace_open needs the conversation", async () => {
     const { call, settled } = harness();
     const result = await call("workspace_open", { repo: "a/landing", task: "x" });
@@ -575,6 +593,37 @@ describe("with an open workspace", () => {
       );
       expect(result.kick).not.toHaveBeenCalled();
     });
+  });
+
+  test("every repo tool refuses a repo that is not open in the conversation", async () => {
+    const close = stub(actions, "closeTaskWorkspace");
+    const start = stub(devServers, "startDevServer");
+    const { call, settled } = open();
+    const cases: [string, Record<string, unknown>][] = [
+      ["workspace_close", {}],
+      ["dev_server_start", { cmd: "npm run dev" }],
+      ["dev_server_stop", {}],
+      ["dev_server_logs", {}],
+      ["workspace_deliver", { action: "commit", message: "fix: x" }],
+    ];
+    for (const [name, args] of cases)
+      expect(await call(name, { ...args, repo: "outro" })).toEqual({
+        content: [{ type: "text", text: "outro não está aberto nesta conversa. Abertos: landing." }],
+        isError: true,
+      });
+    expect(close).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    expect(settled()).toEqual([expect.objectContaining({ outcome: "failed" })]);
+  });
+
+  test("dev_server_start hands back the server that is already running", async () => {
+    const running = devServer({ port: 4200, url: "http://localhost:4200" });
+    stub(devServers, "startDevServer").mockRejectedValue(new devServers.ServerRunning(running, []));
+    const { call, settled } = open();
+    const result = await call("dev_server_start", { cmd: "npm run dev" });
+    expect(result.isError).toBeUndefined();
+    expect(textOf(result)).toBe(new devServers.ServerRunning(running, []).message);
+    expect(settled().at(-1)).toMatchObject({ output: { port: 4200 } });
   });
 
   test("read-only permission refuses tools that change things", async () => {

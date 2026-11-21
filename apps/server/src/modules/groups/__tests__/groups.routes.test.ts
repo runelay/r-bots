@@ -1,10 +1,11 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { makeBot } from "../../../../test/engine-helpers";
 import { request, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
 import { getDb } from "../../../db";
 import { groupMembers, groups } from "../../../db/tables";
 import { setDeleted } from "../../bots/services/bots.service";
 import { loadGroupRows, saveGroupRow } from "../repositories/groups.repository";
+import * as groupsService from "../services/groups.service";
 import {
   activeMembers,
   createGroup,
@@ -113,6 +114,25 @@ describe("groups routes", () => {
     const missing = await request<{ code: string }>(`/groups/${group.id}/eve/v1/session/nope/events`);
     expect(missing.status).toBe(409);
     expect(missing.body.code).toBe("session_not_active");
+  });
+
+  test("answers 404 when the group disappears during a write", async () => {
+    const group = await createGroup({ name: "Some", members: await twoBots() });
+    const update = spyOn(groupsService, "updateGroup").mockResolvedValue(null);
+    const archive = spyOn(groupsService, "setGroupArchived").mockResolvedValue(null);
+    try {
+      for (const [path, method] of [
+        [`/groups/${group.id}`, "PATCH"],
+        [`/groups/${group.id}/archive`, "POST"],
+      ] as const) {
+        const answer = await request<{ error: string }>(path, { method, body: { name: "Outro" } });
+        expect(answer.status).toBe(404);
+        expect(answer.body.error).toBe("Grupo não encontrado.");
+      }
+    } finally {
+      update.mockRestore();
+      archive.mockRestore();
+    }
   });
 
   test("unknown group, unknown route and validation errors", async () => {

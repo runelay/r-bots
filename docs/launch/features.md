@@ -152,6 +152,7 @@ Caminhos: `server/` = `apps/server/src/modules/`, `mac/` = `apps/mac/Sources/Run
 | Canvas | Diagrama editável (bot e pessoa), traço à mão, mapa mental e fluxo com layout automático | `server/canvas`, `mac/Artifacts/Views/CanvasViews.swift`, v20 | ✅ |
 | Geração de imagem | Bots no Codex geram imagem nativamente e ela volta como anexo | `providers/codex.ts`, 884eec5 | 🧪 |
 | Recorte de imagem (`image_cutout`) | Tira o fundo de uma imagem (modelo de matting local) e devolve PNG transparente | `server/images/services/cutout.service.ts`, 4f94999 | 🧪 |
+| Áudio falado (`speech_create`) | Bot gera MP3 com a voz dele na ElevenLabs (chave da integração, nunca exposta) e anexa na conversa | `server/voice/services/speech-tools.service.ts` | 🧪 |
 
 ## 12. Cofre e segurança
 

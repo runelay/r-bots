@@ -199,10 +199,11 @@ enum FileTools {
             } catch {
                 throw permissionAware(error, path: url)
             }
-            trashed.append(.object([
-                "path": .string(url.path(percentEncoded: false)),
-                "trashPath": (resulting as URL?).map { .string($0.path(percentEncoded: false)) } ?? .null,
-            ]))
+            trashed.append(
+                .object([
+                    "path": .string(url.path(percentEncoded: false)),
+                    "trashPath": (resulting as URL?).map { .string($0.path(percentEncoded: false)) } ?? .null,
+                ]))
         }
         return .object(["trashed": .array(trashed)])
     }
@@ -233,7 +234,8 @@ enum FileTools {
     private static func permissionAware(_ error: Error, path: URL) -> ToolFailure {
         let nsError = error as NSError
         if nsError.domain == NSCocoaErrorDomain, [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(nsError.code) {
-            return ToolFailure(403, code: "permission_denied", "O macOS não deixou o r/bots acessar \(path.path(percentEncoded: false)). Libere em Ajustes do Sistema → Privacidade e Segurança → Arquivos e Pastas.")
+            return ToolFailure(
+                403, code: "permission_denied", "O macOS não deixou o r/bots acessar \(path.path(percentEncoded: false)). Libere em Ajustes do Sistema → Privacidade e Segurança → Arquivos e Pastas.")
         }
         return ToolFailure(500, code: "file_error", nsError.localizedDescription)
     }

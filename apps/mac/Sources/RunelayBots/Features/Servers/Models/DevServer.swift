@@ -130,10 +130,11 @@ struct ServerProject: Identifiable, Equatable, Sendable {
         guard let name = value["name"]?.stringValue, let path = value["path"]?.stringValue else { return nil }
         self.name = name
         self.path = path
-        worktrees = value["worktrees"]?.arrayValue?.compactMap { item in
-            guard let path = item["path"]?.stringValue else { return nil }
-            return Worktree(path: path, branch: item["branch"]?.stringValue, main: item["main"]?.boolValue ?? false)
-        } ?? []
+        worktrees =
+            value["worktrees"]?.arrayValue?.compactMap { item in
+                guard let path = item["path"]?.stringValue else { return nil }
+                return Worktree(path: path, branch: item["branch"]?.stringValue, main: item["main"]?.boolValue ?? false)
+            } ?? []
     }
 }
 
@@ -153,10 +154,11 @@ struct ProjectScripts: Equatable, Sendable {
 
     init(_ value: JSONValue) {
         manager = value["manager"]?.stringValue ?? "npm"
-        scripts = value["scripts"]?.arrayValue?.compactMap { item in
-            guard let name = item["name"]?.stringValue else { return nil }
-            return ServerScript(name: name, command: item["command"]?.stringValue ?? "", tool: item["tool"]?.stringValue ?? "process")
-        } ?? []
+        scripts =
+            value["scripts"]?.arrayValue?.compactMap { item in
+                guard let name = item["name"]?.stringValue else { return nil }
+                return ServerScript(name: name, command: item["command"]?.stringValue ?? "", tool: item["tool"]?.stringValue ?? "process")
+            } ?? []
         envFiles = value["envFiles"]?.arrayValue?.compactMap(\.stringValue) ?? []
         envKeys = value["envKeys"]?.arrayValue?.compactMap(\.stringValue) ?? []
         branch = value["branch"]?.stringValue

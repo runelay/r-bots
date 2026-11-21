@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, setDefaultTimeout, sp
 import { factsOfType, makeBot, waitFor } from "../../../../test/engine-helpers";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
 import { startTestJobs, type TestJobs } from "../../../../test/jobs-helpers";
+import { must } from "../../../../test/must";
 import { env } from "../../../config/env";
 import * as botsService from "../../bots/services/bots.service";
 import * as sessionsService from "../../conversations/services/sessions.service";
@@ -62,7 +63,7 @@ describe("fire", () => {
     const thread = await threadsService.ensureThread(bot.id);
     expect(started?.sessionId).toBe(thread.sessionId);
     await settled(thread.sessionId);
-    const session = sessionsService.getStoredSession(thread.sessionId)!;
+    const session = must(sessionsService.getStoredSession(thread.sessionId));
     const consumed = await factsOfType(session, "delivery.consumed");
     expect(consumed.at(-1)?.data).toMatchObject({
       deliveryId: started?.deliveryId,
@@ -156,7 +157,7 @@ describe("reloadSchedules", () => {
     await reloadSchedules();
     await settled(thread.sessionId);
     const session = sessionsService.getStoredSession(thread.sessionId);
-    expect((await factsOfType(session!, "delivery.consumed"))[0]?.data).toMatchObject({
+    expect((await factsOfType(must(session), "delivery.consumed"))[0]?.data).toMatchObject({
       source: "schedule",
       scheduleId: schedule.name,
     });

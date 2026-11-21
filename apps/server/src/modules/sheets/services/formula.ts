@@ -368,9 +368,9 @@ function criteriaOf(raw: unknown) {
   const value = (raw as { value?: unknown })?.value ?? raw;
   if (typeof value === "number" || typeof value === "boolean") return (item: unknown) => item === value;
   const text = String(value ?? "");
-  const match = /^(<=|>=|<>|=|<|>)?(.*)$/s.exec(text)!;
-  const op = match[1] ?? "=";
-  const operand = match[2];
+  const match = /^(<=|>=|<>|=|<|>)?(.*)$/s.exec(text);
+  const op = match?.[1] ?? "=";
+  const operand = match?.[2] ?? text;
   const numeric = operand.trim() !== "" && Number.isFinite(Number(operand)) ? Number(operand) : null;
   const pattern = new RegExp(
     `^${operand
@@ -615,7 +615,11 @@ function shiftIndex(index: number, op: StructureOp, at: number, count: number): 
 }
 
 function shiftBounds(start: number, end: number, op: StructureOp, at: number, count: number) {
-  if (op.startsWith("insert")) return [shiftIndex(start, op, at, count)!, shiftIndex(end, op, at, count)!];
+  if (op.startsWith("insert")) {
+    const insertedStart = shiftIndex(start, op, at, count);
+    const insertedEnd = shiftIndex(end, op, at, count);
+    return insertedStart === null || insertedEnd === null ? null : [insertedStart, insertedEnd];
+  }
   const nextStart = start >= at && start < at + count ? at : start >= at + count ? start - count : start;
   const nextEnd = end >= at && end < at + count ? at - 1 : end >= at + count ? end - count : end;
   return nextEnd < nextStart ? null : [nextStart, nextEnd];
@@ -640,7 +644,9 @@ export function shiftFormula(
             const sheet = sheetOf(prefix) ?? ownTab;
             if (sheet.toLocaleLowerCase("pt-BR") !== target) return whole;
             const pieces = ref.split(":");
-            const parsed = pieces.map((piece) => /^(\$?)([A-Za-z]*)(\$?)(\d*)$/.exec(piece)!);
+            const matches = pieces.map((piece) => /^(\$?)([A-Za-z]*)(\$?)(\d*)$/.exec(piece));
+            if (!matches.every((m): m is RegExpExecArray => m !== null)) return whole;
+            const parsed = matches;
             const isCol = parsed.every((m) => m[2] && !m[4]);
             const isRow = parsed.every((m) => !m[2] && m[4]);
             if ((rows && isCol) || (!rows && isRow)) return whole;

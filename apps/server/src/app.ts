@@ -39,6 +39,7 @@ import { handleSkills } from "./modules/skills/routes/skills.routes";
 import { handleMetrics } from "./modules/status/routes/metrics.routes";
 import { handleHealth, handleMeta, handleStatus, handleStatusStream } from "./modules/status/routes/status.routes";
 import { handleTests } from "./modules/tests/routes/tests.routes";
+import { handleTools } from "./modules/tools/routes/tools.routes";
 import { handleUsageRoute } from "./modules/usage/routes/usage.routes";
 import { handleVaultRoute } from "./modules/vault/routes/vault.routes";
 import { handleVoices } from "./modules/voice/routes/voice.routes";
@@ -101,6 +102,7 @@ export const routeTable: RouteEntry[] = [
   { root: "metrics", match: exactly("GET"), handle: (_req, res) => handleMetrics(res) },
   { root: "environments", match: exactly("GET"), handle: (_req, res) => handleEnvironments(res) },
   { root: "providers", handle: (req, res, _url, method, parts) => handleProviders(req, res, method, parts) },
+  { root: "tools", handle: (_req, res, _url, method, parts) => handleTools(res, method, parts) },
   { root: "server", match: exactly("GET", "version"), handle: (_req, res) => handleServerVersion(res) },
   { root: "computer", match: exactly("GET", "health"), handle: (_req, res) => handleComputerHealth(res) },
   {

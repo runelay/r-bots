@@ -34,7 +34,7 @@ final class BotTabs {
     init(profileID: String) {
         storageKey = "tabs.\(profileID)"
         guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let saved = try? JSONDecoder().decode(Saved.self, from: data)
+            let saved = try? JSONDecoder().decode(Saved.self, from: data)
         else { return }
         hasSavedState = true
         order = Self.unique(saved.order)

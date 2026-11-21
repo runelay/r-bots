@@ -70,7 +70,7 @@ enum PreferenceKeys {
 }
 
 enum AppInfo {
-    static let version = "0.5.0"
+    static let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
 }
 
 extension EnvironmentValues {

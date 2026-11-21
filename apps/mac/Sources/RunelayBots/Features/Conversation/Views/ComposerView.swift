@@ -19,25 +19,30 @@ struct ComposerView: View {
     private var composerActions: [GlassMenuItem] {
         var items: [GlassMenuItem] = []
         if !bot.isGroup {
-            items.append(GlassMenuItem("Trabalhar num repositório…", systemImage: "arrow.triangle.branch") {
-                model.activeSheet = .repoPicker(bot.id)
-            })
-            if store.codeState?.workspace != nil {
-                items.append(GlassMenuItem("Ver mudanças", systemImage: "plusminus") {
-                    store.changesWorkspaceID = nil
-                    model.activeSheet = .changes(bot.id)
+            items.append(
+                GlassMenuItem("Trabalhar num repositório…", systemImage: "arrow.triangle.branch") {
+                    model.activeSheet = .repoPicker(bot.id)
                 })
+            if store.codeState?.workspace != nil {
+                items.append(
+                    GlassMenuItem("Ver mudanças", systemImage: "plusminus") {
+                        store.changesWorkspaceID = nil
+                        model.activeSheet = .changes(bot.id)
+                    })
             }
-            items.append(GlassMenuItem("Anexar arquivo…", systemImage: "paperclip", startsSection: true) {
-                AttachmentPicker.choose(for: store)
-            })
+            items.append(
+                GlassMenuItem("Anexar arquivo…", systemImage: "paperclip", startsSection: true) {
+                    AttachmentPicker.choose(for: store)
+                })
         }
-        items.append(GlassMenuItem("Perfil de \(bot.name)", id: "profile", systemImage: "person.crop.circle", startsSection: !items.isEmpty) {
-            store.onOpenProfile?()
-        })
-        items.append(GlassMenuItem("Limpar campo", systemImage: "eraser", isEnabled: !(store.draft.isEmpty && store.composerAttachments.isEmpty)) {
-            store.clearDraft()
-        })
+        items.append(
+            GlassMenuItem("Perfil de \(bot.name)", id: "profile", systemImage: "person.crop.circle", startsSection: !items.isEmpty) {
+                store.onOpenProfile?()
+            })
+        items.append(
+            GlassMenuItem("Limpar campo", systemImage: "eraser", isEnabled: !(store.draft.isEmpty && store.composerAttachments.isEmpty)) {
+                store.clearDraft()
+            })
         return items
     }
 
@@ -58,24 +63,24 @@ struct ComposerView: View {
                 onFocusChange: { focused in isFocused = focused },
                 onCommand: handle
             )
-                .frame(height: composerHeight)
-                .overlay(alignment: .topLeading) {
-                    if store.draft.isEmpty && !placeholder.isEmpty {
-                        Text(placeholder)
-                            .font(TypeScale.body)
-                            .foregroundStyle(Theme.textTertiary)
-                            .lineLimit(1)
-                            .padding(.vertical, ComposerTextView.verticalInset)
-                            .allowsHitTesting(false)
-                    }
+            .frame(height: composerHeight)
+            .overlay(alignment: .topLeading) {
+                if store.draft.isEmpty && !placeholder.isEmpty {
+                    Text(placeholder)
+                        .font(TypeScale.body)
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                        .padding(.vertical, ComposerTextView.verticalInset)
+                        .allowsHitTesting(false)
                 }
-                .overlay(alignment: .leading) {
-                    if isListening && store.draft.isEmpty {
-                        listeningIndicator
-                            .allowsHitTesting(false)
-                            .transition(.opacity)
-                    }
+            }
+            .overlay(alignment: .leading) {
+                if isListening && store.draft.isEmpty {
+                    listeningIndicator
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
                 }
+            }
 
             if isListening && !store.draft.isEmpty && !reduceMotion {
                 VoiceWaveform(voice: voice, barCount: 8, height: 14)
@@ -340,29 +345,33 @@ struct ComposerView: View {
     private var slashCommands: [SlashCommand] {
         guard let query = slashQuery else { return [] }
         let target = bot
-        let all = [
-            SlashCommand(id: "limpar", title: "/limpar", subtitle: "Começar a conversa do zero (⌘K)", systemImage: "eraser") {
-                if model.canClearConversation(target) {
-                    model.clearConversation(target)
-                } else if target.isGroup {
-                    model.showNotice("Conversa de grupo não dá para limpar.")
-                } else {
-                    model.showNotice("Essa conversa já está limpa.")
-                }
-            },
-            SlashCommand(id: "novo-bot", title: "/novo-bot", subtitle: "Criar um bot novo", systemImage: "person.badge.plus") {
-                model.openEditor(for: nil)
-            },
-            SlashCommand(id: "repo", title: "/repo", subtitle: "Trabalhar num repositório", systemImage: "arrow.triangle.branch") {
-                if !target.isGroup {
-                    model.activeSheet = .repoPicker(target.id)
-                }
-            },
-        ] + (target.isGroup ? [] : [
-            SlashCommand(id: "side", title: "/side", subtitle: "Conversa secundária ao lado, com o contexto desta", systemImage: "rectangle.split.2x1") {
-                openSide(text: store.draft.trimmingCharacters(in: .whitespacesAndNewlines))
-            },
-        ])
+        let all =
+            [
+                SlashCommand(id: "limpar", title: "/limpar", subtitle: "Começar a conversa do zero (⌘K)", systemImage: "eraser") {
+                    if model.canClearConversation(target) {
+                        model.clearConversation(target)
+                    } else if target.isGroup {
+                        model.showNotice("Conversa de grupo não dá para limpar.")
+                    } else {
+                        model.showNotice("Essa conversa já está limpa.")
+                    }
+                },
+                SlashCommand(id: "novo-bot", title: "/novo-bot", subtitle: "Criar um bot novo", systemImage: "person.badge.plus") {
+                    model.openEditor(for: nil)
+                },
+                SlashCommand(id: "repo", title: "/repo", subtitle: "Trabalhar num repositório", systemImage: "arrow.triangle.branch") {
+                    if !target.isGroup {
+                        model.activeSheet = .repoPicker(target.id)
+                    }
+                },
+            ]
+            + (target.isGroup
+                ? []
+                : [
+                    SlashCommand(id: "side", title: "/side", subtitle: "Conversa secundária ao lado, com o contexto desta", systemImage: "rectangle.split.2x1") {
+                        openSide(text: store.draft.trimmingCharacters(in: .whitespacesAndNewlines))
+                    }
+                ])
         return all.filter { query.isEmpty || $0.id.contains(query) || $0.subtitle.lowercased().contains(query) }
     }
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { BoxSpec, BoxStatus } from "@runelay-bots/protocol";
 import { BoxError, BoxLifecycle } from "../lifecycle";
-import type { BoxExecHandle, BoxProvider, MemInfo } from "../types";
+import type { BoxExecHandle, BoxProvider, EnsureOptions, MemInfo } from "../types";
 import { boxSpec, boxStatus, FakeClock, until } from "./helpers";
 
 class FakeProvider implements BoxProvider {
@@ -12,8 +12,11 @@ class FakeProvider implements BoxProvider {
   failStop = new Set<string>();
   failList = false;
 
-  async ensure(botId: string, spec: BoxSpec) {
+  readonly idle: boolean[] = [];
+
+  async ensure(botId: string, spec: BoxSpec, options?: EnsureOptions) {
     this.calls.push(`ensure ${botId} ${spec.memMb}`);
+    this.idle.push(options?.idle ?? true);
     const status = boxStatus(botId, { memMb: spec.memMb });
     this.states.set(botId, status);
     return status;
@@ -106,6 +109,20 @@ describe("BoxLifecycle", () => {
     roomy.lifecycle.dispose();
     expect(roomy.clock.delays()).toEqual([]);
     expect(clock.delays()).toEqual([]);
+  });
+
+  test("lets the provider recreate the box only when no other turn uses it", async () => {
+    const { provider, lifecycle } = setup();
+    expect(lifecycle.isBusy("bot-1")).toBe(false);
+    await lifecycle.acquire("bot-1", boxSpec());
+    expect(lifecycle.isBusy("bot-1")).toBe(true);
+    await lifecycle.acquire("bot-1", boxSpec());
+    lifecycle.release("bot-1");
+    lifecycle.release("bot-1");
+    expect(lifecycle.isBusy("bot-1")).toBe(false);
+    await lifecycle.acquire("bot-1", boxSpec());
+    expect(provider.idle).toEqual([true, false, true]);
+    lifecycle.dispose();
   });
 
   test("refuses a second spec while the box is busy", async () => {

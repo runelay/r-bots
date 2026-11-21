@@ -426,11 +426,7 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
           .enum(glyphPresets)
           .optional()
           .describe("Rosto do personagem: crown (coroa), visor (viseira), antenna (antena), face-1 a face-11, ou auto"),
-        account: z
-          .string()
-          .max(80)
-          .optional()
-          .describe("Conta de IA pelo nome ou id, como Claude Alex ou vps:codex"),
+        account: z.string().max(80).optional().describe("Conta de IA pelo nome ou id, como Claude Alex ou vps:codex"),
         model: z.string().max(100).optional().describe("Modelo pelo nome ou id, como Sonnet ou Opus"),
         effort: z.enum(["low", "medium", "high", "auto"]).optional().describe("auto volta ao padrão do modelo"),
         fallback: z

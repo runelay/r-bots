@@ -1,12 +1,16 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { fakeRunelay, request, startTestServer, type TestServer } from "../../../../test/helpers";
+import { Req, Res } from "../../../shared/http";
 import { listConnections } from "../../connectors/services/runelay.service";
 import { type GhOutput, setGhRunner } from "../../github/services/gh-client.service";
 import { clearGitHubCache } from "../../github/services/github.service";
+import { handleLinear } from "../routes/linear.routes";
 import {
   cardOf,
   cleanDescription,
   clearLinearCache,
+  linearTool,
+  projectOf,
   sortStates,
   stageWeight,
   startedState,
@@ -367,5 +371,194 @@ describe("routes", () => {
     });
     expect((await request("/linear/issues/ENG-1/assign", { method: "POST" })).status).toBe(200);
     expect((await request("/linear/issues/ENG-1/start", { method: "POST" })).status).toBe(404);
+  });
+
+  test("lists open projects, labels and active users", async () => {
+    tools.set("linear_server.list_projects", (args) =>
+      args.cursor
+        ? {
+            projects: [{ id: "p3", name: "Fechado", status: { name: "Done", type: "completed" } }],
+            hasNextPage: false,
+          }
+        : {
+            projects: [
+              {
+                uuid: "p1",
+                name: "Checkout",
+                icon: "Cart",
+                color: "#f00",
+                url: "https://linear.app/p/p1",
+                summary: "Novo checkout",
+                status: { name: "Em andamento", type: "started" },
+              },
+              { id: "p2" },
+              { name: "sem id" },
+              { id: "p4", status: { type: "canceled" } },
+            ],
+            hasNextPage: true,
+            cursor: "pc",
+          },
+    );
+    tools.set("linear_server.list_issue_labels", () => ({
+      labels: [
+        { id: "l2", name: "bug", color: "#f00" },
+        { id: "l1", name: "Area" },
+        { id: "l3", name: "Bug" },
+        { id: "l4", name: "Velha", retiredAt: "2026-01-01" },
+        { id: "l5" },
+      ],
+    }));
+    tools.set("linear_server.list_users", () => ({
+      users: [
+        { id: "u1", name: "Ana", displayName: "ana", email: "ana@x.dev", avatarUrl: "https://a/u1.png" },
+        { id: "u2", displayName: "bia" },
+        { id: "u3", name: "Ex", isActive: false },
+        { name: "sem id" },
+      ],
+    }));
+    const projects = await request<{ projects: Array<Record<string, unknown>> }>("/linear/projects?refresh=1");
+    expect(projects.status).toBe(200);
+    expect(projects.body.projects).toEqual([
+      {
+        id: "p1",
+        name: "Checkout",
+        icon: "Cart",
+        color: "#f00",
+        url: "https://linear.app/p/p1",
+        summary: "Novo checkout",
+        state: "Em andamento",
+        stateType: "started",
+      },
+      {
+        id: "p2",
+        name: "Projeto",
+        icon: null,
+        color: null,
+        url: null,
+        summary: null,
+        state: null,
+        stateType: null,
+      },
+    ]);
+    const projectCall = fakeRunelay.toolCalls.filter((item) => item.name === "call_tool").at(-1);
+    expect(projectCall?.args.args).toEqual({ limit: 50, cursor: "pc" });
+    const labels = await request<{ labels: unknown[] }>("/linear/labels");
+    expect(labels.body.labels).toEqual([
+      { id: "l1", name: "Area", color: null },
+      { id: "l2", name: "bug", color: "#f00" },
+    ]);
+    const users = await request<{ users: unknown[] }>("/linear/users");
+    expect(users.body.users).toEqual([
+      { id: "u1", name: "Ana", displayName: "ana", email: "ana@x.dev", avatarUrl: "https://a/u1.png" },
+      { id: "u2", name: "bia", displayName: "bia", email: null, avatarUrl: null },
+    ]);
+    const views = await request<{ views: Array<Record<string, unknown>> }>("/linear/views");
+    expect(views.body.views.at(-1)).toEqual({
+      id: "project:p2",
+      name: "Projeto",
+      kind: "project",
+      description: null,
+      team: null,
+      url: null,
+      icon: null,
+      color: null,
+    });
+    expect(views.body.views.find((view) => view.id === "project:p1")).toMatchObject({
+      description: "Novo checkout",
+      icon: "Cart",
+    });
+  });
+
+  test("filters the board by project and label", async () => {
+    tools.set("linear_server.list_projects", () => ({ projects: [{ id: "p1", name: "Checkout" }] }));
+    const project = await request<{ view: { kind: string; name: string }; project: string | null }>(
+      "/linear/board?view=project:p1&project=Outro",
+    );
+    expect(project.status).toBe(200);
+    expect(project.body.view).toMatchObject({ kind: "project", name: "Checkout" });
+    expect(project.body.project).toBeNull();
+    const projectArgs = fakeRunelay.toolCalls.filter((item) => item.args.name === "linear_server.list_issues").at(-1)
+      ?.args.args;
+    expect(projectArgs).toMatchObject({ project: "p1" });
+    const loose = await request<{ view: { name: string } }>("/linear/board?view=project:zzz");
+    expect(loose.body.view.name).toBe("Projeto");
+    const filtered = await request<{ label: string; project: string }>(
+      "/linear/board?view=team:team-1&label=Bug&project=Checkout",
+    );
+    expect(filtered.body).toMatchObject({ label: "Bug", project: "Checkout" });
+    const args = fakeRunelay.toolCalls.filter((item) => item.args.name === "linear_server.list_issues").at(-1)
+      ?.args.args;
+    expect(args).toMatchObject({ team: "team-1", label: "Bug", project: "Checkout" });
+    const bad = await request<{ field: string }>("/linear/board?label=%3Cscript%3E");
+    expect(bad.status).toBe(400);
+    expect(bad.body.field).toBe("label");
+  });
+
+  test("exposes raw tool calls and project parsing", async () => {
+    expect(await linearTool("list_issues", { parentId: "ENG-1" })).toMatchObject({
+      issues: [{ id: "ENG-3" }],
+    });
+    expect(projectOf({})).toBeNull();
+    expect(projectOf({ id: "p9", status: "x" })).toMatchObject({ id: "p9", state: null });
+  });
+
+  test("answers 502 when the request body breaks mid-read", async () => {
+    for (const reason of [new Error("client aborted"), "socket hang up"]) {
+      const body = new ReadableStream({
+        start(controller) {
+          controller.error(reason);
+        },
+      });
+      const controller = new AbortController();
+      const req = new Req(
+        new Request("http://x.local/linear/issues/ENG-1/assign", { method: "POST", body, duplex: "half" }),
+      );
+      const res = new Res(controller.signal);
+      await handleLinear(req, res, new URL(`http://x.local${req.url}`), "POST", [
+        "linear",
+        "issues",
+        "ENG-1",
+        "assign",
+      ]);
+      const response = await res.response;
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({ ok: false, error: reason instanceof Error ? reason.message : reason });
+      expect(saved).toEqual([]);
+    }
+  });
+
+  test("still shows the board and the issue when GitHub and the team states fail", async () => {
+    ghReply = () => ({ code: 1, stdout: "", stderr: "gh: auth required" });
+    tools.set("linear_server.list_issue_statuses", () => {
+      throw new Error("statuses down");
+    });
+    const reply = await request<{
+      columns: Array<{ key: string; count: number }>;
+      issues: Array<{ pr: unknown }>;
+    }>("/linear/board?view=team:team-1");
+    expect(reply.status).toBe(200);
+    expect(reply.body.columns.map((column) => `${column.key}=${column.count}`)).toEqual([
+      "triage:Triagem=1",
+      "started:Em progresso=1",
+    ]);
+    expect(reply.body.issues.map((item) => item.pr)).toEqual([null, null]);
+    const detail = await request<{ issue: { states: unknown[]; pr: unknown } }>("/linear/issues/ENG-1");
+    expect(detail.status).toBe(200);
+    expect(detail.body.issue).toMatchObject({ states: [], pr: null });
+  });
+
+  test("treats a failing connection list as Linear not connected", async () => {
+    clearLinearCache();
+    fakeRunelay.tool("list_connections", () => {
+      throw new Error("runelay down");
+    });
+    setSystemTime(new Date(Date.now() + 120_000));
+    try {
+      const reply = await request<{ error: string }>("/linear/summary");
+      expect(reply.status).toBe(503);
+      expect(reply.body.error).toBe("Conecte o Linear em Conectores para ver suas issues aqui.");
+    } finally {
+      setSystemTime();
+    }
   });
 });

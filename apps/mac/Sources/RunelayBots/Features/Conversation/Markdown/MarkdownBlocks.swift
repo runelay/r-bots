@@ -184,7 +184,8 @@ enum MarkdownParser {
             }
 
             if line.contains("|"), index + 1 < lines.count, isTerminated(index + 1),
-               let alignments = delimiterAlignments(lines[index + 1]) {
+                let alignments = delimiterAlignments(lines[index + 1])
+            {
                 let headers = cells(line)
                 if headers.count == alignments.count {
                     flushParagraph()
@@ -331,7 +332,8 @@ enum MarkdownParser {
     }
 
     static func isNumeric(_ cell: String) -> Bool {
-        let stripped = cell
+        let stripped =
+            cell
             .replacingOccurrences(of: "R$", with: "")
             .filter { !" `*_$€£%+-−~≈x×()".contains($0) }
         guard !stripped.isEmpty else { return false }

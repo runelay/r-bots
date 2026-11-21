@@ -43,21 +43,23 @@ final class SpotifyPlayer {
     func start() {
         guard loop == nil else { return }
         let distributed = DistributedNotificationCenter.default()
-        observers.append(distributed.addObserver(forName: .init("com.spotify.client.PlaybackStateChanged"), object: nil, queue: .main) { note in
-            let state = note.userInfo?["Player State"] as? String
-            MainActor.assumeIsolated {
-                SpotifyPlayer.shared.applyNotification(state: state)
-            }
-        })
-        let workspace = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
-            observers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { note in
-                let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-                guard app?.bundleIdentifier == SpotifyPlayer.bundleIdentifier else { return }
-                Task { @MainActor in
-                    await SpotifyPlayer.shared.refresh()
+        observers.append(
+            distributed.addObserver(forName: .init("com.spotify.client.PlaybackStateChanged"), object: nil, queue: .main) { note in
+                let state = note.userInfo?["Player State"] as? String
+                MainActor.assumeIsolated {
+                    SpotifyPlayer.shared.applyNotification(state: state)
                 }
             })
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification] {
+            observers.append(
+                workspace.addObserver(forName: name, object: nil, queue: .main) { note in
+                    let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                    guard app?.bundleIdentifier == SpotifyPlayer.bundleIdentifier else { return }
+                    Task { @MainActor in
+                        await SpotifyPlayer.shared.refresh()
+                    }
+                })
         }
         loop = Task { [weak self] in
             while !Task.isCancelled {
@@ -225,39 +227,39 @@ actor SpotifyScriptRunner {
     }
 
     static let statusScript = """
-    on txt(v)
-        try
-            if v is missing value then return ""
-            return v as text
-        on error
-            return ""
-        end try
-    end txt
-    set trackId to ""
-    set trackName to ""
-    set trackArtist to ""
-    set trackAlbum to ""
-    set trackArtwork to ""
-    set trackDuration to 0
-    set playerPosition to 0
-    tell application id "com.spotify.client"
-        set playerState to player state as text
-        try
-            set playerPosition to player position
-        end try
-        try
-            set currentTrack to current track
-            set trackId to id of currentTrack
-            set trackName to name of currentTrack
-            set trackArtist to artist of currentTrack
-            set trackAlbum to album of currentTrack
-            set trackArtwork to artwork url of currentTrack
-            set trackDuration to duration of currentTrack
-        end try
-    end tell
-    set sep to character id 30
-    return playerState & sep & my txt(trackId) & sep & my txt(trackName) & sep & my txt(trackArtist) & sep & my txt(trackAlbum) & sep & my txt(trackArtwork) & sep & my txt(trackDuration) & sep & ((round (playerPosition * 1000)) as text)
-    """
+        on txt(v)
+            try
+                if v is missing value then return ""
+                return v as text
+            on error
+                return ""
+            end try
+        end txt
+        set trackId to ""
+        set trackName to ""
+        set trackArtist to ""
+        set trackAlbum to ""
+        set trackArtwork to ""
+        set trackDuration to 0
+        set playerPosition to 0
+        tell application id "com.spotify.client"
+            set playerState to player state as text
+            try
+                set playerPosition to player position
+            end try
+            try
+                set currentTrack to current track
+                set trackId to id of currentTrack
+                set trackName to name of currentTrack
+                set trackArtist to artist of currentTrack
+                set trackAlbum to album of currentTrack
+                set trackArtwork to artwork url of currentTrack
+                set trackDuration to duration of currentTrack
+            end try
+        end tell
+        set sep to character id 30
+        return playerState & sep & my txt(trackId) & sep & my txt(trackName) & sep & my txt(trackArtist) & sep & my txt(trackAlbum) & sep & my txt(trackArtwork) & sep & my txt(trackDuration) & sep & ((round (playerPosition * 1000)) as text)
+        """
 
     func run(_ source: String) async -> Outcome {
         await withCheckedContinuation { continuation in

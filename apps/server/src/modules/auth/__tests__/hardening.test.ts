@@ -28,6 +28,7 @@ let ownerId = "";
 let memberToken = "";
 let memberId = "";
 const restores: Array<() => void> = [];
+const unsubscribes: Array<() => void> = [];
 
 function req(path: string, init: RequestInit & { token?: string; peer?: string } = {}) {
   const headers = new Headers(init.headers);
@@ -70,7 +71,7 @@ beforeAll(async () => {
 afterEach(() => {
   for (const restore of restores.splice(0).reverse()) restore();
   useAuthModule(null);
-  onUserRevoked(null);
+  for (const unsubscribe of unsubscribes.splice(0)) unsubscribe();
 });
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -287,7 +288,7 @@ describe("auth routes", () => {
 describe("revocation", () => {
   test("banning or deleting a user drops sessions, keys and devices", async () => {
     const revoked: Array<[string, string[]]> = [];
-    onUserRevoked((userId, ids) => revoked.push([userId, ids]));
+    unsubscribes.push(onUserRevoked((userId, ids) => revoked.push([userId, ids])));
     const registered = await mod.auth.api.createApiKey({
       body: { name: "device", userId: memberId, metadata: { kind: "device" } },
     });

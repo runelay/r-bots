@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { NotePatchOp } from "@runelay-bots/protocol";
 import { resetData } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import { getDb } from "../../../db";
 import { noteLinks, notes } from "../../../db/tables";
 import { BlockError } from "../../blocks/services/blocks.shared";
@@ -203,10 +204,10 @@ describe("notes", () => {
     expect(await searchNotes(bot, { q: 5 })).toEqual({ items: [], total: 0, nextCursor: null });
     const body = await searchNotes(bot, { q: "orcamento" });
     expect(body.total).toBe(2);
-    const fromBody = body.items.find((item) => item.id === a.id)!;
+    const fromBody = must(body.items.find((item) => item.id === a.id));
     expect(fromBody.snippet).toContain("orçamento");
     expect(fromBody.snippet.slice(fromBody.ranges[0][0], fromBody.ranges[0][1])).toBe("orçamento");
-    const fromTitle = body.items.find((item) => item.id === b.id)!;
+    const fromTitle = must(body.items.find((item) => item.id === b.id));
     expect(fromTitle.snippet).toBe("Orçamento anual");
     expect(fromTitle.ranges).toEqual([[0, 9]]);
     const titles = await searchNotes(bot, { q: "reu", mode: "title" });

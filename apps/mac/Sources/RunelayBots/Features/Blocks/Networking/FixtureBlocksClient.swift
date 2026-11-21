@@ -14,8 +14,12 @@ actor FixtureBlocksClient: BlocksClient {
     private var seeded = false
 
     private let accounts: [AgendaAccount] = [
-        AgendaAccount(id: "acc_pessoal", label: "Pessoal", email: "pessoal@exemplo.com", color: "blue", primary: true, status: "ready", calendars: [AgendaCalendar(id: "primary", name: "Pessoal", color: "blue", selected: true)]),
-        AgendaAccount(id: "acc_trabalho", label: "Trabalho", email: "trabalho@exemplo.com", color: "violet", primary: false, status: "ready", calendars: [AgendaCalendar(id: "primary", name: "Trabalho", color: "violet", selected: true)]),
+        AgendaAccount(
+            id: "acc_pessoal", label: "Pessoal", email: "pessoal@exemplo.com", color: "blue", primary: true, status: "ready",
+            calendars: [AgendaCalendar(id: "primary", name: "Pessoal", color: "blue", selected: true)]),
+        AgendaAccount(
+            id: "acc_trabalho", label: "Trabalho", email: "trabalho@exemplo.com", color: "violet", primary: false, status: "ready",
+            calendars: [AgendaCalendar(id: "primary", name: "Trabalho", color: "violet", selected: true)]),
     ]
 
     private func seed() {
@@ -23,55 +27,67 @@ actor FixtureBlocksClient: BlocksClient {
         seeded = true
         let now = BlockDates.string(Date())
         let seeds: [(String, String, String, String)] = [
-            ("note_plano", "Plano Q1", "Projetos", """
-            # Plano Q1
+            (
+                "note_plano", "Plano Q1", "Projetos",
+                """
+                # Plano Q1
 
-            Metas do trimestre, revisadas toda segunda com o [[Diário de bordo]].
+                Metas do trimestre, revisadas toda segunda com o [[Diário de bordo]].
 
-            ## Metas
-            - [x] Revisar o orçamento com a [[Reunião com a Ana]]
-            - [ ] Fechar as metas de receita
-            - [ ] Lançar a nova página de preços
+                ## Metas
+                - [x] Revisar o orçamento com a [[Reunião com a Ana]]
+                - [ ] Fechar as metas de receita
+                - [ ] Lançar a nova página de preços
 
-            ## Números
-            | Métrica | Meta | Hoje |
-            | --- | ---: | ---: |
-            | Receita | R$ 120 mil | R$ 84 mil |
-            | Clientes | 40 | 31 |
+                ## Números
+                | Métrica | Meta | Hoje |
+                | --- | ---: | ---: |
+                | Receita | R$ 120 mil | R$ 84 mil |
+                | Clientes | 40 | 31 |
 
-            > Foco em menos coisas, feitas até o fim.
+                > Foco em menos coisas, feitas até o fim.
 
-            ```
-            prioridade = impacto / esforço
-            ```
-            """),
-            ("note_ana", "Reunião com a Ana", "Reuniões", """
-            # Reunião com a Ana
+                ```
+                prioridade = impacto / esforço
+                ```
+                """
+            ),
+            (
+                "note_ana", "Reunião com a Ana", "Reuniões",
+                """
+                # Reunião com a Ana
 
-            **Quando:** terça, 10h
-            **Pauta:** orçamento do [[Plano Q1]] e contratação.
+                **Quando:** terça, 10h
+                **Pauta:** orçamento do [[Plano Q1]] e contratação.
 
-            - Ana aprova o teto de *R$ 30 mil* para mídia
-            - Contratar uma pessoa de design até março
-            - [ ] Mandar a proposta revisada
-            """),
-            ("note_diario", "Diário de bordo", "", """
-            # Diário de bordo
+                - Ana aprova o teto de *R$ 30 mil* para mídia
+                - Contratar uma pessoa de design até março
+                - [ ] Mandar a proposta revisada
+                """
+            ),
+            (
+                "note_diario", "Diário de bordo", "",
+                """
+                # Diário de bordo
 
-            ## 18/11
-            - Revisei o [[Plano Q1]] e marquei o orçamento como feito.
-            - Ideia: juntar as metas numa [[Planilha de metas]].
+                ## 18/11
+                - Revisei o [[Plano Q1]] e marquei o orçamento como feito.
+                - Ideia: juntar as metas numa [[Planilha de metas]].
 
-            ## 17/11
-            - Conversa boa com o time sobre prioridades.
-            """),
-            ("note_leituras", "Leituras", "Pessoal", """
-            # Leituras
+                ## 17/11
+                - Conversa boa com o time sobre prioridades.
+                """
+            ),
+            (
+                "note_leituras", "Leituras", "Pessoal",
+                """
+                # Leituras
 
-            - [x] Shape Up
-            - [ ] The Mom Test
-            - [ ] Working Backwards
-            """),
+                - [x] Shape Up
+                - [ ] The Mom Test
+                - [ ] Working Backwards
+                """
+            ),
         ]
         for (id, title, folder, content) in seeds {
             notesByID[id] = makeNote(id: id, title: title, folder: folder, content: content, version: 1, updatedAt: now, author: .bot)
@@ -142,11 +158,12 @@ actor FixtureBlocksClient: BlocksClient {
                 meetUrl: meet ? "https://meet.google.com/abc-defg-hij" : nil,
                 location: meet ? nil : (title == "Dentista" ? "Rua Augusta, 1200" : nil),
                 description: title == "Reunião com a Ana" ? "Orçamento do Plano Q1 e contratação de design." : nil,
-                attendees: meet ? [
-                    AgendaAttendee(email: "ana@exemplo.com", name: "Ana Souza", response: "accepted", isSelf: false, organizer: true),
-                    AgendaAttendee(email: "trabalho@exemplo.com", name: nil, response: "accepted", isSelf: true, organizer: false),
-                    AgendaAttendee(email: "pedro@exemplo.com", name: "Pedro Lima", response: "tentative", isSelf: false, organizer: false),
-                ] : [],
+                attendees: meet
+                    ? [
+                        AgendaAttendee(email: "ana@exemplo.com", name: "Ana Souza", response: "accepted", isSelf: false, organizer: true),
+                        AgendaAttendee(email: "trabalho@exemplo.com", name: nil, response: "accepted", isSelf: true, organizer: false),
+                        AgendaAttendee(email: "pedro@exemplo.com", name: "Pedro Lima", response: "tentative", isSelf: false, organizer: false),
+                    ] : [],
                 status: "confirmed",
                 recurring: title == "Daily do time",
                 updatedAt: now
@@ -154,7 +171,10 @@ actor FixtureBlocksClient: BlocksClient {
         }
         let allDayStart = at(4, 0)
         refreshLinks()
-        events.append(AgendaEvent(id: "evt_allday", accountId: "acc_pessoal", calendarId: "primary", title: "Aniversário da Bia", start: BlockDates.dayString(allDayStart), end: BlockDates.dayString(at(5, 0)), allDay: true, meet: false, meetUrl: nil, location: nil, description: nil, attendees: [], status: "confirmed", recurring: false, updatedAt: now))
+        events.append(
+            AgendaEvent(
+                id: "evt_allday", accountId: "acc_pessoal", calendarId: "primary", title: "Aniversário da Bia", start: BlockDates.dayString(allDayStart), end: BlockDates.dayString(at(5, 0)),
+                allDay: true, meet: false, meetUrl: nil, location: nil, description: nil, attendees: [], status: "confirmed", recurring: false, updatedAt: now))
     }
 
     func notes(botID: String, folder: String?, query: String?, cursor: String?, limit: Int) async throws -> BlockPage<NoteSummary> {
@@ -196,7 +216,9 @@ actor FixtureBlocksClient: BlocksClient {
             } else if !titlesOnly, let line = note.content.split(separator: "\n").first(where: { $0.localizedCaseInsensitiveContains(needle) }) {
                 let snippet = String(line).trimmingCharacters(in: .whitespaces)
                 let range = (snippet as NSString).range(of: needle, options: [.caseInsensitive, .diacriticInsensitive])
-                hits.append(NoteSearchHit(id: note.id, title: note.title, folder: note.folder, snippet: snippet, ranges: range.location == NSNotFound ? nil : [[range.location, range.location + range.length]]))
+                hits.append(
+                    NoteSearchHit(
+                        id: note.id, title: note.title, folder: note.folder, snippet: snippet, ranges: range.location == NSNotFound ? nil : [[range.location, range.location + range.length]]))
             }
         }
         return paged(hits, cursor: cursor, limit: limit)
@@ -269,7 +291,9 @@ actor FixtureBlocksClient: BlocksClient {
 
     func sheets(botID: String, query: String?, cursor: String?, limit: Int) async throws -> BlockPage<SheetSummary> {
         seed()
-        var items = sheetsByID.values.map { SheetSummary(id: $0.id, title: $0.title, version: $0.version, updatedAt: $0.updatedAt, updatedBy: $0.updatedBy, tabs: $0.tabs.map { SheetTabRef(id: $0.id, name: $0.name) }) }
+        var items = sheetsByID.values.map {
+            SheetSummary(id: $0.id, title: $0.title, version: $0.version, updatedAt: $0.updatedAt, updatedBy: $0.updatedBy, tabs: $0.tabs.map { SheetTabRef(id: $0.id, name: $0.name) })
+        }
         if let query, !query.isEmpty { items = items.filter { $0.title.localizedCaseInsensitiveContains(query) } }
         return paged(items.sorted { $0.updatedAt > $1.updatedAt }, cursor: cursor, limit: limit)
     }
@@ -277,7 +301,9 @@ actor FixtureBlocksClient: BlocksClient {
     func createSheet(botID: String, title: String) async throws -> Sheet {
         seed()
         let id = "sheet_\(UUID().uuidString.prefix(8))"
-        let sheet = Sheet(id: id, title: title, version: 1, updatedAt: BlockDates.string(Date()), updatedBy: .user, tabs: [SheetTab(id: "tab_1", name: "Planilha 1", index: 0, rowCount: 0, colCount: 0, frozenRows: 0, frozenCols: 0, colWidths: [:])])
+        let sheet = Sheet(
+            id: id, title: title, version: 1, updatedAt: BlockDates.string(Date()), updatedBy: .user,
+            tabs: [SheetTab(id: "tab_1", name: "Planilha 1", index: 0, rowCount: 0, colCount: 0, frozenRows: 0, frozenCols: 0, colWidths: [:])])
         sheetsByID[id] = sheet
         return sheet
     }
@@ -371,7 +397,10 @@ actor FixtureBlocksClient: BlocksClient {
 
     func createEvent(botID: String, draft: AgendaEventDraft) async throws -> AgendaEvent {
         seed()
-        let event = AgendaEvent(id: "evt_\(UUID().uuidString.prefix(6))", accountId: draft.accountId, calendarId: "primary", title: draft.title, start: BlockDates.string(draft.start), end: BlockDates.string(draft.end), allDay: draft.allDay, meet: draft.meet, meetUrl: draft.meet ? "https://meet.google.com/new" : nil, location: draft.location, description: draft.description, attendees: [], status: "confirmed", recurring: false, updatedAt: BlockDates.string(Date()))
+        let event = AgendaEvent(
+            id: "evt_\(UUID().uuidString.prefix(6))", accountId: draft.accountId, calendarId: "primary", title: draft.title, start: BlockDates.string(draft.start), end: BlockDates.string(draft.end),
+            allDay: draft.allDay, meet: draft.meet, meetUrl: draft.meet ? "https://meet.google.com/new" : nil, location: draft.location, description: draft.description, attendees: [],
+            status: "confirmed", recurring: false, updatedAt: BlockDates.string(Date()))
         events.append(event)
         return event
     }
@@ -402,7 +431,9 @@ actor FixtureBlocksClient: BlocksClient {
         default:
             throw BlocksError.message("Esse formato chega junto com o servidor dos blocos.")
         }
-        let job = ExportJob(id: "exp_\(UUID().uuidString.prefix(8))", kind: kind.rawValue, sourceId: id, format: format, status: "ready", fileName: "\(title).\(format.rawValue)", size: data.count, url: "fixture", error: nil, createdAt: BlockDates.string(Date()))
+        let job = ExportJob(
+            id: "exp_\(UUID().uuidString.prefix(8))", kind: kind.rawValue, sourceId: id, format: format, status: "ready", fileName: "\(title).\(format.rawValue)", size: data.count, url: "fixture",
+            error: nil, createdAt: BlockDates.string(Date()))
         exports[job.id] = (job, data)
         return job
     }
@@ -438,10 +469,11 @@ actor FixtureBlocksClient: BlocksClient {
         return (0...maxRow).map { row in
             (0...maxCol).map { col in
                 let cell = cells[SheetAddress.cell(row: row, col: col)]
-                let text = cell.map { value -> String in
-                    if case .number(let number) = value.v { return String(number) }
-                    return CellText.display(value.v, type: value.t, format: value.format)
-                } ?? ""
+                let text =
+                    cell.map { value -> String in
+                        if case .number(let number) = value.v { return String(number) }
+                        return CellText.display(value.v, type: value.t, format: value.format)
+                    } ?? ""
                 return text.contains(",") || text.contains("\"") || text.contains("\n") ? "\"\(text.replacingOccurrences(of: "\"", with: "\"\""))\"" : text
             }
             .joined(separator: ",")
@@ -469,7 +501,8 @@ actor FixtureBlocksClient: BlocksClient {
     }
 
     private func makeNote(id: String, title: String, folder: String, content: String, version: Int, updatedAt: String, author: BlockAuthor) -> Note {
-        let plain = content
+        let plain =
+            content
             .replacingOccurrences(of: "#", with: "")
             .replacingOccurrences(of: "[[", with: "")
             .replacingOccurrences(of: "]]", with: "")

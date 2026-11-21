@@ -206,6 +206,16 @@ describe("layered layout", () => {
     layoutDoc(wide);
     noOverlaps(wide);
   });
+
+  test("refuses an edge that points to a missing node with a clear error", () => {
+    const broken: CanvasDoc = {
+      schema: 1,
+      layout: "diagram",
+      nodes: [{ id: "a", text: "a", x: 0, y: 0, w: 100, h: 50, shape: "box" }],
+      edges: [{ id: "e", from: "a", to: "ghost" }],
+    };
+    expect(() => layoutDoc(broken)).toThrow("canvas layout: missing entry ghost");
+  });
 });
 
 describe("radial layout", () => {

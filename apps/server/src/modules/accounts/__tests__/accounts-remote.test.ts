@@ -3,7 +3,7 @@ import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/
 import { fakeProviders } from "../../../../test/helpers";
 import { boxHello, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
 import { env } from "../../../config/env";
-import { botIdOf, runOnAccount } from "../services/accounts.service";
+import { accountDir, accountPath, botIdOf, refreshAccounts, runOnAccount } from "../services/accounts.service";
 
 const account = { id: "vps:claude", provider: "claude" as const };
 const hooks: NativeToolHooks = { before: async () => ({ allow: true }), after: async () => {} };
@@ -60,13 +60,34 @@ describe("runOnAccount placement", () => {
       op: "turn.start",
       botId: "bot-r",
       hooks: true,
-      request: { turnId: "r1", configDir: null, mcp: { url: "/mcp/bot-r/s1" } },
+      request: { turnId: "r1", configDir: accountPath(account.id), mcp: { url: "/mcp/bot-r/s1" } },
       box: { memMb: env.BOX_MEM_MB, cpus: env.BOX_CPUS },
     });
     runner.say({ type: "turn.event", id: "r1", event: { type: "done", ok: true } });
     runner.say({ type: "turn.end", id: "r1" });
     await finished;
     expect(events).toEqual([{ type: "done", ok: true }]);
+    expect(fakeProviders.turns).toEqual([]);
+  });
+
+  test("gives the box the default account dir as the config dir", async () => {
+    await refreshAccounts();
+    const dir = accountPath(account.id);
+    expect(dir).toBeTruthy();
+    expect(accountDir(account.id)).toBeNull();
+    env.BOTS_SANDBOX = "docker";
+    const runner = fakeRunner(runnerDevice("box-1"));
+    runner.say(boxHello());
+    const finished = runOnAccount(account, turnRequest("r3"), new AbortController().signal, () => {}, hooks);
+    const start = await runner.next("request");
+    expect(start).toMatchObject({
+      op: "turn.start",
+      request: { turnId: "r3", configDir: dir },
+      box: { mounts: expect.arrayContaining([expect.objectContaining({ box: dir, readOnly: false })]) },
+    });
+    runner.say({ type: "turn.event", id: "r3", event: { type: "done", ok: true } });
+    runner.say({ type: "turn.end", id: "r3" });
+    await finished;
     expect(fakeProviders.turns).toEqual([]);
   });
 

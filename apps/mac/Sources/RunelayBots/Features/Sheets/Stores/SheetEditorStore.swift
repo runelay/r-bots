@@ -262,11 +262,12 @@ final class SheetEditorStore {
 
     func applyFormat(_ type: CellFormatType) {
         guard let tabID else { return }
-        let decimals: Int? = switch type {
-        case .brl, .number: 2
-        case .percent: 1
-        default: nil
-        }
+        let decimals: Int? =
+            switch type {
+            case .brl, .number: 2
+            case .percent: 1
+            default: nil
+            }
         let range = selectionDataRange
         let base = cell(selection.anchor.row, selection.anchor.col)?.format
         let format = CellFormat(type: type, decimals: decimals, bold: base?.bold, align: base?.align)

@@ -110,6 +110,38 @@ describe("an open workspace", () => {
     expect(session.meta.providerSessions).toEqual({ [`vps:claude@${open.id}`]: "prov-code" });
   });
 
+  test("routes native tools to the conversation's workspaces and tracks one adopted mid-turn", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const open = workspace();
+    const other = workspace();
+    session.meta.workspace = open;
+    session.meta.workspaces = [open];
+    const nativeHooks = { before: async () => ({ allow: true }), after: async () => undefined } as NativeToolHooks;
+    const made = track(spyOn(hooks, "nativeHooks").mockReturnValue(nativeHooks));
+    const adopt = track(
+      spyOn(actions, "adoptWorkspaceAt").mockImplementation(async (_session, path) =>
+        path.startsWith(other.path) ? other : null,
+      ),
+    );
+    const checkpoint = track(spyOn(workspaces, "createCheckpoint").mockResolvedValue(undefined as never));
+    track(spyOn(workspaces, "snapshotChanges").mockResolvedValue(new Map()));
+    const routed: unknown[] = [];
+    fakeProviders.next(async ({ emit }) => {
+      const router = made.mock.calls[0][3] as hooks.WorkspaceRouter;
+      routed.push(router.workspaceFor(join(open.path, "src", "a.ts")));
+      routed.push(await router.adopt(join(other.path, "b.ts")));
+      routed.push(await router.adopt("/tmp/fora"));
+      emit({ type: "text", part: "a", text: "Feito." });
+      emit({ type: "done", ok: true });
+    });
+    await run(session, { text: "mexe nos dois" });
+    expect(routed).toEqual([open, other, null]);
+    expect(adopt).toHaveBeenCalledWith(session, join(other.path, "b.ts"));
+    expect(checkpoint).toHaveBeenCalledWith(session, other, "turn_0");
+    expect(await repliesOf(session)).toEqual(["Feito."]);
+  });
+
   test("describes each install state", async () => {
     const bot = await makeBot();
     const cases: Array<[Partial<InstallState>, string]> = [

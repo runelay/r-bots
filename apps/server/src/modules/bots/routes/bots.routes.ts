@@ -72,7 +72,8 @@ export async function handleBots(req: Req, res: Res, url: URL, method: string, p
   if (tail === "" && method === "PATCH") {
     try {
       const updated = await updateBot(bot.id, await readBody(req));
-      return sendJson(res, 200, await publicBot(updated!));
+      if (!updated) return sendJson(res, 404, { ok: false, error: "Bot não encontrada." });
+      return sendJson(res, 200, await publicBot(updated));
     } catch (error) {
       return validationResponse(res, error);
     }
@@ -81,19 +82,22 @@ export async function handleBots(req: Req, res: Res, url: URL, method: string, p
     await readBody(req).catch(() => undefined);
     if (tail === "delete") stopDesktop(bot.id);
     const updated = await setDeleted(bot.id, tail === "delete");
-    return sendJson(res, 200, await publicBot(updated!));
+    if (!updated) return sendJson(res, 404, { ok: false, error: "Bot não encontrada." });
+    return sendJson(res, 200, await publicBot(updated));
   }
   if (tail === "sidebar" && method === "PATCH") {
     try {
       const updated = await updateSidebar(bot.id, await readBody(req), sectionExists);
-      return sendJson(res, 200, await publicBot(updated!));
+      if (!updated) return sendJson(res, 404, { ok: false, error: "Bot não encontrada." });
+      return sendJson(res, 200, await publicBot(updated));
     } catch (error) {
       return validationResponse(res, error);
     }
   }
   if ((tail === "archive" || tail === "unarchive") && method === "POST") {
     const updated = await setArchived(bot.id, tail === "archive");
-    return sendJson(res, 200, await publicBot(updated!));
+    if (!updated) return sendJson(res, 404, { ok: false, error: "Bot não encontrada." });
+    return sendJson(res, 200, await publicBot(updated));
   }
   if (rest[0] === "thread") return handleBotThread(req, res, method, bot, tail);
   if (rest[0] === "schedules") return handleBotSchedules(req, res, method, bot, rest.slice(1));

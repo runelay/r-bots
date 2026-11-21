@@ -34,7 +34,8 @@ enum DownloadsFolder {
     }
 
     static func cleanName(_ name: String) -> String {
-        let cleaned = name
+        let cleaned =
+            name
             .components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>\n\r\t"))
             .joined(separator: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)

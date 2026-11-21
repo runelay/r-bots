@@ -49,8 +49,8 @@ struct SidebarHeader: View {
         searchRow
             .padding(.leading, FrameMetrics.titleLeading - FrameMetrics.railWidth)
             .padding(.trailing, Spacing.m)
-        .padding(.top, Spacing.m)
-        .padding(.bottom, Spacing.s)
+            .padding(.top, Spacing.m)
+            .padding(.bottom, Spacing.s)
     }
 
     private var searchRow: some View {
@@ -291,9 +291,11 @@ struct BotChatList: View {
             cancelRename: {
                 renamingBotID = nil
             },
-            onNewConversation: bot.isGroup || bot.isPending ? nil : {
-                model.newConversation(in: bot.id)
-            },
+            onNewConversation: bot.isGroup || bot.isPending
+                ? nil
+                : {
+                    model.newConversation(in: bot.id)
+                },
             collapse: collapseAction(for: bot)
         ) {
             model.openFromSidebar(newTab: NSEvent.modifierFlags.contains(.command)) {
@@ -401,15 +403,19 @@ struct BotChatList: View {
                 conversationTitle = conversation.title
                 renamingConversationID = conversation.sessionId
             },
-            archive: conversation.isMain ? nil : {
-                model.archiveConversation(conversation)
-            },
+            archive: conversation.isMain
+                ? nil
+                : {
+                    model.archiveConversation(conversation)
+                },
             depth: depth,
             childCount: childCount,
             childrenCollapsed: model.collapsedThreads.contains(conversation.sessionId),
-            toggleChildren: childCount == 0 ? nil : {
-                model.toggleThreadChildren(conversation)
-            }
+            toggleChildren: childCount == 0
+                ? nil
+                : {
+                    model.toggleThreadChildren(conversation)
+                }
         ) {
             model.openFromSidebar(newTab: NSEvent.modifierFlags.contains(.command)) {
                 model.selectConversation(botID: bot.id, sessionID: conversation.sessionId)

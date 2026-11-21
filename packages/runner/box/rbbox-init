@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+printf "%s\n" "${RBOX_SANDBOX_ROOTS:-}" | tr ":" "\n" | sed "/^$/d" > /etc/rb-sandbox/roots
+: > /etc/rb-sandbox/hide
+exec sleep infinity

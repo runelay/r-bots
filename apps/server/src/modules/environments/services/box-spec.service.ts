@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { BoxSpec, TurnRequest } from "@runelay-bots/protocol";
-import { clisDir, dataDir, env, hostDataDir, hostHome } from "../../../config/env";
+import { clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
 import { boxHome } from "../constants/environments.constants";
 import { containsPath } from "./placement.service";
 
@@ -9,6 +9,7 @@ type Mount = BoxSpec["mounts"][number];
 
 export function hostPathOf(path: string) {
   if (containsPath(dataDir, path)) return `${hostDataDir}${path.slice(dataDir.replace(/\/$/, "").length)}`;
+  if (containsPath(toolsDir, path)) return `${hostToolsDir}${path.slice(toolsDir.replace(/\/$/, "").length)}`;
   if (containsPath(boxHome, path)) return `${hostHome}${path.slice(boxHome.length)}`;
   return path;
 }
@@ -28,6 +29,7 @@ export function boxSpecFor({ request, accountPath }: { request: TurnRequest; acc
     ...(accountPath ? [mountOf(accountPath, false)] : []),
     ...(code ? [mountOf(code.cwd, code.readOnly === true)] : []),
     ...(existsSync(clisDir) ? [mountOf(clisDir, true)] : []),
+    ...(existsSync(toolsDir) ? [mountOf(toolsDir, true)] : []),
   ];
   const unique = mounts.filter((mount, index) => mounts.findIndex(({ box }) => box === mount.box) === index);
   return { memMb: env.BOX_MEM_MB, cpus: env.BOX_CPUS, mounts: unique };

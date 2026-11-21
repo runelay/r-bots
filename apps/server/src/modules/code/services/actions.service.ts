@@ -19,10 +19,10 @@ import {
   readHead,
   readMaybe,
   shareWithSandbox,
+  type WorkspaceState,
   workspaceAt,
   workspaceById,
   workspaceFromRecord,
-  type WorkspaceState,
   worktreeIdAt,
 } from "./workspace.service";
 

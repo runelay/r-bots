@@ -154,7 +154,8 @@ final class ConversationStore {
             buffer.append(record)
             catchUpBuffer = buffer
             if case .facts = record, let target = catchUpTarget,
-               (lineCursor ?? 0) + buffer.reduce(0, { $0 + (Self.isFacts($1) ? 1 : 0) }) >= target {
+                (lineCursor ?? 0) + buffer.reduce(0, { $0 + (Self.isFacts($1) ? 1 : 0) }) >= target
+            {
                 flushCatchUp()
             }
             return
@@ -977,7 +978,8 @@ final class ConversationStore {
                 append(TranscriptEntry(id: "memory-\(fact.key)", kind: .memory(titles)), date: currentLineDate)
             }
         case "bot.updated":
-            let summary = data["summary"]?.stringValue
+            let summary =
+                data["summary"]?.stringValue
                 ?? (data["fields"]?.arrayValue?.compactMap(\.stringValue).joined(separator: ", ")).map { "atualizou \($0)" }
                 ?? "atualizou a própria configuração"
             append(TranscriptEntry(id: "update-\(fact.key)", kind: .update("\(bot.name): \(summary)")), date: currentLineDate)
@@ -997,11 +999,12 @@ final class ConversationStore {
             finishStreamingParts()
             if data["outcome"]?.stringValue == "failed" {
                 phase = .failed
-                appendNotice(FriendlyError.notice(
-                    code: data["error"]?["code"]?.stringValue,
-                    message: Self.errorText(data),
-                    fallback: "A conversa terminou com erro."
-                ))
+                appendNotice(
+                    FriendlyError.notice(
+                        code: data["error"]?["code"]?.stringValue,
+                        message: Self.errorText(data),
+                        fallback: "A conversa terminou com erro."
+                    ))
             } else if phase != .failed {
                 phase = .idle
             }
@@ -1032,13 +1035,15 @@ final class ConversationStore {
         let me = myUserID
         let previous = reactions[target] ?? []
         let mine = previous.first { $0.authorKind == .user && $0.emoji == emoji && (me == nil || $0.authorID == me) }
-        let reaction = mine ?? MessageReaction(
-            target: target,
-            emoji: emoji,
-            authorKind: .user,
-            authorID: me ?? "local",
-            at: ISO8601DateFormatter().string(from: Date())
-        )
+        let reaction =
+            mine
+            ?? MessageReaction(
+                target: target,
+                emoji: emoji,
+                authorKind: .user,
+                authorID: me ?? "local",
+                at: ISO8601DateFormatter().string(from: Date())
+            )
         let on = mine == nil
         setReaction(reaction, on: on)
         reactionWrites[target, default: 0] += 1
@@ -1101,7 +1106,7 @@ final class ConversationStore {
         guard fact.type == "content.delta" else { return }
         let data = fact.data
         guard let partID = data["partId"]?.stringValue,
-              let delta = data["delta"]?.stringValue
+            let delta = data["delta"]?.stringValue
         else { return }
         if data["kind"]?.stringValue == "reasoning" {
             return
@@ -1172,7 +1177,9 @@ final class ConversationStore {
             return
         }
         guard userMessages[id] == nil else { return }
-        userMessages[id] = UserMessage(id: id, text: text, state: .sent, isConfirmed: true, isVoice: data["voice"]?.boolValue == true, skills: Self.skills(in: data), attachments: attachments, deliveryID: data["deliveryId"]?.stringValue)
+        userMessages[id] = UserMessage(
+            id: id, text: text, state: .sent, isConfirmed: true, isVoice: data["voice"]?.boolValue == true, skills: Self.skills(in: data), attachments: attachments,
+            deliveryID: data["deliveryId"]?.stringValue)
         if let from = data["from"]?["botId"]?.stringValue {
             userMessages[id]?.fromBotID = from
             userMessages[id]?.fromName = data["from"]?["name"]?.stringValue
@@ -1238,14 +1245,16 @@ final class ConversationStore {
         if kind == "control" {
             return
         }
-        let name = capability?["name"]?.stringValue
+        let name =
+            capability?["name"]?.stringValue
             ?? capability?.stringValue
             ?? data["name"]?.stringValue
             ?? data["toolName"]?.stringValue
             ?? "ferramenta"
         let label = capability?["label"]?.stringValue
         let ownerCall = data["owner"]?["callId"]?.stringValue
-        let via = data["origin"]?["agent"]?.stringValue
+        let via =
+            data["origin"]?["agent"]?.stringValue
             ?? ownerCall.flatMap { toolCalls[$0]?.name }
         toolCalls[callID] = ToolCall(
             id: callID,
@@ -1339,11 +1348,12 @@ final class ConversationStore {
         if options.isEmpty, kind == "approval" {
             options = [
                 ApprovalOption(id: "approve", label: "Aprovar", isPrimary: true),
-                ApprovalOption(id: "deny", label: "Negar", isPrimary: false)
+                ApprovalOption(id: "deny", label: "Negar", isPrimary: false),
             ]
         }
 
-        let callID = data["subject"]?["callId"]?.stringValue
+        let callID =
+            data["subject"]?["callId"]?.stringValue
             ?? data["call"]?["callId"]?.stringValue
             ?? request["subject"]?["callId"]?.stringValue
             ?? data["callId"]?.stringValue
@@ -1376,9 +1386,10 @@ final class ConversationStore {
                 onNeedsAttention?()
             }
             if isLiveLine {
-                onNotify?(kind == "question"
-                    ? .question(id: id, title: prompt, sessionID: sessionId)
-                    : .approval(id: id, prompt: prompt))
+                onNotify?(
+                    kind == "question"
+                        ? .question(id: id, title: prompt, sessionID: sessionId)
+                        : .approval(id: id, prompt: prompt))
             }
         }
     }
@@ -1425,7 +1436,8 @@ final class ConversationStore {
 
     private func applyInteractionSettled(_ data: JSONValue) {
         guard let id = data["interactionId"]?.stringValue, let approval = approvals[id] else { return }
-        let optionID = data["response"]?["optionId"]?.stringValue
+        let optionID =
+            data["response"]?["optionId"]?.stringValue
             ?? data["optionId"]?.stringValue
             ?? data["answer"]?["optionId"]?.stringValue
             ?? data["decision"]?.stringValue
@@ -1441,7 +1453,8 @@ final class ConversationStore {
             return
         }
         if approval.isQuestion {
-            approvals[id]?.resolution = data["outcome"]?.stringValue == "declined"
+            approvals[id]?.resolution =
+                data["outcome"]?.stringValue == "declined"
                 ? .settled("Pulou · o bot decide", .neutral)
                 : .settled(data["summary"]?.stringValue ?? "Respondido", .approved)
             return
@@ -1516,7 +1529,8 @@ final class ConversationStore {
             toolCalls[callID]?.decisionDetail = nil
         }
         if kind == "route" {
-            let chosen = data["botId"]?.stringValue
+            let chosen =
+                data["botId"]?.stringValue
                 ?? data["choice"]?.stringValue
                 ?? data["answer"]?["botId"]?.stringValue
                 ?? data["answer"]?["choice"]?.stringValue
@@ -1622,7 +1636,8 @@ final class ConversationStore {
     private func scheduleLabel(_ scheduleID: String?, text: String) -> String {
         if let scheduleID {
             if let schedule = bot.schedules.first(where: { $0.name == scheduleID }),
-               let description = schedule.description, !description.isEmpty {
+                let description = schedule.description, !description.isEmpty
+            {
                 return Self.scheduleTitle(description)
             }
             return scheduleID
@@ -1684,12 +1699,16 @@ extension ConversationStore {
     func answerQuestion(id: String, answers: [QuestionAnswerDraft]) {
         guard let approval = approvals[id], approval.isOpen, let sessionId else { return }
         let given = answers.filter { !$0.skipped && !$0.isEmpty }
-        let pending = given.isEmpty ? "Pulou · o bot decide" : "Respondeu: " + given.map { draft in
-            let question = approval.questions.first { $0.id == draft.questionID }
-            let labels = draft.optionIDs.compactMap { optionID in question?.choices.first { $0.id == optionID }?.label }
-            let text = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (labels + (text.isEmpty ? [] : [text])).joined(separator: ", ")
-        }.joined(separator: " · ")
+        let pending =
+            given.isEmpty
+            ? "Pulou · o bot decide"
+            : "Respondeu: "
+                + given.map { draft in
+                    let question = approval.questions.first { $0.id == draft.questionID }
+                    let labels = draft.optionIDs.compactMap { optionID in question?.choices.first { $0.id == optionID }?.label }
+                    let text = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return (labels + (text.isEmpty ? [] : [text])).joined(separator: ", ")
+                }.joined(separator: " · ")
         let previousPhase = phase
         approvals[id]?.resolution = .answering(pending)
         if phase == .awaitingInput, !approvals.values.contains(where: \.isOpen) {
@@ -1793,7 +1812,9 @@ extension ConversationStore {
             case "closed":
                 append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Fechou \(repo). A branch \(branch) continua guardada", "folder")), date: currentLineDateValue)
             case "failed":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Não consegui abrir \(repo): \(data["error"]?.stringValue ?? "erro")", "exclamationmark.triangle")), date: currentLineDateValue)
+                append(
+                    TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Não consegui abrir \(repo): \(data["error"]?.stringValue ?? "erro")", "exclamationmark.triangle")),
+                    date: currentLineDateValue)
             case "removed":
                 let number = data["pr"]?["number"]?.intValue
                 let status = data["pr"]?["status"]?.stringValue
@@ -1865,7 +1886,10 @@ extension ConversationStore {
             let turns = data["turnIds"]?.arrayValue?.compactMap(\.stringValue) ?? []
             revertedTurns.formUnion(turns)
             let files = data["files"]?.boolValue == true
-            append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(files ? "Conversa e arquivos voltaram para antes desse pedido" : "Conversa voltou para antes desse pedido", "arrow.uturn.backward.circle")), date: currentLineDateValue)
+            append(
+                TranscriptEntry(
+                    id: "code-\(fact.key)", kind: .codeLine(files ? "Conversa e arquivos voltaram para antes desse pedido" : "Conversa voltou para antes desse pedido", "arrow.uturn.backward.circle")),
+                date: currentLineDateValue)
         default:
             break
         }

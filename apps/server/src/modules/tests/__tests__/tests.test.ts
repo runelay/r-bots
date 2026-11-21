@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, type Mock
 import { mkdirSync, writeFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
+import * as os from "node:os";
 import { join } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { codeProcesses, makeRepo } from "../../../../test/code-helpers";
@@ -249,7 +250,12 @@ describe("parsers", () => {
     mkdirSync(join(home, ".agent-browser", "browsers", "chrome-2"), { recursive: true });
     mkdirSync(join(home, ".agent-browser", "browsers", "firefox"), { recursive: true });
     expect(await agentBrowserChrome(home)).toBe(join(home, ".agent-browser", "browsers", "chrome-2", "chrome"));
-    expect(await agentBrowserChrome()).toEqual(expect.anything() as never);
+    const fakeHome = spyOn(os, "homedir").mockReturnValue(home);
+    try {
+      expect(await agentBrowserChrome()).toBe(join(home, ".agent-browser", "browsers", "chrome-2", "chrome"));
+    } finally {
+      fakeHome.mockRestore();
+    }
   });
 });
 

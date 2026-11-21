@@ -122,7 +122,8 @@ struct NoteStyler {
             if fences.contains(where: { NSIntersectionRange($0, line).length > 0 }) {
                 styleCode(storage, line: line, text: text, isFence: (text.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)).hasPrefix("```"))
             } else {
-                previousWasTableHeader = styleLine(storage, line: line, text: text, reveal: reveal, nextIsSeparator: isTableSeparator(after: line, text: text), previousWasTableHeader: previousWasTableHeader)
+                previousWasTableHeader = styleLine(
+                    storage, line: line, text: text, reveal: reveal, nextIsSeparator: isTableSeparator(after: line, text: text), previousWasTableHeader: previousWasTableHeader)
             }
             location = NSMaxRange(line)
             if line.length == 0 { break }
@@ -138,12 +139,13 @@ struct NoteStyler {
     }
 
     private func styleCode(_ storage: NSTextStorage, line: NSRange, text: NSString, isFence: Bool) {
-        storage.addAttributes([
-            .font: NoteFonts.mono(13),
-            .foregroundColor: isFence ? tertiary : primary,
-            .noteCode: true,
-            .paragraphStyle: paragraph(spacing: 2),
-        ], range: line)
+        storage.addAttributes(
+            [
+                .font: NoteFonts.mono(13),
+                .foregroundColor: isFence ? tertiary : primary,
+                .noteCode: true,
+                .paragraphStyle: paragraph(spacing: 2),
+            ], range: line)
     }
 
     private func hide(_ storage: NSTextStorage, _ range: NSRange, reveal: Bool) {
@@ -165,10 +167,11 @@ struct NoteStyler {
         if let level = headingLevel(body) {
             let sizes: [CGFloat] = [26, 21, 18, 16, 15, 15]
             let size = sizes[min(level, 6) - 1]
-            storage.addAttributes([
-                .font: NoteFonts.sans(size, weight: .semibold),
-                .paragraphStyle: paragraph(spacing: 2, before: level == 1 ? 6 : 10),
-            ], range: line)
+            storage.addAttributes(
+                [
+                    .font: NoteFonts.sans(size, weight: .semibold),
+                    .paragraphStyle: paragraph(spacing: 2, before: level == 1 ? 6 : 10),
+                ], range: line)
             hide(storage, NSRange(location: contentStart, length: level + 1), reveal: reveal)
             contentStart += level + 1
             styleInline(storage, range: NSRange(location: contentStart, length: max(0, line.location + (trimmedEnd as NSString).length - contentStart)), reveal: reveal, baseSize: size)
@@ -193,7 +196,8 @@ struct NoteStyler {
             let markerLength = body.hasPrefix("> ") ? 2 : 1
             storage.addAttributes([.foregroundColor: secondary, .noteQuote: true, .paragraphStyle: paragraph(spacing: 4, indent: 14)], range: line)
             hide(storage, NSRange(location: contentStart, length: markerLength), reveal: reveal)
-            styleInline(storage, range: NSRange(location: contentStart + markerLength, length: max(0, (trimmedEnd as NSString).length - leading - markerLength)), reveal: reveal, baseSize: Self.bodySize)
+            styleInline(
+                storage, range: NSRange(location: contentStart + markerLength, length: max(0, (trimmedEnd as NSString).length - leading - markerLength)), reveal: reveal, baseSize: Self.bodySize)
             return false
         }
 

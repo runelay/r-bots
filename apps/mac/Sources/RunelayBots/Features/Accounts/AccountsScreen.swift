@@ -273,19 +273,22 @@ private struct AccountRow: View {
             }
         ]
         if account.name != account.autoName {
-            items.append(GlassMenuItem("Voltar para \(account.autoName)", systemImage: "arrow.uturn.backward") {
-                model.renameAccount(account, to: nil)
-            })
+            items.append(
+                GlassMenuItem("Voltar para \(account.autoName)", systemImage: "arrow.uturn.backward") {
+                    model.renameAccount(account, to: nil)
+                })
         }
         if !account.isDefault {
-            items.append(GlassMenuItem("Usar como padrão", systemImage: "checkmark.circle", startsSection: true) {
-                model.makeDefaultAccount(account)
-            })
+            items.append(
+                GlassMenuItem("Usar como padrão", systemImage: "checkmark.circle", startsSection: true) {
+                    model.makeDefaultAccount(account)
+                })
         }
         if account.added {
-            items.append(GlassMenuItem("Tirar da lista", systemImage: "minus.circle", destructive: true, startsSection: true) {
-                model.removeAccount(account)
-            })
+            items.append(
+                GlassMenuItem("Tirar da lista", systemImage: "minus.circle", destructive: true, startsSection: true) {
+                    model.removeAccount(account)
+                })
         }
         return items
     }
@@ -515,7 +518,7 @@ struct KnownProvider: Identifiable {
         KnownProvider(id: "claude", label: "Claude", detail: "Claude Code com a sua assinatura."),
         KnownProvider(id: "codex", label: "ChatGPT · Codex", detail: "Codex CLI com a assinatura do ChatGPT."),
         KnownProvider(id: "grok", label: "Grok", detail: "Grok CLI."),
-        KnownProvider(id: "cursor", label: "Cursor", detail: "cursor-agent com a assinatura do Cursor.")
+        KnownProvider(id: "cursor", label: "Cursor", detail: "cursor-agent com a assinatura do Cursor."),
     ]
 }
 

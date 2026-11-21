@@ -42,24 +42,24 @@ struct ConversationView: View {
                     .transition(.opacity.combined(with: .offset(y: -6)))
                 }
             }
-        .springAnimation(value: store.codeState?.workspace?.id)
-        .background(Theme.background)
-        .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
-            guard !bot.isGroup else { return false }
-            return AttachmentDrop.handle(providers, store: store)
-        }
-        .overlay {
-            if isDropTargeted && !bot.isGroup {
-                AttachmentDropOverlay()
-                    .transition(.opacity)
+            .springAnimation(value: store.codeState?.workspace?.id)
+            .background(Theme.background)
+            .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
+                guard !bot.isGroup else { return false }
+                return AttachmentDrop.handle(providers, store: store)
             }
-        }
-        .springAnimation(value: isDropTargeted)
-        .overlay(alignment: .top) {
-            if !compact {
-                CallOverlay(bot: bot)
+            .overlay {
+                if isDropTargeted && !bot.isGroup {
+                    AttachmentDropOverlay()
+                        .transition(.opacity)
+                }
             }
-        }
+            .springAnimation(value: isDropTargeted)
+            .overlay(alignment: .top) {
+                if !compact {
+                    CallOverlay(bot: bot)
+                }
+            }
     }
 
     private var transcript: some View {
@@ -100,76 +100,82 @@ struct ConversationView: View {
                     .ignoresSafeArea(.container, edges: .bottom)
             }
             .overlay(alignment: .bottom) {
-            if showsJumpButton && userScrolled && store.historySettled {
-                JumpToBottomButton(count: unseenCount, accent: Theme.accent(bot.accent)) {
-                    jumpToEnd()
+                if showsJumpButton && userScrolled && store.historySettled {
+                    JumpToBottomButton(count: unseenCount, accent: Theme.accent(bot.accent)) {
+                        jumpToEnd()
+                    }
+                    .padding(.bottom, (Self.fadeHeight - 32) / 2)
+                    .transition(Motion.insertion(reduceMotion: reduceMotion))
                 }
-                .padding(.bottom, (Self.fadeHeight - 32) / 2)
-                .transition(Motion.insertion(reduceMotion: reduceMotion))
             }
-        }
-        .springAnimation(value: showsJumpButton)
-        .onChange(of: store.entryMotion) {
-            let previous = lastEntryID
-            lastEntryID = store.entries.last?.id
-            guard store.historySettled, !store.isLoadingOlder else { return }
-            guard previous != lastEntryID else { return }
-            guard !scroll.isPinned else { return }
-            let sentByMe = store.entries.last.map { $0.kind == .user && store.userMessages[$0.id]?.fromBotID == nil } ?? false
-            if sentByMe {
-                jumpToEnd()
-                return
+            .springAnimation(value: showsJumpButton)
+            .onChange(of: store.entryMotion) {
+                let previous = lastEntryID
+                lastEntryID = store.entries.last?.id
+                guard store.historySettled, !store.isLoadingOlder else { return }
+                guard previous != lastEntryID else { return }
+                guard !scroll.isPinned else { return }
+                let sentByMe = store.entries.last.map { $0.kind == .user && store.userMessages[$0.id]?.fromBotID == nil } ?? false
+                if sentByMe {
+                    jumpToEnd()
+                    return
+                }
+                let added = previous.flatMap { id in store.entries.lastIndex { $0.id == id } }.map { store.entries.count - 1 - $0 } ?? 1
+                unseenCount += max(1, added)
             }
-            let added = previous.flatMap { id in store.entries.lastIndex { $0.id == id } }.map { store.entries.count - 1 - $0 } ?? 1
-            unseenCount += max(1, added)
-        }
-        .onChange(of: store.historySettled) {
-            lastEntryID = store.entries.last?.id
-            fillIfShort()
-            reportShown()
-        }
-        .onChange(of: store.isLoadingOlder) {
-            if !store.isLoadingOlder {
-                fillIfShort()
-            }
-        }
-        .onAppear {
-            lastEntryID = store.entries.last?.id
-            if let memory = store.scrollMemory {
-                userScrolled = true
-                scroll.restore(memory)
-            }
-            if store.historySettled {
+            .onChange(of: store.historySettled) {
+                lastEntryID = store.entries.last?.id
                 fillIfShort()
                 reportShown()
             }
-        }
-        .onDisappear {
-            store.scrollMemory = scroll.isPinned ? nil : scroll.memory
-        }
-        .overlay {
-            TranscriptLoadingLayer(loading: store.isLoadingHistory)
-        }
-        .overlay {
-            if !store.isLoadingHistory && store.entries.isEmpty && !store.showsThinking {
-                ConversationEmptyState(bot: bot, mood: store.mood)
+            .onChange(of: store.isLoadingOlder) {
+                if !store.isLoadingOlder {
+                    fillIfShort()
+                }
             }
-        }
+            .onAppear {
+                lastEntryID = store.entries.last?.id
+                if let memory = store.scrollMemory {
+                    userScrolled = true
+                    scroll.restore(memory)
+                }
+                if store.historySettled {
+                    fillIfShort()
+                    reportShown()
+                }
+            }
+            .onDisappear {
+                store.scrollMemory = scroll.isPinned ? nil : scroll.memory
+            }
+            .overlay {
+                TranscriptLoadingLayer(loading: store.isLoadingHistory)
+            }
+            .overlay {
+                if !store.isLoadingHistory && store.entries.isEmpty && !store.showsThinking {
+                    ConversationEmptyState(bot: bot, mood: store.mood)
+                }
+            }
     }
 
     private func transcriptRows(items: [TranscriptItem], bubbles: [String: BubbleMeta]) -> [TranscriptListRow] {
         var rows: [TranscriptListRow] = []
         if store.hasOlder {
-            rows.append(row("transcript-older", OlderMessagesRow(loading: store.isLoadingOlder) {
-                loadOlderIfNeeded(force: true)
-            }))
+            rows.append(
+                row(
+                    "transcript-older",
+                    OlderMessagesRow(loading: store.isLoadingOlder) {
+                        loadOlderIfNeeded(force: true)
+                    }))
         }
         for item in items {
             rows.append(row(item.id, itemView(item, bubbles: bubbles).padding(.top, topSpacing(for: item, bubbles: bubbles))))
         }
         if store.showsThinking, store.mood != .waiting {
-            rows.append(row("transcript-thinking", ThinkingCharacter(bot: bot, mood: store.mood, queuePosition: store.queuePosition)
-                .padding(.top, 14)))
+            rows.append(
+                row(
+                    "transcript-thinking",
+                    ThinkingCharacter(bot: bot, mood: store.mood, queuePosition: store.queuePosition)
+                        .padding(.top, 14)))
         }
         rows.append(row("transcript-end", Color.clear.frame(height: Self.fadeHeight)))
         return rows
@@ -186,9 +192,11 @@ struct ConversationView: View {
                     .environment(model)
                     .environment(\.appReduceMotion, reduceMotion)
                     .environment(\.conversationFontSize, conversationFontSize)
-                    .environment(\.transcriptToggle, { row, collapsing in
-                        scroll.noteToggle(row: row, collapsing: collapsing)
-                    })
+                    .environment(
+                        \.transcriptToggle,
+                        { row, collapsing in
+                            scroll.noteToggle(row: row, collapsing: collapsing)
+                        })
             )
         )
     }
@@ -246,7 +254,8 @@ struct ConversationView: View {
 
     private func fillIfShort() {
         guard store.historySettled, store.hasOlder, !store.isLoadingOlder,
-              store.entries.count < 20 || store.transcriptSnapshot(now: Date()).items.isEmpty else { return }
+            store.entries.count < 20 || store.transcriptSnapshot(now: Date()).items.isEmpty
+        else { return }
         store.loadOlder()
     }
 
@@ -282,8 +291,8 @@ struct ConversationView: View {
             }
             if let question = store.openQuestion {
                 QuestionCard(store: store, approval: question, via: question.viaAgent.flatMap { model.bot(id: $0) })
-                .id(question.id)
-                .transition(Motion.insertion(reduceMotion: reduceMotion))
+                    .id(question.id)
+                    .transition(Motion.insertion(reduceMotion: reduceMotion))
             } else {
                 ComposerView(
                     store: store,

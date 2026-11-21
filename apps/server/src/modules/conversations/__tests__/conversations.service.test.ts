@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import { fakeProviders, resetData } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import { ValidationError } from "../../../shared/errors";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import type { WorkspaceState } from "../../code/services/workspace.service";
@@ -11,9 +12,11 @@ import {
   autoTitle,
   ConversationError,
   type ConversationEvent,
+  childConversations,
   conversationOf,
   conversationSessions,
   createConversation,
+  delegationConversation,
   isConversationSession,
   listConversations,
   markConversation,
@@ -123,9 +126,9 @@ describe("publicConversation", () => {
 
   test("describes the main thread with its live title and counters", async () => {
     const state = await ensureThread(bot.id);
-    const session = (await listConversations(bot.id)).find((item) => item.main)!;
+    const session = must((await listConversations(bot.id)).find((item) => item.main));
     expect(session.title).toBe("Nova conversa");
-    const stored = conversationOf(bot.id, state.sessionId)!;
+    const stored = must(conversationOf(bot.id, state.sessionId));
     stored.log.emit({ type: "delivery.consumed", data: { source: "schedule", parts: [{ kind: "text", text: "x" }] } });
     stored.log.emit({ type: "delivery.consumed", data: { source: "chat", parts: [{ kind: "file" }] } });
     stored.log.emit({ type: "delivery.consumed", data: { source: "chat" } });
@@ -183,6 +186,33 @@ describe("conversation listing", () => {
     expect(list.slice(1).map((item) => item.sessionId)).toEqual([newer.meta.sessionId, older.meta.sessionId]);
     expect((await listConversations(bot.id, true)).map((item) => item.title)).toEqual(["Arquivada"]);
     expect(conversationSessions(bot.id, true)).toEqual([archived]);
+  });
+
+  test("finds the children of a conversation oldest first and the newest delegation from a caller", async () => {
+    const parent = await createConversation(bot.id, { title: "Pai" });
+    const parentId = parent.meta.sessionId;
+    const later = await createConversation(bot.id, { title: "Depois", meta: { parentSessionId: parentId } });
+    later.meta.startedAt = "2002-01-01T00:00:00.000Z";
+    const first = await createConversation(bot.id, { title: "Antes", meta: { spawnedBy: parentId } });
+    first.meta.startedAt = "2001-01-01T00:00:00.000Z";
+    const gone = await createConversation(bot.id, { title: "Arquivada", meta: { parentSessionId: parentId } });
+    await archiveConversation(gone, true);
+    expect(childConversations(parentId)).toEqual([first, later]);
+
+    const delegatedBy = { botId: "caller", name: "Caller", sessionId: "origin", callId: "c1" };
+    const oldest = await createConversation(bot.id, { title: "Delegada 1", delegatedBy });
+    oldest.meta.startedAt = "2001-01-01T00:00:00.000Z";
+    const newest = await createConversation(bot.id, {
+      title: "Delegada 2",
+      delegatedBy: { ...delegatedBy, callId: "c2" },
+    });
+    newest.meta.startedAt = "2003-01-01T00:00:00.000Z";
+    await createConversation(bot.id, {
+      title: "Outra origem",
+      delegatedBy: { ...delegatedBy, sessionId: "elsewhere" },
+    });
+    expect(delegationConversation(bot.id, "caller", "origin")).toBe(newest);
+    expect(delegationConversation(bot.id, "nobody", "origin")).toBeUndefined();
   });
 
   test("conversationOf only returns conversations of that bot", async () => {
@@ -250,7 +280,7 @@ describe("updateConversation", () => {
 describe("archive, read and move", () => {
   test("the main thread cannot be archived or moved", async () => {
     const state = await ensureThread(bot.id);
-    const main = conversationOf(bot.id, state.sessionId)!;
+    const main = must(conversationOf(bot.id, state.sessionId));
     await expect(archiveConversation(main, true)).rejects.toMatchObject({ status: 400, code: "main_conversation" });
     await expect(moveConversation(main, "x")).rejects.toMatchObject({ status: 400, code: "main_conversation" });
   });

@@ -118,8 +118,8 @@ final class BrowserLiveSession {
 
     func send(_ message: JSONValue) {
         guard phase == .live, let socket,
-              let data = try? JSONEncoder().encode(message),
-              let text = String(data: data, encoding: .utf8)
+            let data = try? JSONEncoder().encode(message),
+            let text = String(data: data, encoding: .utf8)
         else { return }
         Task {
             try? await socket.send(.string(text))
@@ -194,7 +194,8 @@ final class BrowserLiveSession {
                 message = try await socket.receive()
             } catch {
                 if !receivedAny, let status = (socket.response as? HTTPURLResponse)?.statusCode,
-                   status == 404 || status == 400 || status == 426 || status == 405 {
+                    status == 404 || status == 400 || status == 426 || status == 405
+                {
                     return .unsupported
                 }
                 if !receivedAny, (error as? URLError)?.code == .badServerResponse {
@@ -216,8 +217,8 @@ final class BrowserLiveSession {
             switch value["type"]?.stringValue {
             case "frame":
                 guard let encoded = value["data"]?.stringValue,
-                      let data = Data(base64Encoded: encoded),
-                      let image = decode(data)
+                    let data = Data(base64Encoded: encoded),
+                    let image = decode(data)
                 else { continue }
                 let width = value["width"]?.doubleValue ?? Double(image.width)
                 let height = value["height"]?.doubleValue ?? Double(image.height)
@@ -233,19 +234,21 @@ final class BrowserLiveSession {
 
     nonisolated private static func decode(_ data: Data) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+            let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
         else { return nil }
         let width = image.width
         let height = image.height
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
-        ) else { return image }
+        guard
+            let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            )
+        else { return image }
         context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
         return context.makeImage() ?? image
     }

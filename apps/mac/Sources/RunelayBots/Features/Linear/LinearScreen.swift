@@ -359,7 +359,9 @@ private struct LinearColumnView: View {
             guard let id = items.first else { return false }
             Task { await store.move(id, to: column.key) }
             return true
-        } isTargeted: { targeted = $0 }
+        } isTargeted: {
+            targeted = $0
+        }
     }
 }
 
@@ -374,60 +376,60 @@ private struct LinearCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
-                HStack(spacing: 6) {
-                    Text(card.id)
-                        .font(BrandFonts.mono(10.5))
-                        .foregroundStyle(Theme.textTertiary)
-                    if let team = card.team, let view = store.views.first(where: { $0.kind == "team" && $0.name == team }) {
-                        LinearViewIcon(view: view, size: 12)
-                            .help(team)
-                    }
-                    Spacer(minLength: 0)
-                    PriorityIcon(priority: card.priority)
+            HStack(spacing: 6) {
+                Text(card.id)
+                    .font(BrandFonts.mono(10.5))
+                    .foregroundStyle(Theme.textTertiary)
+                if let team = card.team, let view = store.views.first(where: { $0.kind == "team" && $0.name == team }) {
+                    LinearViewIcon(view: view, size: 12)
+                        .help(team)
                 }
-                Text(card.title)
-                    .font(BrandFonts.sans(13.5, weight: .medium))
-                    .foregroundStyle(Theme.textPrimary)
-                    .lineLimit(3)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                BoardFlow(spacing: 5) {
-                    if let project = card.project, !store.projectViewActive {
-                        LinearProjectTag(name: project, project: store.project(named: project))
-                    }
-                    ForEach(card.labels.prefix(3), id: \.self) { label in
-                        LinearLabelTag(name: label, color: store.labelColor(label), compact: true)
-                    }
-                    if let estimate = card.estimate {
-                        HStack(spacing: 3) {
-                            Image(systemName: "triangle")
-                                .font(.system(size: 8, weight: .semibold))
-                            Text(estimate.formatted())
-                                .font(BrandFonts.sans(10.5, weight: .medium))
-                        }
-                        .foregroundStyle(Theme.textTertiary)
-                        .frame(height: 19)
-                    }
-                    if let pr = card.pr {
-                        LinearPullChip(link: pr)
-                    }
+                Spacer(minLength: 0)
+                PriorityIcon(priority: card.priority)
+            }
+            Text(card.title)
+                .font(BrandFonts.sans(13.5, weight: .medium))
+                .foregroundStyle(Theme.textPrimary)
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            BoardFlow(spacing: 5) {
+                if let project = card.project, !store.projectViewActive {
+                    LinearProjectTag(name: project, project: store.project(named: project))
                 }
-                HStack(spacing: 6) {
-                    StateIcon(type: card.stateType, name: card.state, size: 11)
-                    Text(BoardDates.relative(card.updatedAt))
-                        .font(TypeScale.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
-                    if let assignee = card.assignee {
-                        RemoteAvatar(url: store.avatar(for: assignee), name: assignee, size: 18)
+                ForEach(card.labels.prefix(3), id: \.self) { label in
+                    LinearLabelTag(name: label, color: store.labelColor(label), compact: true)
+                }
+                if let estimate = card.estimate {
+                    HStack(spacing: 3) {
+                        Image(systemName: "triangle")
+                            .font(.system(size: 8, weight: .semibold))
+                        Text(estimate.formatted())
+                            .font(BrandFonts.sans(10.5, weight: .medium))
                     }
+                    .foregroundStyle(Theme.textTertiary)
+                    .frame(height: 19)
+                }
+                if let pr = card.pr {
+                    LinearPullChip(link: pr)
                 }
             }
-            .padding(Spacing.m)
-            .background(cardBackground, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-            .softElevation(lifted: hovering)
-            .contentShape(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
+            HStack(spacing: 6) {
+                StateIcon(type: card.stateType, name: card.state, size: 11)
+                Text(BoardDates.relative(card.updatedAt))
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if let assignee = card.assignee {
+                    RemoteAvatar(url: store.avatar(for: assignee), name: assignee, size: 18)
+                }
+            }
+        }
+        .padding(Spacing.m)
+        .background(cardBackground, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
+        .softElevation(lifted: hovering)
+        .contentShape(RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
         .onTapGesture { store.select(isSelected ? nil : card.id) }
         .clickable()
         .accessibilityElement(children: .combine)

@@ -54,8 +54,7 @@ export async function handleVaultRoute(req: Req, res: Res, url: URL, method: str
     if (!grant) return json(res, 410, { ok: false, error: "Esse tíquete já foi usado ou venceu." });
     return json(res, 200, grant);
   }
-  if (!macRunnerAuthorized(req))
-    return json(res, 401, { ok: false, error: "O cofre só responde ao app r/bots." });
+  if (!macRunnerAuthorized(req)) return json(res, 401, { ok: false, error: "O cofre só responde ao app r/bots." });
   try {
     if (parts.length === 2 && parts[1] === "secrets" && method === "GET") {
       return json(res, 200, { secrets: listSecretMeta().map(publicMeta), serverStorage: serverStorageAvailable() });

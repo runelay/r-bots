@@ -24,7 +24,7 @@ struct BotCapabilitySet: Hashable, Sendable, Decodable {
     var json: JSONValue {
         .object([
             "browser": .bool(browser),
-            "delegate": .array(delegate.map { .string($0) })
+            "delegate": .array(delegate.map { .string($0) }),
         ])
     }
 }
@@ -168,7 +168,7 @@ enum ConnectorNames {
         "cloudflare_docs": "Cloudflare Docs",
         "google_calendar": "Google Calendar",
         "linear_server": "Linear",
-        "meta_social_technologies": "Meta"
+        "meta_social_technologies": "Meta",
     ]
 
     static func pretty(_ name: String) -> String {
@@ -483,7 +483,7 @@ struct ServerMeta: Equatable, Sendable, Decodable {
         accents: ["electric", "teal", "violet", "royal", "sky", "indigo"],
         capabilities: [
             MetaCapability(id: "browser", label: "Navegador", description: "Abre páginas, clica, preenche e tira print."),
-            MetaCapability(id: "delegate", label: "Delegar", description: "Passa partes do trabalho para outros bots do time.")
+            MetaCapability(id: "delegate", label: "Delegar", description: "Passa partes do trabalho para outros bots do time."),
         ]
     )
 }

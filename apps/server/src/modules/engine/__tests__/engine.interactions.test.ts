@@ -101,6 +101,23 @@ describe("approvals", () => {
     expect((await factsOfType(session, "response.submitted"))[0].data.deliveryId).toBe("dlv_answer");
   });
 
+  test("offers to allow until the end of the task when the call can be remembered for the turn", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const ask = asking("Posso rodar o comando?", { untilTurnEnd: true });
+    fakeProviders.next(ask.script);
+    send(session);
+    const card = await nextInteraction(session);
+    expect((card.request.options as Array<{ id: string; label: string }>).map((option) => option.label)).toEqual([
+      "Aprovar",
+      "Permitir até o fim da tarefa",
+      "Negar",
+    ]);
+    answer(session, "dlv_turn", card.interactionId, "approve_always");
+    await idle(session);
+    expect(ask.results[0]).toEqual({ choice: "approve", interactionId: card.interactionId, always: true });
+  });
+
   test("asks for a secret and records a denial", async () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);
@@ -372,6 +389,32 @@ describe("steering a running turn", () => {
     expect((await settledOf(session))?.outcome).toBe("completed");
   });
 
+  test("also stops after a provider tool finishes and resumes with the message", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const started = Promise.withResolvers<void>();
+    const steered = Promise.withResolvers<void>();
+    fakeProviders.next(
+      sequence(async (turn) => {
+        turn.emit({ type: "session", id: "prov-tool" });
+        started.resolve();
+        await steered.promise;
+        turn.emit({ type: "tool", id: "b1", name: "Bash", phase: "start", input: { command: "ls" } });
+        turn.emit({ type: "tool", id: "b1", name: "Bash", phase: "end", ok: true });
+        await aborted(turn.signal);
+      }, replyWith("Mudei o título.")),
+    );
+    send(session, { text: "faz a landing" });
+    await started.promise;
+    send(session, { text: "muda o título" });
+    steered.resolve();
+    await idle(session);
+    expect(fakeProviders.turns).toHaveLength(2);
+    expect(lastRequest().resume).toBe("prov-tool");
+    expect(lastRequest().prompt).toContain("muda o título");
+    expect(await repliesOf(session)).toEqual(["Mudei o título."]);
+  });
+
   test("hands messages that arrived before the run started to the live input", async () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);
@@ -391,6 +434,71 @@ describe("steering a running turn", () => {
     await idle(session);
     expect(live.pushed.map((item) => item.text)).toEqual([`${steerLead}\ne usa azul`]);
     expect(fakeProviders.turns).toHaveLength(1);
+  });
+
+  test("keeps a message the live input refused and delivers it at the next tool boundary", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    const gate = Promise.withResolvers<void>();
+    track(
+      spyOn(handoff, "handoffBlock").mockImplementation(async () => {
+        await gate.promise;
+        return "";
+      }),
+    );
+    const offered: unknown[] = [];
+    fakeProviders.next(
+      sequence(async (turn) => {
+        turn.emit({ type: "session", id: "prov-refuse" });
+        turn.inbox?.((message) => {
+          offered.push(message);
+          return false;
+        });
+        const context = contextOf(turn);
+        context.onCallStart();
+        context.onCallEnd();
+        await aborted(turn.signal);
+      }, replyWith("Usei azul.")),
+    );
+    send(session, { text: "faz a landing" });
+    await waitFor(async () => (await factsOfType(session, "turn.started")).length === 1);
+    send(session, { text: "e usa azul" });
+    gate.resolve();
+    await idle(session);
+    expect(offered).toHaveLength(1);
+    expect(fakeProviders.turns).toHaveLength(2);
+    expect(lastRequest().resume).toBe("prov-refuse");
+    expect(lastRequest().prompt).toContain("e usa azul");
+    expect(await repliesOf(session)).toEqual(["Usei azul."]);
+  });
+
+  test("sends the live message without attachments that fail to prepare", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    track(spyOn(uploads, "prepareAttachments").mockRejectedValue(new Error("storage down")));
+    const live = liveTurn("Segui sem a imagem.");
+    fakeProviders.next(live.script);
+    send(session, { text: "faz a landing" });
+    await live.started;
+    send(session, {
+      text: "olha isso",
+      attachments: [
+        {
+          uploadId: "up_2",
+          name: "quebrada.png",
+          mime: "image/png",
+          size: 10,
+          kind: "image",
+          file: "quebrada.png",
+          createdAt: new Date().toISOString(),
+          source: "user",
+        },
+      ],
+    });
+    await idle(session);
+    expect(live.pushed[0].images ?? []).toEqual([]);
+    expect(live.pushed[0].text).toContain("olha isso");
+    expect(await repliesOf(session)).toEqual(["Segui sem a imagem."]);
   });
 });
 

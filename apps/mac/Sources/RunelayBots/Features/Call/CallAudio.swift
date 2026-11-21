@@ -59,7 +59,7 @@ final class CallAudio: @unchecked Sendable {
 
     init(captureRate: Double, playbackRate: Double, usesMicrophone: Bool = true) throws {
         guard let playback = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: playbackRate, channels: 1, interleaved: false),
-              let capture = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: captureRate, channels: 1, interleaved: true)
+            let capture = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: captureRate, channels: 1, interleaved: true)
         else { throw CallAudioError.format }
         playbackFormat = playback
         captureFormat = capture
@@ -187,7 +187,9 @@ final class CallAudio: @unchecked Sendable {
             }
             let format = input.outputFormat(forBus: 0)
             guard format.sampleRate > 0, format.channelCount > 0 else { throw CallAudioError.noInput }
-            onEvent?("voice processing: entrada=\(input.isVoiceProcessingEnabled) saída=\(engine.outputNode.isVoiceProcessingEnabled) bypass=\(input.isVoiceProcessingBypassed) agc=\(input.isVoiceProcessingAGCEnabled) canais=\(format.channelCount)")
+            onEvent?(
+                "voice processing: entrada=\(input.isVoiceProcessingEnabled) saída=\(engine.outputNode.isVoiceProcessingEnabled) bypass=\(input.isVoiceProcessingBypassed) agc=\(input.isVoiceProcessingAGCEnabled) canais=\(format.channelCount)"
+            )
             lock.withLock { stats.inputFormat = "\(Int(format.sampleRate)) Hz · \(format.channelCount) canal(is) · vp \(voiceProcessing)" }
             input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
                 self?.capture(buffer)
@@ -242,7 +244,7 @@ final class CallAudio: @unchecked Sendable {
     func play(pcm16 data: Data) {
         let frames = data.count / 2
         guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: playbackFormat, frameCapacity: AVAudioFrameCount(frames)),
-              let channel = buffer.floatChannelData?[0]
+            let channel = buffer.floatChannelData?[0]
         else { return }
         buffer.frameLength = AVAudioFrameCount(frames)
         data.withUnsafeBytes { raw in
@@ -412,11 +414,11 @@ final class CallAudio: @unchecked Sendable {
 
     private static func firstChannel(of buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
         guard buffer.format.channelCount > 1,
-              buffer.format.commonFormat == .pcmFormatFloat32,
-              let source = buffer.floatChannelData?[0],
-              let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: false),
-              let output = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength),
-              let target = output.floatChannelData?[0]
+            buffer.format.commonFormat == .pcmFormatFloat32,
+            let source = buffer.floatChannelData?[0],
+            let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: buffer.format.sampleRate, channels: 1, interleaved: false),
+            let output = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: buffer.frameLength),
+            let target = output.floatChannelData?[0]
         else { return buffer }
         let stride = buffer.format.isInterleaved ? Int(buffer.format.channelCount) : 1
         for frame in 0..<Int(buffer.frameLength) {

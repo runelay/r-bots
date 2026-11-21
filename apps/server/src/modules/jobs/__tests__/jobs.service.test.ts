@@ -220,7 +220,8 @@ describe("jobs on redis", () => {
   test("puts the held jobs back in line on shutdown", async () => {
     const warn = quietWarn();
     await enqueue("test.block", {}, { id: "block-2" });
-    await waitFor(async () => (await getJobView("block-2"))?.status === "active");
+    await waitFor(() => starts.includes("block-2"));
+    expect((await getJobView("block-2"))?.status).toBe("active");
     expect(await releaseActiveJobs()).toBe(1);
     expect(await releaseActiveJobs()).toBe(0);
     await waitFor(() => starts.filter((id) => id === "block-2").length === 2);

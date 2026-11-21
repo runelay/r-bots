@@ -7,12 +7,14 @@ import type {
   HookCallbackMatcher,
   HookEvent,
   SDKMessage,
+  SDKUserMessage,
   SpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { LivePush, NativeToolHooks } from "@runelay-bots/protocol";
 import {
   contextBudgetEnv,
   hookFailureMessage,
+  liveInput,
   nativeTools,
   privateMcpArgs,
   runClaude,
@@ -559,5 +561,23 @@ describe("runClaude", () => {
     await runClaude(turnRequest(), fakeCli.home, signal(), emit);
     Object.defineProperty(process, "platform", { value: "linux" });
     expect(fakeSdk.calls[0].options?.spawnClaudeCodeProcess).toBeUndefined();
+  });
+});
+
+describe("liveInput", () => {
+  test("waits for pushed messages, skips failed ones and ends when closed", async () => {
+    const first = { type: "user", session_id: "first" } as SDKUserMessage;
+    const second = { type: "user", session_id: "second" } as SDKUserMessage;
+    const input = liveInput(Promise.resolve(first));
+    const iterator = input.messages[Symbol.asyncIterator]();
+    expect((await iterator.next()).value).toBe(first);
+    const waiting = iterator.next();
+    expect(input.push(Promise.reject(new Error("lost")))).toBe(true);
+    expect(input.push(Promise.resolve(second))).toBe(true);
+    expect((await waiting).value).toBe(second);
+    const ending = iterator.next();
+    input.close();
+    expect(await ending).toEqual({ done: true, value: undefined });
+    expect(input.push(Promise.resolve(second))).toBe(false);
   });
 });

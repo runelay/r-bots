@@ -13,14 +13,14 @@ let package = Package(
             path: "Sources/RunelayBots",
             resources: [
                 .copy("Resources/Fonts"),
-                .copy("Resources/Logos")
+                .copy("Resources/Logos"),
             ]
         ),
         .testTarget(
             name: "RunelayBotsTests",
             dependencies: ["RunelayBots"],
             path: "Tests/RunelayBotsTests"
-        )
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -21,12 +21,13 @@ struct MaestroRun: Sendable {
         var object: [String: JSONValue] = [
             "passed": .bool(passed),
             "durationMs": .number(Double(durationMs)),
-            "steps": .array(steps.map { step in
-                var item: [String: JSONValue] = ["name": .string(step.name), "status": .string(step.status)]
-                if let duration = step.durationMs { item["durationMs"] = .number(Double(duration)) }
-                if let error = step.error { item["error"] = .string(error) }
-                return .object(item)
-            }),
+            "steps": .array(
+                steps.map { step in
+                    var item: [String: JSONValue] = ["name": .string(step.name), "status": .string(step.status)]
+                    if let duration = step.durationMs { item["durationMs"] = .number(Double(duration)) }
+                    if let error = step.error { item["error"] = .string(error) }
+                    return .object(item)
+                }),
             "log": .string(log),
             "device": .string(device),
         ]
@@ -87,8 +88,9 @@ enum MaestroRunner {
     static func steps(in directory: URL) -> [MaestroStep] {
         let found = files(in: directory)
         guard let file = found.first(where: { $0.lastPathComponent.hasPrefix("commands") && $0.pathExtension == "json" }),
-              let data = try? Data(contentsOf: file),
-              let json = try? JSONDecoder().decode(JSONValue.self, from: data) else { return [] }
+            let data = try? Data(contentsOf: file),
+            let json = try? JSONDecoder().decode(JSONValue.self, from: data)
+        else { return [] }
         return (json.arrayValue ?? []).compactMap { item in
             let metadata = item["metadata"]
             let raw = metadata?["status"]?.stringValue ?? "COMPLETED"
@@ -130,8 +132,9 @@ enum MaestroRunner {
         let pngs = (files(in: debug) + files(in: root).filter { $0.deletingLastPathComponent() == root }).filter { $0.pathExtension == "png" }
         let failure = pngs.first { $0.lastPathComponent.contains("❌") }
         if let shot = passed ? pngs.last : (failure ?? pngs.last),
-           let image = NSImage(contentsOf: shot), let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
-           let shrunk = try? SimulatorRunner.jpeg(cg, maxHeight: 900) {
+            let image = NSImage(contentsOf: shot), let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+            let shrunk = try? SimulatorRunner.jpeg(cg, maxHeight: 900)
+        {
             screenshot = shrunk.0.base64EncodedString()
         } else if let shot = try? await SimulatorRunner.screenshotData(udid: udid, maxHeight: 900) {
             screenshot = shot.0.base64EncodedString()

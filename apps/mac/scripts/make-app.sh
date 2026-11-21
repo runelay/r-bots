@@ -17,7 +17,11 @@ if [ ! -f "$ICNS" ] || [ "$SVG" -nt "$ICNS" ]; then
     iconutil -c icns "$ICONSET" -o "$ICNS"
 fi
 
-VERSION="$(grep -o 'version = "[^"]*"' "$ROOT/Sources/RunelayBots/Design/Preferences.swift" | head -1 | cut -d'"' -f2)"
+PACKAGE_JSON="$ROOT/../../package.json"
+if [ -z "${VERSION:-}" ] && [ -f "$PACKAGE_JSON" ]; then
+    VERSION="$(grep -m1 -o '"version": *"[^"]*"' "$PACKAGE_JSON" | cut -d'"' -f4)"
+fi
+VERSION="${VERSION:-dev}"
 APP="$ROOT/.build/rbots.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -81,9 +85,10 @@ if [ -f "$SIGN_KC" ] && [ -f "$SIGN_DIR/pw" ]; then
 fi
 if [ -n "$SIGN_ID" ]; then
     CURRENT_KCS="$(security list-keychains -d user | tr -d '"' | xargs)"
+    read -r -a CURRENT_KC_LIST <<< "$CURRENT_KCS"
     case " $CURRENT_KCS " in
         *" $SIGN_KC "*) ;;
-        *) security list-keychains -d user -s $CURRENT_KCS "$SIGN_KC" ;;
+        *) security list-keychains -d user -s ${CURRENT_KC_LIST[@]+"${CURRENT_KC_LIST[@]}"} "$SIGN_KC" ;;
     esac
 fi
 if [ -n "$SIGN_ID" ] && codesign --force --deep --keychain "$SIGN_KC" -s "$SIGN_ID" "$APP"; then

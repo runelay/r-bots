@@ -61,7 +61,8 @@ enum PreviewAddress {
 
     static func proxyURL(root: URL, location: String) -> URL? {
         guard var components = URLComponents(url: root, resolvingAgainstBaseURL: false),
-              let target = URLComponents(string: location) else { return nil }
+            let target = URLComponents(string: location)
+        else { return nil }
         var prefix = components.percentEncodedPath
         while prefix.hasSuffix("/") { prefix.removeLast() }
         components.percentEncodedPath = prefix + (target.percentEncodedPath.isEmpty ? "/" : target.percentEncodedPath)
@@ -170,7 +171,8 @@ struct PreviewAddressBar: View {
     private func submit() {
         defer { editing = false }
         guard let next = PreviewAddress.normalize(draft),
-              let target = PreviewAddress.pageURL(next, base: navigator.url ?? root) else { return }
+            let target = PreviewAddress.pageURL(next, base: navigator.url ?? root)
+        else { return }
         navigator.load(target)
     }
 

@@ -108,10 +108,10 @@ enum AuthStore {
 
     static func authorize(_ request: inout URLRequest) {
         guard request.value(forHTTPHeaderField: "Authorization") == nil,
-              let url = request.url,
-              let target = origin(of: url),
-              target == origin(of: ServerConfig.currentURL()) || target == socketOrigin(),
-              let token = read(.session)
+            let url = request.url,
+            let target = origin(of: url),
+            target == origin(of: ServerConfig.currentURL()) || target == socketOrigin(),
+            let token = read(.session)
         else { return }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }

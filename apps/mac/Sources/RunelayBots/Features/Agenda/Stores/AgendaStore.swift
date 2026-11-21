@@ -122,7 +122,7 @@ final class AgendaStore {
 
     func reload() async {
         guard let first = days.first, let last = days.last,
-              let end = Calendar.agenda.date(byAdding: .day, value: 1, to: last)
+            let end = Calendar.agenda.date(byAdding: .day, value: 1, to: last)
         else { return }
         loading = true
         defer { loading = false }
@@ -228,7 +228,7 @@ final class AgendaStore {
 
     var timedEventsVisible: [AgendaEvent] {
         guard let first = days.first, let last = days.last,
-              let end = Calendar.agenda.date(byAdding: .day, value: 1, to: last)
+            let end = Calendar.agenda.date(byAdding: .day, value: 1, to: last)
         else { return [] }
         return events.filter { !$0.allDay && !hiddenAccounts.contains($0.accountId) && $0.startDate < end && $0.endDate > first }
     }

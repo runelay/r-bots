@@ -45,8 +45,9 @@ function notifyPositions() {
 
 function pump() {
   let granted = false;
-  while (running < maxTurns && waiters.length > 0) {
-    const next = waiters.shift()!;
+  while (running < maxTurns) {
+    const next = waiters.shift();
+    if (!next) break;
     running++;
     granted = true;
     next.grant();

@@ -63,7 +63,9 @@ struct CallBar: View {
                 .padding(Spacing.l)
                 .frame(width: 300)
             }
-            CallIconButton(systemImage: call.captionsVisible ? "captions.bubble.fill" : "captions.bubble", help: call.captionsVisible ? "Esconder legendas" : "Mostrar legendas", isActive: call.captionsVisible) {
+            CallIconButton(
+                systemImage: call.captionsVisible ? "captions.bubble.fill" : "captions.bubble", help: call.captionsVisible ? "Esconder legendas" : "Mostrar legendas", isActive: call.captionsVisible
+            ) {
                 call.captionsVisible.toggle()
             }
             if call.pushToTalk {
@@ -610,7 +612,7 @@ struct VoiceSettingsForm: View {
         do {
             voices = try await list
             voicesUnavailable = false
-        } catch where BotsClient.isNotConfigured(error) {
+        } catch  where BotsClient.isNotConfigured(error) {
             voicesUnavailable = true
         } catch {
             loadError = "Não consegui carregar as vozes. Tenta de novo."

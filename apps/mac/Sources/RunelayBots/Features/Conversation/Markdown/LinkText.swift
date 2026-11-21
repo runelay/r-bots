@@ -26,9 +26,10 @@ enum LinkDetection {
         guard text.contains("://") || text.contains("www.") else { return nil }
         let nsRange = NSRange(text.startIndex..., in: text)
         guard let match = detector?.firstMatch(in: text, options: [], range: nsRange),
-              let url = match.url,
-              url.scheme == "http" || url.scheme == "https",
-              let range = Range(match.range, in: text) else { return nil }
+            let url = match.url,
+            url.scheme == "http" || url.scheme == "https",
+            let range = Range(match.range, in: text)
+        else { return nil }
         return (url, range)
     }
 
@@ -49,7 +50,7 @@ enum LinkTextBuilder {
         if BrandFonts.availableFamilies.contains(BrandFonts.sansFamily) {
             let descriptor = NSFontDescriptor(fontAttributes: [
                 .family: BrandFonts.sansFamily,
-                .traits: [NSFontDescriptor.TraitKey.weight: weight]
+                .traits: [NSFontDescriptor.TraitKey.weight: weight],
             ])
             font = NSFont(descriptor: descriptor, size: size) ?? .systemFont(ofSize: size, weight: weight)
         } else {
@@ -95,7 +96,7 @@ enum LinkTextBuilder {
             var attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: ink,
-                .paragraphStyle: paragraph
+                .paragraphStyle: paragraph,
             ]
             if intent.contains(.strikethrough) {
                 attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
@@ -166,7 +167,7 @@ final class LinkTextView: NSTextView {
         isAutomaticLinkDetectionEnabled = false
         linkTextAttributes = [
             .foregroundColor: NSColor(Theme.brandText),
-            .cursor: NSCursor.pointingHand
+            .cursor: NSCursor.pointingHand,
         ]
         setContentHuggingPriority(.defaultHigh, for: .vertical)
         setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -175,7 +176,7 @@ final class LinkTextView: NSTextView {
     func useLinkColor(_ color: NSColor?) {
         var attributes: [NSAttributedString.Key: Any] = [
             .foregroundColor: color ?? NSColor(Theme.brandText),
-            .cursor: NSCursor.pointingHand
+            .cursor: NSCursor.pointingHand,
         ]
         if color != nil {
             attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
@@ -183,7 +184,7 @@ final class LinkTextView: NSTextView {
         linkTextAttributes = attributes
     }
 
-        func apply(source: String, fontSize: CGFloat, lineSpacing: CGFloat, ink: NSColor) {
+    func apply(source: String, fontSize: CGFloat, lineSpacing: CGFloat, ink: NSColor) {
         let key = "\(fontSize)|\(lineSpacing)|\(ink.hash)|\(source)"
         guard key != appliedKey, let storage = textStorage else { return }
         appliedKey = key
@@ -311,8 +312,9 @@ struct SystemLink: Equatable {
     private static func pullNumber(_ url: URL) -> String? {
         let parts = url.pathComponents
         guard let index = parts.firstIndex(where: { $0 == "pull" || $0 == "pulls" || $0 == "merge_requests" }),
-              index + 1 < parts.count,
-              parts[index + 1].allSatisfy(\.isNumber) else { return nil }
+            index + 1 < parts.count,
+            parts[index + 1].allSatisfy(\.isNumber)
+        else { return nil }
         return parts[index + 1]
     }
 }

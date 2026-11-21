@@ -19,6 +19,15 @@ const realReadFileSync = fs.readFileSync;
 const realReadlinkSync = fs.readlinkSync;
 const realReaddirSync = fs.readdirSync;
 
+async function procRunning(pid: number | undefined, command: string) {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const found = listProcs().find((proc) => proc.pid === pid);
+    if (found?.command === command || Date.now() > deadline) return found;
+    await Bun.sleep(5);
+  }
+}
+
 function fakeProcFs(table: Record<number, FakeProc>) {
   const entry = (path: string) => table[Number(path.split("/")[2])];
   spyOn(fs, "readdirSync").mockImplementation(((path: fs.PathLike, ...rest: unknown[]) =>
@@ -162,7 +171,7 @@ describe("proc-tree", () => {
     });
     const marker = `${scope}:real`;
     expect(activeMarkers()).toContain(marker);
-    const found = listProcs().find((proc) => proc.pid === child.pid);
+    const found = await procRunning(child.pid, "sleep 30");
     expect(found?.marker).toBe(marker);
     expect(found?.command).toBe("sleep 30");
     expect(killMarked("real", 0)).toBe(1);

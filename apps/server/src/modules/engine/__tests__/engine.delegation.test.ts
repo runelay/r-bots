@@ -17,6 +17,7 @@ import {
   track,
 } from "../../../../test/engine-turn-helpers";
 import { type FakeTurn, fakeProviders } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import * as decisions from "../../approvals/services/decisions.service";
 import { getBot, setArchived } from "../../bots/services/bots.service";
 import { botHomePath } from "../../code/services/bot-home.service";
@@ -465,7 +466,7 @@ describe("groups", () => {
       [bia.id, "Eu vejo isso."],
       [ana.id, "Números fechados."],
     ]);
-    const anaRequest = fakeProviders.turns.find((turn) => turn.request.workKey.startsWith(`${ana.id}/`))!.request;
+    const anaRequest = must(fakeProviders.turns.find((turn) => turn.request.workKey.startsWith(`${ana.id}/`))).request;
     expect(anaRequest.prompt).toContain(`${bia.name} passou a vez para você com esta nota: Ana fecha os números`);
     expect(anaRequest.prompt).toContain(`${bia.name}: Eu vejo isso.`);
     expect(anaRequest.prompt).toContain("Pessoa: Como estão as vendas?");

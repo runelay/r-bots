@@ -65,6 +65,7 @@ const codexOk =
 beforeEach(async () => {
   await resetData();
   await resetUsageTables();
+  await settings.writeSetting("accounts.settings", {});
   await rm(join(home, ".claude"), { recursive: true, force: true });
   await rm(join(home, ".claude.json"), { force: true });
   await rm(join(home, ".codex"), { recursive: true, force: true });
@@ -283,15 +284,15 @@ describe("usageLimits", () => {
     expect(
       limits.map((account) => [account.id, account.label, account.plan, account.isDefault, account.ok, account.error]),
     ).toEqual([
-      ["vps:claude", "Claude Ana", "max", true, true, null],
-      ["claude-2:claude", "Claude Bia", "team", false, true, null],
+      ["vps:claude", "Claude", "max", true, true, null],
+      ["claude-2:claude", "Claude 2", "team", false, true, null],
       ["vps:codex", "Codex", "pro", true, true, null],
     ]);
     expect(limits[0].windows.map((window) => [window.kind, window.usedPercent])).toEqual([["session", 20]]);
     expect(limits[1].windows.map((window) => [window.kind, window.usedPercent])).toEqual([["weekly", 9]]);
-    expect(limits[0].failover).toEqual([{ botId: "b1", botName: "One", to: "claude-2:claude", toLabel: "Claude Bia" }]);
-    expect(limits[1].failover).toEqual([{ botId: "b2", botName: "Two", to: "vps:claude", toLabel: "Claude Ana" }]);
-    expect(limits[2].failover).toEqual([{ botId: "b3", botName: "Three", to: "vps:claude", toLabel: "Claude Ana" }]);
+    expect(limits[0].failover).toEqual([{ botId: "b1", botName: "One", to: "claude-2:claude", toLabel: "Claude 2" }]);
+    expect(limits[1].failover).toEqual([{ botId: "b2", botName: "Two", to: "vps:claude", toLabel: "Claude" }]);
+    expect(limits[2].failover).toEqual([{ botId: "b3", botName: "Three", to: "vps:claude", toLabel: "Claude" }]);
     expect(await service.usageLimits()).toBe(limits);
     expect(calls).toHaveLength(2);
     const checked = Date.parse(service.limitsCheckedAt());
@@ -321,7 +322,7 @@ describe("usageLimits", () => {
     await writeFixture(join(home, ".claude.json"), { oauthAccount: { organizationName: "Org" } });
     await writeFixture(join(home, ".claude", ".credentials.json"), { claudeAiOauth: {} });
     account = await claudeOf();
-    expect([account.label, account.error]).toEqual(["Claude Org", "Claude Org não está logado."]);
+    expect([account.label, account.error]).toEqual(["Claude", "Claude não está logado."]);
 
     await writeFixture(join(home, ".claude.json"), "{");
     await writeFixture(join(home, ".claude", ".credentials.json"), {
@@ -370,7 +371,9 @@ describe("usageLimits", () => {
     await discover();
     const server = fakeCodexAppServer(codexOk({ rateLimits: { planType: "plus" } }));
     restores.push(server.restore);
-    const spawn = Bun.spawn as unknown as { mock: { calls: Array<[string[], { env: Record<string, string> }]> } };
+    const spawn = Bun.spawn as unknown as {
+      mock: { calls: Array<[string[], { env: Record<string, string | undefined> }]> };
+    };
     const limits = await (await fresh()).usageLimits();
     expect(limits.map((item) => item.id)).toEqual(["vps:claude", "vps:codex", "codex-2:codex"]);
     const homes = spawn.mock.calls.map((call) => call[1].env.CODEX_HOME ?? null);
@@ -447,7 +450,7 @@ describe("usageSummary", () => {
     expect(summary.accounts.map((item) => [item.id, item.label, item.processed, item.requests, item.sessions])).toEqual(
       [
         ["vps:claude", "Claude", 23 + 2 + 5, 3, 3],
-        ["claude-2:claude", "Claude Bia", 7, 1, 1],
+        ["claude-2:claude", "Claude 2", 7, 1, 1],
         ["vps:codex", "Codex", 21, 1, 0],
       ],
     );
@@ -467,7 +470,7 @@ describe("usageSummary", () => {
     );
     const shared = await (await fresh()).usageSummary("30d", null, null);
     expect(shared.accounts.find((item) => item.id === "vps:claude+claude-2:claude")).toMatchObject({
-      label: "Claude + Claude Bia",
+      label: "Claude + Claude 2",
       processed: 3,
     });
     await rm(join(home, ".claude-2"), { recursive: true, force: true });

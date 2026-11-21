@@ -1,0 +1,86 @@
+name: docker
+
+on:
+  pull_request:
+    paths:
+      - "**/Dockerfile"
+      - "**/*.Dockerfile"
+      - ".dockerignore"
+      - "compose.yaml"
+      - "deploy/**"
+      - "packages/**"
+      - "apps/server/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "**/Dockerfile"
+      - "**/*.Dockerfile"
+      - ".dockerignore"
+      - "compose.yaml"
+      - "deploy/**"
+      - "packages/**"
+      - "apps/server/**"
+      - "package.json"
+      - "bun.lock"
+      - ".github/**"
+
+permissions: {}
+
+concurrency:
+  group: docker-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  HADOLINT_IMAGE: hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
+  ACTIONLINT_IMAGE: rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo "$ACTIONLINT_IMAGE" -color
+      - name: hadolint
+        run: |
+          status=0
+          while IFS= read -r file; do
+            echo "::group::$file"
+            docker run --rm -i -v "$PWD/.github/hadolint.yaml:/config.yaml:ro" "$HADOLINT_IMAGE" \
+              hadolint --config /config.yaml --format tty - < "$file" || status=1
+            echo "::endgroup::"
+          done < <(git ls-files -- '*Dockerfile')
+          exit "$status"
+      - name: compose config
+        run: |
+          docker compose -f compose.yaml config -q
+          docker compose -f compose.yaml --profile "*" config -q
+
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: false
+          outputs: type=cacheonly
+          cache-from: type=gha,scope=r-bots
+          cache-to: type=gha,mode=max,scope=r-bots

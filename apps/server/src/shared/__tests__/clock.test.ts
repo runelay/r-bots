@@ -1,14 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import * as settings from "../../db/settings";
-import {
-  defaultTimezone,
-  isTimezone,
-  noteClientTimezone,
-  nowNote,
-  resetClock,
-  userTimezone,
-  zonedDay,
-} from "../clock";
+import { defaultTimezone, isTimezone, noteClientTimezone, nowNote, resetClock, userTimezone, zonedDay } from "../clock";
 
 const lateNight = new Date("2026-11-20T02:47:00Z");
 

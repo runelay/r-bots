@@ -513,71 +513,69 @@ export async function usageSummary(rangeKey: string, provider: string | null, ac
       costUsd: number | null;
     }
   >();
-  {
-    for (const row of snapshot.rows as UsageRow[]) {
-      if (!keep(row)) continue;
-      const c = row.c;
-      const write = c[2] + c[3];
-      const processed = c[0] + c[1] + write + c[4];
-      const cost = costOf(priceFor(table, row.m), row.s, c);
-      totals.processed += processed;
-      totals.input += c[0];
-      totals.cacheRead += c[1];
-      totals.cacheWrite += write;
-      totals.output += c[4];
-      totals.reasoning += c[5];
-      totals.requests += c[6];
-      if (cost) {
-        totals.costUsd += cost.total;
-        totals.savingsUsd += cost.savings;
-        costByType.input += cost.input;
-        costByType.cacheRead += cost.cacheRead;
-        costByType.cacheWrite += cost.cacheWrite;
-        costByType.output += cost.output;
-      } else totals.unpricedTokens += processed;
-      const bucket = hourly ? new Date(row.h * 1000).toISOString() : dayKey(row.h);
-      const seriesKey = `${bucket}|${row.p}`;
-      const point = series.get(seriesKey) ?? { bucket, provider: row.p, tokens: 0, costUsd: 0 };
-      point.tokens += processed;
-      point.costUsd += cost?.total ?? 0;
-      series.set(seriesKey, point);
-      const speed = speeds.get(row.s) ?? { speed: row.s, tokens: 0, costUsd: 0 };
-      speed.tokens += processed;
-      speed.costUsd += cost?.total ?? 0;
-      speeds.set(row.s, speed);
-      const day = dayKey(row.h);
-      const owner = accountEntry(row.a, row.p);
-      owner.processed += processed;
-      owner.requests += c[6];
-      owner.costUsd += cost?.total ?? 0;
-      const detailKey = `${day}|${row.p}|${row.m}|${row.a}`;
-      const entry = detail.get(detailKey) ?? {
-        day,
-        provider: row.p,
-        model: row.m,
-        account: row.a,
-        input: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-        output: 0,
-        processed: 0,
-        requests: 0,
-        costUsd: cost ? 0 : null,
-      };
-      entry.input += c[0];
-      entry.cacheRead += c[1];
-      entry.cacheWrite += write;
-      entry.output += c[4];
-      entry.processed += processed;
-      entry.requests += c[6];
-      if (cost) entry.costUsd = (entry.costUsd ?? 0) + cost.total;
-      detail.set(detailKey, entry);
-    }
-    for (const session of snapshot.sessions as SessionRow[]) {
-      if (!keep(session)) continue;
-      totals.sessions += 1;
-      accountEntry(session.a, session.p).sessions += 1;
-    }
+  for (const row of snapshot.rows as UsageRow[]) {
+    if (!keep(row)) continue;
+    const c = row.c;
+    const write = c[2] + c[3];
+    const processed = c[0] + c[1] + write + c[4];
+    const cost = costOf(priceFor(table, row.m), row.s, c);
+    totals.processed += processed;
+    totals.input += c[0];
+    totals.cacheRead += c[1];
+    totals.cacheWrite += write;
+    totals.output += c[4];
+    totals.reasoning += c[5];
+    totals.requests += c[6];
+    if (cost) {
+      totals.costUsd += cost.total;
+      totals.savingsUsd += cost.savings;
+      costByType.input += cost.input;
+      costByType.cacheRead += cost.cacheRead;
+      costByType.cacheWrite += cost.cacheWrite;
+      costByType.output += cost.output;
+    } else totals.unpricedTokens += processed;
+    const bucket = hourly ? new Date(row.h * 1000).toISOString() : dayKey(row.h);
+    const seriesKey = `${bucket}|${row.p}`;
+    const point = series.get(seriesKey) ?? { bucket, provider: row.p, tokens: 0, costUsd: 0 };
+    point.tokens += processed;
+    point.costUsd += cost?.total ?? 0;
+    series.set(seriesKey, point);
+    const speed = speeds.get(row.s) ?? { speed: row.s, tokens: 0, costUsd: 0 };
+    speed.tokens += processed;
+    speed.costUsd += cost?.total ?? 0;
+    speeds.set(row.s, speed);
+    const day = dayKey(row.h);
+    const owner = accountEntry(row.a, row.p);
+    owner.processed += processed;
+    owner.requests += c[6];
+    owner.costUsd += cost?.total ?? 0;
+    const detailKey = `${day}|${row.p}|${row.m}|${row.a}`;
+    const entry = detail.get(detailKey) ?? {
+      day,
+      provider: row.p,
+      model: row.m,
+      account: row.a,
+      input: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      output: 0,
+      processed: 0,
+      requests: 0,
+      costUsd: cost ? 0 : null,
+    };
+    entry.input += c[0];
+    entry.cacheRead += c[1];
+    entry.cacheWrite += write;
+    entry.output += c[4];
+    entry.processed += processed;
+    entry.requests += c[6];
+    if (cost) entry.costUsd = (entry.costUsd ?? 0) + cost.total;
+    detail.set(detailKey, entry);
+  }
+  for (const session of snapshot.sessions as SessionRow[]) {
+    if (!keep(session)) continue;
+    totals.sessions += 1;
+    accountEntry(session.a, session.p).sessions += 1;
   }
   if (!provider && !account) for (const item of known) accountEntry(item.id, item.provider as UsageProvider);
   return {

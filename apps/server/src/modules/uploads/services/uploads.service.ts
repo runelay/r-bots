@@ -495,7 +495,7 @@ async function importMacFile(botId: string, rawPath: string, name?: string) {
   return register(botId, meta);
 }
 
-export async function importBotFile(botId: string, rawPath: string, name?: string) {
+export async function importBotFile(botId: string, rawPath: string, name?: string, transcript?: string) {
   const confined = await openConfined(botId, rawPath);
   if (!confined) {
     if (macRunnerSupports("files")) return importMacFile(botId, rawPath, name);
@@ -536,6 +536,7 @@ export async function importBotFile(botId: string, rawPath: string, name?: strin
     file,
     createdAt: new Date().toISOString(),
     source: "bot",
+    ...(transcript === undefined ? {} : { transcript }),
   };
   return register(botId, meta);
 }
@@ -902,8 +903,10 @@ async function prepare(botId: string, meta: UploadMeta): Promise<Prepared> {
     prepared.error = error instanceof Error ? error.message : String(error);
     return prepared;
   }
-  await mkdir(derivedDir(botId, meta.uploadId), { recursive: true });
-  await writeFile(cache, JSON.stringify(prepared));
+  try {
+    await mkdir(derivedDir(botId, meta.uploadId), { recursive: true });
+    await writeFile(cache, JSON.stringify(prepared));
+  } catch {}
   return prepared;
 }
 
@@ -1192,7 +1195,7 @@ const cutoutImageFile = /\.(png|jpe?g|webp)$/i;
 async function cutoutSource(botId: string, input: Record<string, unknown>) {
   if (typeof input.uploadId === "string" && input.uploadId) {
     const meta = await readUpload(botId, input.uploadId);
-    if (!meta || meta.kind !== "image") throw new Error("Anexo de imagem não encontrado.");
+    if (meta?.kind !== "image") throw new Error("Anexo de imagem não encontrado.");
     return { path: uploadPath(botId, meta), name: meta.name, dir: join(outboxDir(botId), "imagens") };
   }
   const raw = typeof input.path === "string" ? input.path.trim() : "";
@@ -1317,4 +1320,4 @@ export function uploadTools(botId: string): BotTool[] {
 }
 
 export const uploadGuide =
-  '## Arquivos\nA pessoa pode anexar imagem, vídeo, áudio e arquivos. Imagens chegam junto da mensagem; áudio chega transcrito como "[áudio: …]"; vídeo chega com a transcrição e quadros-chave; PDF e texto chegam com o conteúdo extraído. Para devolver um arquivo que você gerou (imagem, PDF, CSV…), salve na sua pasta de saída (`outbox` dentro da pasta do bot) e use `send_file` com o caminho; não cole o caminho na resposta.\n\n## Fundo transparente\nPara ícone, sticker, logo ou recorte de produto, não peça transparência nativa na geração: o recorte sai serrilhado, com halo branco e sujeira em volta. Gere com 1024 px ou mais, objeto inteiro e centralizado, com folga, sobre um fundo liso e sólido que contraste com o objeto (cinza claro para objeto escuro ou colorido; verde puro ou azul-escuro para objeto branco ou claro), sem sombra no chão nem degradê. Depois chame `image_cutout` com a imagem e entregue o `-recorte.png`.';
+  '## Arquivos\nA pessoa pode anexar imagem, vídeo, áudio e arquivos. Imagens chegam junto da mensagem; áudio chega transcrito como "[áudio: …]"; vídeo chega com a transcrição e quadros-chave; PDF e texto chegam com o conteúdo extraído. Para devolver um arquivo que você gerou (imagem, PDF, CSV…), salve na sua pasta de saída (`outbox` dentro da pasta do bot) e use `send_file` com o caminho; não cole o caminho na resposta.\n\n## Fundo transparente\nPara ícone, sticker, logo ou recorte de produto, não peça transparência nativa na geração: o recorte sai serrilhado, com halo branco e sujeira em volta. Gere com 1024 px ou mais, objeto inteiro e centralizado, com folga, sobre um fundo liso e sólido que contraste com o objeto (cinza claro para objeto escuro ou colorido; verde puro ou azul-escuro para objeto branco ou claro), sem sombra no chão nem degradê. Depois chame `image_cutout` com a imagem e entregue o `-recorte.png`.\n\n## Áudio falado\nPara mandar um áudio, narrar um texto ou gravar uma locução, use `speech_create` com o texto a ser falado: ele usa a ElevenLabs conectada em Configurações › Integrações e já anexa o MP3 na conversa. Nunca chame a API da ElevenLabs com `http_request` nem procure a chave no cofre.';

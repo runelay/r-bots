@@ -85,7 +85,7 @@ Nada disso foi aplicado em produção. Antes de qualquer passo: `curl -s -H "Aut
    ```sh
    docker compose stop server
    docker compose run --rm data-secrets
-   docker exec -i runelay-bots-postgres psql -U runelay_bots -d runelay_bots \
+   docker compose exec -T postgres psql -U runelay_bots -d runelay_bots \
      -v app_password="$(cat ~/.local/share/runelay-bots/secrets/postgres-app.password)" \
      < deploy/postgres/operator/switch-to-app-role.sql
    echo "POSTGRES_APP_USER=runelay_app" >> .env
@@ -161,7 +161,7 @@ O build anterior deixava o Bash dos bots ler `<dados>` inteiro. Trate como vazad
 3. **Postgres**: gere senhas novas e aplique no banco antes de trocar os arquivos:
    ```sh
    new=$(openssl rand -hex 32); app=$(openssl rand -hex 32)
-   docker exec -i runelay-bots-postgres psql -U runelay_bots -d runelay_bots \
+   docker compose exec -T postgres psql -U runelay_bots -d runelay_bots \
      -c "ALTER ROLE runelay_bots PASSWORD '$new'" -c "ALTER ROLE runelay_app PASSWORD '$app'"
    printf %s "$new" > <dados>/secrets/postgres.password
    printf %s "$app" > <dados>/secrets/postgres-app.password

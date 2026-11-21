@@ -321,9 +321,10 @@ describe("simulator tools and routes", () => {
     } as unknown as ToolContext;
     const tools = new Map<
       string,
-      (
-        args: Record<string, unknown>,
-      ) => Promise<{ content: Array<{ type: string; text?: string; data?: string }>; isError?: boolean }>
+      (args: Record<string, unknown>) => Promise<{
+        content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+        isError?: boolean;
+      }>
     >();
     registerSimulatorTools(
       { registerTool: (name: string, _c: unknown, handler: never) => tools.set(name, handler) } as unknown as McpServer,

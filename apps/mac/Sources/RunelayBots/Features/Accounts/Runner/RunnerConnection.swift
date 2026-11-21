@@ -155,7 +155,9 @@ final class RunnerConnection {
             "type": .string("hello"),
             "app": .string("runelay bots"),
             "version": .string(AppInfo.version),
-            "capabilities": .array([.string("turns"), .string("accounts"), .string("computer"), .string("transcribe"), .string("vault"), .string("usage"), .string("files"), .string("mcp-proxy"), .string("simulators")]),
+            "capabilities": .array([
+                .string("turns"), .string("accounts"), .string("computer"), .string("transcribe"), .string("vault"), .string("usage"), .string("files"), .string("mcp-proxy"), .string("simulators"),
+            ]),
         ])
         return String(decoding: (try? JSONEncoder().encode(hello)) ?? Data(), as: UTF8.self)
     }

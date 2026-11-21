@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { sql } from "drizzle-orm";
 import { factsOf, factsOfType, makeBot } from "../../../../test/engine-helpers";
 import { resetData } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import { getDb } from "../../../db";
 import { forgetSecretValue, rememberSecretValue } from "../../../shared/redact";
 import {
@@ -248,7 +249,7 @@ describe("threads", () => {
     expect(await peekThread(bot.id)).toBe(first);
     const session = getStoredSession(first.sessionId);
     expect(session?.meta).toMatchObject({ kind: "thread", title: "Conversa principal" });
-    expect((await factsOf(session!))[0]).toMatchObject({ type: "session.started", data: { thread: true } });
+    expect((await factsOf(must(session)))[0]).toMatchObject({ type: "session.started", data: { thread: true } });
     expect(await readLiveThread(bot.id)).toEqual(first);
     expect(publicThread(first)).toEqual({ sessionId: first.sessionId, lastMessage: null, unread: 0, total: 1 });
     expect(publicThread(null)).toEqual({ sessionId: null, lastMessage: null, unread: 0, total: 0 });
@@ -274,7 +275,7 @@ describe("threads", () => {
   test("recordThreadMessage updates the last message, unread count and the main title", async () => {
     const bot = await makeBot();
     const state = await ensureThread(bot.id);
-    const session = getStoredSession(state.sessionId)!;
+    const session = must(getStoredSession(state.sessionId));
     await recordThreadMessage(bot.id, state.sessionId, {
       role: "user",
       text: "oi, pode montar o relatório?",
@@ -310,12 +311,12 @@ describe("threads", () => {
   test("reset archives the current thread and restore brings it back", async () => {
     const bot = await makeBot();
     const original = await ensureThread(bot.id);
-    const originalSession = getStoredSession(original.sessionId)!;
+    const originalSession = must(getStoredSession(original.sessionId));
     originalSession.meta.scheduleSummaries = { diaria: "ok" };
     const { state: fresh, archiveId } = await resetThread(bot.id);
     expect(archiveId).toMatch(/^tha_/);
     expect(fresh.sessionId).not.toBe(original.sessionId);
-    const freshSession = getStoredSession(fresh.sessionId)!;
+    const freshSession = must(getStoredSession(fresh.sessionId));
     expect(freshSession.meta.scheduleSummaries).toEqual({ diaria: "ok" });
     freshSession.meta.scheduleSummaries = { diaria: "novo", semanal: "s" };
     expect(await restoreThread(bot.id, "tha_missing")).toBeNull();
@@ -331,7 +332,7 @@ describe("threads", () => {
     const bot = await makeBot();
     const original = await ensureThread(bot.id);
     const { state: fresh, archiveId } = await resetThread(bot.id);
-    getStoredSession(fresh.sessionId)!.log.emit({ type: "delivery.consumed", data: {} });
+    must(getStoredSession(fresh.sessionId)).log.emit({ type: "delivery.consumed", data: {} });
     const restored = await restoreThread(bot.id, archiveId);
     expect(restored?.state.sessionId).toBe(original.sessionId);
     expect(restored?.replacedArchiveId).toMatch(/^tha_/);

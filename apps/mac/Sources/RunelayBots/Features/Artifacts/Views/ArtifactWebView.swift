@@ -220,8 +220,9 @@ struct AuthenticatedWebView: NSViewRepresentable {
 
         private static func sameDocument(_ target: URL, _ loaded: URL?) -> Bool {
             guard let loaded,
-                  var left = URLComponents(url: target, resolvingAgainstBaseURL: false),
-                  var right = URLComponents(url: loaded, resolvingAgainstBaseURL: false) else { return false }
+                var left = URLComponents(url: target, resolvingAgainstBaseURL: false),
+                var right = URLComponents(url: loaded, resolvingAgainstBaseURL: false)
+            else { return false }
             left.fragment = nil
             right.fragment = nil
             return left.url == right.url

@@ -329,64 +329,64 @@ struct GitPullRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: Spacing.m) {
-                Image(systemName: GHStyle.stateSymbol(pull))
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(GHStyle.stateColor(pull))
-                    .frame(width: 20, height: 20)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(pull.title)
-                        .font(TypeScale.rowTitle)
-                        .foregroundStyle(Theme.textPrimary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(spacing: 5) {
-                        Text("\(pull.repoName) #\(pull.number)")
-                            .foregroundStyle(Theme.textSecondary)
-                        Text("·").foregroundStyle(Theme.textTertiary)
-                        Text(pull.head)
-                            .font(BrandFonts.mono(11))
-                            .foregroundStyle(Theme.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Text("·").foregroundStyle(Theme.textTertiary)
-                        Text(BoardDates.relative(pull.mergedAt ?? pull.updatedAt))
-                            .foregroundStyle(Theme.textTertiary)
-                            .fixedSize()
+            Image(systemName: GHStyle.stateSymbol(pull))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(GHStyle.stateColor(pull))
+                .frame(width: 20, height: 20)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(pull.title)
+                    .font(TypeScale.rowTitle)
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack(spacing: 5) {
+                    Text("\(pull.repoName) #\(pull.number)")
+                        .foregroundStyle(Theme.textSecondary)
+                    Text("·").foregroundStyle(Theme.textTertiary)
+                    Text(pull.head)
+                        .font(BrandFonts.mono(11))
+                        .foregroundStyle(Theme.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text("·").foregroundStyle(Theme.textTertiary)
+                    Text(BoardDates.relative(pull.mergedAt ?? pull.updatedAt))
+                        .foregroundStyle(Theme.textTertiary)
+                        .fixedSize()
+                }
+                .font(TypeScale.caption)
+                .lineLimit(1)
+                HStack(spacing: 5) {
+                    if pull.ci != "none" {
+                        BoardChip(text: GHStyle.ciTitle(pull.ci), tint: GHStyle.ciColor(pull.ci), filled: true)
                     }
-                    .font(TypeScale.caption)
-                    .lineLimit(1)
-                    HStack(spacing: 5) {
-                        if pull.ci != "none" {
-                            BoardChip(text: GHStyle.ciTitle(pull.ci), tint: GHStyle.ciColor(pull.ci), filled: true)
-                        }
-                        if let review = GHStyle.reviewTitle(pull.review), pull.isOpen {
-                            BoardChip(text: review, systemImage: GHStyle.reviewSymbol(pull.review), tint: GHStyle.reviewColor(pull.review), filled: pull.review != "review_required")
-                        }
-                        if pull.mergeable == "conflicting", pull.isOpen {
-                            BoardChip(text: "Conflitos", systemImage: "exclamationmark.triangle", tint: Theme.danger, filled: true)
-                        }
-                        if let key = pull.linear {
-                            LinearKeyChip(identifier: key)
-                        }
-                        Spacer(minLength: 0)
-                        if pull.comments > 0 {
-                            HStack(spacing: 3) {
-                                Image(systemName: "bubble.left")
-                                    .font(.system(size: 10, weight: .medium))
-                                Text("\(pull.comments)")
-                                    .font(TypeScale.counter)
-                            }
-                            .foregroundStyle(Theme.textTertiary)
-                        }
-                        DiffStat(additions: pull.additions, deletions: pull.deletions)
-                        RemoteAvatar(url: pull.author.avatarUrl, name: pull.author.login, size: 18)
+                    if let review = GHStyle.reviewTitle(pull.review), pull.isOpen {
+                        BoardChip(text: review, systemImage: GHStyle.reviewSymbol(pull.review), tint: GHStyle.reviewColor(pull.review), filled: pull.review != "review_required")
                     }
+                    if pull.mergeable == "conflicting", pull.isOpen {
+                        BoardChip(text: "Conflitos", systemImage: "exclamationmark.triangle", tint: Theme.danger, filled: true)
+                    }
+                    if let key = pull.linear {
+                        LinearKeyChip(identifier: key)
+                    }
+                    Spacer(minLength: 0)
+                    if pull.comments > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "bubble.left")
+                                .font(.system(size: 10, weight: .medium))
+                            Text("\(pull.comments)")
+                                .font(TypeScale.counter)
+                        }
+                        .foregroundStyle(Theme.textTertiary)
+                    }
+                    DiffStat(additions: pull.additions, deletions: pull.deletions)
+                    RemoteAvatar(url: pull.author.avatarUrl, name: pull.author.login, size: 18)
                 }
             }
-            .padding(Spacing.m)
-            .background(isSelected ? Theme.selection : hovering ? Theme.hover : Theme.maskHidden, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+        }
+        .padding(Spacing.m)
+        .background(isSelected ? Theme.selection : hovering ? Theme.hover : Theme.maskHidden, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
         .onTapGesture(perform: action)
         .clickable()
         .accessibilityElement(children: .combine)

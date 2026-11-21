@@ -19,6 +19,7 @@ import {
   usageOf,
 } from "../../../../test/engine-turn-helpers";
 import { fakeProviders, replyWith } from "../../../../test/helpers";
+import { must } from "../../../../test/must";
 import * as accounts from "../../accounts/services/accounts.service";
 import { clearLimit, limitOf, markLimited } from "../../accounts/services/limits.service";
 import * as decisions from "../../approvals/services/decisions.service";
@@ -29,6 +30,7 @@ import { botHomePath } from "../../code/services/bot-home.service";
 import { addAllowedRepo, removeAllowedRepo, worktreesRoot } from "../../code/services/repos.service";
 import * as computer from "../../computer/services/computer.service";
 import * as handoff from "../../conversations/services/handoff.service";
+import * as reactions from "../../conversations/services/reactions.service";
 import * as threads from "../../conversations/services/threads.service";
 import { metricsText, resetTurnDurations } from "../../status/services/metrics.service";
 import * as uploads from "../../uploads/services/uploads.service";
@@ -230,7 +232,7 @@ describe("a chat turn", () => {
     });
     track(
       spyOn(accounts, "findAccount").mockImplementation(async (id: string) => ({
-        ...(await accounts.listAccounts()).find((item) => item.id === "vps:claude")!,
+        ...must((await accounts.listAccounts()).find((item) => item.id === "vps:claude")),
         id,
         status: "offline",
         detail: "caiu",
@@ -399,12 +401,14 @@ describe("the system prompt", () => {
     });
   });
 
-  test("ignores failing canvas and blocks notes and skips recall when memory is off", async () => {
+  test("ignores failing canvas, blocks and reaction notes and skips recall when memory is off", async () => {
     const bot = await makeBot({ memory: { recall: false, capture: false } });
     const session = await newSession(bot.id);
     track(spyOn(canvas, "canvasEditNote").mockRejectedValue(new Error("sem canvas")));
     const blocks = track(spyOn(blockTools, "blocksEditNote").mockRejectedValue(new Error("sem blocos")));
+    const reacted = track(spyOn(reactions, "reactionNote").mockRejectedValue(new Error("sem reações")));
     await run(session);
+    expect(reacted).toHaveBeenCalledWith(session, bot.id);
     expect(quiet.recall).not.toHaveBeenCalled();
     expect(quiet.capture).not.toHaveBeenCalled();
     expect(blocks).toHaveBeenCalledWith(bot.id);

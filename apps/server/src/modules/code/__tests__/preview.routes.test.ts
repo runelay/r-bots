@@ -7,6 +7,7 @@ import type { Socket } from "../../../shared/ws";
 import {
   handlePreview,
   isPreviewTraffic,
+  issuePreviewTicket,
   onPreviewHost,
   previewHost,
   previewOrigin,
@@ -110,6 +111,36 @@ describe("preview exchange", () => {
   });
 });
 
+describe("preview tickets", () => {
+  test("a ticket opens a session once, leaves the link token unused and expires after two minutes", async () => {
+    const clock = { at: 5_000_000 };
+    usePreviewClock(() => clock.at);
+    const port = upstream(() => new Response("page"));
+    const token = serveToken(port);
+    const ticket = issuePreviewTicket(token);
+    expect(ticket).toMatch(/^[\w-]{24}$/);
+    expect(ticket).not.toContain(token);
+    const redirect = await request(`/preview/ws1/${port}/app?t=${ticket}`, { redirect: "manual" });
+    expect(redirect.status).toBe(302);
+    expect(redirect.headers.get("location")).toBe("/app");
+    expect((await request("/page", { headers: { cookie: cookieOf(redirect) } })).status).toBe(200);
+    expect((await request(`/preview/ws1/${port}/?t=${ticket}`, { redirect: "manual" })).status).toBe(403);
+    expect((await request(`/preview/ws1/${port}/?t=${token}`, { redirect: "manual" })).status).toBe(302);
+    const late = issuePreviewTicket(token);
+    clock.at += 2 * 60_000;
+    expect((await request(`/preview/ws1/${port}/?t=${late}`, { redirect: "manual" })).status).toBe(403);
+    const fresh = issuePreviewTicket(token);
+    expect((await request(`/preview/ws1/${port}/?t=${fresh}`, { redirect: "manual" })).status).toBe(302);
+  });
+
+  test("a ticket for another server does not open this one", async () => {
+    const port = upstream(() => new Response("page"));
+    serveToken(port);
+    const other = issuePreviewTicket("tok-other");
+    expect((await request(`/preview/ws1/${port}/?t=${other}`, { redirect: "manual" })).status).toBe(403);
+  });
+});
+
 describe("preview sessions", () => {
   test("keep a bounded number of sessions and forget tokens of stopped servers", async () => {
     let issued = 0;
@@ -198,6 +229,21 @@ describe("preview proxy", () => {
       "x-forwarded-for",
     ])
       expect(forwarded[name]).toBeUndefined();
+  });
+
+  test("passes an answer without body through uncompressed", async () => {
+    const methods: string[] = [];
+    const port = upstream((incoming) => {
+      methods.push(incoming.method);
+      return new Response("<p>page</p>", { headers: { "content-type": "text/html" } });
+    });
+    const token = serveToken(port);
+    const cookie = cookieOf(await request(`/preview/ws1/${port}/?t=${token}`, { redirect: "manual" }));
+    const head = await request("/page", { method: "HEAD", headers: { cookie, "accept-encoding": "gzip" } });
+    expect(head.status).toBe(200);
+    expect(head.text).toBe("");
+    expect(head.headers.get("content-encoding")).toBeNull();
+    expect(methods).toEqual(["HEAD"]);
   });
 
   test("never shadows API routes, refuses service worker scripts and unknown cookies", async () => {

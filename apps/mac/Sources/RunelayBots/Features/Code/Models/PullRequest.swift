@@ -209,12 +209,13 @@ struct PullRequestEvent: Hashable, Sendable {
             check = data["author"]?.stringValue
             logURL = nil
             log = data["body"]?.stringValue
-            comments = data["comments"]?.arrayValue?.compactMap { item in
-                guard let body = item["body"]?.stringValue, !body.isEmpty else { return nil }
-                let path = (item["path"]?.stringValue ?? "") as NSString
-                let line = item["line"]?.intValue.map { ":\($0)" } ?? ""
-                return path.length > 0 ? "\(path.lastPathComponent)\(line) — \(body)" : body
-            } ?? []
+            comments =
+                data["comments"]?.arrayValue?.compactMap { item in
+                    guard let body = item["body"]?.stringValue, !body.isEmpty else { return nil }
+                    let path = (item["path"]?.stringValue ?? "") as NSString
+                    let line = item["line"]?.intValue.map { ":\($0)" } ?? ""
+                    return path.length > 0 ? "\(path.lastPathComponent)\(line) — \(body)" : body
+                } ?? []
         default:
             return nil
         }

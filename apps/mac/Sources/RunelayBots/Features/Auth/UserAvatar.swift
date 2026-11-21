@@ -93,15 +93,17 @@ enum AvatarImage {
         let crop = CGRect(x: (width - edge) / 2, y: (height - edge) / 2, width: edge, height: edge).integral
         guard let square = source.cropping(to: crop) else { return nil }
         let target = Int(min(side, edge))
-        guard let context = CGContext(
-            data: nil,
-            width: target,
-            height: target,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
-        ) else { return nil }
+        guard
+            let context = CGContext(
+                data: nil,
+                width: target,
+                height: target,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+            )
+        else { return nil }
         context.interpolationQuality = .high
         context.setFillColor(CGColor.white)
         context.fill(CGRect(x: 0, y: 0, width: target, height: target))

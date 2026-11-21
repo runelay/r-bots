@@ -23,11 +23,12 @@ final class AppActivity {
             NSWindow.willCloseNotification,
         ]
         for name in names {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated {
-                    AppActivity.shared.refresh()
-                }
-            })
+            observers.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated {
+                        AppActivity.shared.refresh()
+                    }
+                })
         }
         refresh()
     }

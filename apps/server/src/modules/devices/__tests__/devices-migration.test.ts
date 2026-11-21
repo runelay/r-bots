@@ -8,6 +8,7 @@ describe("0003_devices migration", () => {
   test("copies device identity from old key metadata and gives old keys an expiry", async () => {
     const db = await freshDb({ migrate: false });
     const before = journal.entries.filter((entry) => entry.tag < "0003_devices");
+    const through = journal.entries.filter((entry) => entry.tag <= "0003_devices");
     await runMigrations(db, before, migrationFiles);
     const now = "2026-11-01T10:00:00.000Z";
     await db.execute(
@@ -37,7 +38,7 @@ describe("0003_devices migration", () => {
     await key("k5", "mac-runner", JSON.stringify({ kind: "device", deviceId: "dev-5" }));
     await key("k6", "device", JSON.stringify({ kind: "device", deviceId: "dev-6", registeredAt: "nope" }));
     await key("k7", "device", JSON.stringify({ kind: "device", deviceId: "dev-7" }), "ghost");
-    expect(await runMigrations(db, journal.entries, migrationFiles)).toEqual(["0003_devices"]);
+    expect(await runMigrations(db, through, migrationFiles)).toEqual(["0003_devices"]);
     const devices = await db.execute<{ id: string; api_key_id: string; name: string; model: string | null }>(
       sql`select id, api_key_id, name, model, machine_id, registered_at from device order by id`,
     );

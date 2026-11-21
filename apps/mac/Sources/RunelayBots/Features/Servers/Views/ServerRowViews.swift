@@ -112,38 +112,46 @@ enum ServerActions {
     static func items(_ server: DevServerInfo, botID: String) -> [GlassMenuItem] {
         let store = ServerStore.shared
         var items: [GlassMenuItem] = [
-            GlassMenuItem(server.branch ?? server.name, id: "about", systemImage: server.branch == nil ? "folder" : "arrow.triangle.branch", subtitle: server.command, isEnabled: false) {},
+            GlassMenuItem(server.branch ?? server.name, id: "about", systemImage: server.branch == nil ? "folder" : "arrow.triangle.branch", subtitle: server.command, isEnabled: false) {}
         ]
         if server.status == .running {
-            items.append(GlassMenuItem("Abrir no painel", systemImage: "sidebar.right", startsSection: true) {
-                store.openPanel(server, botID: botID, tab: .preview)
-            })
-            items.append(GlassMenuItem("Abrir no navegador", systemImage: "safari") {
-                store.openInBrowser(server)
-            })
-            items.append(GlassMenuItem("Copiar URL", systemImage: "link") {
-                store.copyURL(server)
-            })
+            items.append(
+                GlassMenuItem("Abrir no painel", systemImage: "sidebar.right", startsSection: true) {
+                    store.openPanel(server, botID: botID, tab: .preview)
+                })
+            items.append(
+                GlassMenuItem("Abrir no navegador", systemImage: "safari") {
+                    store.openInBrowser(server)
+                })
+            items.append(
+                GlassMenuItem("Copiar URL", systemImage: "link") {
+                    store.copyURL(server)
+                })
         }
         if server.isMobile, let device = SimulatorStore.shared.preferredDevice {
-            items.append(GlassMenuItem(device.booted ? "Desligar \(device.name)" : "Ligar \(device.name)", systemImage: "power") {
-                SimulatorStore.shared.toggle(device)
-            })
+            items.append(
+                GlassMenuItem(device.booted ? "Desligar \(device.name)" : "Ligar \(device.name)", systemImage: "power") {
+                    SimulatorStore.shared.toggle(device)
+                })
         }
-        items.append(GlassMenuItem("Logs", systemImage: "text.alignleft", startsSection: server.status != .running) {
-            store.openPanel(server, botID: botID, tab: .logs)
-        })
-        items.append(GlassMenuItem(server.status.isLive ? "Reiniciar" : "Rodar de novo", systemImage: "arrow.clockwise") {
-            store.restart(server.id)
-        })
+        items.append(
+            GlassMenuItem("Logs", systemImage: "text.alignleft", startsSection: server.status != .running) {
+                store.openPanel(server, botID: botID, tab: .logs)
+            })
+        items.append(
+            GlassMenuItem(server.status.isLive ? "Reiniciar" : "Rodar de novo", systemImage: "arrow.clockwise") {
+                store.restart(server.id)
+            })
         if server.status.isLive {
-            items.append(GlassMenuItem("Parar", systemImage: "stop.fill", destructive: true) {
-                store.stop(server.id)
-            })
+            items.append(
+                GlassMenuItem("Parar", systemImage: "stop.fill", destructive: true) {
+                    store.stop(server.id)
+                })
         } else {
-            items.append(GlassMenuItem("Tirar da lista", systemImage: "xmark") {
-                store.forget(server.id)
-            })
+            items.append(
+                GlassMenuItem("Tirar da lista", systemImage: "xmark") {
+                    store.forget(server.id)
+                })
         }
         return items
     }

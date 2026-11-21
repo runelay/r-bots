@@ -32,8 +32,9 @@ final class TranscriptCache: Sendable {
             return hit
         }
         guard let url = Self.fileURL(server: server, sessionID: sessionID),
-              let data = try? Data(contentsOf: url),
-              let cached = Self.decode(data) else { return nil }
+            let data = try? Data(contentsOf: url),
+            let cached = Self.decode(data)
+        else { return nil }
         remember(cached, key: key)
         return cached
     }
@@ -43,7 +44,8 @@ final class TranscriptCache: Sendable {
         remember(cached, key: key)
         queue.async {
             guard let url = Self.fileURL(server: server, sessionID: sessionID),
-                  let data = Self.encode(cached) else { return }
+                let data = Self.encode(cached)
+            else { return }
             try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try? data.write(to: url, options: .atomic)
         }
@@ -125,7 +127,7 @@ final class TranscriptCache: Sendable {
                 "v": 1,
                 "total": cached.total,
                 "lines": lines,
-                "r": cached.reactions.suffix(400).map(\.json.foundationObject)
+                "r": cached.reactions.suffix(400).map(\.json.foundationObject),
             ]
             guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
             if data.count <= maxBytes || lines.count == 1 {
@@ -138,9 +140,10 @@ final class TranscriptCache: Sendable {
 
     private static func decode(_ data: Data) -> CachedTranscript? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              object["v"] as? Int == 1,
-              let total = object["total"] as? Int,
-              let rawLines = object["lines"] as? [[[String: Any]]] else { return nil }
+            object["v"] as? Int == 1,
+            let total = object["total"] as? Int,
+            let rawLines = object["lines"] as? [[[String: Any]]]
+        else { return nil }
         let lines = rawLines.map { line in
             line.compactMap { raw -> StreamFact? in
                 guard let type = raw["t"] as? String, let key = raw["k"] as? String else { return nil }
@@ -158,8 +161,8 @@ final class TranscriptCache: Sendable {
     }
 }
 
-private extension JSONValue {
-    var foundationObject: Any {
+extension JSONValue {
+    fileprivate var foundationObject: Any {
         switch self {
         case .null: NSNull()
         case .bool(let value): value
@@ -170,7 +173,7 @@ private extension JSONValue {
         }
     }
 
-    init(foundation: Any) {
+    fileprivate init(foundation: Any) {
         switch foundation {
         case let value as String:
             self = .string(value)

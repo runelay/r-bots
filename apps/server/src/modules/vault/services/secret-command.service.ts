@@ -45,7 +45,7 @@ function readVariable(command: string, start: number, byEnv: Map<string, string>
   const secret = name ? byEnv.get(name) : undefined;
   if (!match || !secret)
     reject(
-      "No comando com segredo só vale $SEGREDO_NOME ou ${SEGREDO_NOME} puro: sem outras variáveis, recortes como ${X:0:4} ou substituições.",
+      `No comando com segredo só vale $SEGREDO_NOME ou \${SEGREDO_NOME} puro: sem outras variáveis, recortes como \${X:0:4} ou substituições.`,
     );
   word.push({ secret });
   return start + 1 + match[0].length;

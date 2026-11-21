@@ -15,7 +15,7 @@ import {
 import { resetData, startTestServer, type TestServer } from "../../../../test/helpers";
 import * as accounts from "../../accounts/services/accounts.service";
 import { type BotDefinition, getBot, sidebarOf, updateBot } from "../../bots/services/bots.service";
-import { addAllowedRepo, allowedRepos } from "../../code/services/repos.service";
+import { addAllowedRepo, allowedRepos, loadAllowedRepos, removeAllowedRepo } from "../../code/services/repos.service";
 import * as runelay from "../../connectors/services/runelay.service";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import * as store from "../../integrations/services/integration-store.service";
@@ -152,6 +152,7 @@ describe("helpers", () => {
 describe("settings_get", () => {
   test("shows the bot and the workspace without secret values", async () => {
     await saveSecretMeta("github-token", { description: "Token do GitHub", domains: ["github.com"] });
+    for (const repo of await loadAllowedRepos()) await removeAllowedRepo(repo.path);
     await addAllowedRepo(repoRoot, "teste", null);
     await updatePreferences({ microphones: ["MacBook Air", "USB"] });
     spy(runelay, "runelayEnabled").mockReturnValue(true);

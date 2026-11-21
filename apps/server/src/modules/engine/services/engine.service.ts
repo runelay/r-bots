@@ -788,7 +788,8 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
   const mentioned = mentionedMembers(delivery.text, members);
   const queue: { bot: BotDefinition; note: string | null }[] = [];
   if (mentioned.length > 0) {
-    for (const id of mentioned) queue.push({ bot: members.find((member) => member.id === id)!, note: null });
+    for (const bot of mentioned.flatMap((id) => members.filter((member) => member.id === id)))
+      queue.push({ bot, note: null });
   } else {
     const decision = await decideRoute(
       group.name,
@@ -802,8 +803,9 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
   }
   let turns = 0;
   let first = true;
-  while (queue.length > 0 && turns < maxGroupTurns) {
-    const next = queue.shift()!;
+  while (turns < maxGroupTurns) {
+    const next = queue.shift();
+    if (!next) break;
     turns++;
     let handoff: { botId: string; note: string } | null = null;
     const roster = members
@@ -848,8 +850,7 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
 async function drain(session: StoredSession, runtime: Runtime) {
   draining.add(session.meta.sessionId);
   try {
-    while (runtime.queue.length > 0) {
-      const delivery = runtime.queue.shift()!;
+    for (let delivery = runtime.queue.shift(); delivery; delivery = runtime.queue.shift()) {
       try {
         if (session.meta.kind === "group") await runGroup(session, runtime, delivery);
         else await runTurn(session, runtime, delivery);
@@ -1316,8 +1317,7 @@ const waits: { from: string; to: string }[] = [];
 function waitsOn(start: string, goal: string) {
   const seen = new Set<string>();
   const stack = [start];
-  while (stack.length > 0) {
-    const current = stack.pop()!;
+  for (let current = stack.pop(); current !== undefined; current = stack.pop()) {
     if (current === goal) return true;
     if (seen.has(current)) continue;
     seen.add(current);

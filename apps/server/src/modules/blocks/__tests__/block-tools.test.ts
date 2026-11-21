@@ -238,9 +238,10 @@ describe("agenda", () => {
     expect(await label("agenda_list", { start: "2026-11-16", end: "2026-11-23", silent: true })).toBe(
       "Conferiu a agenda",
     );
-    const list = (await run("agenda_list", { start: "2026-11-20", end: "2026-11-21" })) as {
-      items: Array<{ title: string }>;
-    };
+    const list = await run<{ items: Array<{ title: string }> }>("agenda_list", {
+      start: "2026-11-20",
+      end: "2026-11-21",
+    });
     expect(list.items.map((item) => item.title)).toEqual(["Foco"]);
     expect(list.blockEvent?.type).toBe("block.updated");
     expect(list.blockEvent?.data).toMatchObject({

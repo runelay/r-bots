@@ -56,10 +56,11 @@ final class WindowConfiguringView: NSView {
         let leading: CGFloat = 18
         let spacing: CGFloat = 20
         for (index, button) in buttons.enumerated() {
-            button.setFrameOrigin(NSPoint(
-                x: leading + CGFloat(index) * spacing,
-                y: ((stripHeight - button.frame.height) / 2).rounded()
-            ))
+            button.setFrameOrigin(
+                NSPoint(
+                    x: leading + CGFloat(index) * spacing,
+                    y: ((stripHeight - button.frame.height) / 2).rounded()
+                ))
         }
     }
 }

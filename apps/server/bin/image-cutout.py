@@ -16,7 +16,7 @@ SIZE = 1024
 
 
 def model_path(name):
-    root = os.environ.get("IMAGE_CUTOUT_MODELS", "/opt/runelay-cutout/models")
+    root = os.environ.get("IMAGE_CUTOUT_MODELS", "/opt/rbots-tools/cutout/current/models")
     path = os.path.join(root, f"{name}.onnx")
     if not os.path.isfile(path):
         raise SystemExit(f"modelo {name} não encontrado em {root}")

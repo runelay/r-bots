@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
+
 @testable import RunelayBots
 
 struct HarnessFixture {
@@ -323,11 +324,13 @@ final class HarnessHost {
 
     func pressJump() -> Bool {
         let characters = String(Character(UnicodeScalar(NSDownArrowFunctionKey)!))
-        guard let event = NSEvent.keyEvent(
-            with: .keyDown, location: .zero, modifierFlags: [.command, .numericPad, .function], timestamp: ProcessInfo.processInfo.systemUptime,
-            windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
-            isARepeat: false, keyCode: 125
-        ) else { return false }
+        guard
+            let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [.command, .numericPad, .function], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, characters: characters, charactersIgnoringModifiers: characters,
+                isARepeat: false, keyCode: 125
+            )
+        else { return false }
         return window.performKeyEquivalent(with: event)
     }
 

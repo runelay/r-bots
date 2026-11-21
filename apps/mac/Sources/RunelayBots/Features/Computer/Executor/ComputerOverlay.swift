@@ -50,11 +50,12 @@ final class ComputerOverlay {
             }
         }
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
-            activeObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated {
-                    ComputerExecutor.shared.overlayAppActivityChanged()
-                }
-            })
+            activeObservers.append(
+                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated {
+                        ComputerExecutor.shared.overlayAppActivityChanged()
+                    }
+                })
         }
     }
 

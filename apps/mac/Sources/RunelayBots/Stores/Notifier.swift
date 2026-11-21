@@ -1,6 +1,6 @@
 import AppKit
-import SwiftUI
 import Foundation
+import SwiftUI
 import UserNotifications
 
 enum NotificationPreference: String, CaseIterable, Identifiable {
@@ -163,10 +163,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let renderer = ImageRenderer(content: avatar)
         renderer.scale = 2
         guard let image = renderer.nsImage,
-              let tiff = image.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiff),
-              let png = bitmap.representation(using: .png, properties: [:]),
-              (try? png.write(to: url)) != nil
+            let tiff = image.tiffRepresentation,
+            let bitmap = NSBitmapImageRep(data: tiff),
+            let png = bitmap.representation(using: .png, properties: [:]),
+            (try? png.write(to: url)) != nil
         else { return nil }
         return try? UNNotificationAttachment(identifier: "avatar", url: url, options: nil)
     }

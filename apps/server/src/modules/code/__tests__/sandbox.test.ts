@@ -144,7 +144,10 @@ describe("probe and process control", () => {
     process.env.BOTS_SANDBOX_SUDO = "/fake/sudo";
     let reply: { code: number; stdout?: string; stderr?: string } = { code: 0, stdout: "ok 1502 bwrap=0\n" };
     const fake = fakeProcesses((call) => (call.command === "/fake/sudo" ? reply : undefined));
-    expect(await sandboxBootReport()).toEqual({ ok: true, line: "sandbox de ferramentas: uid (runelaytool, bwrap ausente)" });
+    expect(await sandboxBootReport()).toEqual({
+      ok: true,
+      line: "sandbox de ferramentas: uid (runelaytool, bwrap ausente)",
+    });
     resetSandboxProbe();
     reply = { code: 0, stdout: "ok 1502 bwrap=1\n" };
     expect((await sandboxBootReport()).line).toBe("sandbox de ferramentas: uid (runelaytool, bwrap ligado)");

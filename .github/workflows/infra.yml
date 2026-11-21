@@ -6,8 +6,7 @@ on:
       - "infra/**"
       - ".github/workflows/infra.yml"
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   group: infra-${{ github.event.pull_request.number }}
@@ -19,6 +18,9 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -28,8 +30,10 @@ jobs:
       run:
         working-directory: ${{ matrix.dir }}
     steps:
-      - uses: actions/checkout@v6.1.0
-      - uses: opentofu/setup-opentofu@v2.0.2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: ${{ env.TOFU_VERSION }}
           tofu_wrapper: false
@@ -39,13 +43,19 @@ jobs:
 
   docker:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: bash -n infra/docker/install.sh
 
   plan:
     needs: validate
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write
@@ -73,9 +83,11 @@ jobs:
             echo "HCLOUD_TOKEN ausente: plan ignorado."
           fi
       - if: steps.gate.outputs.enabled == 'true'
-        uses: actions/checkout@v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - if: steps.gate.outputs.enabled == 'true'
-        uses: opentofu/setup-opentofu@v2.0.2
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: ${{ env.TOFU_VERSION }}
           tofu_wrapper: false
@@ -102,7 +114,7 @@ jobs:
           tofu plan -input=false -no-color -out="$RUNNER_TEMP/tfplan"
           tofu show -no-color "$RUNNER_TEMP/tfplan" > "$RUNNER_TEMP/plan.txt"
       - if: steps.gate.outputs.enabled == 'true'
-        uses: actions/github-script@v9.0.0
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const fs = require("node:fs");

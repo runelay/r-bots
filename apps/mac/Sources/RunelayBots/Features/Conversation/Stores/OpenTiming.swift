@@ -48,8 +48,10 @@ enum OpenTiming {
     }
 
     private static func write(_ line: String) {
-        guard let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appending(path: "runelay bots", directoryHint: .isDirectory) else { return }
+        guard
+            let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+                .appending(path: "runelay bots", directoryHint: .isDirectory)
+        else { return }
         let url = folder.appending(path: "open-timing.log")
         let data = Data("\(ISO8601DateFormatter().string(from: Date())) \(line)\n".utf8)
         if let handle = try? FileHandle(forWritingTo: url) {

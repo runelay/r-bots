@@ -18,7 +18,9 @@ struct TurnTiming: Sendable {
 
 @MainActor
 final class TurnTaker {
-    private static let fillers: Set<String> = ["ta", "tah", "uhum", "uhm", "hum", "hm", "ahn", "ah", "aham", "ok", "okay", "certo", "sei", "entendi", "beleza", "e", "eh", "oi", "hmm", "mhm", "anham", "ham"]
+    private static let fillers: Set<String> = [
+        "ta", "tah", "uhum", "uhm", "hum", "hm", "ahn", "ah", "aham", "ok", "okay", "certo", "sei", "entendi", "beleza", "e", "eh", "oi", "hmm", "mhm", "anham", "ham",
+    ]
 
     var onTurn: ((String, Bool) -> Void)?
     var onBargeIn: (() -> Void)?

@@ -16,10 +16,12 @@ import {
 import { waitFor } from "../../../../test/engine-helpers";
 import { resetData } from "../../../../test/helpers";
 import { adoptWorkspaceAt, openTaskWorkspace } from "../services/actions.service";
+import * as repos from "../services/repos.service";
 import { addAllowedRepo } from "../services/repos.service";
 import {
   activeWorkspace,
   activeWorkspaces,
+  addWorkspace,
   alignBase,
   allDiffs,
   baseContent,
@@ -28,13 +30,14 @@ import {
   changedFiles,
   checkpointRef,
   clipText,
-  closeWorkspace,
   closestBase,
+  closeWorkspace,
   codeSummary,
   createCheckpoint,
   diffTexts,
   fileDiff,
   followHead,
+  forgetRepoCache,
   hunkStats,
   insideWorkspace,
   installLogPath,
@@ -75,6 +78,25 @@ describe("repository discovery", () => {
     expect(names).not.toContain("ws-gone");
     expect(repos.find((repo) => repo.name === "ws-beta")?.branch).toBe("develop");
     expect(cachedRepoNames()).toEqual(names);
+  });
+
+  test("lists a repo whose .git has no HEAD without a branch", async () => {
+    mkdirSync(join(repoRoot, "ws-headless", ".git"), { recursive: true });
+    await addAllowedRepo(join(repoRoot, "ws-headless"), "test", null);
+    const repos = await listRepos(true);
+    expect(repos.find((repo) => repo.name === "ws-headless")).toMatchObject({ branch: null, location: "repos" });
+  });
+
+  test("asks for a repo to be allowed when none is", async () => {
+    const none = spyOn(repos, "allowedRepos").mockReturnValue([]);
+    try {
+      forgetRepoCache();
+      expect(await listRepos()).toEqual([]);
+      await expect(resolveRepo("qualquer")).rejects.toThrow("Nenhum repositório liberado ainda.");
+    } finally {
+      none.mockRestore();
+      forgetRepoCache();
+    }
   });
 
   test("resolves allowed repos by path, home path, exact, case, loose and partial names", async () => {
@@ -191,6 +213,20 @@ describe("opening and closing workspaces", () => {
     expect(await readHead(join(workspace.path, "..", "..", ".."))).toBeNull();
   });
 
+  test("a HEAD read that fails does not block the next one", async () => {
+    const { workspace } = await opened("ws-follow-fail");
+    gitSync(workspace.path, ["checkout", "-q", "-b", "fix/after"]);
+    const broken = spyOn(proc, "run").mockRejectedValueOnce(new Error("git exploded"));
+    try {
+      const first = followHead(workspace);
+      const second = followHead(workspace);
+      await expect(first).rejects.toThrow("git exploded");
+      expect(await second).toEqual({ from: "feat/add-feature", to: "fix/after" });
+    } finally {
+      broken.mockRestore();
+    }
+  });
+
   test("adds a suffix when the folder or branch is taken", async () => {
     const first = await opened("ws-clash");
     const second = await openWorkspace(await newSession("bot-ws-clash"), "bot-ws-clash", "ws-clash", "Add feature");
@@ -249,6 +285,48 @@ describe("several repositories in one conversation", () => {
     session.meta.workspaces = [{ ...workspace }];
     expect(workspacesOf(session)).toHaveLength(1);
     expect(activeWorkspace(session)).toBe(session.meta.workspaces[0]);
+  });
+
+  test("keeps the open workspaces and drops the oldest closed one past the limit", async () => {
+    const session = await newSession("bot-many");
+    const make = (index: number, active: boolean): WorkspaceState => ({
+      id: `ws-many-${index}`,
+      repo: `/r/${index}`,
+      repoName: `r${index}`,
+      path: `/w/${index}`,
+      branch: "feat/x",
+      base: "main",
+      baseCommit: "abc",
+      task: "t",
+      openedAt: "",
+      active,
+      closedAt: active ? null : "2026-01-01T00:00:00.000Z",
+      install: { status: "skipped", manager: null, command: null, startedAt: null, finishedAt: null },
+    });
+    addWorkspace(session, make(0, true), true);
+    addWorkspace(session, make(1, false), false);
+    for (let index = 2; index < 9; index++) addWorkspace(session, make(index, true), false);
+    expect(workspacesOf(session).map((item) => item.id)).toEqual([0, 2, 3, 4, 5, 6, 7, 8].map((i) => `ws-many-${i}`));
+    expect(session.meta.workspace?.id).toBe("ws-many-0");
+    addWorkspace(session, make(9, true), false);
+    expect(workspacesOf(session)).toHaveLength(9);
+  });
+
+  test("does not adopt a worktree whose HEAD cannot be read", async () => {
+    await makeRepo("ws-adopt-headless");
+    await listRepos(true);
+    const session = await newSession("bot-adopt-headless");
+    const { workspace } = await openTaskWorkspace(session, "bot-adopt-headless", "ws-adopt-headless", "Api");
+    await waitForInstall(workspace);
+    session.meta.workspaces = [];
+    session.meta.workspace = undefined;
+    const broken = spyOn(proc, "run").mockRejectedValue(new Error("git exploded"));
+    try {
+      expect(await adoptWorkspaceAt(session, join(workspace.path, "src", "x.ts"))).toBeNull();
+    } finally {
+      broken.mockRestore();
+    }
+    expect(activeWorkspaces(session)).toEqual([]);
   });
 
   test("adopts a worktree of the same conversation edited by path", async () => {
@@ -338,7 +416,12 @@ describe("dependency install", () => {
       if (call.command.endsWith("pnpm")) throw new Error("spawn failed");
       return undefined;
     });
+    const realFindBinary = proc.findBinary;
+    const installed = spyOn(proc, "findBinary").mockImplementation((names) =>
+      names.includes("pnpm") ? "/usr/local/bin/pnpm" : realFindBinary(names),
+    );
     const broken = await opened("ws-install-throw", { files: { "pnpm-lock.yaml": "x" } });
+    installed.mockRestore();
     expect(broken.workspace.install.status).toBe("failed");
     expect(broken.workspace.install.error).toBe("pnpm install --frozen-lockfile --ignore-scripts saiu com código 1.");
   });

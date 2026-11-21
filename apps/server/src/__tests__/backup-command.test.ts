@@ -89,7 +89,7 @@ describe("backup subcommand of the server entry", () => {
       [
         "#!/bin/sh",
         `if [ ${exitCode} -ne 0 ]; then echo "conexão recusada" >&2; exit ${exitCode}; fi`,
-        'for arg in "$@"; do case "$arg" in --file=*) printf dump > "${arg#--file=}";; esac; done',
+        `for arg in "$@"; do case "$arg" in --file=*) printf dump > "\${arg#--file=}";; esac; done`,
       ].join("\n"),
     );
     chmodSync(bin, 0o755);

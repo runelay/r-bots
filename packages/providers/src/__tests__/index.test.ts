@@ -278,6 +278,7 @@ describe("runTurn", () => {
       const aborted = params.options?.abortController?.signal as AbortSignal;
       controller.abort();
       forwarded = aborted.aborted;
+      yield* [];
     });
     const { events, emit } = recorder();
     await runTurn(turnRequest(), fakeCli.home, controller.signal, emit);

@@ -34,7 +34,8 @@ final class BrandIconStore {
             return nil
         }
         if let url = ResourceBundle.bundle?.url(forResource: slug, withExtension: "svg", subdirectory: "Logos/si"),
-           let icon = Self.load(url) {
+            let icon = Self.load(url)
+        {
             cache[slug] = icon
             return icon
         }
@@ -55,8 +56,8 @@ final class BrandIconStore {
         Task {
             defer { inFlight.remove(slug) }
             guard let (data, response) = try? await URLSession.shared.data(from: url),
-                  (response as? HTTPURLResponse)?.statusCode == 200,
-                  let directory = Self.cacheDirectory
+                (response as? HTTPURLResponse)?.statusCode == 200,
+                let directory = Self.cacheDirectory
             else {
                 missing.insert(slug)
                 return

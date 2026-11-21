@@ -1,0 +1,46 @@
+name: Bug report
+description: Something is broken
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: r/bots version
+      description: "`rbots version` on the server, or Settings › Versions in the app."
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options: [Server, Mac app, Install or update, Boxes (sandbox), Other]
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      multiple: true
+      options: [Claude, Codex, Cursor, Grok, Not related]
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`rbots logs server`. Remove tokens and personal data before pasting."
+      render: shell

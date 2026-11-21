@@ -146,7 +146,7 @@ export interface ExecHandle {
 }
 ```
 
-- **Backend `docker`:** API do Docker Engine pelo socket unix, com `fetch(url, { unix })` do Bun (nada de dockerode). Um container por bot, `rbbox-<botId>`, a partir da imagem `runelay-bots-box:<versão>`.
+- **Backend `docker`:** API do Docker Engine pelo socket unix, com `fetch(url, { unix })` do Bun (nada de dockerode). Um container por bot, `rbbox-<botId>`, a partir da imagem única `ghcr.io/runelay/r-bots:<versão>` (a mesma do servidor e do runner, desde 21/11), com `Entrypoint: rbbox-init`, `WorkingDir: /data` e healthcheck desligado.
   - Runtime `runsc` se `docker info` listar; senão `runc`, com aviso no `hello`.
   - Limites `--memory`, `--memory-swap` igual à memória, `--cpus`, `--pids-limit 1024`, `--cap-drop ALL`, `no-new-privileges`, rede `bridge`, sem montar o Docker socket nem `${HOME}`.
 - **Montagens:** só o que vem em `BoxSpec.mounts`, ou seja, o diretório da conta do provider (somente leitura, exceto a pasta de sessões), o `workDir` do turno e, no modo código, o worktree. Os caminhos de host precisam estar em `workspaceRoots`.
@@ -189,11 +189,11 @@ export interface EnvironmentInfo {
 
 - O runner roda como serviço `runner` do `compose.yaml`, no perfil `sandbox`, com o socket do Docker montado só nele. O container do servidor continua sem socket.
 - Token: com `BOTS_SANDBOX=docker`, o servidor garante no boot uma chave de dispositivo `local-runner` do dono e grava em `<data>/runner/box-runner.token` (pasta 0700, arquivo 0600). O runner monta só essa pasta e lê o arquivo por `RBOTS_DEVICE_TOKEN_FILE`, esperando ele aparecer. Sem dono ainda (primeiro acesso), não grava e tenta de novo quando o dono existir.
-- A imagem da caixa (`packages/runner/box/Dockerfile`) e a do runner (`packages/runner/Dockerfile`) são construídas pelo compose no mesmo perfil.
+- O runner usa a mesma imagem do servidor (`Dockerfile` da raiz), com `entrypoint: rbots-runner` no compose; o compose constrói uma vez só (21/11). A caixa também é essa imagem e não é serviço do compose: o runner cria e, se faltar, puxa `RBOX_IMAGE` (padrão: a própria imagem) pela API do Docker, com `RBOTS_REGISTRY_USER`/`RBOTS_REGISTRY_TOKEN` quando o registry pede login (os scripts gravam no `.env.local` com o repo privado). Ver `docker.md`.
 
 ### D6. Infra em código
 
-- `compose.yaml` na raiz é a fonte da stack: servidor, Postgres, Redis, Garage, runner, imagem da caixa e observabilidade.
+- `compose.yaml` na raiz é a fonte da stack: servidor, Postgres, Redis, Garage, runner e observabilidade. Convenções em `docker.md`.
 - `install.sh` na raiz e `infra/docker/install.sh`: ver D7.
 - `infra/hetzner/`: OpenTofu que cria a VPS, o firewall (SSH e Tailscale) e, no `cloud-init`, instala Docker e Tailscale, clona o repo e chama o mesmo `infra/docker/install.sh`.
 - Estado do OpenTofu num bucket S3 compatível (R2), por `-backend-config`; nada de credencial no repo.

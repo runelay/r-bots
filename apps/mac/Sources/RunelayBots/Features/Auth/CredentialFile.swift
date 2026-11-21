@@ -1,8 +1,8 @@
 import CryptoKit
 import Foundation
 import IOKit
-import os
 import Security
+import os
 
 struct CredentialBook: Codable, Sendable {
     var tokens: [String: String] = [:]
@@ -28,10 +28,10 @@ enum CredentialFile {
     static func load() -> CredentialBook {
         guard let raw = try? Data(contentsOf: url) else { return CredentialBook() }
         guard let envelope = try? JSONDecoder().decode(Envelope.self, from: raw),
-              let key = key(salt: envelope.salt),
-              let sealed = try? AES.GCM.SealedBox(combined: envelope.box),
-              let plain = try? AES.GCM.open(sealed, using: key),
-              let book = try? JSONDecoder().decode(CredentialBook.self, from: plain)
+            let key = key(salt: envelope.salt),
+            let sealed = try? AES.GCM.SealedBox(combined: envelope.box),
+            let plain = try? AES.GCM.open(sealed, using: key),
+            let book = try? JSONDecoder().decode(CredentialBook.self, from: plain)
         else {
             logger.error("credentials file unreadable, starting empty")
             return CredentialBook()
@@ -43,9 +43,9 @@ enum CredentialFile {
     static func save(_ book: CredentialBook) -> Bool {
         let salt = Data((0..<16).map { _ in UInt8.random(in: 0...255) })
         guard let key = key(salt: salt),
-              let plain = try? JSONEncoder().encode(book),
-              let box = try? AES.GCM.seal(plain, using: key).combined,
-              let data = try? JSONEncoder().encode(Envelope(version: 1, salt: salt, box: box))
+            let plain = try? JSONEncoder().encode(book),
+            let box = try? AES.GCM.seal(plain, using: key).combined,
+            let data = try? JSONEncoder().encode(Envelope(version: 1, salt: salt, box: box))
         else { return false }
         let manager = FileManager.default
         let folder = url.deletingLastPathComponent()

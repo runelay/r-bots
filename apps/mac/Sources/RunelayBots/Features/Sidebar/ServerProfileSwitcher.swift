@@ -65,9 +65,10 @@ struct ServerProfileSwitcher: View {
                 profiles.activate(profile.id)
             }
         }
-        list.append(GlassMenuItem("Gerenciar servidores…", id: "manage", systemImage: "slider.horizontal.3", startsSection: true) {
-            model.openSettings(.server)
-        })
+        list.append(
+            GlassMenuItem("Gerenciar servidores…", id: "manage", systemImage: "slider.horizontal.3", startsSection: true) {
+                model.openSettings(.server)
+            })
         return list
     }
 }

@@ -12,11 +12,11 @@ struct CronSchedule: Sendable {
     init?(_ expression: String) {
         let parts = expression.split(whereSeparator: \.isWhitespace).map(String.init)
         guard parts.count == 5,
-              let minutes = Self.field(parts[0], range: 0...59),
-              let hours = Self.field(parts[1], range: 0...23),
-              let days = Self.field(parts[2], range: 1...31),
-              let months = Self.field(parts[3], range: 1...12),
-              let weekdays = Self.field(parts[4], range: 0...7)
+            let minutes = Self.field(parts[0], range: 0...59),
+            let hours = Self.field(parts[1], range: 0...23),
+            let days = Self.field(parts[2], range: 1...31),
+            let months = Self.field(parts[3], range: 1...12),
+            let weekdays = Self.field(parts[4], range: 0...7)
         else { return nil }
         self.minutes = minutes
         self.hours = hours

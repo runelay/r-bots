@@ -686,16 +686,21 @@ private struct GlassPopupRoot: View {
     @Environment(\.appReduceMotion) private var reduceMotion
 
     var body: some View {
-        let corner: UnitPoint = switch (edge, phase.flipped) {
-        case (.leading, false): .topLeading
-        case (.trailing, false): .topTrailing
-        case (.leading, true): .bottomLeading
-        case (.trailing, true): .bottomTrailing
-        }
+        let corner: UnitPoint =
+            switch (edge, phase.flipped) {
+            case (.leading, false): .topLeading
+            case (.trailing, false): .topTrailing
+            case (.leading, true): .bottomLeading
+            case (.trailing, true): .bottomTrailing
+            }
         content
             .glassMenuSurface()
             .fixedSize()
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { onSize($0) }
+            .onGeometryChange(for: CGSize.self) {
+                $0.size
+            } action: {
+                onSize($0)
+            }
             .scaleEffect(phase.shown || reduceMotion ? 1 : 0.9, anchor: corner)
             .offset(y: phase.shown || reduceMotion ? 0 : (phase.flipped ? 6 : -6))
             .opacity(phase.shown ? 1 : 0)
@@ -909,25 +914,28 @@ private final class GlassPopupPresenter {
             monitors.append(global)
         }
         let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in
-                self?.requestDismiss()
-            }
-        })
-        if let parent {
-            observers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: parent, queue: .main) { [weak self] _ in
+        observers.append(
+            center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in
                     self?.requestDismiss()
                 }
             })
+        if let parent {
+            observers.append(
+                center.addObserver(forName: NSWindow.willCloseNotification, object: parent, queue: .main) { [weak self] _ in
+                    Task { @MainActor in
+                        self?.requestDismiss()
+                    }
+                })
         }
         if let panel {
-            observers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self, self.isShown, NSApp.modalWindow == nil, !self.owns(NSApp.keyWindow) else { return }
-                    self.requestDismiss()
-                }
-            })
+            observers.append(
+                center.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
+                    Task { @MainActor in
+                        guard let self, self.isShown, NSApp.modalWindow == nil, !self.owns(NSApp.keyWindow) else { return }
+                        self.requestDismiss()
+                    }
+                })
         }
     }
 

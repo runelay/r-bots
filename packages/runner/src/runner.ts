@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { cpus, homedir, hostname } from "node:os";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 import type { EnvironmentCapacity, EnvironmentHello } from "@runelay-bots/protocol";
+import pkg from "../package.json" with { type: "json" };
 import { connectUrl } from "./backoff";
 import { realClock } from "./clock";
 import { RunnerConnection } from "./connection";
@@ -10,10 +11,14 @@ import {
   boxDefaultMemMb,
   boxMemReserveMb,
   boxPauseAfterMs,
+  boxRemoveAfterMs,
   boxRuntimes,
   boxStopAfterMs,
-  defaultBoxImage,
+  cleanupIntervalMs,
   defaultDockerSocket,
+  defaultHealthFile,
+  defaultImageRepository,
+  defaultImageTag,
   forbiddenMountHosts,
   kvmPath,
   meminfoPath,
@@ -22,7 +27,8 @@ import {
 } from "./constants";
 import { DockerSandboxProvider, detectRuntime, imageProviders } from "./docker";
 import { DockerApi } from "./docker-api";
-import { isRecord, stringOf } from "./json";
+import { writeBeat } from "./health";
+import { parseImageRef, registryAuth } from "./image";
 import { BoxLifecycle } from "./lifecycle";
 import { readMeminfo } from "./meminfo";
 import { TurnManager } from "./turns";
@@ -92,17 +98,19 @@ export function readEnv(env: Record<string, string | undefined>): RunnerEnv {
     accountRoots: accountRootsOf(env.RBOTS_ACCOUNT_ROOTS),
     runtime: runtimeOf(env.RBOTS_RUNTIME),
     socketPath: env.DOCKER_SOCKET || defaultDockerSocket,
-    image: env.RBOX_IMAGE || defaultBoxImage,
+    image: env.RBOX_IMAGE || `${defaultImageRepository}:${env.RBOTS_VERSION || defaultImageTag}`,
     pauseAfterMs: numberOf(env.BOX_PAUSE_AFTER_MS, boxPauseAfterMs),
     stopAfterMs: numberOf(env.BOX_STOP_AFTER_MS, boxStopAfterMs),
     reserveMb: numberOf(env.BOX_MEM_RESERVE_MB, boxMemReserveMb),
     maxBoxes: env.RBOTS_MAX_BOXES ? numberOf(env.RBOTS_MAX_BOXES, 1) : null,
+    registry: { user: env.RBOTS_REGISTRY_USER || null, token: env.RBOTS_REGISTRY_TOKEN || null },
+    removeAfterMs: numberOf(env.BOX_REMOVE_AFTER_MS, boxRemoveAfterMs),
+    healthFile: env.RBOTS_HEALTH_FILE || defaultHealthFile,
   };
 }
 
-export async function runnerVersion() {
-  const pkg: unknown = await Bun.file(new URL("../package.json", import.meta.url)).json();
-  return isRecord(pkg) ? stringOf(pkg.version, "0.0.0") : "0.0.0";
+export function runnerVersion() {
+  return pkg.version;
 }
 
 export async function startRunner(config: RunnerEnv, overrides: Partial<RunnerDeps> = {}) {
@@ -115,7 +123,13 @@ export async function startRunner(config: RunnerEnv, overrides: Partial<RunnerDe
   const { runtime, engine } = choice;
   log(`caixas com o runtime ${runtime} (${engine})`);
   if (runtime === "runc") log("nem Kata nem gVisor (runsc) disponíveis: as caixas rodam com runc");
-  const provider = new DockerSandboxProvider({ api, image, choice, log });
+  const auth = registryAuth(config.registry, parseImageRef(image).registry);
+  const provider = new DockerSandboxProvider({ api, image, registryAuth: auth, choice, log });
+  const imageId = await provider.images.ensure().catch((error: unknown) => {
+    log(error instanceof Error ? error.message : String(error));
+    return null;
+  });
+  if (imageId) log(`imagem da caixa ${image} pronta (${imageId.slice(0, 19)})`);
   const memory = () => readMeminfo(deps.meminfoPath);
   const outbox: { connection: RunnerConnection | null } = { connection: null };
   const send = (frame: Record<string, unknown>) => outbox.connection?.send(frame) ?? false;
@@ -128,7 +142,13 @@ export async function startRunner(config: RunnerEnv, overrides: Partial<RunnerDe
     reserveMb,
     onChange: (boxes) => send({ type: "boxes", boxes }),
   });
+  const cleanup = () =>
+    provider
+      .cleanup({ removeAfterMs: config.removeAfterMs, busy: (botId) => lifecycle.isBusy(botId) })
+      .catch((error: unknown) => log(`limpeza das caixas falhou: ${error instanceof Error ? error.message : error}`));
+  await cleanup();
   await lifecycle.init();
+  const sweeper = clock.every(cleanupIntervalMs, () => void cleanup());
   const turns = new TurnManager({
     lifecycle,
     provider,
@@ -151,16 +171,15 @@ export async function startRunner(config: RunnerEnv, overrides: Partial<RunnerDe
       maxBoxes: config.maxBoxes ?? Math.max(1, Math.floor((totalMb - reserveMb) / boxDefaultMemMb)),
     };
   };
-  const [version, providers] = await Promise.all([runnerVersion(), imageProviders(api, image)]);
   const hello = async (): Promise<EnvironmentHello> => ({
     type: "hello",
     capabilities: runnerCapabilities,
     runner: {
-      version,
+      version: runnerVersion(),
       name,
       kvm,
       runtime,
-      providers,
+      providers: await imageProviders(api, image),
       workspaceRoots,
       capacity: await capacity(),
     },
@@ -174,8 +193,10 @@ export async function startRunner(config: RunnerEnv, overrides: Partial<RunnerDe
     capacity,
     onFrame: (frame) => void turns.handle(frame),
     onClose: () => turns.cancelAll(),
+    onBeat: () => writeBeat(config.healthFile),
     onStop: (reason) => {
       log(`runner parado: ${reason}`);
+      sweeper.cancel();
       turns.cancelAll();
       lifecycle.dispose();
       onStopped(reason);

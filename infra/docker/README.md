@@ -29,7 +29,7 @@ Fora de um checkout, o `install.sh` da raiz baixa a versão pronta do GitHub Rel
 
 1. consulta a última release do canal (`RBOTS_CHANNEL=stable`, o padrão, ou `beta`, que inclui pre-releases) ou a versão de `RBOTS_VERSION`;
 2. baixa `r-bots-<versão>.tar.gz` e `SHA256SUMS` e confere o tarball (`sha256sum` ou `shasum -a 256`);
-3. monta a pasta abaixo e chama `current/infra/docker/install.sh`, que roda `docker compose pull` e `up -d` com as imagens do GHCR (`ghcr.io/runelay/r-bots-server`, `-runner` e `-box`) e grava `RBOTS_VERSION` no `.env.local`.
+3. monta a pasta abaixo e chama `current/infra/docker/install.sh`, que roda `docker compose pull` e `up -d` com a imagem única do GHCR (`ghcr.io/runelay/r-bots:<versão>`, a mesma para servidor, runner e caixa) e grava `RBOTS_VERSION` no `.env.local`.
 
 ```
 ~/.local/share/runelay-bots-app/      (RBOTS_DIR)
@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/runelay/r-bots/main/install.sh | RB
 
 ### Repo privado
 
-Enquanto o repo for privado, o instalador e o `rbots` precisam de um token do GitHub. Eles usam `RBOTS_GITHUB_TOKEN` ou, se faltar, o `gh auth token` de quem está logado no `gh`. Com token, a consulta e o download vão pela API do GitHub e as imagens são baixadas depois de um `docker login ghcr.io`. As imagens privadas pedem o escopo `read:packages`:
+Enquanto o repo for privado, o instalador e o `rbots` precisam de um token do GitHub. Eles usam `RBOTS_GITHUB_TOKEN` ou, se faltar, o `gh auth token` de quem está logado no `gh`. Com token, a consulta e o download vão pela API do GitHub e a imagem é baixada depois de um `docker login ghcr.io`. A imagem privada pede o escopo `read:packages`. Com o repo privado, o mesmo token vai para o `.env.local` persistente como `RBOTS_REGISTRY_USER`/`RBOTS_REGISTRY_TOKEN` (arquivo em 0600), para o runner puxar a imagem da caixa pela API do Docker; quando o repo fica público, os scripts tiram essas linhas:
 
 ```sh
 gh auth refresh -h github.com -s read:packages
@@ -62,14 +62,14 @@ Sem token e com o repo privado, o GitHub responde 404 e o instalador diz como pa
 
 ### Modo código
 
-Dentro de um checkout, o `install.sh` da raiz chama direto o script do checkout, que constrói as imagens na máquina (`up -d --build`). `RBOTS_FROM_SOURCE=1` força o modo de antes: clona o repo com `--depth 1` em `RBOTS_DIR` (ou faz `git pull --ff-only` se já existe). Uma pasta `RBOTS_DIR` que já é um clone continua no modo código; para passar às releases, instale com `RBOTS_DIR` apontando para outra pasta.
+Dentro de um checkout, o `install.sh` da raiz chama direto o script do checkout, que constrói a imagem na máquina (`docker compose build`, uma vez só: o runner reaproveita a imagem do servidor). `RBOTS_FROM_SOURCE=1` força o modo de antes: clona o repo com `--depth 1` em `RBOTS_DIR` (ou faz `git pull --ff-only` se já existe). Uma pasta `RBOTS_DIR` que já é um clone continua no modo código; para passar às releases, instale com `RBOTS_DIR` apontando para outra pasta.
 
 ### O que o `infra/docker/install.sh` faz
 
 1. confere Docker, Compose v2 ou mais novo e se o usuário fala com o Docker sem `sudo`;
 2. cria as pastas de dados em `~/.local/share/runelay-bots` (com `runner/` em 0700);
 3. grava no `.env.local`, só se a linha faltar: `BOTS_SANDBOX=docker`, `DOCKER_GID` (o gid do socket `/var/run/docker.sock`) e, em máquina com menos de 8 GB, `BOTS_MEM_LIMIT=3g` e `BOTS_MAX_TURNS=2`. No modo release grava também `RBOTS_VERSION` (trocando a linha) e `RBOTS_CHANNEL`, se veio no ambiente;
-4. no modo release, `docker compose --profile sandbox pull` e `up -d`; num checkout, `docker compose --profile sandbox up -d --build`;
+4. no modo release, `docker login ghcr.io` (com token), o token do runner no `.env.local` se o repo é privado e `docker compose --profile sandbox pull`; num checkout, `docker compose --profile sandbox build`. Depois, `up -d --remove-orphans`;
 5. espera o `/health` por até 180 s e imprime o endereço, o runtime das caixas, o próximo passo (abrir o app e criar o dono) e o comando do `tailscale serve`, se o `tailscale` existir;
 6. linka `rbots` em `~/.local/bin` quando essa pasta existe e está no `PATH` (no modo release, pelo link `current`, então o atalho acompanha as versões).
 
@@ -110,16 +110,16 @@ No modo release:
 1. descobre a versão alvo: a última do canal ou a de `--to`. `--check` só mostra a instalada e a disponível;
 2. já na mesma versão, avisa e sai;
 3. recusa com turno rodando (lê o `/status` com o token de `~/.local/share/runelay-bots/runner.token`), a não ser com `--force`;
-4. faz backup do banco com `docker compose exec -T server ./runelay-bots-server backup`. Se falhar, para sem mudar nada (`--no-backup` pula);
+4. faz backup do banco com `docker compose exec -T -u app server ./runelay-bots-server backup` (como `app`: rodando como root, o backup deixaria arquivos que o servidor não lê). Se falhar, para sem mudar nada (`--no-backup` pula);
 5. baixa, confere e extrai em `releases/<alvo>`;
-6. baixa as imagens novas com o compose novo, com a stack ainda na versão velha;
+6. baixa a imagem nova com o compose novo, com a stack ainda na versão velha. É a mesma imagem do servidor, do runner e da caixa, e só as camadas que mudaram descem (num release que só muda código, a do bundle do servidor, ~15 MB em zstd);
 7. troca o `current`, grava `RBOTS_VERSION` (e `RBOTS_CHANNEL`, com `--channel`) e roda `up -d` com os mesmos perfis que estão de pé;
 8. espera o `/health` por até 180 s. Se não vier, volta o `current` e o `RBOTS_VERSION`, sobe a versão anterior e avisa que o banco pode ter migrado, com o caminho do backup;
 9. guarda as 3 últimas versões em `releases/` e apaga as mais velhas.
 
 Voltar para uma versão mais velha pede `--yes`, porque as migrations do banco não voltam.
 
-Num checkout, `rbots update` faz como antes: `git pull --ff-only` e `up -d --build` com os perfis que estão de pé, recusando com turno rodando a não ser com `--force`. `--to` e `--channel` valem só no modo release.
+Num checkout, `rbots update` faz `git pull --ff-only`, um `docker compose build` e `up -d` com os perfis que estão de pé, recusando com turno rodando a não ser com `--force`. `--to` e `--channel` valem só no modo release.
 
 Sem o link em `~/.local/bin`, rode `current/infra/docker/rbots` (release) ou `infra/docker/rbots` (checkout).
 
@@ -138,9 +138,13 @@ Sem o link em `~/.local/bin`, rode `current/infra/docker/rbots` (release) ou `in
 | `RBOTS_RELEASE_REPO` | `runelay/r-bots` | repo das releases |
 | `RBOTS_FROM_SOURCE` | vazio | `1` instala clonando o repo, como antes das releases |
 | `RBOTS_REPO` | `https://github.com/runelay/r-bots.git` | de onde clonar no modo código |
-| `BOTS_IMAGE`, `BOTS_RUNNER_IMAGE`, `RBOX_IMAGE` | `ghcr.io/runelay/r-bots-*:${RBOTS_VERSION}` | troca a imagem do servidor, do runner ou da caixa |
+| `RBOTS_IMAGE` | `ghcr.io/runelay/r-bots:${RBOTS_VERSION}` | troca a imagem única (servidor, runner e caixa). `BOTS_IMAGE` antigo ainda vale como alternativa; `BOTS_RUNNER_IMAGE` não existe mais |
+| `RBOX_IMAGE` | a de `RBOTS_IMAGE` | só se a caixa precisar de outra imagem que a do runner |
 | `RBOTS_INSTALL_SANDBOX_RUNTIME` | vazio | `1` equivale a `--harden --yes` (compatibilidade; o `cloud-init` da Hetzner passa as flags direto) |
 | `KATA_VERSION` | `3.18.0` | versão do Kata |
 | `GVISOR_RELEASE` | `20261102` | release do gVisor (data `aaaammdd`) |
 | `RBOTS_APP_USER` | usuário atual | quando roda como root, o usuário dono dos dados e da stack |
 | `RBOTS_RUNTIME` | vazio | no `.env.local`, força `kata`, `runsc` ou `runc` no runner |
+| `RBOTS_REGISTRY_USER`, `RBOTS_REGISTRY_TOKEN` | vazio | credencial do registry para o runner puxar a imagem da caixa. Os scripts gravam com o token do GitHub quando o repo é privado |
+
+Convenções do compose (pinagem, limites, segurança, perfis): `docs/architecture/docker.md`.

@@ -342,11 +342,12 @@ final class AppModel {
     }
 
     func openGroupEditor(for group: Bot?) {
-        activeSheet = .groupEditor(GroupRequest(
-            groupID: group?.groupID,
-            name: group?.name ?? "",
-            members: group?.groupMembers ?? []
-        ))
+        activeSheet = .groupEditor(
+            GroupRequest(
+                groupID: group?.groupID,
+                name: group?.name ?? "",
+                members: group?.groupMembers ?? []
+            ))
     }
 
     func createGroup(name: String, members: [String]) {
@@ -386,10 +387,13 @@ final class AppModel {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         activeSheet = nil
-        mutateGroup(id, body: .object([
-            "name": .string(trimmed),
-            "members": .array(members.map { .string($0) })
-        ])) { group in
+        mutateGroup(
+            id,
+            body: .object([
+                "name": .string(trimmed),
+                "members": .array(members.map { .string($0) }),
+            ])
+        ) { group in
             group.name = trimmed
             group.members = members
         }
@@ -598,9 +602,11 @@ final class AppModel {
         let client = client
         Task {
             do {
-                let updated = try await client.updateBot(id: bot.id, body: .object([
-                    "memory": .object(["capture": .bool(settings.capture), "recall": .bool(settings.recall)])
-                ]))
+                let updated = try await client.updateBot(
+                    id: bot.id,
+                    body: .object([
+                        "memory": .object(["capture": .bool(settings.capture), "recall": .bool(settings.recall)])
+                    ]))
                 replaceBot(updated)
             } catch {
                 replaceBot(original)
@@ -878,7 +884,8 @@ final class AppModel {
 
     func ensureThread(for botID: String) {
         guard let bot = bot(id: botID), !bot.isPending, !botID.hasPrefix("group:pending"),
-              threads[botID] == nil, !resolvingThreads.contains(botID) else { return }
+            threads[botID] == nil, !resolvingThreads.contains(botID)
+        else { return }
         guard streamsLive(botID) else {
             if let session = tabs.session(for: botID) ?? bot.thread?.sessionId {
                 TranscriptCache.shared.warm(client: client, basePath: bot.sessionBasePath, sessionID: session)
@@ -971,7 +978,8 @@ final class AppModel {
     func activateTab(_ botID: String) {
         revealConversations()
         if threads[botID] == nil, let session = tabs.session(for: botID),
-           conversations(for: botID).contains(where: { $0.sessionId == session && !$0.isMain }) {
+            conversations(for: botID).contains(where: { $0.sessionId == session && !$0.isMain })
+        {
             selectConversation(botID: botID, sessionID: session)
         } else {
             selectBot(botID)
@@ -1022,7 +1030,7 @@ final class AppModel {
 
     func prefetchTab(_ botID: String) {
         guard botID != selectedBotID, threads[botID] == nil, let bot = bot(id: botID), !bot.isPending,
-              let session = tabs.session(for: botID) ?? bot.thread?.sessionId
+            let session = tabs.session(for: botID) ?? bot.thread?.sessionId
         else { return }
         TranscriptCache.shared.warm(client: client, basePath: bot.sessionBasePath, sessionID: session)
     }
@@ -1066,7 +1074,8 @@ final class AppModel {
         tabs.insert(closed.botID, at: closed.index)
         revealConversations()
         if let session = closed.sessionID, threads[closed.botID]?.sessionId != session,
-           conversations(for: closed.botID).contains(where: { $0.sessionId == session }) {
+            conversations(for: closed.botID).contains(where: { $0.sessionId == session })
+        {
             selectConversation(botID: closed.botID, sessionID: session)
         } else {
             selectBot(closed.botID)
@@ -1115,7 +1124,8 @@ final class AppModel {
     private func restoreTabs() {
         tabsRestored = true
         let saved = tabs.order.filter { bot(id: $0) != nil || $0.hasPrefix("group:") }
-        let active = tabs.savedActive.flatMap { id in saved.contains(id) && bot(id: id) != nil ? id : nil }
+        let active =
+            tabs.savedActive.flatMap { id in saved.contains(id) && bot(id: id) != nil ? id : nil }
             ?? saved.first { bot(id: $0) != nil }
         for botID in saved where botID != active {
             if let session = tabs.session(for: botID) ?? bot(id: botID)?.thread?.sessionId, let bot = bot(id: botID), !bot.isPending {
@@ -1154,7 +1164,8 @@ final class AppModel {
     func engineLabel(for bot: Bot) -> String {
         let engine = bot.engine
         let accountID = engine?.account ?? "vps:claude"
-        let provider = account(id: accountID)?.label.split(separator: "·").first
+        let provider =
+            account(id: accountID)?.label.split(separator: "·").first
             .map { $0.trimmingCharacters(in: .whitespaces) } ?? ModelNames.providerName(accountID)
         let modelID = engine?.model ?? meta.model
         let modelLabel = modelID.map { id in
@@ -1202,11 +1213,12 @@ final class AppModel {
         others: @escaping (inout AIAccount) -> Void = { _ in }
     ) {
         guard case .loaded(let list) = accounts else { return }
-        accounts = .loaded(list.map { item in
-            var copy = item
-            if copy.id == account.id { change(&copy) } else { others(&copy) }
-            return copy
-        })
+        accounts = .loaded(
+            list.map { item in
+                var copy = item
+                if copy.id == account.id { change(&copy) } else { others(&copy) }
+                return copy
+            })
         let client = client
         Task {
             do {
@@ -1885,9 +1897,11 @@ final class AppModel {
         Task {
             do {
                 try await client.conversationAction(botID: botID, sessionID: conversation.sessionId, action: "archive")
-                showNotice("Conversa arquivada", action: NoticeAction(title: "Desfazer") { [weak self] in
-                    self?.unarchiveConversation(conversation)
-                })
+                showNotice(
+                    "Conversa arquivada",
+                    action: NoticeAction(title: "Desfazer") { [weak self] in
+                        self?.unarchiveConversation(conversation)
+                    })
             } catch {
                 conversationLists[botID] = before
                 showNotice(ErrorMessage.describe(error))
@@ -1913,7 +1927,9 @@ final class AppModel {
         let client = client
         Task {
             do {
-                guard let moved = try await client.conversationAction(botID: conversation.botId, sessionID: conversation.sessionId, action: "move", body: .object(["botId": .string(targetID)])) else { return }
+                guard let moved = try await client.conversationAction(botID: conversation.botId, sessionID: conversation.sessionId, action: "move", body: .object(["botId": .string(targetID)])) else {
+                    return
+                }
                 let wasActive = activeConversationID(for: conversation.botId) == conversation.sessionId
                 parkedStores.removeValue(forKey: conversation.sessionId)?.stop()
                 if wasActive, let main = conversations(for: conversation.botId).first(where: \.isMain) {
@@ -2199,7 +2215,8 @@ final class AppModel {
                     failures = 0
                     for try await line in bytes.lines {
                         guard let data = line.data(using: .utf8),
-                              let value = try? JSONDecoder().decode(JSONValue.self, from: data) else { continue }
+                            let value = try? JSONDecoder().decode(JSONValue.self, from: data)
+                        else { continue }
                         self?.applyStatusLine(value)
                     }
                 } catch {
@@ -2347,9 +2364,11 @@ final class AppModel {
                 if let previous {
                     clearedStores[archiveID] = previous
                 }
-                showNotice("Conversa limpa", action: NoticeAction(title: "Desfazer") { [weak self] in
-                    self?.undoClear(botID: bot.id, archiveID: archiveID)
-                })
+                showNotice(
+                    "Conversa limpa",
+                    action: NoticeAction(title: "Desfazer") { [weak self] in
+                        self?.undoClear(botID: bot.id, archiveID: archiveID)
+                    })
             } catch {
                 showNotice(ErrorMessage.describe(error))
             }
@@ -2649,7 +2668,8 @@ final class AppModel {
             default:
                 break
             }
-            let visible = NSApp.isActive && self.selectedBotID == bot.id
+            let visible =
+                NSApp.isActive && self.selectedBotID == bot.id
                 && self.section == .conversations && !self.settingsPresented
             if case .approval = event {
                 if visible { return }

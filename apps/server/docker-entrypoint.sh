@@ -59,6 +59,16 @@ share_tool_credentials() {
   return 0
 }
 
+link_desktop_browsers() {
+  desktop_home=/home/runelaybot
+  [ -d "$desktop_home" ] || return 0
+  install -d -o runelaybot -g runelaybot -m 0755 "$desktop_home/.agent-browser" "$desktop_home/.agent-browser/browsers"
+  for link in /home/app/.agent-browser/browsers/chrome-*; do
+    [ -L "$link" ] && ln -sfn "$(readlink "$link")" "$desktop_home/.agent-browser/browsers/${link##*/}"
+  done
+  return 0
+}
+
 prepare_sandbox() {
   sandbox_home=${HOST_HOME:-/home/app}
   worktrees="$sandbox_home/.local/share/runelay-bots-worktrees"
@@ -117,6 +127,11 @@ if [ "$(id -u)" = 0 ]; then
   for dir in /data /backups; do
     [ -d "$dir" ] && [ "$(owner_of "$dir" %u)" = 0 ] && chown app:app "$dir"
   done
+  tools_dir=${RBOTS_TOOLS_DIR:-/opt/rbots-tools}
+  if [ -d "$tools_dir" ] && [ "$(owner_of "$tools_dir" %u)" = 0 ]; then
+    chown app:app "$tools_dir" && chmod 0755 "$tools_dir"
+  fi
+  link_desktop_browsers
   lock_secrets
   if [ "${BOTS_TOOL_SANDBOX:-off}" != off ]; then
     prepare_sandbox
