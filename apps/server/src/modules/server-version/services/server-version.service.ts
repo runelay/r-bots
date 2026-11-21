@@ -17,6 +17,7 @@ import {
   updateCommand,
 } from "../constants/server-version.constants";
 import type { LatestRelease, ReleaseSettings, ServerVersion, ServerVersionDeps } from "../types/server-version.types";
+import { readServerUpdate } from "./server-update.service";
 
 const defaults: ServerVersionDeps = {
   fetch: (url, init) => fetch(url, init),
@@ -125,7 +126,7 @@ export async function serverVersion(): Promise<ServerVersion> {
   const settings = deps.settings();
   const given = settings.version?.trim() || devVersion;
   const installed = normalizeVersion(given);
-  const latest = await latestRelease(settings);
+  const [latest, update] = await Promise.all([latestRelease(settings), readServerUpdate()]);
   return {
     current: installed ?? given,
     channel: settings.channel,
@@ -135,5 +136,6 @@ export async function serverVersion(): Promise<ServerVersion> {
     publishedAt: latest?.publishedAt ?? null,
     notes: latest?.notes ?? null,
     updateCommand,
+    update,
   };
 }

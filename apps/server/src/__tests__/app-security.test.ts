@@ -132,6 +132,7 @@ describe("dispatch of every route entry", () => {
       [providers, "handleProviders", "GET", "/providers/versions"],
       [tools, "handleTools", "GET", "/tools"],
       [serverVersion, "handleServerVersion", "GET", "/server/version"],
+      [serverVersion, "handleServerUpdate", "POST", "/server/update"],
       [computer, "handleComputerHealth", "GET", "/computer/health"],
       [connectors, "handleConnectorActions", "POST", "/connectors/github/install"],
       [connectors, "handleConnections", "GET", "/connectors"],

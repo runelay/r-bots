@@ -29,6 +29,10 @@ token=""
 api_error=""
 rel_tag=""
 rel_version=""
+update_dir="$data_dir/update"
+agent_id=""
+agent_from=""
+agent_to=""
 
 usage() {
   cat <<'EOF'
@@ -39,6 +43,7 @@ Comandos:
   logs [serviço]    acompanha os logs (todos ou de um serviço: server, runner, postgres...)
   update [opções]   atualiza; recusa com turno rodando, a não ser com --force
   version           versão instalada e a última do canal
+  update-agent      uso interno: atende o pedido de atualização feito pelo app
   start             liga de novo o que foi parado
   stop              para a stack sem apagar nada
 
@@ -56,11 +61,48 @@ EOF
 
 fail() {
   printf 'erro: %s\n' "$1" >&2
+  agent_finish failed "$1"
   exit 1
 }
 
 say() {
   printf '%s\n' "$1"
+}
+
+json_text() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="$(printf '%s' "$value" | tr '\n\r\t' '   ')"
+  printf '"%s"' "$value"
+}
+
+now_iso() {
+  date -u +%Y-%m-%dT%H:%M:%SZ
+}
+
+write_status() {
+  local state="$1" step="${2:-}" message="${3:-}" finished="${4:-}" body tmp
+  [ -n "$agent_id" ] || return 0
+  body="{\"id\":$(json_text "$agent_id"),\"state\":$(json_text "$state"),\"updatedAt\":$(json_text "$(now_iso)")"
+  [ -n "$step" ] && body="$body,\"step\":$(json_text "$step")"
+  [ -n "$message" ] && body="$body,\"message\":$(json_text "$message")"
+  [ -n "$agent_from" ] && body="$body,\"from\":$(json_text "$agent_from")"
+  [ -n "$agent_to" ] && body="$body,\"to\":$(json_text "$agent_to")"
+  [ -n "$finished" ] && body="$body,\"finishedAt\":$(json_text "$finished")"
+  tmp="$update_dir/.status.$$.tmp"
+  printf '%s}\n' "$body" >"$tmp" && mv -f "$tmp" "$update_dir/status.json"
+}
+
+step() {
+  write_status running "$1"
+}
+
+agent_finish() {
+  local message="${2:-}"
+  [ -n "$agent_id" ] || return 0
+  write_status "$1" "" "${message^}" "$(now_iso)"
+  agent_id=""
 }
 
 env_value() {
@@ -439,14 +481,19 @@ cmd_version() {
 
 update_checkout() {
   local force="$1" profiles=()
+  step "Conferindo os turnos"
   ensure_idle "$force"
   mapfile -t profiles < <(profile_args)
   say "Baixando o código novo"
-  git -C "$repo_dir" pull --ff-only
+  step "Baixando o código novo"
+  git -C "$repo_dir" pull --ff-only || fail "o git pull falhou em $repo_dir"
   say "Reconstruindo a imagem"
-  compose "${profiles[@]}" build
+  step "Reconstruindo a imagem"
+  compose "${profiles[@]}" build || fail "o build da imagem falhou"
   say "Subindo ${profiles[*]:-sem perfis extras}"
-  compose "${profiles[@]}" up -d --remove-orphans
+  step "Subindo o servidor"
+  compose "${profiles[@]}" up -d --remove-orphans || fail "o docker compose up falhou"
+  wait_health || fail "o servidor não respondeu em 180 s depois do build"
 }
 
 update_release() {
@@ -456,6 +503,7 @@ update_release() {
   installed="$(installed_version)"
   resolve_release "$to" "$chan" || fail "$api_error"
   target="$rel_version"
+  agent_to="$target"
   if [ "$check" = 1 ]; then
     say "Instalada: $installed"
     if [ -n "$to" ]; then
@@ -486,14 +534,17 @@ update_release() {
   if version_lt "$target" "$installed" && [ "$yes" = 0 ]; then
     fail "a $target é mais velha que a instalada ($installed). As migrations do banco não voltam, e a versão velha pode não ler o banco migrado. Para voltar mesmo assim, rode de novo com --yes"
   fi
+  step "Conferindo os turnos"
   ensure_idle "$force"
   if [ "$backup" = 1 ]; then
+    step "Fazendo backup"
     backup_now
   else
     say "Sem backup antes de atualizar (--no-backup)"
   fi
 
   say "Baixando o r/bots $target"
+  step "Baixando a $target"
   download_asset "r-bots-$target.tar.gz" "$work/r-bots-$target.tar.gz"
   download_asset SHA256SUMS "$work/SHA256SUMS"
   verify_asset "$work" "r-bots-$target.tar.gz"
@@ -502,6 +553,7 @@ update_release() {
   mapfile -t profiles < <(profile_args)
   registry_login
   say "Baixando a imagem da $target (a stack continua na $installed)"
+  step "Baixando a imagem da $target"
   if ! RBOTS_VERSION="$target" compose_at "$app_dir/releases/$target" "${profiles[@]}" pull; then
     printf 'Se o repo é privado, o token precisa do escopo read:packages: gh auth refresh -h github.com -s read:packages\n' >&2
     fail "não deu para baixar a imagem da $target; nada mudou na stack"
@@ -514,6 +566,7 @@ update_release() {
     set_env RBOTS_CHANNEL "$chan"
   fi
   say "Subindo a $target ${profiles[*]:-sem perfis extras}"
+  step "Subindo a $target"
   if compose "${profiles[@]}" up -d --remove-orphans && wait_health; then
     prune_releases
     say "Atualizado: $installed -> $target"
@@ -521,6 +574,7 @@ update_release() {
   fi
 
   say "O servidor não respondeu em 180 s na $target. Voltando para a $installed."
+  step "Voltando para a $installed"
   point_current "$previous_link"
   set_env RBOTS_VERSION "$installed"
   compose "${profiles[@]}" up -d || true
@@ -532,6 +586,8 @@ update_release() {
   else
     printf 'Não houve backup antes desta atualização (--no-backup).\n' >&2
   fi
+  agent_to="$installed"
+  agent_finish failed "A $target não subiu e o servidor voltou para a $installed."
   exit 1
 }
 
@@ -581,6 +637,53 @@ cmd_update() {
   update_release "$check" "$to" "$chan" "$force" "$backup" "$yes" "$channel_flag"
 }
 
+request_field() {
+  sed -n "s/.*\"$1\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\).*/\1/p" "$2" | head -1
+}
+
+cmd_update_agent() {
+  local request="$update_dir/request.json" claimed force args=() rc errlog last
+  [ -d "$update_dir" ] || exit 0
+  if command -v flock >/dev/null; then
+    exec 9>"$update_dir/agent.lock"
+    if ! flock -n 9; then
+      say "Outra atualização já está rodando"
+      exit 0
+    fi
+  fi
+  [ -f "$request" ] || exit 0
+  claimed="$update_dir/.request.$$.json"
+  mv -f "$request" "$claimed" || exit 0
+  agent_id="$(request_field id "$claimed")"
+  force="$(request_field force "$claimed")"
+  rm -f "$claimed"
+  [ -n "$agent_id" ] || agent_id="manual-$(date +%s)"
+  agent_from="$(installed_version)"
+  [ "$force" = true ] && args+=(--force)
+  errlog="$update_dir/.update.$$.log"
+  write_status running "Começando"
+  set +e
+  (
+    set -e
+    cmd_update "${args[@]}"
+  ) 2>"$errlog"
+  rc=$?
+  set -e
+  cat "$errlog" >&2
+  last="$(sed -n 's/^erro: //p' "$errlog" | head -1)"
+  [ -n "$last" ] || last="$(sed '/^[[:space:]]*$/d' "$errlog" | tail -1)"
+  rm -f "$errlog"
+  if [ "$rc" = 0 ]; then
+    [ -n "$agent_to" ] || agent_to="$(installed_version)"
+    agent_finish succeeded
+    return
+  fi
+  if grep -q '"state":"running"' "$update_dir/status.json" 2>/dev/null; then
+    agent_finish failed "${last:-A atualização parou sem explicar. Veja journalctl --user -u rbots-update no servidor.}"
+  fi
+  exit "$rc"
+}
+
 cmd_start() {
   local profiles=()
   mapfile -t profiles < <(profile_args)
@@ -615,6 +718,7 @@ case "$1" in
     shift
     cmd_update "$@"
     ;;
+  update-agent) cmd_update_agent ;;
   start) cmd_start ;;
   stop) cmd_stop ;;
   *)

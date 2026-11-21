@@ -30,7 +30,7 @@ import { handleLinear } from "./modules/linear/routes/linear.routes";
 import { handleProviders } from "./modules/providers/routes/providers.routes";
 import { handleReview } from "./modules/review/routes/review.routes";
 import { handleSections } from "./modules/sections/routes/sections.routes";
-import { handleServerVersion } from "./modules/server-version/routes/server-version.routes";
+import { handleServerUpdate, handleServerVersion } from "./modules/server-version/routes/server-version.routes";
 import { handleServers } from "./modules/servers/routes/servers.routes";
 import { handlePreferences } from "./modules/settings/routes/preferences.routes";
 import { handleSimulators } from "./modules/simulators/routes/simulators.routes";
@@ -104,6 +104,7 @@ export const routeTable: RouteEntry[] = [
   { root: "providers", handle: (req, res, _url, method, parts) => handleProviders(req, res, method, parts) },
   { root: "tools", handle: (_req, res, _url, method, parts) => handleTools(res, method, parts) },
   { root: "server", match: exactly("GET", "version"), handle: (_req, res) => handleServerVersion(res) },
+  { root: "server", match: exactly("POST", "update"), handle: (req, res) => handleServerUpdate(req, res) },
   { root: "computer", match: exactly("GET", "health"), handle: (_req, res) => handleComputerHealth(res) },
   {
     root: "connectors",

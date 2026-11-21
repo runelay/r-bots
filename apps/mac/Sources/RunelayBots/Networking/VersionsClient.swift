@@ -8,12 +8,31 @@ private struct CliRollbackResult: Decodable {
     let version: CliVersion
 }
 
+private struct ServerUpdateRefusal: Decodable {
+    let code: String?
+    let running: Int?
+}
+
 extension BotsClient {
     func serverVersion() async throws -> ServerVersionInfo? {
         let (data, status) = try await versionsCall(try request(path: "/server/version"))
         if status == 404 { return nil }
         try Self.versionsCheck(status, data)
         return try JSONDecoder().decode(ServerVersionInfo.self, from: data)
+    }
+
+    func requestServerUpdate(force: Bool) async throws -> ServerUpdateRequest {
+        var urlRequest = try request(path: "/server/update")
+        urlRequest.httpMethod = "POST"
+        urlRequest.timeoutInterval = 30
+        urlRequest.httpBody = try JSONEncoder().encode(["force": force])
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (data, status) = try await versionsCall(urlRequest)
+        if status == 409, let refusal = try? JSONDecoder().decode(ServerUpdateRefusal.self, from: data), refusal.code == "turns_running" {
+            return .turnsRunning(max(refusal.running ?? 1, 1))
+        }
+        try Self.versionsCheck(status, data)
+        return .queued
     }
 
     func providerVersions() async throws -> [CliVersion]? {

@@ -71,7 +71,8 @@ Dentro de um checkout, o `install.sh` da raiz chama direto o script do checkout,
 3. grava no `.env.local`, só se a linha faltar: `BOTS_SANDBOX=docker`, `DOCKER_GID` (o gid do socket `/var/run/docker.sock`) e, em máquina com menos de 8 GB, `BOTS_MEM_LIMIT=3g` e `BOTS_MAX_TURNS=2`. No modo release grava também `RBOTS_VERSION` (trocando a linha) e `RBOTS_CHANNEL`, se veio no ambiente;
 4. no modo release, `docker login ghcr.io` (com token), o token do runner no `.env.local` se o repo é privado e `docker compose --profile sandbox pull`; num checkout, `docker compose --profile sandbox build`. Depois, `up -d --remove-orphans`;
 5. espera o `/health` por até 180 s e imprime o endereço, o runtime das caixas, o próximo passo (abrir o app e criar o dono) e o comando do `tailscale serve`, se o `tailscale` existir;
-6. linka `rbots` em `~/.local/bin` quando essa pasta existe e está no `PATH` (no modo release, pelo link `current`, então o atalho acompanha as versões).
+6. linka `rbots` em `~/.local/bin` quando essa pasta existe e está no `PATH` (no modo release, pelo link `current`, então o atalho acompanha as versões);
+7. com systemd de usuário, instala o vigia de atualização (`~/.config/systemd/user/rbots-update.path` e `.service`) e grava `~/.local/share/runelay-bots/update/agent.json`: o botão Atualizar do app deixa um pedido em `update/request.json`, o vigia roda `rbots update-agent` (o mesmo `rbots update`, com os passos em `update/status.json`). Sem systemd, o app mostra o comando. Sem `loginctl enable-linger`, o vigia só roda com o usuário logado. Instalação antiga ganha o vigia rodando o instalador de novo.
 
 Rodar de novo é seguro: não duplica linha, não reinstala runtime e só recria o que mudou.
 

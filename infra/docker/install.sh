@@ -286,6 +286,8 @@ box_runtime() {
   done
 }
 
+cli_path="$repo_dir/infra/docker/rbots"
+
 link_cli() {
   local bin_dir="$app_home/.local/bin"
   chmod +x "$repo_dir/infra/docker/rbots" 2>/dev/null || true
@@ -293,6 +295,7 @@ link_cli() {
     case ":$PATH:" in
       *":$bin_dir:"*)
         ln -sfn "$repo_dir/infra/docker/rbots" "$bin_dir/rbots"
+        cli_path="$bin_dir/rbots"
         say "Atalho: rbots status | logs | update | version | stop | start"
         return
         ;;
@@ -300,6 +303,51 @@ link_cli() {
   fi
   say "Atalho: $repo_dir/infra/docker/rbots status | logs | update | version | stop | start"
   say "  (para usar só rbots, crie ~/.local/bin, coloque no PATH e rode o instalador de novo)"
+}
+
+update_agent() {
+  local unit_dir="$app_home/.config/systemd/user" update_dir="$data_dir/update" linger
+  if [ "$(id -un)" != "$app_user" ] || ! command -v systemctl >/dev/null \
+    || ! systemctl --user show-environment >/dev/null 2>&1; then
+    rm -f "$update_dir/agent.json"
+    say "Atualizar pelo app: sem systemd de usuário aqui; o app mostra o comando rbots update"
+    return
+  fi
+  mkdir -p "$unit_dir" "$update_dir"
+  cat >"$unit_dir/rbots-update.path" <<UNIT
+[Unit]
+Description=r/bots: pedido de atualização feito pelo app
+
+[Path]
+PathExists=$update_dir/request.json
+Unit=rbots-update.service
+
+[Install]
+WantedBy=default.target
+UNIT
+  cat >"$unit_dir/rbots-update.service" <<UNIT
+[Unit]
+Description=r/bots: atualização pedida pelo app
+
+[Service]
+Type=oneshot
+Environment=PATH=$app_home/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=$cli_path update-agent
+TimeoutStartSec=1h
+UNIT
+  if ! systemctl --user daemon-reload || ! systemctl --user enable --now rbots-update.path >/dev/null 2>&1; then
+    rm -f "$update_dir/agent.json"
+    say "Aviso: não deu para ligar o rbots-update.path; o app mostra o comando rbots update"
+    return
+  fi
+  printf '{"version":"%s","installedAt":"%s"}\n' "${release_version:-dev}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >"$update_dir/.agent.json.tmp"
+  mv -f "$update_dir/.agent.json.tmp" "$update_dir/agent.json"
+  say "Atualizar pelo app: ligado (rbots-update.path vigia $update_dir/request.json)"
+  linger="$(loginctl show-user "$app_user" -p Linger --value 2>/dev/null || true)"
+  if [ "$linger" != yes ]; then
+    say "  sem linger, o vigia só roda com você logado; para valer sempre: sudo loginctl enable-linger $app_user"
+  fi
 }
 
 command -v docker >/dev/null || fail "Docker não encontrado; instale o Docker Engine (https://docs.docker.com/engine/install/) e rode de novo"
@@ -329,6 +377,7 @@ as_app mkdir -p \
   "$app_home/.local/share/runelay-bots-worktrees" \
   "$app_home/.claude" "$app_home/.codex" "$app_home/.config/gh" "$app_home/.config/.wrangler" "$app_home/.supabase"
 as_app mkdir -p -m 0700 "$data_dir/runner"
+as_app mkdir -p -m 0755 "$data_dir/update"
 as_app mkdir -p -m 0755 "$app_home/.local/share/runelay-bots-tools"
 [ -f "$app_home/.claude.json" ] || printf '{}\n' | as_app tee "$app_home/.claude.json" >/dev/null
 as_app touch "$app_home/.gitconfig"
@@ -409,3 +458,4 @@ if command -v tailscale >/dev/null; then
 fi
 say ""
 link_cli
+update_agent

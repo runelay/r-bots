@@ -148,3 +148,35 @@ Uma entrada por conta Claude/Codex do servidor (as `missing` ficam de fora), lid
 ### Verificado 20/11 (produção)
 
 Antes/depois de um turno Haiku em cada conta (`usage_buckets`, últimas 2 h, modelo `claude-haiku-*`): `vps:claude` 10 → 11 chamadas; `claude-2:claude` 0 → 1 chamada (28.148 tokens). Nesta VPS `~/.claude-2/projects` é symlink de `~/.claude/projects`, por isso o resto do uso de terminal/T3 aparece no par.
+
+## v60 (21/11): atualizar o servidor pelo app
+
+O container do servidor não fala com o Docker, então quem troca a versão é o host: o servidor deixa um pedido em `<dados>/update/` e o vigia do host (`rbots-update.path` + `rbots-update.service`, instalados pelo `install.sh` com systemd de usuário) roda `rbots update-agent`, que chama o mesmo fluxo do `rbots update`.
+
+Arquivos em `<dados>/update/` (`/data/update` no container):
+
+- `agent.json`: `{"version","installedAt"}`, gravado pelo instalador. Existir = vigia instalado.
+- `request.json`: `{"id","requestedAt","force"}`, gravado pelo servidor (tmp + rename). O vigia move o arquivo antes de começar.
+- `status.json`: `{"id","state","step?","message?","from?","to?","finishedAt?","updatedAt"}`, gravado pelo vigia (tmp + mv) a cada passo.
+
+### `GET /server/version` → 200
+
+Ganha `update`:
+
+```json
+{"current":"0.1.6","latest":"0.1.7","updateAvailable":true,…,
+ "update":{"available":true,"state":"running","step":"Baixando a 0.1.7","from":"0.1.6","to":"0.1.7"}}
+```
+
+`state`: `idle`, `queued` (pedido ainda não pego), `running`, `succeeded`, `failed`. Pedido sem resposta do vigia por 5 min vira `failed` ("O vigia não pegou o pedido…"); `running` sem notícia por 30 min também.
+
+### `POST /server/update` (só do dono) → 202
+
+Corpo opcional `{"force":true}`. Resposta `{"ok":true,"update":{"available":true,"state":"queued"}}`.
+
+- `422 {"ok":false,"code":"agent_missing",…}`: sem `agent.json`.
+- `409 {"ok":false,"code":"update_in_progress",…}`: já tem pedido ou atualização rodando.
+- `409 {"ok":false,"code":"turns_running","running":2,…}`: turno rodando (mesma contagem do `/status`) e sem `force`.
+- `400`: corpo que não é objeto ou `force` que não é booleano.
+
+O app pergunta antes de reenviar com `force`, mostra o `step` enquanto `queued`/`running` e trata erro de rede como "Reiniciando o servidor…" por até 4 min. Sem vigia, continua mostrando o comando `rbots update`.

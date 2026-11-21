@@ -1,5 +1,24 @@
 import Foundation
 
+struct ServerUpdateStatus: Decodable, Equatable, Sendable {
+    let available: Bool
+    let state: String
+    let step: String?
+    let message: String?
+    let from: String?
+    let to: String?
+    let finishedAt: String?
+
+    var isInProgress: Bool { state == "queued" || state == "running" }
+    var succeeded: Bool { state == "succeeded" }
+    var failed: Bool { state == "failed" }
+}
+
+enum ServerUpdateRequest: Equatable, Sendable {
+    case queued
+    case turnsRunning(Int)
+}
+
 struct ServerVersionInfo: Decodable, Equatable, Sendable {
     let current: String
     let channel: String?
@@ -9,6 +28,7 @@ struct ServerVersionInfo: Decodable, Equatable, Sendable {
     let publishedAt: String?
     let notes: String?
     let updateCommand: String?
+    let update: ServerUpdateStatus?
 
     var isDevelopment: Bool { current == "dev" }
     var isBeta: Bool { channel == "beta" }
@@ -20,6 +40,8 @@ struct ServerVersionInfo: Decodable, Equatable, Sendable {
     var releaseLink: URL? {
         releaseUrl.flatMap(URL.init(string:))
     }
+
+    var canUpdateFromApp: Bool { update?.available == true }
 
     var publishedDate: Date? {
         guard let publishedAt else { return nil }
