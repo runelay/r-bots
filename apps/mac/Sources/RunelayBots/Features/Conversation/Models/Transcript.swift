@@ -379,7 +379,7 @@ struct Approval: Identifiable, Equatable {
         }
         switch optionID {
         case "approve": return ("Aprovado", .approved)
-        case "approve_always": return ("Sempre permitido neste repositório", .approved)
+        case "approve_always": return ("Permitido sem perguntar de novo", .approved)
         case "deny": return ("Negado", .denied)
         default:
             let label = options.first { $0.id == optionID }?.label ?? optionID

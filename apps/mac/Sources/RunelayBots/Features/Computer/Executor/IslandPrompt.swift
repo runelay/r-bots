@@ -138,8 +138,8 @@ struct IslandPromptCard: View {
                 Spacer(minLength: 0)
                 Button("Agora não") { answer("deny") }
                     .buttonStyle(SmallPillButtonStyle(kind: .neutral))
-                if approval.options.contains(where: { $0.id == "approve_always" }) {
-                    Button("Sempre neste repo") { answer("approve_always") }
+                if let always = approval.options.first(where: { $0.id == "approve_always" }) {
+                    Button(approval.grant == nil ? always.label : "Sempre neste repo") { answer("approve_always") }
                         .buttonStyle(SmallPillButtonStyle(kind: .neutral))
                 }
                 Button("Permitir") { answer("approve") }

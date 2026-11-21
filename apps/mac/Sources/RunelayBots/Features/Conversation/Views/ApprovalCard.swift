@@ -213,10 +213,10 @@ struct ActionApprovalCard: View {
                     .accessibilityLabel("\(bot.name) está esperando sua resposta")
             }
             denyButton
-            if approval.options.contains(where: { $0.id == "approve_always" }) {
-                Button("Sempre neste repo") { answer("approve_always") }
+            if let always = approval.options.first(where: { $0.id == "approve_always" }) {
+                Button(approval.grant == nil ? always.label : "Sempre neste repo") { answer("approve_always") }
                     .buttonStyle(SmallPillButtonStyle(kind: .neutral))
-                    .help(approval.grant.map { "Não perguntar mais: \($0)" } ?? "Não perguntar mais neste repositório")
+                    .help(approval.grant.map { "Não perguntar mais: \($0)" } ?? "Não perguntar de novo até o fim desta tarefa")
             }
             allowButton
         }
