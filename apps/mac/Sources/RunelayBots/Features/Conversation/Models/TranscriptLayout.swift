@@ -109,7 +109,8 @@ enum TranscriptItem: Identifiable {
         var summarized: Set<String> = []
         for (index, entry) in visible.enumerated() {
             if store.bot.isGroup, entry.kind == .text, let part = store.textParts[entry.id], part.phase == .reply,
-               !summarized.contains(entry.id) {
+                !summarized.contains(entry.id)
+            {
                 var replies = 0
                 var speakers: Set<String> = []
                 for later in visible[index...] {
@@ -144,7 +145,8 @@ enum TranscriptItem: Identifiable {
                 continue
             }
             if entry.kind == .toolCall, let call = store.toolCalls[entry.id],
-               call.isDelegation || call.ownerCallID != nil || call.viaAgent != nil {
+                call.isDelegation || call.ownerCallID != nil || call.viaAgent != nil
+            {
                 flushTools()
                 group.append(entry.id)
                 continue

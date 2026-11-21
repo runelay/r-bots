@@ -67,6 +67,8 @@ targets:
         group: Shared
       - path: ../mac/Sources/RunelayBots/Design/Glass.swift
         group: Shared
+      - path: ../mac/Sources/RunelayBots/Design/SettingsTile.swift
+        group: Shared
       - path: ../mac/Sources/RunelayBots/Design/BrandMark.swift
         group: Shared
       - path: ../mac/Sources/RunelayBots/Design/Preferences.swift

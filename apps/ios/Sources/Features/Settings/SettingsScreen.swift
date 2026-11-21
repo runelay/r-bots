@@ -1,10 +1,16 @@
 import SwiftUI
 
 enum SettingsRoute: Hashable {
+    case account
+    case appearance
+    case shortcuts
+    case bots
+    case versions
+    case about
     case connectors
     case routines
     case usage
-    case accounts
+    case aiAccounts
     case integrations
     case vault
     case devices
@@ -43,20 +49,28 @@ struct SettingsScreen: View {
                     }
                     .settingsRow()
                 }
-                Section("Time") {
-                    link("Conectores", "point.3.connected.trianglepath.dotted", .connectors)
-                    link("Rotinas", "clock", .routines)
-                    link("Uso e limites", "chart.bar", .usage)
-                    link("Contas de IA", "person.2", .accounts)
-                    link("Integrações", "puzzlepiece.extension", .integrations)
-                    link("Cofre", "lock", .vault)
-                    link("Dispositivos", "iphone.and.arrow.forward", .devices)
+                Section("Conta e servidor") {
+                    link("Servidores", "server.rack", SettingsTint.blue, .servers)
+                    link("Conta", "person.crop.circle.fill", SettingsTint.graphite, .account)
+                    link("Dispositivos", "laptopcomputer.and.iphone", SettingsTint.teal, .devices)
+                    link("Cofre", "lock.shield.fill", SettingsTint.indigo, .vault)
                 }
                 .settingsRow()
-                Section("Este iPhone") {
-                    link("Notificações", "bell", .notifications)
-                    link("Servidores", "server.rack", .servers)
-                    LabeledContent("Versão do app", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+                Section("App") {
+                    link("Aparência", "circle.lefthalf.filled", SettingsTint.slate, .appearance)
+                    link("Notificações", "bell.badge.fill", SettingsTint.red, .notifications)
+                    link("Atalhos", "command", SettingsTint.graphite, .shortcuts)
+                }
+                .settingsRow()
+                Section("Bots e automação") {
+                    link("Bots", "person.2.fill", SettingsTint.orange, .bots)
+                    link("Contas de IA", "key.fill", SettingsTint.amber, .aiAccounts)
+                    link("Integrações", "puzzlepiece.extension.fill", SettingsTint.green, .integrations)
+                }
+                .settingsRow()
+                Section("Sobre") {
+                    link("Versões", "arrow.down.circle.fill", SettingsTint.blue, .versions)
+                    link("Sobre", "info", SettingsTint.graphite, .about)
                 }
                 .settingsRow()
                 Section {
@@ -80,10 +94,16 @@ struct SettingsScreen: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: SettingsRoute.self) { route in
                 switch route {
+                case .account: AccountScreen()
+                case .appearance: AppearanceScreen()
+                case .shortcuts: ShortcutsScreen()
+                case .bots: BotsSettingsScreen()
+                case .versions: VersionsScreen()
+                case .about: AboutScreen()
                 case .connectors: ConnectorsScreen()
                 case .routines: RoutinesScreen()
                 case .usage: UsageScreen()
-                case .accounts: AccountsScreen()
+                case .aiAccounts: AccountsScreen()
                 case .integrations: IntegrationsScreen()
                 case .vault: VaultScreen()
                 case .devices: DevicesScreen()
@@ -112,13 +132,12 @@ struct SettingsScreen: View {
         .environment(model)
     }
 
-    private func link(_ title: String, _ symbol: String, _ route: SettingsRoute) -> some View {
+    private func link(_ title: String, _ symbol: String, _ color: Color, _ route: SettingsRoute) -> some View {
         NavigationLink(value: route) {
-            Label {
+            HStack(spacing: Spacing.m) {
+                SettingsTile(symbol: symbol, color: color, size: 29)
                 Text(title)
-            } icon: {
-                Image(systemName: symbol)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(Theme.textPrimary)
             }
         }
     }

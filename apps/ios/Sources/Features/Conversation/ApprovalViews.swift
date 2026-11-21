@@ -325,11 +325,12 @@ struct QuestionOutcomeLine: View {
     let approval: Approval
 
     var body: some View {
-        let text: String = switch approval.resolution {
-        case .open: "Pergunta aberta"
-        case .answering(let summary): summary
-        case .settled(let summary, _): summary
-        }
+        let text: String =
+            switch approval.resolution {
+            case .open: "Pergunta aberta"
+            case .answering(let summary): summary
+            case .settled(let summary, _): summary
+            }
         HStack(alignment: .firstTextBaseline, spacing: Spacing.s) {
             Image(systemName: approval.isOpen ? "questionmark.circle" : "checkmark.circle.fill")
                 .font(.system(size: 12, weight: .semibold))

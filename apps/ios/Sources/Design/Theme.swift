@@ -164,8 +164,12 @@ extension Color {
     }
 
     static func dynamic(light: RGB, dark: RGB, lightAlpha: Double = 1, darkAlpha: Double = 1) -> Color {
-        let lightRed = light.red, lightGreen = light.green, lightBlue = light.blue
-        let darkRed = dark.red, darkGreen = dark.green, darkBlue = dark.blue
+        let lightRed = light.red
+        let lightGreen = light.green
+        let lightBlue = light.blue
+        let darkRed = dark.red
+        let darkGreen = dark.green
+        let darkBlue = dark.blue
         let color = UIColor { traits in
             if traits.userInterfaceStyle == .dark {
                 return UIColor(red: darkRed, green: darkGreen, blue: darkBlue, alpha: darkAlpha)

@@ -87,7 +87,7 @@ struct ReadableResult: View {
         var hidden = 0
         for item in items {
             guard let object = item.objectValue, let name = object["name"]?.stringValue,
-                  let type = object["type"]?.stringValue, kinds.contains(type)
+                let type = object["type"]?.stringValue, kinds.contains(type)
             else { return nil }
             if object["hidden"] == .bool(true) || name.hasPrefix(".") {
                 hidden += 1

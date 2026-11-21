@@ -5,6 +5,7 @@ struct BotListScreen: View {
     @Binding var path: [Route]
     @Binding var showsSettings: Bool
     @State private var creating = false
+    @State private var managingServers = false
 
     var body: some View {
         content
@@ -16,7 +17,22 @@ struct BotListScreen: View {
                 }
                 .environment(model)
             }
+            .sheet(isPresented: $managingServers) {
+                NavigationStack {
+                    ServersScreen()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("OK") { managingServers = false }
+                            }
+                        }
+                }
+                .environment(model)
+            }
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ServerSwitcher(managing: $managingServers)
+                }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         creating = true

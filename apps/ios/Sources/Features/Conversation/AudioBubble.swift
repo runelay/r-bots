@@ -38,7 +38,7 @@ final class AudioPlayback: NSObject, AVAudioPlayerDelegate {
         Task {
             defer { if loadingID == ref.id { loadingID = nil } }
             guard let file = try? await AttachmentFileCache.shared.localFile(for: ref, remote: remote),
-                  let player = try? AVAudioPlayer(contentsOf: file)
+                let player = try? AVAudioPlayer(contentsOf: file)
             else {
                 failedID = ref.id
                 return

@@ -244,7 +244,8 @@ final class AppModel {
             updateConversation(botID: botID, sessionID: sessionID) { $0.unread = 0 }
         }
         if let index = bots.firstIndex(where: { $0.id == botID }), let thread = bots[index].thread, thread.unread > 0,
-           conversation?.isMain != false {
+            conversation?.isMain != false
+        {
             var copy = BotThread(sessionId: thread.sessionId, lastMessage: thread.lastMessage, unread: 0)
             copy.running = thread.running
             copy.status = thread.status
@@ -348,7 +349,8 @@ final class AppModel {
                     failures = 0
                     for try await line in bytes.lines {
                         guard let data = line.data(using: .utf8),
-                              let value = try? JSONDecoder().decode(JSONValue.self, from: data) else { continue }
+                            let value = try? JSONDecoder().decode(JSONValue.self, from: data)
+                        else { continue }
                         self?.applyStatus(value)
                     }
                 } catch {

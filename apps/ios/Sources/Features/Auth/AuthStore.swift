@@ -25,7 +25,7 @@ enum AuthStore {
         query[kSecMatchLimit as String] = kSecMatchLimitOne
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data
+            let data = item as? Data
         else { return nil }
         return String(data: data, encoding: .utf8)
     }
@@ -59,10 +59,10 @@ enum AuthStore {
 
     static func authorize(_ request: inout URLRequest) {
         guard request.value(forHTTPHeaderField: "Authorization") == nil,
-              let url = request.url,
-              let target = origin(of: url),
-              target == origin(of: ServerConfig.currentURL()),
-              let token = read(.session)
+            let url = request.url,
+            let target = origin(of: url),
+            target == origin(of: ServerConfig.currentURL()),
+            let token = read(.session)
         else { return }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }

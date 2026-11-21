@@ -15,8 +15,8 @@ final class AuthImageCache {
         request.timeoutInterval = 60
         AuthStore.authorize(&request)
         guard let (data, response) = try? await URLSession.shared.data(for: request),
-              (response as? HTTPURLResponse)?.statusCode == 200,
-              let image = UIImage(data: data)
+            (response as? HTTPURLResponse)?.statusCode == 200,
+            let image = UIImage(data: data)
         else { return nil }
         images[url] = image
         return image

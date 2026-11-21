@@ -199,4 +199,3 @@ struct ConversationView: View {
         .animation(Motion.animation(reduceMotion: reduceMotion), value: store.connection)
     }
 }
-

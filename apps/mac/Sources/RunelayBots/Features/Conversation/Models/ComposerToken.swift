@@ -1,8 +1,9 @@
-#if canImport(AppKit)
-import AppKit
-#endif
 import SwiftUI
 import UniformTypeIdentifiers
+
+#if canImport(AppKit)
+    import AppKit
+#endif
 
 enum ComposerToken: Hashable, Codable {
     case file(UUID)

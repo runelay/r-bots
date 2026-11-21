@@ -89,7 +89,8 @@ struct ComposerBar: View {
         .fullScreenCover(isPresented: $takingPhoto) {
             CameraPicker { image in
                 if let data = image.jpegData(compressionQuality: 0.85),
-                   let url = AttachmentPasteboard.writeTemporary(data, name: "Foto.jpg") {
+                    let url = AttachmentPasteboard.writeTemporary(data, name: "Foto.jpg")
+                {
                     store.attachFiles([url], ownsFiles: true)
                 }
             }
@@ -147,7 +148,11 @@ struct ComposerBar: View {
                 .padding(.leading, Spacing.xs)
                 .padding(.vertical, 13)
                 .frame(minHeight: 48)
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { fieldWidth = $0 }
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.width
+                } action: {
+                    fieldWidth = $0
+                }
             trailingButtons
                 .buttonStyle(.plain)
                 .padding(.trailing, 6)

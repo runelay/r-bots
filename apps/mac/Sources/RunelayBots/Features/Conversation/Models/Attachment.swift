@@ -1,9 +1,10 @@
-#if canImport(AppKit)
-import AppKit
-#endif
 import Foundation
 import Observation
 import UniformTypeIdentifiers
+
+#if canImport(AppKit)
+    import AppKit
+#endif
 
 enum AttachmentKind: String, Sendable, Equatable {
     case image
@@ -125,31 +126,31 @@ final class ComposerAttachment: Identifiable {
 
 enum AttachmentPasteboard {
     #if os(macOS)
-    static let imageTypes: [NSPasteboard.PasteboardType] = [.png, .tiff]
+        static let imageTypes: [NSPasteboard.PasteboardType] = [.png, .tiff]
 
-    static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
-        return (pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
-    }
-
-    static func hasImage(_ pasteboard: NSPasteboard) -> Bool {
-        let types = pasteboard.types ?? []
-        guard types.contains(where: imageTypes.contains) else { return false }
-        return !types.contains(.rtf) && !types.contains(.rtfd)
-    }
-
-    static func imageFile(from pasteboard: NSPasteboard) -> URL? {
-        let data: Data?
-        if let png = pasteboard.data(forType: .png) {
-            data = png
-        } else if let tiff = pasteboard.data(forType: .tiff), let rep = NSBitmapImageRep(data: tiff) {
-            data = rep.representation(using: .png, properties: [:])
-        } else {
-            data = nil
+        static func fileURLs(from pasteboard: NSPasteboard) -> [URL] {
+            let options: [NSPasteboard.ReadingOptionKey: Any] = [.urlReadingFileURLsOnly: true]
+            return (pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL]) ?? []
         }
-        guard let data else { return nil }
-        return writeTemporary(data, name: "Imagem colada.png")
-    }
+
+        static func hasImage(_ pasteboard: NSPasteboard) -> Bool {
+            let types = pasteboard.types ?? []
+            guard types.contains(where: imageTypes.contains) else { return false }
+            return !types.contains(.rtf) && !types.contains(.rtfd)
+        }
+
+        static func imageFile(from pasteboard: NSPasteboard) -> URL? {
+            let data: Data?
+            if let png = pasteboard.data(forType: .png) {
+                data = png
+            } else if let tiff = pasteboard.data(forType: .tiff), let rep = NSBitmapImageRep(data: tiff) {
+                data = rep.representation(using: .png, properties: [:])
+            } else {
+                data = nil
+            }
+            guard let data else { return nil }
+            return writeTemporary(data, name: "Imagem colada.png")
+        }
     #endif
 
     static func writeTemporary(_ data: Data, name: String) -> URL? {

@@ -17,6 +17,7 @@ struct RBotsApp: App {
 struct RootView: View {
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(PreferenceKeys.appearance) private var appearance = AppearancePreference.system.rawValue
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let session = AuthSession.shared
 
@@ -53,6 +54,7 @@ struct RootView: View {
         .environment(model)
         .environment(\.appReduceMotion, reduceMotion)
         .tint(Theme.brandAccent)
+        .preferredColorScheme(AppearancePreference(rawValue: appearance)?.colorScheme)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: stage)
         .task {
             await session.bootstrap()
@@ -100,7 +102,9 @@ struct MainView: View {
             showsSettings = false
             path = [.conversation(botID: botID)]
         }
-        .task {
+        .task(id: AuthSession.shared.serverRevision) {
+            path = []
+            model.stop()
             await model.start()
             await LocalNotifier.requestAuthorization()
         }

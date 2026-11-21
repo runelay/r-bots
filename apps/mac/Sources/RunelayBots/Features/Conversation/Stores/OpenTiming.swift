@@ -66,30 +66,30 @@ enum OpenTiming {
 }
 
 #if os(macOS)
-@MainActor
-enum OpenBench {
-    static func runIfRequested(_ model: AppModel) {
-        guard OpenTiming.enabled, UserDefaults.standard.bool(forKey: "debugOpenBench") else { return }
-        Task {
-            try? await Task.sleep(for: .seconds(4))
-            let bots = model.loadedBots.filter { !$0.isPending && $0.thread?.sessionId != nil }.prefix(5)
-            for round in ["cold", "warm"] {
+    @MainActor
+    enum OpenBench {
+        static func runIfRequested(_ model: AppModel) {
+            guard OpenTiming.enabled, UserDefaults.standard.bool(forKey: "debugOpenBench") else { return }
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                let bots = model.loadedBots.filter { !$0.isPending && $0.thread?.sessionId != nil }.prefix(5)
+                for round in ["cold", "warm"] {
+                    for bot in bots {
+                        OpenTiming.begin(model.conversation(for: bot.id)?.sessionId ?? bot.thread?.sessionId, label: "bot-\(round)")
+                        model.openConversation(bot.id)
+                        try? await Task.sleep(for: .seconds(1.5))
+                    }
+                }
                 for bot in bots {
-                    OpenTiming.begin(model.conversation(for: bot.id)?.sessionId ?? bot.thread?.sessionId, label: "bot-\(round)")
-                    model.openConversation(bot.id)
-                    try? await Task.sleep(for: .seconds(1.5))
+                    let others = model.conversations(for: bot.id).filter { $0.sessionId != model.conversation(for: bot.id)?.sessionId }.prefix(2)
+                    for conversation in others {
+                        OpenTiming.begin(conversation.sessionId, label: "older")
+                        model.selectConversation(botID: bot.id, sessionID: conversation.sessionId)
+                        try? await Task.sleep(for: .seconds(1.5))
+                    }
                 }
+                OpenTiming.note("bench done")
             }
-            for bot in bots {
-                let others = model.conversations(for: bot.id).filter { $0.sessionId != model.conversation(for: bot.id)?.sessionId }.prefix(2)
-                for conversation in others {
-                    OpenTiming.begin(conversation.sessionId, label: "older")
-                    model.selectConversation(botID: bot.id, sessionID: conversation.sessionId)
-                    try? await Task.sleep(for: .seconds(1.5))
-                }
-            }
-            OpenTiming.note("bench done")
         }
     }
-}
 #endif

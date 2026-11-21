@@ -642,40 +642,71 @@ struct DevicesScreen: View {
 }
 
 struct ServersScreen: View {
-    @State private var saved: [String] = UserDefaults.standard.stringArray(forKey: "servers.recent") ?? []
     private let session = AuthSession.shared
+    @State private var adding = false
+    @State private var name = ""
+    @State private var address = ""
 
     var body: some View {
+        let book = ServerConfig.book()
         List {
-            Section("Conectado a") {
-                Text(ServerConfig.currentURL().absoluteString)
-                    .font(BrandFonts.mono(14))
-                    .textSelection(.enabled)
-            }
-            .settingsRow()
-            if !saved.isEmpty {
-                Section("Usados antes") {
-                    ForEach(saved, id: \.self) { address in
-                        Text(address).font(BrandFonts.mono(14))
-                    }
-                    .onDelete { offsets in
-                        saved.remove(atOffsets: offsets)
-                        UserDefaults.standard.set(saved, forKey: "servers.recent")
-                    }
-                }
-                .settingsRow()
-            }
             Section {
-                Button("Trocar de servidor") {
-                    Task { await session.signOut() }
+                ForEach(book.profiles) { profile in
+                    Button {
+                        Task { await session.switchServer(to: profile) }
+                    } label: {
+                        HStack(spacing: Spacing.m) {
+                            ServerBadge(profile: profile, size: 29)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(profile.name)
+                                    .foregroundStyle(Theme.textPrimary)
+                                Text(profile.address)
+                                    .font(BrandFonts.mono(12))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            if profile.id == book.activeID {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(Theme.brandText)
+                            }
+                        }
+                    }
+                    .swipeActions {
+                        if profile.id != book.activeID {
+                            Button("Remover", role: .destructive) { session.removeServer(profile) }
+                        }
+                    }
                 }
             } footer: {
-                Text("Você sai desta conta e escolhe outro endereço na tela de login.")
+                Text("Cada servidor guarda o próprio login neste iPhone. Trocar recarrega o app sem misturar bots e conversas.")
+            }
+            .settingsRow()
+            Section {
+                if adding {
+                    TextField("Nome (ex.: Casa)", text: $name)
+                    TextField("http://100.64.0.1:2000", text: $address)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    Button("Adicionar") {
+                        if session.addServer(name: name, address: address) != nil {
+                            name = ""
+                            address = ""
+                            adding = false
+                        }
+                    }
+                    .disabled(ServerConfig.parse(AuthSession.normalized(address)) == nil)
+                } else {
+                    Button("Adicionar servidor", systemImage: "plus") { adding = true }
+                }
             }
             .settingsRow()
         }
         .settingsList()
         .navigationTitle("Servidores")
+        .id(session.serverRevision)
     }
 }
 
