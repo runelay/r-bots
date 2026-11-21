@@ -4,6 +4,7 @@
 
 ### Fixes
 
+- New conversations on a box no longer fail with "permission denied": the server creates the conversation folder before the box starts. Before, Docker created it as root and the bot could not write to it.
 - Pasting an image or file with ⌘V in the Mac composer attaches it to the conversation you are typing in. Before, another open tab or side thread could take it, or nothing happened.
 
 ## v0.1.7

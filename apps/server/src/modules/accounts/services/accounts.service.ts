@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import {
   type AccountProbe,
@@ -12,7 +13,7 @@ import {
 import { probe, runTurn } from "@runelay-bots/providers";
 import { dataDir, env } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
-import { boxSpecFor, hostPathOf } from "../../environments/services/box-spec.service";
+import { boxSpecFor, hostPathOf, workDirOf } from "../../environments/services/box-spec.service";
 import { place } from "../../environments/services/scheduler.service";
 import {
   type AccountDir,
@@ -260,6 +261,7 @@ export async function runOnAccount(
   if (placement.kind === "remote") {
     const mounted = accountPath(id);
     const remoteTurn = { ...turn, configDir: turn.configDir ?? mounted };
+    mkdirSync(workDirOf(remoteTurn), { recursive: true });
     const box = boxSpecFor({ request: remoteTurn, accountPath: mounted });
     const outcome = await runRemoteTurn(placement.environmentId, { turn: remoteTurn, botId, box, hooks }, signal, emit);
     if (outcome === "ran") return;
