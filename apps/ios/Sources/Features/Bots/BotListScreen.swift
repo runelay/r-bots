@@ -7,16 +7,18 @@ struct BotListScreen: View {
     @State private var creating = false
     @State private var managingServers = false
     @State private var showsShortcuts = false
+    @State private var searchOpen = false
+    @FocusState private var searchFocused: Bool
+    @Namespace private var searchNamespace
 
     var body: some View {
         content
             .safeAreaInset(edge: .bottom, alignment: .trailing) {
-                shortcutsButton
+                bottomControls
             }
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Bots")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: Bindable(model).searchQuery, prompt: "Buscar")
             .sheet(isPresented: $showsShortcuts) {
                 NavigationStack {
                     ShortcutsScreen()
@@ -47,16 +49,20 @@ struct BotListScreen: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
+                    RunelaySymbol()
+                        .fill(LinearGradient(colors: [Theme.silverFrom, Theme.silverTo], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 28 * 572 / 592, height: 28)
+                        .padding(.trailing, 2)
+                        .accessibilityLabel("r/bots")
+                }
+                .sharedBackgroundVisibility(.hidden)
+                ToolbarItem(placement: .topBarLeading) {
                     ServerSwitcher(managing: $managingServers)
                 }
                 ToolbarItem(placement: .principal) {
-                    HStack(spacing: Spacing.s) {
-                        RunelayAppMark(size: 22)
-                        Text("Bots")
-                            .font(BrandFonts.sans(17, weight: .semibold))
-                            .foregroundStyle(Theme.textPrimary)
-                    }
-                    .accessibilityElement(children: .combine)
+                    Color.clear
+                        .frame(width: 1, height: 1)
+                        .accessibilityHidden(true)
                 }
                 .sharedBackgroundVisibility(.hidden)
                 ToolbarItem(placement: .topBarTrailing) {
@@ -114,21 +120,100 @@ struct BotListScreen: View {
         !model.searchQuery.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
+    private static let floatingSize: CGFloat = 56
+
+    private var bottomControls: some View {
+        GlassEffectContainer(spacing: 12) {
+            HStack(spacing: 12) {
+                if searchOpen {
+                    searchCapsule
+                } else {
+                    searchButton
+                    shortcutsButton
+                }
+            }
+        }
+        .padding(.leading, searchOpen ? Spacing.l : 0)
+        .padding(.trailing, Spacing.l)
+        .padding(.bottom, Spacing.s)
+    }
+
+    private var searchButton: some View {
+        Button(action: openSearch) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .frame(width: Self.floatingSize, height: Self.floatingSize)
+                .glassEffect(.regular.interactive(), in: Circle())
+                .glassEffectID("search", in: searchNamespace)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Buscar")
+    }
+
+    private var searchCapsule: some View {
+        HStack(spacing: Spacing.s) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+            TextField("Buscar", text: Bindable(model).searchQuery)
+                .font(BrandFonts.sans(17))
+                .foregroundStyle(Theme.textPrimary)
+                .focused($searchFocused)
+                .submitLabel(.search)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .onAppear { searchFocused = true }
+            Button(action: closeSearch) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: 36, height: 36)
+                    .background(Theme.textTertiary.opacity(0.18), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Fechar busca")
+        }
+        .padding(.leading, 20)
+        .padding(.trailing, 10)
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.floatingSize)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .glassEffectID("search", in: searchNamespace)
+        .onChange(of: searchFocused) { _, focused in
+            if !focused && !isSearching {
+                withAnimation(Motion.spring) { searchOpen = false }
+            }
+        }
+    }
+
     private var shortcutsButton: some View {
         Button {
             showsShortcuts = true
         } label: {
             GridPlusIcon()
+                .scaleEffect(1.2)
                 .foregroundStyle(Theme.textPrimary)
-                .frame(width: 44, height: 44)
+                .frame(width: Self.floatingSize, height: Self.floatingSize)
                 .glassEffect(.regular.interactive(), in: Circle())
+                .glassEffectID("shortcuts", in: searchNamespace)
                 .contentShape(Circle())
         }
         .buttonStyle(.plain)
-        .padding(.trailing, Spacing.l)
-        .padding(.bottom, Spacing.s)
         .accessibilityLabel("Atalhos")
         .accessibilityHint("GitHub, Linear, Agenda e mais")
+    }
+
+    private func openSearch() {
+        withAnimation(Motion.spring) { searchOpen = true }
+    }
+
+    private func closeSearch() {
+        model.searchQuery = ""
+        searchFocused = false
+        withAnimation(Motion.spring) { searchOpen = false }
     }
 
     @ViewBuilder

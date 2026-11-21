@@ -8,8 +8,7 @@ import { redactText } from "../../../shared/redact";
 import type { Principal } from "../../auth/services/auth.middleware";
 import { authorize } from "../../auth/services/policy.service";
 import { latestFailureTtlMs, latestTtlMs } from "../../providers/constants/providers.constants";
-import { notesLimit } from "../constants/server-version.constants";
-import { updatePickupMs, updateStaleMs } from "../constants/server-version.constants";
+import { notesLimit, updatePickupMs, updateStaleMs } from "../constants/server-version.constants";
 import {
   parseUpdateStatus,
   readServerUpdate,
