@@ -120,9 +120,9 @@ function runningMessage(server: PublicDevServer | null, strays: StrayServer[]) {
   }
   if (strays.length > 0) {
     const list = strays.map((item) => `porta ${item.port} (pid ${item.pid}: ${item.command})`).join("; ");
-    const escape = server ? "" : ", ou passe replace: true para subir mesmo assim";
+    const replaceHint = server ? "" : ", ou passe replace: true para subir mesmo assim";
     parts.push(
-      `Esta pasta já tem servidor subido fora do r/bots: ${list}. Pare com kill <pid> em vez de subir outro${escape}.`,
+      `Esta pasta já tem servidor subido fora do r/bots: ${list}. Pare com kill <pid> em vez de subir outro${replaceHint}.`,
     );
   }
   return parts.join(" ");

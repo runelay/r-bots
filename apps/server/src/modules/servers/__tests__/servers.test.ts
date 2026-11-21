@@ -284,7 +284,7 @@ describe("profiles", () => {
 describe("project servers", () => {
   test("starts from a script with env, hides secrets, restarts, stops and forgets", async () => {
     processes();
-    const kill = fakeKill();
+    fakeKill();
     const repo = await project();
     writeFileSync(join(repo.path, ".env.local"), "API_TOKEN=supersecret1\n");
     const { server: launched, ready } = await startProjectServer({ path: repo.path, script: "dev", startedBy: "user" });

@@ -121,7 +121,10 @@ export async function sandboxBootReport(): Promise<{ ok: boolean; line: string }
     return { ok: true, line: "sandbox de ferramentas: off (comandos dos bots rodam como o usuário do servidor)" };
   const status = await sandboxStatus();
   if (status.ok)
-    return { ok: true, line: `sandbox de ferramentas: uid (${sandboxUser}, bwrap ${status.bwrap ? "ligado" : "ausente"})` };
+    return {
+      ok: true,
+      line: `sandbox de ferramentas: uid (${sandboxUser}, bwrap ${status.bwrap ? "ligado" : "ausente"})`,
+    };
   return {
     ok: false,
     line: `ERRO: BOTS_TOOL_SANDBOX=uid, mas o sandbox de ferramentas não respondeu (sudo -n -u ${sandboxUser} ${sandboxExec()} --probe). Nenhum comando de bot roda até corrigir o sudoers, o wrapper e o usuário ${sandboxUser}.`,

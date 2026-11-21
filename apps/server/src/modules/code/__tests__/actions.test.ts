@@ -296,7 +296,7 @@ describe("delivery safety", () => {
     const commitCall = fake.calls.find((call) => gitArgs(call, "commit"));
     expect(commitCall?.args).toContain("--no-verify");
     const gh = fake.calls.find((call) => call.command === "gh");
-    expect((gh?.options.env as Record<string, string>).GIT_CONFIG_KEY_0).toBe("core.hooksPath");
+    expect((gh?.options.env as Record<string, string> | undefined)?.GIT_CONFIG_KEY_0).toBe("core.hooksPath");
     fake.restore();
   });
 });

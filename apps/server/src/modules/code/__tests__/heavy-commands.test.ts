@@ -53,9 +53,9 @@ describe("wrapHeavyCommand", () => {
   test("an outer wrapper runs the limited command while the lock stays outside it", () => {
     const outer = (inner: string) => `SANDBOX[${inner}]`;
     const test = wrapHeavyCommand("vitest", "vitest", outer) as string;
-    expect(test.startsWith(`flock -E 75 -w ${heavyLimits.testWaitSec} '${heavyLimits.lockFile}' SANDBOX[ulimit -c 0; env`)).toBe(
-      true,
-    );
+    expect(
+      test.startsWith(`flock -E 75 -w ${heavyLimits.testWaitSec} '${heavyLimits.lockFile}' SANDBOX[ulimit -c 0; env`),
+    ).toBe(true);
     const heavy = wrapHeavyCommand("tsc", "tsc", outer) as string;
     expect(heavy.startsWith("SANDBOX[ulimit -c 0; env NODE_OPTIONS=")).toBe(true);
     expect(heavy).not.toContain("flock");

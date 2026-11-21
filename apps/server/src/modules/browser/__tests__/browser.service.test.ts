@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fakeAgentBrowser, pngBytes, until } from "../../../../test/browser-helpers";
+import * as netGuard from "../../../shared/net-guard";
 import {
   browserAlive,
   browserClick,
@@ -33,7 +34,6 @@ import {
   startLiveView,
   viewport,
 } from "../services/browser.service";
-import * as netGuard from "../../../shared/net-guard";
 import { controllerOf, onControllerChange, setController, waitForBotControl } from "../services/control.service";
 
 let counter = 0;

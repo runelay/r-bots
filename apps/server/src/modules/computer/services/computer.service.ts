@@ -72,7 +72,10 @@ const gitReadWrite = new Set(["status", "diff", "add", "commit"]);
 
 export function shellArgv(command: string): string[] | null {
   if (shellMetacharacters.test(command)) return null;
-  return command.trim().split(/[ \t]+/).filter(Boolean);
+  return command
+    .trim()
+    .split(/[ \t]+/)
+    .filter(Boolean);
 }
 
 function shellAllowed(argv: string[]) {

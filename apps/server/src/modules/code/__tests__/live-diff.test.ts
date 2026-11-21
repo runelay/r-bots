@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EventLog } from "../../conversations/services/sessions.service";
-import { type CodeSignal, CodeLive, CodeLives, onCodeSignal } from "../services/live-diff.service";
+import { CodeLive, CodeLives, type CodeSignal, onCodeSignal } from "../services/live-diff.service";
 import type { WorkspaceState } from "../services/workspace.service";
 import * as workspaceService from "../services/workspace.service";
 

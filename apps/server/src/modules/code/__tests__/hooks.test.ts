@@ -20,8 +20,8 @@ import {
   endCall,
   homeHooks,
   nativeHooks,
-  worktreePathsIn,
   sandboxedBash,
+  worktreePathsIn,
 } from "../services/hooks.service";
 import type { CodeLive } from "../services/live-diff.service";
 import type { Gate } from "../services/policy.service";

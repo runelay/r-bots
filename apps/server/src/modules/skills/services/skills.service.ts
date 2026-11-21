@@ -113,7 +113,8 @@ export async function skillsIndex(timeoutMs = 3000) {
   const lines = list
     .slice(0, indexLimit)
     .map((skill) => `- \`${skill.slug}\`${skill.description ? `: ${skill.description}` : ""}`);
-  const more = list.length > indexLimit ? `\n- e mais ${list.length - indexLimit}; ache com memory_search (kind skill).` : "";
+  const more =
+    list.length > indexLimit ? `\n- e mais ${list.length - indexLimit}; ache com memory_search (kind skill).` : "";
   return `## Skills da pessoa\nSlug e para que serve. Quando a tarefa bater com uma delas, leia inteira com \`skill_read(slug)\` antes de começar e siga passo a passo.\n${lines.join("\n")}${more}`;
 }
 

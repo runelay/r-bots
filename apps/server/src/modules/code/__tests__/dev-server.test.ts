@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { EventEmitter } from "node:events";
 import { spawn } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
 import net from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   type FakeChild,
@@ -32,10 +32,10 @@ import {
   serverLogs,
   serversOf,
   startDevServer,
-  strayServers,
   stopAllDevServers,
   stopDevServer,
   stopDevServers,
+  strayServers,
   toolOf,
   viewServer,
   withHost,
