@@ -537,8 +537,11 @@ export function board(input: BoardInput): Promise<Board> {
       if (column) column.count++;
       else columns.set(issue.column, { key: issue.column, name: issue.state, type: issue.stateType, count: 1 });
     }
+    const presentTypes = new Set(issues.map((issue) => issue.stateType));
     const ordered = sortStates([...columns.values()]).filter(
-      (column) => column.count > 0 || !["canceled", "duplicate"].includes(column.type),
+      (column) =>
+        column.count > 0 ||
+        (!["canceled", "duplicate"].includes(column.type) && (view.kind !== "view" || presentTypes.has(column.type))),
     );
     return {
       view,

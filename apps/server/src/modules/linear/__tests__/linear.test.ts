@@ -261,6 +261,30 @@ describe("routes", () => {
     expect((await request("/linear/board?view=bad id")).status).toBe(400);
   });
 
+  test("keeps every saved view issue on screen without empty columns of absent state types", async () => {
+    tools.set("linear_server.list_issues", () => ({
+      issues: [
+        issue("ENG-1"),
+        issue("ENG-2", { status: "Concluído", statusType: "completed" }),
+        issue("ENG-3", { status: "Em teste", statusType: "started" }),
+      ],
+      hasNextPage: true,
+      cursor: "next",
+    }));
+    const reply = await request<{
+      columns: Array<{ key: string; count: number }>;
+      issues: Array<{ column: string }>;
+    }>("/linear/board?view=view:v1");
+    expect(reply.body.columns.map((column) => `${column.key}=${column.count}`)).toEqual([
+      "started:Em progresso=1",
+      "started:Em review=0",
+      "started:Em teste=1",
+      "completed:Concluído=1",
+    ]);
+    const keys = new Set(reply.body.columns.map((column) => column.key));
+    expect(reply.body.issues.every((item) => keys.has(item.column))).toBe(true);
+  });
+
   test("returns the summary of started issues", async () => {
     const reply = await request("/linear/summary");
     expect(reply.body).toEqual({ started: 1, more: true });
