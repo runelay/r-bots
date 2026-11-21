@@ -49,6 +49,14 @@
         "@runelay-bots/protocol": "workspace:*",
       },
     },
+    "packages/runner": {
+      "name": "@runelay-bots/runner",
+      "version": "0.1.0",
+      "dependencies": {
+        "@runelay-bots/protocol": "workspace:*",
+        "@runelay-bots/providers": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@anthropic-ai/claude-agent-sdk": ["@anthropic-ai/claude-agent-sdk@0.3.328", "", { "optionalDependencies": { "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.328", "@anthropic-ai/claude-agent-sdk-darwin-x64": "0.3.328", "@anthropic-ai/claude-agent-sdk-linux-arm64": "0.3.328", "@anthropic-ai/claude-agent-sdk-linux-arm64-musl": "0.3.328", "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.328", "@anthropic-ai/claude-agent-sdk-linux-x64-musl": "0.3.328", "@anthropic-ai/claude-agent-sdk-win32-arm64": "0.3.328", "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.328" }, "peerDependencies": { "@anthropic-ai/sdk": ">=0.93.0", "@modelcontextprotocol/sdk": "^1.29.0", "zod": "^4.0.0" } }, "sha512-YcOWlpXVm7etPjPVrvSJEfynDksMiG11zvEybSBnk1EVWji6rSjU75HbbhJ8XPEB2ECEwRRP597Udu6IWMtsDw=="],
@@ -252,6 +260,8 @@
     "@runelay-bots/protocol": ["@runelay-bots/protocol@workspace:packages/protocol"],
 
     "@runelay-bots/providers": ["@runelay-bots/providers@workspace:packages/providers"],
+
+    "@runelay-bots/runner": ["@runelay-bots/runner@workspace:packages/runner"],
 
     "@runelay-bots/server": ["@runelay-bots/server@workspace:apps/server"],
 

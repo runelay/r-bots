@@ -12,6 +12,8 @@ import {
 import { probe, runTurn } from "@runelay-bots/providers";
 import { dataDir, env } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
+import { boxSpecFor, hostPathOf } from "../../environments/services/box-spec.service";
+import { place } from "../../environments/services/scheduler.service";
 import {
   type AccountDir,
   type AccountSettings,
@@ -28,6 +30,7 @@ import {
   writeAccountSettings,
 } from "./account-dirs.service";
 import { emitFault, injectedFault } from "./limits.service";
+import { runRemoteTurn } from "./mac-runner.service";
 
 export type RunnerId = "vps";
 export type AccountStatus = "ready" | "logged_out" | "offline" | "missing";
@@ -234,7 +237,12 @@ export function mcpBaseFor() {
   return `http://127.0.0.1:${env.GATEWAY_PORT}`;
 }
 
-export function runOnAccount(
+export function botIdOf({ workKey }: Pick<TurnRequest, "workKey">) {
+  const [botId = ""] = workKey.split("/");
+  return botId;
+}
+
+export async function runOnAccount(
   account: Pick<Account, "id" | "provider">,
   request: TurnRequest,
   signal: AbortSignal,
@@ -243,8 +251,21 @@ export function runOnAccount(
   inbox?: LiveInbox,
 ) {
   const fault = injectedFault(account.id);
-  if (fault) return Promise.resolve(emitFault(fault, emit));
-  return runTurn({ ...request, configDir: accountDir(account.id) }, dataDir, signal, emit, hooks, inbox);
+  if (fault) return emitFault(fault, emit);
+  const { id, provider } = account;
+  const turn = { ...request, configDir: accountDir(id) };
+  const botId = botIdOf(request);
+  const codeCwd = request.code ? hostPathOf(request.code.cwd) : null;
+  const placement = place({ botId, provider, codeCwd, memMb: env.BOX_MEM_MB });
+  if (placement.kind === "remote") {
+    const box = boxSpecFor({ request: turn, accountPath: accountPath(id) });
+    const outcome = await runRemoteTurn(placement.environmentId, { turn, botId, box, hooks }, signal, emit);
+    if (outcome === "ran") return;
+    console.log(
+      `${new Date().toISOString()} turn ${request.turnId} refused by ${placement.environmentId}, running local`,
+    );
+  }
+  return runTurn(turn, dataDir, signal, emit, hooks, inbox);
 }
 
 async function changeSettings(change: (settings: AccountSettings) => void) {

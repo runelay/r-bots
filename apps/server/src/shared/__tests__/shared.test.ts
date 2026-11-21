@@ -98,6 +98,15 @@ describe("config", () => {
     );
   });
 
+  test("env takes the sandbox edition and refuses the cloud one for now", async () => {
+    expect((await loadEnv({ BOTS_SANDBOX: undefined }, "sandbox-default")).env.BOTS_SANDBOX).toBe("off");
+    expect((await loadEnv({ BOTS_SANDBOX: "docker" }, "sandbox-docker")).env.BOTS_SANDBOX).toBe("docker");
+    await expect(loadEnv({ BOTS_SANDBOX: "cloudflare" }, "sandbox-cloud")).rejects.toThrow(
+      "BOTS_SANDBOX: use off ou docker.",
+    );
+    await expect(loadEnv({ BOTS_SANDBOX: "vm" }, "sandbox-vm")).rejects.toThrow("BOTS_SANDBOX: use off ou docker.");
+  });
+
   test("storage paths follow the test env and drivers parse their settings", () => {
     expect(blobsDir).toBe(process.env.BLOB_FS_DIR as string);
     expect(blobDriver()).toBe("fs");

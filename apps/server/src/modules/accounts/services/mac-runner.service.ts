@@ -1,10 +1,37 @@
 import { randomUUID } from "node:crypto";
-import type { AccountProbe, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import type {
+  AccountProbe,
+  BoxSpec,
+  BoxStatus,
+  EnvironmentCapacity,
+  HookRequestFrame,
+  HookResponseFrame,
+  NativeToolGate,
+  NativeToolHooks,
+  ProviderEvent,
+  RemoteTurnStart,
+  TurnRequest,
+} from "@runelay-bots/protocol";
 import { host, port } from "../../../config/env";
 import type { Req } from "../../../shared/http";
 import { type Socket, type SocketData, type SocketHandler, socketOpen } from "../../../shared/ws";
 import { authActive, currentAuthModule, onUserRevoked, principalOf } from "../../auth/gate";
 import { ownerRole } from "../../auth/services/auth.service";
+import {
+  boxesCapability,
+  capacityRefusal,
+  failedHookMessage,
+  invalidHookMessage,
+  missingHooksMessage,
+} from "../../environments/constants/environments.constants";
+import {
+  boxesOf,
+  capabilitiesOf,
+  capacityOf,
+  hookRequestOf,
+  runnerOf,
+} from "../../environments/services/runner-frames.service";
+import type { RunnerEnvironment, RunnerInfo } from "../../environments/types/environments.types";
 
 export const runnerConnectPath = "/runner/connect";
 export const revokedCloseCode = 4001;
@@ -20,6 +47,18 @@ type TurnStream = {
   key: string;
   emit: (event: ProviderEvent) => void;
   finish: () => void;
+  hooks?: NativeToolHooks;
+  refuse?: () => void;
+  started: boolean;
+};
+
+export type RemoteTurnOutcome = "ran" | "refused";
+
+export type RemoteTurnInput = {
+  turn: TurnRequest;
+  botId: string;
+  box: BoxSpec;
+  hooks?: NativeToolHooks;
 };
 
 export type RunnerSocketData = SocketData & {
@@ -41,6 +80,9 @@ type Connection = {
   userId: string | null;
   owner: boolean;
   beat: { alive: boolean; timer: ReturnType<typeof setInterval> };
+  runner: RunnerInfo | null;
+  capacity: EnvironmentCapacity | null;
+  boxes: BoxStatus[];
 };
 
 export type McpForwarder = (path: string, init: RequestInit) => Promise<Response>;
@@ -51,6 +93,7 @@ const pending = new Map<string, Pending>();
 const turns = new Map<string, TurnStream>();
 const eventListeners = new Set<(event: { type: string; botId?: string }) => void>();
 const changeListeners = new Set<(connected: boolean, key: string) => void>();
+const environmentListeners = new Set<() => void>();
 const mcpPathPattern = /^\/mcp\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const forwardedRequestHeaders = ["authorization", "content-type", "accept", "mcp-session-id", "mcp-protocol-version"];
 const forwardedResponseHeaders = ["content-type", "mcp-session-id"];
@@ -90,6 +133,10 @@ function isOpen(connection: Connection | undefined): connection is Connection {
   return connection !== undefined && connection.socket.readyState === socketOpen;
 }
 
+function isBoxRunner({ hello }: Connection) {
+  return capabilitiesOf(hello.capabilities).includes(boxesCapability);
+}
+
 function connectionFor(key?: string) {
   if (key !== undefined) {
     const found = connections.get(key);
@@ -97,7 +144,7 @@ function connectionFor(key?: string) {
   }
   let best: Connection | null = null;
   for (const connection of connections.values()) {
-    if (!isOpen(connection) || !connection.owner) continue;
+    if (!isOpen(connection) || !connection.owner || isBoxRunner(connection)) continue;
     if (!best || connection.rank < best.rank) best = connection;
   }
   return best;
@@ -166,8 +213,34 @@ export function onMacRunnerChange(listener: (connected: boolean, key: string) =>
   return () => changeListeners.delete(listener);
 }
 
+export function onRunnerEnvironmentsChange(listener: () => void) {
+  environmentListeners.add(listener);
+  return () => environmentListeners.delete(listener);
+}
+
+export function runnerEnvironments(): RunnerEnvironment[] {
+  return [...connections.values()]
+    .filter((connection) => isOpen(connection) && connection.owner && isBoxRunner(connection))
+    .map(({ key, name, hello, runner, capacity, boxes }) => ({
+      key,
+      name,
+      capabilities: capabilitiesOf(hello.capabilities),
+      runner,
+      capacity,
+      boxes,
+    }));
+}
+
 export function useMcpForwarder(forwarder: McpForwarder | null) {
   mcpForwarder = forwarder ?? loopbackForwarder;
+}
+
+function notifyEnvironments() {
+  for (const listener of environmentListeners) {
+    try {
+      listener();
+    } catch {}
+  }
 }
 
 function notifyChange(connected: boolean, key: string) {
@@ -176,9 +249,10 @@ function notifyChange(connected: boolean, key: string) {
       listener(connected, key);
     } catch {}
   }
+  notifyEnvironments();
 }
 
-function send(message: Record<string, unknown>, key?: string) {
+function send(message: object, key?: string) {
   const connection = connectionFor(key);
   if (!connection) throw new MacRunnerUnavailable("O app r/bots não está conectado.");
   connection.socket.send(JSON.stringify(message));
@@ -269,6 +343,49 @@ async function forwardMcp(connection: Connection, message: Record<string, unknow
   }
 }
 
+async function gateFor(
+  hooks: NativeToolHooks | undefined,
+  frame: HookRequestFrame,
+): Promise<NativeToolGate | undefined> {
+  if (!hooks) return { allow: false, message: missingHooksMessage };
+  const { phase, tool, input, toolUseId, response, failed } = frame;
+  try {
+    if (phase === "before") return await hooks.before(tool, input, toolUseId);
+    await hooks.after(tool, input, response, toolUseId, failed === true);
+    return undefined;
+  } catch {
+    return { allow: false, message: failedHookMessage };
+  }
+}
+
+async function answerHook(connection: Connection, message: Record<string, unknown>) {
+  const reply = (frame: HookResponseFrame) => {
+    if (connection.socket.readyState === socketOpen) connection.socket.send(JSON.stringify(frame));
+  };
+  const frame = hookRequestOf(message);
+  if (!frame) {
+    if (typeof message.id === "string")
+      reply({ type: "hook.response", id: message.id, gate: { allow: false, message: invalidHookMessage } });
+    return;
+  }
+  const stream = turns.get(frame.turnId);
+  const gate = await gateFor(stream?.key === connection.key ? stream.hooks : undefined, frame);
+  reply({ type: "hook.response", id: frame.id, ...(gate ? { gate } : {}) });
+}
+
+function onTurnResponse(connection: Connection, id: string, message: Record<string, unknown>) {
+  const stream = turns.get(id);
+  if (stream?.key !== connection.key || message.ok !== false) return;
+  turns.delete(id);
+  const error = typeof message.error === "string" ? message.error : "";
+  if (error === capacityRefusal && stream.refuse && !stream.started) {
+    stream.refuse();
+    return;
+  }
+  stream.emit({ type: "done", ok: false, message: error || "O ambiente recusou o turno." });
+  stream.finish();
+}
+
 function onMessage(connection: Connection, raw: string) {
   let message: Record<string, unknown>;
   try {
@@ -279,6 +396,23 @@ function onMessage(connection: Connection, raw: string) {
   const id = typeof message.id === "string" ? message.id : "";
   if (message.type === "hello") {
     connection.hello = message;
+    connection.runner = runnerOf(message.runner);
+    connection.capacity = connection.runner?.capacity ?? null;
+    notifyEnvironments();
+    return;
+  }
+  if (message.type === "capacity") {
+    connection.capacity = capacityOf(message.capacity) ?? connection.capacity;
+    notifyEnvironments();
+    return;
+  }
+  if (message.type === "boxes") {
+    connection.boxes = boxesOf(message.boxes) ?? connection.boxes;
+    notifyEnvironments();
+    return;
+  }
+  if (message.type === "hook.request") {
+    void answerHook(connection, message);
     return;
   }
   if (message.type === "mcp.request") {
@@ -287,7 +421,11 @@ function onMessage(connection: Connection, raw: string) {
   }
   if (message.type === "response") {
     const entry = pending.get(id);
-    if (!entry || entry.key !== connection.key) return;
+    if (!entry) {
+      onTurnResponse(connection, id, message);
+      return;
+    }
+    if (entry.key !== connection.key) return;
     clearTimeout(entry.timer);
     pending.delete(id);
     entry.resolve(message);
@@ -358,6 +496,9 @@ export const runnerSocket: SocketHandler = {
       userId: data.userId,
       owner: data.owner,
       beat,
+      runner: null,
+      capacity: null,
+      boxes: [],
     });
     console.log(`${new Date().toISOString()} mac runner connected (${data.deviceKey})`);
     notifyChange(true, data.deviceKey);
@@ -494,9 +635,34 @@ function throughProxy(turn: TurnRequest, key: string) {
   }
 }
 
-export function runMacTurn(turn: TurnRequest, signal: AbortSignal, emit: (event: ProviderEvent) => void, key?: string) {
-  return new Promise<void>((resolve) => {
+type StreamOptions = {
+  target: Connection | null;
+  turnId: string;
+  signal: AbortSignal;
+  emit: (event: ProviderEvent) => void;
+  start: (target: Connection) => object;
+  missing: string | null;
+  hooks?: NativeToolHooks;
+};
+
+function streamTurn({ target, turnId, signal, emit, start, missing, hooks }: StreamOptions) {
+  return new Promise<RemoteTurnOutcome>((resolve) => {
     let done = false;
+    const onAbort = () => {
+      try {
+        if (target) send({ type: "turn.cancel", id: turnId }, target.key);
+      } catch {}
+      setTimeout(() => {
+        const stream = turns.get(turnId);
+        if (!stream) return;
+        turns.delete(turnId);
+        stream.finish();
+      }, 5000).unref();
+    };
+    const settle = (outcome: RemoteTurnOutcome) => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(outcome);
+    };
     const finish = () => {
       if (!done)
         emit({
@@ -504,40 +670,71 @@ export function runMacTurn(turn: TurnRequest, signal: AbortSignal, emit: (event:
           ok: false,
           message: signal.aborted ? "cancelled" : "O Mac encerrou o turno sem resposta.",
         });
-      signal.removeEventListener("abort", onAbort);
-      resolve();
+      settle("ran");
     };
-    const target = connectionFor(key);
-    const onAbort = () => {
-      try {
-        if (target) send({ type: "turn.cancel", id: turn.turnId }, target.key);
-      } catch {}
-      setTimeout(() => {
-        const stream = turns.get(turn.turnId);
-        if (!stream) return;
-        turns.delete(turn.turnId);
-        stream.finish();
-      }, 5000).unref();
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
     if (!target) {
-      emit({
-        type: "done",
-        ok: false,
-        message: key ? "Mac desconectado." : "O app r/bots não está conectado.",
-      });
-      done = true;
-      finish();
+      if (missing !== null) emit({ type: "done", ok: false, message: missing });
+      resolve(missing === null ? "refused" : "ran");
       return;
     }
-    turns.set(turn.turnId, {
+    signal.addEventListener("abort", onAbort, { once: true });
+    const stream: TurnStream = {
       key: target.key,
       emit: (event) => {
+        stream.started = true;
         if (event.type === "done") done = true;
         emit(event);
       },
       finish,
-    });
-    send({ type: "turn.start", id: turn.turnId, turn: throughProxy(turn, target.key) }, target.key);
+      started: false,
+      ...(hooks ? { hooks } : {}),
+      ...(missing === null ? { refuse: () => settle("refused") } : {}),
+    };
+    turns.set(turnId, stream);
+    send(start(target), target.key);
+  });
+}
+
+export async function runMacTurn(
+  turn: TurnRequest,
+  signal: AbortSignal,
+  emit: (event: ProviderEvent) => void,
+  key?: string,
+) {
+  await streamTurn({
+    target: connectionFor(key),
+    turnId: turn.turnId,
+    signal,
+    emit,
+    missing: key ? "Mac desconectado." : "O app r/bots não está conectado.",
+    start: (target) => ({ type: "turn.start", id: turn.turnId, turn: throughProxy(turn, target.key) }),
+  });
+}
+
+export function runRemoteTurn(
+  environmentId: string,
+  { turn, botId, box, hooks }: RemoteTurnInput,
+  signal: AbortSignal,
+  emit: (event: ProviderEvent) => void,
+) {
+  const found = connectionFor(environmentId);
+  const target = found && isBoxRunner(found) ? found : null;
+  return streamTurn({
+    target,
+    turnId: turn.turnId,
+    signal,
+    emit,
+    missing: null,
+    hooks,
+    start: ({ key }): RemoteTurnStart => ({
+      type: "request",
+      id: turn.turnId,
+      op: "turn.start",
+      turnId: turn.turnId,
+      botId,
+      request: throughProxy(turn, key),
+      box,
+      hooks: hooks !== undefined,
+    }),
   });
 }

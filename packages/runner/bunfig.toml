@@ -1,0 +1,4 @@
+[test]
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["src/__tests__/**", "../protocol/**", "../providers/**"]
+coverageThreshold = { lines = 0.99, functions = 0.99 }

@@ -93,6 +93,7 @@ import {
 } from "../../questions/services/questions.service";
 import { settingsGuide } from "../../settings/services/settings-tools.service";
 import { type LoadedSkill, skillsBlock, skillsIndex } from "../../skills/services/skills.service";
+import { observeTurnDuration } from "../../status/services/metrics.service";
 import {
   attachmentsTitle,
   importGeneratedImage,
@@ -1125,6 +1126,7 @@ async function executeProvider(run: ProviderRun) {
     .filter(Boolean)
     .join("\n\n");
   turn.promptChars = { system: systemPrompt.length, prompt: run.prompt.length };
+  const startedAt = performance.now();
   try {
     await runOnAccount(
       run.account,
@@ -1158,6 +1160,7 @@ async function executeProvider(run: ProviderRun) {
       inbox,
     );
   } finally {
+    observeTurnDuration(run.provider, (performance.now() - startedAt) / 1000);
     turn.abort.signal.removeEventListener("abort", forwardAbort);
     if (turn.stopRun === stopRun) turn.stopRun = undefined;
     if (turn.yieldRun === yieldRun) turn.yieldRun = undefined;

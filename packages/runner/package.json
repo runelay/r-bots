@@ -1,0 +1,19 @@
+{
+  "name": "@runelay-bots/runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/runner.ts"
+  },
+  "dependencies": {
+    "@runelay-bots/protocol": "workspace:*",
+    "@runelay-bots/providers": "workspace:*"
+  },
+  "scripts": {
+    "start": "bun src/main.ts",
+    "build:box-agent": "bun build --target=bun src/box-agent-main.ts --outfile dist/box-agent.js",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --coverage"
+  }
+}

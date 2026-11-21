@@ -69,7 +69,11 @@ function seedHome() {
 }
 
 function turnRequest(provider: TurnRequest["provider"] = "claude"): TurnRequest {
-  return { turnId: `turn-${Math.random().toString(36).slice(2)}`, provider } as unknown as TurnRequest;
+  return {
+    turnId: `turn-${Math.random().toString(36).slice(2)}`,
+    provider,
+    workKey: "bot/session",
+  } as unknown as TurnRequest;
 }
 
 beforeAll(async () => {

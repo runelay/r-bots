@@ -30,6 +30,7 @@ import { addAllowedRepo, removeAllowedRepo, worktreesRoot } from "../../code/ser
 import * as computer from "../../computer/services/computer.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import * as threads from "../../conversations/services/threads.service";
+import { metricsText, resetTurnDurations } from "../../status/services/metrics.service";
 import * as uploads from "../../uploads/services/uploads.service";
 import {
   botStatus,
@@ -62,10 +63,7 @@ function withSecondClaude() {
       const list = await real();
       const main = list.find((item) => item.id === "vps:claude");
       return main
-        ? [
-            ...list,
-            { ...main, id: "claude-2:claude", label: "Claude Alex", name: "Claude Alex", isDefault: false },
-          ]
+        ? [...list, { ...main, id: "claude-2:claude", label: "Claude Alex", name: "Claude Alex", isDefault: false }]
         : list;
     }),
   );
@@ -80,6 +78,7 @@ describe("a chat turn", () => {
     const bot = await makeBot();
     const session = await newSession(bot.id);
     const events: StatusEvent[] = [];
+    resetTurnDurations();
     const stop = onStatus((event) => events.push(event));
     const held = hold([
       { type: "session", id: "prov-1" },
@@ -113,6 +112,7 @@ describe("a chat turn", () => {
     expect(events).toContainEqual({ botId: bot.id, status: "idle" });
     expect(quiet.summary).toHaveBeenCalled();
     expect(quiet.capture).toHaveBeenCalled();
+    expect(await metricsText()).toContain('rbots_turn_duration_seconds_count{provider="claude"} 1');
 
     fakeProviders.next(replyWith("de novo"));
     await run(session, { text: "mais uma" });
