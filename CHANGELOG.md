@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+## v0.1.5
+
 ### Fixes
 
 - Boxes also mount the folders an account links to outside itself (like `~/.claude-2/projects` pointing to `~/.claude/projects`). Before, Claude saved those sessions inside the box and lost them whenever the box was recreated (update, new worktree), and the next turn failed with "No conversation found with session ID".
+- The Mac app shows its real version (from the bundle, stamped from the root `package.json` by `make-app.sh`) instead of a fixed 0.5.0.
 
 ## v0.1.4
 
