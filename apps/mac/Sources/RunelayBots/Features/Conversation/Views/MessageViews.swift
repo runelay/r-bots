@@ -47,9 +47,16 @@ struct UserBubble: View {
     let meta: BubbleMeta
     var showsAvatar = false
     var fold: MessageFoldRef? = nil
+    var reactions: [MessageReaction] = []
+    var me: String? = nil
+    var canReact = false
+    var isHovered = false
+    var onHover: (Bool) -> Void = { _ in }
+    var react: (String) -> Void = { _ in }
     let retry: () -> Void
     @Environment(\.transcriptToggle) private var transcriptToggle
     @Environment(\.appReduceMotion) private var reduceMotion
+    @State private var pickerOpen = false
 
     private var avatarInset: CGFloat { showsAvatar ? 20 + Spacing.s : 0 }
 
@@ -112,6 +119,14 @@ struct UserBubble: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(Theme.userBubble, in: BubbleShape.make(meta: meta, trailing: true))
+                    .overlay(alignment: .bottomLeading) {
+                        if canReact {
+                            ReactionPickerButton(edge: .trailing, isOpen: $pickerOpen, pick: react)
+                                .alignmentGuide(.leading) { $0[.trailing] + Spacing.xs }
+                                .opacity(isHovered || pickerOpen ? 1 : 0)
+                                .allowsHitTesting(isHovered || pickerOpen)
+                        }
+                    }
                     .frame(maxWidth: BubbleShape.maxWidth, alignment: .trailing)
                     .fixedSize(horizontal: false, vertical: true)
                     .opacity(message.state == .sending ? 0.8 : 1)
@@ -132,6 +147,11 @@ struct UserBubble: View {
                     setExpanded(!expanded)
                 }
                 .padding(.trailing, avatarInset + Spacing.xs)
+            }
+            if !reactions.isEmpty {
+                ReactionBar(reactions: reactions, me: me, trailing: true, toggle: react)
+                    .padding(.trailing, avatarInset)
+                    .transition(Motion.insertion(reduceMotion: reduceMotion))
             }
             if message.state == .queued {
                 Label("na fila", systemImage: "clock")
@@ -163,7 +183,13 @@ struct UserBubble: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            onHover(hovering)
+        }
+        .animation(.easeOut(duration: 0.15), value: isHovered)
         .springAnimation(value: message.state)
+        .springAnimation(value: reactions.isEmpty)
     }
 }
 
@@ -178,9 +204,13 @@ struct ReplyCard: View {
     var live: LiveTextBuffer? = nil
     var onHover: (Bool) -> Void = { _ in }
     var fold: MessageFoldRef? = nil
+    var reactions: [MessageReaction] = []
+    var me: String? = nil
+    var react: (String) -> Void = { _ in }
     let regenerate: () -> Void
 
     @State private var copied = false
+    @State private var pickerOpen = false
     @Environment(\.transcriptToggle) private var transcriptToggle
     @Environment(\.appReduceMotion) private var reduceMotion
 
@@ -230,6 +260,7 @@ struct ReplyCard: View {
                     .background(Theme.surface, in: BubbleShape.make(meta: meta, trailing: false))
                     .overlay(alignment: .bottomTrailing) {
                         HStack(spacing: 0) {
+                            ReactionPickerButton(edge: .leading, isOpen: $pickerOpen, pick: react)
                             HoverAction(systemImage: copied ? "checkmark" : "doc.on.doc", help: "Copiar") {
                                 copy()
                             }
@@ -238,8 +269,8 @@ struct ReplyCard: View {
                             }
                         }
                         .alignmentGuide(.trailing) { $0[.leading] - Spacing.xs }
-                        .opacity(isHovered && !part.isStreaming ? 1 : 0)
-                        .allowsHitTesting(isHovered && !part.isStreaming)
+                        .opacity((isHovered || pickerOpen) && !part.isStreaming ? 1 : 0)
+                        .allowsHitTesting((isHovered || pickerOpen) && !part.isStreaming)
                     }
                     .frame(maxWidth: BubbleShape.maxWidth, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -251,6 +282,11 @@ struct ReplyCard: View {
                     setExpanded(!expanded)
                 }
                 .padding(.leading, 20 + Spacing.s + Spacing.xs)
+            }
+            if !reactions.isEmpty {
+                ReactionBar(reactions: reactions, me: me, trailing: false, toggle: react)
+                    .padding(.leading, 20 + Spacing.s + Spacing.xs)
+                    .transition(Motion.insertion(reduceMotion: reduceMotion))
             }
             if meta.isLast {
                 HStack(spacing: Spacing.xs) {
@@ -278,6 +314,7 @@ struct ReplyCard: View {
         }
         .animation(.easeOut(duration: 0.15), value: isHovered)
         .springAnimation(value: copied)
+        .springAnimation(value: reactions.isEmpty)
     }
 
     private func copy() {

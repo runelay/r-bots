@@ -47,6 +47,8 @@ final class ConversationStore {
     @ObservationIgnored private var catchUpTarget: Int?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     private(set) var userMessages: [String: UserMessage] = [:] { didSet { transcriptRevision &+= 1 } }
+    private(set) var reactions: [String: [MessageReaction]] = [:]
+    @ObservationIgnored private var reactionWrites: [String: Int] = [:]
     private(set) var textParts: [String: TextPart] = [:] { didSet { transcriptRevision &+= 1 } }
     private(set) var toolCalls: [String: ToolCall] = [:] { didSet { transcriptRevision &+= 1 } }
     private(set) var callOrder: [String] = []
@@ -118,6 +120,7 @@ final class ConversationStore {
         for facts in cached.lines {
             apply(.facts(facts))
         }
+        mergeReactions(cached.reactions, covering: MessageReaction.targets(in: cached.lines))
         recentLines = cached.lines
         lineCursor = cached.total
         restoredCursor = cached.total
@@ -134,7 +137,7 @@ final class ConversationStore {
         }
         lineCursor = total ?? (lineCursor ?? 0) + lines.count
         guard let cursor = lineCursor else { return }
-        let snapshot = CachedTranscript(lines: recentLines, total: cursor)
+        let snapshot = CachedTranscript(lines: recentLines, total: cursor, reactions: reactions.values.flatMap { $0 })
         let server = client.baseURL
         saveTask?.cancel()
         saveTask = Task(priority: .utility) {
@@ -481,6 +484,9 @@ final class ConversationStore {
                 for facts in page.lines {
                     self.apply(.facts(facts))
                 }
+                if let snapshot = page.reactions {
+                    self.mergeReactions(snapshot, covering: MessageReaction.targets(in: page.lines))
+                }
                 self.olderCursor = page.nextBefore
                 self.hasOlder = (page.nextBefore ?? 0) > 0
                 startIndex = page.total ?? 0
@@ -512,6 +518,9 @@ final class ConversationStore {
                 older.apply(.facts(facts))
             }
             absorbOlder(older)
+            if let snapshot = page.reactions {
+                mergeReactions(snapshot, covering: MessageReaction.targets(in: page.lines))
+            }
             olderCursor = page.nextBefore
             hasOlder = (page.nextBefore ?? 0) > 0
         }
@@ -532,6 +541,7 @@ final class ConversationStore {
         codeEdits.merge(older.codeEdits) { current, _ in current }
         codeBulks.merge(older.codeBulks) { current, _ in current }
         entryTurns.merge(older.entryTurns) { current, _ in current }
+        reactions.merge(older.reactions) { current, _ in current }
         checkpointTurns.formUnion(older.checkpointTurns)
         revertedTurns.formUnion(older.revertedTurns)
         let known = Set(callOrder)
@@ -837,6 +847,10 @@ final class ConversationStore {
             if Self.isScheduleDelivery(data), let deliveryID = data["deliveryId"]?.stringValue {
                 scheduleDeliveries[deliveryID] = Self.scheduleID(data) ?? ""
             }
+        case "reaction.added", "reaction.removed":
+            if let reaction = MessageReaction(json: data) {
+                setReaction(reaction, on: fact.type == "reaction.added")
+            }
         case "delivery.consumed":
             applyConsumed(data, key: fact.key)
         case "content.completed":
@@ -986,6 +1000,93 @@ final class ConversationStore {
         }
     }
 
+    var myUserID: String? {
+        AuthSession.shared.user?.id
+    }
+
+    func reactionTarget(for entry: TranscriptEntry) -> String? {
+        switch entry.kind {
+        case .user:
+            guard let message = userMessages[entry.id], message.fromBotID == nil else { return nil }
+            return message.deliveryID
+        case .text:
+            guard let part = textParts[entry.id], part.phase == .reply, !part.isStreaming else { return nil }
+            return part.id
+        default:
+            return nil
+        }
+    }
+
+    func toggleReaction(target: String, emoji: String) {
+        guard let sessionId else { return }
+        let me = myUserID
+        let previous = reactions[target] ?? []
+        let mine = previous.first { $0.authorKind == .user && $0.emoji == emoji && (me == nil || $0.authorID == me) }
+        let reaction = mine ?? MessageReaction(
+            target: target,
+            emoji: emoji,
+            authorKind: .user,
+            authorID: me ?? "local",
+            at: ISO8601DateFormatter().string(from: Date())
+        )
+        let on = mine == nil
+        setReaction(reaction, on: on)
+        reactionWrites[target, default: 0] += 1
+        let client = client
+        let basePath = bot.sessionBasePath
+        Task { [weak self] in
+            do {
+                try await client.setReaction(basePath: basePath, sessionId: sessionId, target: target, emoji: emoji, on: on)
+                self?.finishReactionWrite(target: target, restore: nil)
+            } catch {
+                self?.finishReactionWrite(target: target, restore: previous)
+            }
+        }
+    }
+
+    private func finishReactionWrite(target: String, restore: [MessageReaction]?) {
+        let left = (reactionWrites[target] ?? 1) - 1
+        reactionWrites[target] = left > 0 ? left : nil
+        if let restore {
+            reactions[target] = restore.isEmpty ? nil : restore
+            lastError = "Não deu para reagir agora. Tente de novo."
+            persistReactions()
+        }
+    }
+
+    private func setReaction(_ reaction: MessageReaction, on: Bool) {
+        var list = reactions[reaction.target] ?? []
+        let exists = list.contains { $0.identity == reaction.identity }
+        if on, !exists {
+            list.append(reaction)
+        } else if !on, exists {
+            list.removeAll { $0.identity == reaction.identity }
+        } else {
+            return
+        }
+        reactions[reaction.target] = list.isEmpty ? nil : list
+        persistReactions()
+    }
+
+    private func mergeReactions(_ snapshot: [MessageReaction], covering targets: Set<String>) {
+        var grouped: [String: [MessageReaction]] = [:]
+        for reaction in snapshot {
+            grouped[reaction.target, default: []].append(reaction)
+        }
+        var next = reactions
+        for target in targets.union(grouped.keys) where reactionWrites[target] == nil {
+            next[target] = grouped[target]
+        }
+        if next != reactions {
+            reactions = next
+        }
+    }
+
+    private func persistReactions() {
+        guard historySettled, lineCursor != nil else { return }
+        remember([])
+    }
+
     private func applyProgress(_ fact: StreamFact) {
         guard fact.type == "content.delta" else { return }
         let data = fact.data
@@ -1036,6 +1137,7 @@ final class ConversationStore {
             }
             userMessages[pending.id]?.isConfirmed = true
             userMessages[pending.id]?.state = .sent
+            userMessages[pending.id]?.deliveryID = data["deliveryId"]?.stringValue
             let known = userMessages[pending.id]?.skills ?? []
             let confirmedSkills = Self.skills(in: data).map { skill in
                 guard skill.description.isEmpty, let local = known.first(where: { $0.slug == skill.slug }) else { return skill }
@@ -1060,7 +1162,7 @@ final class ConversationStore {
             return
         }
         guard userMessages[id] == nil else { return }
-        userMessages[id] = UserMessage(id: id, text: text, state: .sent, isConfirmed: true, isVoice: data["voice"]?.boolValue == true, skills: Self.skills(in: data), attachments: attachments)
+        userMessages[id] = UserMessage(id: id, text: text, state: .sent, isConfirmed: true, isVoice: data["voice"]?.boolValue == true, skills: Self.skills(in: data), attachments: attachments, deliveryID: data["deliveryId"]?.stringValue)
         if let from = data["from"]?["botId"]?.stringValue {
             userMessages[id]?.fromBotID = from
             userMessages[id]?.fromName = data["from"]?["name"]?.stringValue

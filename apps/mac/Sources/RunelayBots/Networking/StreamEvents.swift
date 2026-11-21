@@ -21,6 +21,7 @@ struct EventsPage: Sendable {
     let lines: [[StreamFact]]
     let nextBefore: Int?
     let total: Int?
+    var reactions: [MessageReaction]? = nil
 
     static func parse(_ value: JSONValue) -> EventsPage {
         let raw = value["events"]?.arrayValue ?? value["lines"]?.arrayValue ?? value.arrayValue ?? []
@@ -49,7 +50,8 @@ struct EventsPage: Sendable {
         return EventsPage(
             lines: lines,
             nextBefore: value["nextBefore"]?.intValue,
-            total: value["total"]?.intValue
+            total: value["total"]?.intValue,
+            reactions: value["reactions"].map { MessageReaction.list(in: $0) }
         )
     }
 }

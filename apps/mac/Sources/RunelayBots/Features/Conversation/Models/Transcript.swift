@@ -71,6 +71,7 @@ struct UserMessage: Identifiable, Equatable {
     var attachments: [AttachmentRef] = []
     var fromBotID: String? = nil
     var fromName: String? = nil
+    var deliveryID: String? = nil
 
     var isSkillOnly: Bool {
         !skills.isEmpty && text == skills.map(\.invocation).joined(separator: " ")

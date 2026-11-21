@@ -502,6 +502,15 @@ struct BotsClient: Sendable {
         _ = try await post("\(basePath)/session/\(Self.escape(sessionId))", body: .object(["answers": .array([answer])]))
     }
 
+    func setReaction(basePath: String, sessionId: String, target: String, emoji: String, on: Bool) async throws {
+        var urlRequest = try request(path: "\(basePath)/session/\(Self.escape(sessionId))/reactions")
+        urlRequest.httpMethod = on ? "POST" : "DELETE"
+        urlRequest.httpBody = try JSONEncoder().encode(JSONValue.object(["target": .string(target), "emoji": .string(emoji)]))
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let (data, response) = try await perform(urlRequest)
+        try validate(response, data: data)
+    }
+
     func cancel(basePath: String, sessionId: String) async throws {
         _ = try await post("\(basePath)/session/\(Self.escape(sessionId))/cancel", body: nil)
     }

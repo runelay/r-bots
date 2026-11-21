@@ -707,7 +707,25 @@ struct TranscriptRow: View, Equatable {
             if let message = store.userMessages[entry.id], let fromBotID = message.fromBotID {
                 DelegatedRequestBubble(message: message, from: model.bot(id: fromBotID), date: store.entryDates[entry.id])
             } else if let message = store.userMessages[entry.id] {
-                UserBubble(message: message, meta: bubble ?? BubbleMeta(), showsAvatar: store.bot.isGroup, fold: foldRef) {
+                let target = store.reactionTarget(for: entry)
+                UserBubble(
+                    message: message,
+                    meta: bubble ?? BubbleMeta(),
+                    showsAvatar: store.bot.isGroup,
+                    fold: foldRef,
+                    reactions: target.flatMap { store.reactions[$0] } ?? [],
+                    me: store.myUserID,
+                    canReact: target != nil,
+                    isHovered: isHovered,
+                    onHover: { hovering in
+                        setHovered(hovering ? entry.id : nil)
+                    },
+                    react: { emoji in
+                        if let target {
+                            store.toggleReaction(target: target, emoji: emoji)
+                        }
+                    }
+                ) {
                     store.retry(messageID: message.id)
                 }
                 .contextMenu {
@@ -735,7 +753,12 @@ struct TranscriptRow: View, Equatable {
                         onHover: { hovering in
                             setHovered(hovering ? entry.id : nil)
                         },
-                        fold: foldRef
+                        fold: foldRef,
+                        reactions: store.reactions[part.id] ?? [],
+                        me: store.myUserID,
+                        react: { emoji in
+                            store.toggleReaction(target: part.id, emoji: emoji)
+                        }
                     ) {
                         store.resendPrompt(before: entry.id)
                     }

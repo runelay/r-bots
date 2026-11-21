@@ -4,6 +4,7 @@ import os
 struct CachedTranscript: Sendable {
     var lines: [[StreamFact]]
     var total: Int
+    var reactions: [MessageReaction] = []
 
     var start: Int {
         max(0, total - lines.count)
@@ -65,7 +66,7 @@ final class TranscriptCache: Sendable {
                 state.warmedAt[key] = Date()
             }
             guard let page, let total = page.total else { return }
-            write(CachedTranscript(lines: page.lines, total: total), server: server, sessionID: sessionID)
+            write(CachedTranscript(lines: page.lines, total: total, reactions: page.reactions ?? []), server: server, sessionID: sessionID)
         }
     }
 
@@ -120,7 +121,12 @@ final class TranscriptCache: Sendable {
             }
         }
         while !lines.isEmpty {
-            let object: [String: Any] = ["v": 1, "total": cached.total, "lines": lines]
+            let object: [String: Any] = [
+                "v": 1,
+                "total": cached.total,
+                "lines": lines,
+                "r": cached.reactions.suffix(400).map(\.json.foundationObject)
+            ]
             guard let data = try? JSONSerialization.data(withJSONObject: object) else { return nil }
             if data.count <= maxBytes || lines.count == 1 {
                 return data
@@ -147,7 +153,8 @@ final class TranscriptCache: Sendable {
                 )
             }
         }
-        return CachedTranscript(lines: lines, total: total)
+        let reactions = (object["r"] as? [Any] ?? []).compactMap { MessageReaction(json: JSONValue(foundation: $0)) }
+        return CachedTranscript(lines: lines, total: total, reactions: reactions)
     }
 }
 
