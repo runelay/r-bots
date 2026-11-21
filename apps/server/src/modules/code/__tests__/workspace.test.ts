@@ -338,7 +338,12 @@ describe("dependency install", () => {
       if (call.command.endsWith("pnpm")) throw new Error("spawn failed");
       return undefined;
     });
+    const realFindBinary = proc.findBinary;
+    const installed = spyOn(proc, "findBinary").mockImplementation((names) =>
+      names.includes("pnpm") ? "/usr/local/bin/pnpm" : realFindBinary(names),
+    );
     const broken = await opened("ws-install-throw", { files: { "pnpm-lock.yaml": "x" } });
+    installed.mockRestore();
     expect(broken.workspace.install.status).toBe("failed");
     expect(broken.workspace.install.error).toBe("pnpm install --frozen-lockfile --ignore-scripts saiu com código 1.");
   });

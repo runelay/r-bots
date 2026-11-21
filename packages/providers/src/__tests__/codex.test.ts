@@ -262,5 +262,12 @@ describe("runCodex", () => {
     expect(codexHome(undefined)).toBe(join(fakeCli.home, ".codex"));
     if (previous !== undefined) process.env.CODEX_HOME = previous;
     expect(await generatedImages("/missing", "th", 0)).toEqual([]);
+    const home = join(fakeCli.home, "images-home");
+    const dir = join(home, "generated_images", "th");
+    fs.mkdirSync(dir, { recursive: true });
+    fs.symlinkSync(join(dir, "gone"), join(dir, "broken.png"));
+    fs.writeFileSync(join(dir, "kept.png"), "x");
+    expect(await generatedImages(home, "th", 0)).toEqual([join(dir, "kept.png")]);
+    fs.rmSync(home, { recursive: true, force: true });
   });
 });

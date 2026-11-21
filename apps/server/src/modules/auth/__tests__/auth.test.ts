@@ -3,11 +3,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDb } from "../../../../test/db-helpers";
+import { buildRequestContext, setRequestContext } from "../../../shared/http";
 import { type AuthModule, createAuthModule, isPublicRoute } from "..";
 import { safeEqual, signSessionCookie } from "../services/accounts-access.service";
 import { resolveAuthSecret } from "../services/auth-secret.service";
 
 const base = "http://127.0.0.1:2999";
+const peer = "198.51.100.7";
 let dir: string;
 let mod: AuthModule;
 
@@ -15,7 +17,10 @@ function req(path: string, init: RequestInit & { token?: string } = {}) {
   const headers = new Headers(init.headers);
   if (init.token) headers.set("authorization", `Bearer ${init.token}`);
   if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
-  return new Request(`${base}${path}`, { ...init, headers });
+  const request = new Request(`${base}${path}`, { ...init, headers });
+  const context = buildRequestContext(request, peer);
+  if (context) setRequestContext(request, context);
+  return request;
 }
 
 async function call(path: string, init: RequestInit & { token?: string } = {}) {
