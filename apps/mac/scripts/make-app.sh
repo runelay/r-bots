@@ -17,7 +17,11 @@ if [ ! -f "$ICNS" ] || [ "$SVG" -nt "$ICNS" ]; then
     iconutil -c icns "$ICONSET" -o "$ICNS"
 fi
 
-VERSION="$(grep -o 'version = "[^"]*"' "$ROOT/Sources/RunelayBots/Design/Preferences.swift" | head -1 | cut -d'"' -f2)"
+PACKAGE_JSON="$ROOT/../../package.json"
+if [ -z "${VERSION:-}" ] && [ -f "$PACKAGE_JSON" ]; then
+    VERSION="$(grep -m1 -o '"version": *"[^"]*"' "$PACKAGE_JSON" | cut -d'"' -f4)"
+fi
+VERSION="${VERSION:-dev}"
 APP="$ROOT/.build/rbots.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

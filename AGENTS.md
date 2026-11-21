@@ -82,7 +82,7 @@ Mac app (on the Mac, inside `apps/mac`):
 swift build                 # debug build
 swift format -i -r -p Sources Tests Package.swift  # format with .swift-format (CI lints it with --strict)
 swift run                   # run from the terminal
-./scripts/make-app.sh       # release build, icon, sign with "runelay bots Local", install ~/Applications/rbots.app
+./scripts/make-app.sh       # release build, icon, sign with "runelay bots Local", install ~/Applications/rbots.app; version from the root package.json (or VERSION=x.y.z when copied alone)
 ```
 
 ## CI and releases
