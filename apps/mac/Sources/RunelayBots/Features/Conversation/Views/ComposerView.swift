@@ -12,7 +12,6 @@ struct ComposerView: View {
     @Environment(AppModel.self) private var model
     @State private var slashSelection = 0
     @State private var dismissedSlashDraft: String?
-    @State private var pasteMonitor: Any?
     private let voice = VoiceInput.shared
     private let skillCatalog = SkillCatalog.shared
 
@@ -61,6 +60,7 @@ struct ComposerView: View {
                 focusRequest: focusRequest,
                 placeholder: placeholder,
                 onFocusChange: { focused in isFocused = focused },
+                onPasteAttachments: pasteAttachments,
                 onCommand: handle
             )
             .frame(height: composerHeight)
@@ -208,16 +208,11 @@ struct ComposerView: View {
         }
         .onAppear {
             focus()
-            installPasteMonitor()
             voice.focusedStore = store
             skillCatalog.prefetch(client: model.client)
         }
         .onDisappear {
             voice.release(store)
-            if let pasteMonitor {
-                NSEvent.removeMonitor(pasteMonitor)
-            }
-            pasteMonitor = nil
         }
         .onChange(of: isFocused) {
             if isFocused {
@@ -277,32 +272,22 @@ struct ComposerView: View {
         }
     }
 
-    private func installPasteMonitor() {
-        guard pasteMonitor == nil, !bot.isGroup else { return }
-        let store = store
-        pasteMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
-            guard modifiers == .command, event.charactersIgnoringModifiers?.lowercased() == "v" else { return event }
-            let consumed = MainActor.assumeIsolated { () -> Bool in
-                guard isFocused, event.window?.isKeyWindow == true else { return false }
-                let pasteboard = NSPasteboard.general
-                let files = AttachmentPasteboard.fileURLs(from: pasteboard)
-                if !files.isEmpty {
-                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                        store.attachFiles(files)
-                    }
-                    return true
-                }
-                if AttachmentPasteboard.hasImage(pasteboard), let image = AttachmentPasteboard.imageFile(from: pasteboard) {
-                    withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
-                        store.attachFiles([image], ownsFiles: true)
-                    }
-                    return true
-                }
-                return false
+    private func pasteAttachments(from pasteboard: NSPasteboard) -> Bool {
+        guard !bot.isGroup else { return false }
+        let files = AttachmentPasteboard.fileURLs(from: pasteboard)
+        if !files.isEmpty {
+            withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                store.attachFiles(files)
             }
-            return consumed ? nil : event
+            return true
         }
+        if AttachmentPasteboard.hasImage(pasteboard), let image = AttachmentPasteboard.imageFile(from: pasteboard) {
+            withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
+                store.attachFiles([image], ownsFiles: true)
+            }
+            return true
+        }
+        return false
     }
 
     private var isListening: Bool {
