@@ -208,6 +208,19 @@ describe("without an open workspace", () => {
     expect(textOf(plain)).toContain("não é um repositório git");
   });
 
+  test("workspace_add shows the repo by name and a home-relative path", async () => {
+    const home = process.env.HOST_HOME as string;
+    const asked = mock(async () => ({ choice: "deny" as const, interactionId: "i4" }));
+    const { call, context, settled } = harness({ permission: "full" });
+    context.requestApproval = asked as unknown as ToolContext["requestApproval"];
+    stub(repos, "gitRepoAt").mockResolvedValue(`${home}/projects/demo-tarefas`);
+    await call("workspace_add", { path: `${home}/projects/demo-tarefas`, reason: "x" });
+    const shown = JSON.stringify(asked.mock.calls);
+    expect(shown).toContain("Liberar o repositório demo-tarefas (~/projects/demo-tarefas)");
+    expect(shown).not.toContain(`${home}/projects`);
+    expect(JSON.stringify(settled())).not.toContain(`"label":"${home}`);
+  });
+
   test("workspace_add refuses the home folder and server folders without asking", async () => {
     const asked = mock(async () => ({ choice: "approve" as const, interactionId: "i3" }));
     const { call, context } = harness({ permission: "full" });

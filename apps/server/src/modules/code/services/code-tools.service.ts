@@ -1,5 +1,7 @@
+import { basename } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
+import { displayPath } from "../../accounts/services/account-dirs.service";
 import { getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import {
@@ -85,6 +87,7 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
     async (args: Record<string, unknown>) => {
       const reason = String(args.reason);
       const repoPath = await gitRepoAt(String(args.path));
+      const shown = repoPath ? displayPath(repoPath) : String(args.path);
       const known = repoPath ? allowedRepoFor(repoPath) : null;
       const rootProblem = repoPath ? repoRootProblem(repoPath) : null;
       const gate: Gate = !repoPath
@@ -92,21 +95,21 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
         : rootProblem
           ? { kind: "deny", message: rootProblem }
           : protectedPath(repoPath)
-            ? { kind: "deny", message: `${repoPath} é um caminho protegido e não pode ser liberado.` }
+            ? { kind: "deny", message: `${shown} é um caminho protegido e não pode ser liberado.` }
             : known?.path === repoPath
               ? { kind: "allow" }
               : {
                   kind: "human",
-                  prompt: `Liberar o repositório ${repoPath} para os bots? Motivo: ${reason}`,
+                  prompt: `Liberar o repositório ${basename(shown)} (${shown}) para os bots? Motivo: ${reason}`,
                   reason: "Liberar repositório sempre passa por você.",
                   hard: true,
                 };
       const start = await beginCall(context, {
         name: "workspace_add",
-        label: `Liberar ${repoPath ?? String(args.path)}`,
-        input: { path: String(args.path), reason },
+        label: `Liberar ${shown}`,
+        input: { path: repoPath ?? String(args.path), reason },
         gate,
-        target: { label: repoPath ?? String(args.path), role: "repo" },
+        target: { label: shown, role: "repo" },
         alwaysHuman: true,
       });
       if (!start.allowed || !repoPath) return text(start.message ?? "Negado.", true);
