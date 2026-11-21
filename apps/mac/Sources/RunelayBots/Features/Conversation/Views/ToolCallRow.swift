@@ -105,15 +105,17 @@ struct CompactToolRow: View {
                 var items: [GlassMenuItem] = []
                 if let url = phrase.url {
                     items.append(GlassMenuItem("Abrir no meu navegador", systemImage: "safari") { NSWorkspace.shared.open(url) })
-                    items.append(GlassMenuItem("Copiar link", systemImage: "link") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
-                    })
+                    items.append(
+                        GlassMenuItem("Copiar link", systemImage: "link") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        })
                 }
                 if hasTechnical {
-                    items.append(GlassMenuItem(showsTechnical ? "Ocultar detalhes técnicos" : "Detalhes técnicos", id: "technical", systemImage: "curlybraces", startsSection: phrase.url != nil) {
-                        showsTechnical.toggle()
-                    })
+                    items.append(
+                        GlassMenuItem(showsTechnical ? "Ocultar detalhes técnicos" : "Detalhes técnicos", id: "technical", systemImage: "curlybraces", startsSection: phrase.url != nil) {
+                            showsTechnical.toggle()
+                        })
                 }
                 return items
             }
@@ -140,7 +142,8 @@ struct CompactToolRow: View {
 
     private func title(_ phrase: ActionPhrase) -> AttributedString {
         if phrase.surface == .browser, let pageTitle = call.output?["title"]?.stringValue, !pageTitle.isEmpty,
-           ["browser_open", "browser_snapshot", "browser_screenshot"].contains(call.name) {
+            ["browser_open", "browser_snapshot", "browser_screenshot"].contains(call.name)
+        {
             return AttributedString(pageTitle)
         }
         var bare = phrase

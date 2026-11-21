@@ -193,7 +193,8 @@ final class TranscriptListView: NSScrollView {
         rows = newRows
         index = Dictionary(newRows.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         if animatesAppends, !known.isEmpty, !reduceMotion,
-           let firstKnown = newRows.firstIndex(where: { known[$0.id] != nil && !$0.id.hasPrefix("transcript-") }) {
+            let firstKnown = newRows.firstIndex(where: { known[$0.id] != nil && !$0.id.hasPrefix("transcript-") })
+        {
             for row in newRows[firstKnown...] where known[row.id] == nil {
                 appearing.insert(row.id)
             }

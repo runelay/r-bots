@@ -281,8 +281,8 @@ struct AuthClient: Sendable {
         try Self.ensure(data, response)
         let body = Self.object(data)
         guard let user = body["user"] as? [String: Any],
-              let id = user["id"] as? String,
-              let email = user["email"] as? String
+            let id = user["id"] as? String,
+            let email = user["email"] as? String
         else { throw AuthFailure.server(response.statusCode, "Resposta estranha do servidor.") }
         let cookie = (body["cookie"] as? [String: Any]).flatMap { item -> AuthCookie? in
             guard let name = item["name"] as? String, let value = item["value"] as? String else { return nil }
@@ -356,8 +356,8 @@ struct AuthClient: Sendable {
         try Self.ensure(data, response)
         let body = Self.object(data)
         guard let deviceCode = body["device_code"] as? String,
-              let userCode = body["user_code"] as? String,
-              let complete = (body["verification_uri_complete"] as? String).flatMap(URL.init(string:))
+            let userCode = body["user_code"] as? String,
+            let complete = (body["verification_uri_complete"] as? String).flatMap(URL.init(string:))
         else { throw AuthFailure.server(response.statusCode, "Resposta estranha do servidor.") }
         return DeviceGrant(
             deviceCode: deviceCode,

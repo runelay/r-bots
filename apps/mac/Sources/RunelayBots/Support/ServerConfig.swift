@@ -71,8 +71,8 @@ enum ServerConfig {
         var current = book()
         let stored = UserDefaults.standard.string(forKey: storageKey) ?? ""
         guard parse(stored) != nil,
-              let index = current.profiles.firstIndex(where: { $0.id == current.activeID }),
-              current.profiles[index].address != stored
+            let index = current.profiles.firstIndex(where: { $0.id == current.activeID }),
+            current.profiles[index].address != stored
         else { return current }
         current.profiles[index].address = stored
         persist(current)
@@ -103,8 +103,9 @@ enum ServerConfig {
 
     private static func load() -> ServerProfileBook {
         if let data = UserDefaults.standard.data(forKey: profilesKey),
-           let decoded = try? JSONDecoder().decode(ServerProfileBook.self, from: data),
-           !decoded.profiles.isEmpty {
+            let decoded = try? JSONDecoder().decode(ServerProfileBook.self, from: data),
+            !decoded.profiles.isEmpty
+        {
             return decoded
         }
         let address = UserDefaults.standard.string(forKey: storageKey).flatMap { parse($0) != nil ? $0 : nil } ?? defaultURL

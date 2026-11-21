@@ -271,9 +271,10 @@ private struct VaultRow: View {
 
     private var metaLine: String {
         if secret.isExpired { return "Vencido" }
-        let site = secret.policy.domains.first.map { first in
-            secret.policy.domains.count > 1 ? "\(first) +\(secret.policy.domains.count - 1)" : first
-        } ?? "Qualquer site"
+        let site =
+            secret.policy.domains.first.map { first in
+                secret.policy.domains.count > 1 ? "\(first) +\(secret.policy.domains.count - 1)" : first
+            } ?? "Qualquer site"
         if let date = secret.lastUsedAt {
             return "\(site) · \(VaultText.relative(date))\(botName.map { " por \($0)" } ?? "")"
         }

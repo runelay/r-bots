@@ -319,28 +319,34 @@ struct BlockPanelHeader: View {
     private var moreItems: [GlassMenuItem] {
         var items: [GlassMenuItem] = []
         if let botID = center.route?.botID {
-            if case .files = center.route {} else {
-                items.append(GlassMenuItem("Todos os arquivos", systemImage: "square.stack") {
-                    center.navigate(to: .files(botID: botID))
-                })
+            if case .files = center.route {
+            } else {
+                items.append(
+                    GlassMenuItem("Todos os arquivos", systemImage: "square.stack") {
+                        center.navigate(to: .files(botID: botID))
+                    })
             }
         }
         if deletable != nil {
-            items.append(GlassMenuItem("Apagar", systemImage: "trash", destructive: true) {
-                confirmingDelete = true
-            })
+            items.append(
+                GlassMenuItem("Apagar", systemImage: "trash", destructive: true) {
+                    confirmingDelete = true
+                })
         }
         return items
     }
 
     private func exportMenu(_ kind: BlockKind) -> some View {
-        GlassMenuButton(edge: .trailing, help: "Baixar como arquivo", items: {
-            ExportFormat.formats(for: kind).map { format in
-                GlassMenuItem(format.label, systemImage: "arrow.down.doc") {
-                    center.export(format: format)
+        GlassMenuButton(
+            edge: .trailing, help: "Baixar como arquivo",
+            items: {
+                ExportFormat.formats(for: kind).map { format in
+                    GlassMenuItem(format.label, systemImage: "arrow.down.doc") {
+                        center.export(format: format)
+                    }
                 }
             }
-        }) { _ in
+        ) { _ in
             HStack(spacing: Spacing.xs) {
                 if center.exporting {
                     ProgressView()
@@ -516,7 +522,9 @@ struct BlockFilesView: View {
                             }
                         }
                         if store.notes.isEmpty, !store.loading {
-                            PanelEmptyState(systemImage: "doc.text", title: store.query.isEmpty ? "Nenhuma nota ainda" : "Nada encontrado", message: store.query.isEmpty ? "Peça ao bot para anotar algo ou crie uma nota." : "Tente outras palavras.")
+                            PanelEmptyState(
+                                systemImage: "doc.text", title: store.query.isEmpty ? "Nenhuma nota ainda" : "Nada encontrado",
+                                message: store.query.isEmpty ? "Peça ao bot para anotar algo ou crie uma nota." : "Tente outras palavras.")
                         }
                     case .sheets:
                         ForEach(store.sheets) { sheet in
@@ -526,7 +534,9 @@ struct BlockFilesView: View {
                             }
                         }
                         if store.sheets.isEmpty, !store.loading {
-                            PanelEmptyState(systemImage: "tablecells", title: store.query.isEmpty ? "Nenhuma planilha ainda" : "Nada encontrado", message: store.query.isEmpty ? "Peça ao bot para montar uma planilha ou crie uma." : "Tente outras palavras.")
+                            PanelEmptyState(
+                                systemImage: "tablecells", title: store.query.isEmpty ? "Nenhuma planilha ainda" : "Nada encontrado",
+                                message: store.query.isEmpty ? "Peça ao bot para montar uma planilha ou crie uma." : "Tente outras palavras.")
                         }
                     case .agenda:
                         BlockFileRow(symbol: BlockKind.agenda.symbol, title: "Agenda", subtitle: "Semana com as suas contas do Google") {

@@ -75,10 +75,11 @@ enum CanvasRough {
                     let b = 3 * u * u * t
                     let c = 3 * u * t * t
                     let d = t * t * t
-                    current.append(CGPoint(
-                        x: a * start.x + b * control1.x + c * control2.x + d * point.x,
-                        y: a * start.y + b * control1.y + c * control2.y + d * point.y
-                    ))
+                    current.append(
+                        CGPoint(
+                            x: a * start.x + b * control1.x + c * control2.x + d * point.x,
+                            y: a * start.y + b * control1.y + c * control2.y + d * point.y
+                        ))
                 }
                 last = point
             case .closeSubpath:

@@ -204,9 +204,9 @@ private struct ServerStep: View {
                 .foregroundStyle(Theme.textSecondary)
         case .ok(let latency):
             Label("Conectado em \(latency) ms", systemImage: "checkmark.circle.fill")
-            .font(TypeScale.caption)
-            .foregroundStyle(Theme.success)
-            .transition(.opacity)
+                .font(TypeScale.caption)
+                .foregroundStyle(Theme.success)
+                .transition(.opacity)
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.circle.fill")
                 .font(TypeScale.caption)

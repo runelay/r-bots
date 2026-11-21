@@ -61,13 +61,14 @@ actor LocalUsageScanner {
         for (key, counters) in index.buckets {
             let parts = key.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
             guard parts.count == 4, let hour = Int(parts[0]), hour >= since else { continue }
-            rows.append(.object([
-                "h": .number(Double(hour)),
-                "p": .string(parts[1]),
-                "m": .string(parts[2]),
-                "s": .string(parts[3]),
-                "c": .array(counters.map { .number($0) }),
-            ]))
+            rows.append(
+                .object([
+                    "h": .number(Double(hour)),
+                    "p": .string(parts[1]),
+                    "m": .string(parts[2]),
+                    "s": .string(parts[3]),
+                    "c": .array(counters.map { .number($0) }),
+                ]))
         }
         var sessions: [JSONValue] = []
         for (key, entry) in index.sessions where entry.hour >= since {
@@ -85,8 +86,9 @@ actor LocalUsageScanner {
     private func load() -> UsageIndex {
         if let index { return index }
         if let data = try? Data(contentsOf: indexURL),
-           let parsed = try? JSONDecoder().decode(UsageIndex.self, from: data),
-           parsed.version == Self.version {
+            let parsed = try? JSONDecoder().decode(UsageIndex.self, from: data),
+            parsed.version == Self.version
+        {
             return parsed
         }
         return UsageIndex(version: Self.version, files: [:], buckets: [:], sessions: [:], seen: [:])
@@ -118,7 +120,7 @@ actor LocalUsageScanner {
 
     private func visit(_ path: String, provider: String, index: inout UsageIndex) -> Bool {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
-              let size = (attributes[.size] as? NSNumber)?.uint64Value
+            let size = (attributes[.size] as? NSNumber)?.uint64Value
         else { return false }
         var cursor = index.files[path] ?? UsageIndexCursor(offset: 0, codex: nil)
         if size < cursor.offset {
@@ -208,12 +210,12 @@ actor LocalUsageScanner {
 
     private func claudeLine(_ line: Data, index: inout UsageIndex) {
         guard line.range(of: Self.usageNeedle) != nil,
-              let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
-              record["type"] as? String == "assistant",
-              let message = record["message"] as? [String: Any],
-              let usage = message["usage"] as? [String: Any],
-              let model = message["model"] as? String, !model.isEmpty, model != "<synthetic>",
-              let hour = Self.hour(record["timestamp"])
+            let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any],
+            record["type"] as? String == "assistant",
+            let message = record["message"] as? [String: Any],
+            let usage = message["usage"] as? [String: Any],
+            let model = message["model"] as? String, !model.isEmpty, model != "<synthetic>",
+            let hour = Self.hour(record["timestamp"])
         else { return }
         let raw = "\(message["id"] as? String ?? ""):\(record["requestId"] as? String ?? record["uuid"] as? String ?? "")"
         let digest = Insecure.SHA1.hash(data: Data(raw.utf8))
@@ -224,21 +226,23 @@ actor LocalUsageScanner {
         let write = Self.number(usage["cache_creation_input_tokens"])
         let write1h = min(write, Self.number(creation?["ephemeral_1h_input_tokens"]))
         let speed = usage["speed"] as? String == "fast" ? "fast" : "standard"
-        add(&index, hour: hour, provider: "claude", model: model, speed: speed, values: [
-            Self.number(usage["input_tokens"]),
-            Self.number(usage["cache_read_input_tokens"]),
-            write - write1h,
-            write1h,
-            Self.number(usage["output_tokens"]),
-            0,
-            1,
-        ])
+        add(
+            &index, hour: hour, provider: "claude", model: model, speed: speed,
+            values: [
+                Self.number(usage["input_tokens"]),
+                Self.number(usage["cache_read_input_tokens"]),
+                write - write1h,
+                write1h,
+                Self.number(usage["output_tokens"]),
+                0,
+                1,
+            ])
         session(&index, provider: "claude", id: record["sessionId"] as? String ?? "", hour: hour, model: model)
     }
 
     private func codexLine(_ line: Data, state: inout UsageCodexState, index: inout UsageIndex) {
         guard Self.codexNeedles.contains(where: { line.range(of: $0) != nil }),
-              let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any]
+            let record = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any]
         else { return }
         let type = record["type"] as? String
         let payload = record["payload"] as? [String: Any] ?? [:]
@@ -262,8 +266,8 @@ actor LocalUsageScanner {
             return
         }
         guard type == "event_msg", payload["type"] as? String == "token_count",
-              let info = payload["info"] as? [String: Any],
-              let total = info["total_token_usage"] as? [String: Any]
+            let info = payload["info"] as? [String: Any],
+            let total = info["total_token_usage"] as? [String: Any]
         else { return }
         let last = info["last_token_usage"] as? [String: Any]
         let fields = ["input_tokens", "cached_input_tokens", "cache_write_input_tokens", "output_tokens", "reasoning_output_tokens"]
@@ -308,8 +312,8 @@ enum LocalUsageLimits {
     private static func claudeIdentity() -> String? {
         let url = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude.json")
         guard let data = try? Data(contentsOf: url),
-              let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let account = json["oauthAccount"] as? [String: Any]
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let account = json["oauthAccount"] as? [String: Any]
         else { return nil }
         let name = account["displayName"] as? String ?? account["organizationName"] as? String
         return name?.isEmpty == false ? name : nil
@@ -318,7 +322,8 @@ enum LocalUsageLimits {
     private static func claudeCredentials() async -> [String: Any]? {
         let file = FileManager.default.homeDirectoryForCurrentUser.appending(path: ".claude/.credentials.json")
         if let data = try? Data(contentsOf: file),
-           let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        {
             return json["claudeAiOauth"] as? [String: Any]
         }
         let result = await LocalCLI.capture("/usr/bin/security", ["find-generic-password", "-a", NSUserName(), "-s", "Claude Code-credentials", "-w"], timeout: .seconds(10))
@@ -457,7 +462,11 @@ final class CodexRateLimitReader: @unchecked Sendable {
         DispatchQueue.global().asyncAfter(deadline: .now() + 20) { [weak self] in
             self?.finish(.failure(CodexReadError(message: "o Codex não respondeu a tempo")))
         }
-        write(["jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"), "params": .object(["clientInfo": .object(["name": .string("runelay_bots"), "title": .string("r/bots"), "version": .string(AppInfo.version)])])], to: input.fileHandleForWriting)
+        write(
+            [
+                "jsonrpc": .string("2.0"), "id": .number(1), "method": .string("initialize"),
+                "params": .object(["clientInfo": .object(["name": .string("runelay_bots"), "title": .string("r/bots"), "version": .string(AppInfo.version)])]),
+            ], to: input.fileHandleForWriting)
     }
 
     private func write(_ object: [String: JSONValue], to handle: FileHandle) {

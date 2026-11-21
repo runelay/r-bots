@@ -139,13 +139,17 @@ final class DiffHunkTextView: NSTextView {
     private var contentWidth: CGFloat = 0
     private var visibleWidth: CGFloat = 0
 
-    private static let font = NSFontManager.shared.font(withFamily: BrandFonts.monoFamily, traits: [], weight: 5, size: 11.5)
+    private static let font =
+        NSFontManager.shared.font(withFamily: BrandFonts.monoFamily, traits: [], weight: 5, size: 11.5)
         ?? .monospacedSystemFont(ofSize: 11.5, weight: .regular)
-    private static let numberFont = NSFontManager.shared.font(withFamily: BrandFonts.monoFamily, traits: [], weight: 5, size: 10.5)
+    private static let numberFont =
+        NSFontManager.shared.font(withFamily: BrandFonts.monoFamily, traits: [], weight: 5, size: 10.5)
         ?? .monospacedSystemFont(ofSize: 10.5, weight: .regular)
-    private static let markFont = NSFontManager.shared.font(withFamily: BrandFonts.monoFamily, traits: [], weight: 9, size: 11.5)
+    private static let markFont =
+        NSFontManager.shared.font(withFamily: BrandFonts.monoFamily, traits: [], weight: 9, size: 11.5)
         ?? .monospacedSystemFont(ofSize: 11.5, weight: .bold)
-    private static let gapFont = NSFontManager.shared.font(withFamily: BrandFonts.sansFamily, traits: [], weight: 5, size: 11)
+    private static let gapFont =
+        NSFontManager.shared.font(withFamily: BrandFonts.sansFamily, traits: [], weight: 5, size: 11)
         ?? .systemFont(ofSize: 11)
 
     init() {
@@ -249,10 +253,12 @@ final class DiffHunkTextView: NSTextView {
                 string.draw(at: CGPoint(x: 3 + 34 - size.width, y: y + (Self.lineHeight - size.height) / 2))
             }
             if line.kind != .context {
-                let mark = NSAttributedString(string: line.kind == .added ? "+" : "−", attributes: [
-                    .font: Self.markFont,
-                    .foregroundColor: line.kind == .added ? added : removed,
-                ])
+                let mark = NSAttributedString(
+                    string: line.kind == .added ? "+" : "−",
+                    attributes: [
+                        .font: Self.markFont,
+                        .foregroundColor: line.kind == .added ? added : removed,
+                    ])
                 mark.draw(at: CGPoint(x: 3 + 34 + Spacing.s, y: y + (Self.lineHeight - mark.size().height) / 2))
             }
         }
@@ -309,12 +315,14 @@ enum DiffLineText {
         switch line {
         case .gap(_, let count):
             let text = "⋯ \(count) linha\(count == 1 ? "" : "s") oculta\(count == 1 ? "" : "s")"
-            let value = NSAttributedString(string: text, attributes: [
-                .font: gapFont,
-                .foregroundColor: NSColor(Theme.textTertiary),
-                .paragraphStyle: paragraph,
-                .baselineOffset: offset,
-            ])
+            let value = NSAttributedString(
+                string: text,
+                attributes: [
+                    .font: gapFont,
+                    .foregroundColor: NSColor(Theme.textTertiary),
+                    .paragraphStyle: paragraph,
+                    .baselineOffset: offset,
+                ])
             return Entry(text: value, width: value.size().width)
         case .code(let code):
             let key = "\(language)|\(code.kind)|\(code.emphasis.map { "\($0.lowerBound)-\($0.upperBound)" }.joined(separator: ","))|\(code.text)" as NSString
@@ -323,12 +331,15 @@ enum DiffLineText {
             }
             let result = NSMutableAttributedString()
             for (text, token) in CodeSyntax.tokens(code.text, language: language) {
-                result.append(NSAttributedString(string: text, attributes: [
-                    .font: font,
-                    .foregroundColor: NSColor(CodePalette.color(token)),
-                    .paragraphStyle: paragraph,
-                    .baselineOffset: offset,
-                ]))
+                result.append(
+                    NSAttributedString(
+                        string: text,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: NSColor(CodePalette.color(token)),
+                            .paragraphStyle: paragraph,
+                            .baselineOffset: offset,
+                        ]))
             }
             if result.length == 0 {
                 result.append(NSAttributedString(string: " ", attributes: [.font: font, .paragraphStyle: paragraph]))

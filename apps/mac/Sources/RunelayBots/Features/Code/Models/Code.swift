@@ -175,9 +175,10 @@ struct CodeState: Hashable, Sendable {
         } else {
             workspaces = listed
         }
-        checkpoints = value["checkpoints"]?.arrayValue?.compactMap { item in
-            item["turnId"]?.stringValue.map { CodeCheckpoint(turnID: $0, at: item["at"]?.stringValue.flatMap(ISODate.parse), request: item["request"]?.stringValue) }
-        } ?? []
+        checkpoints =
+            value["checkpoints"]?.arrayValue?.compactMap { item in
+                item["turnId"]?.stringValue.map { CodeCheckpoint(turnID: $0, at: item["at"]?.stringValue.flatMap(ISODate.parse), request: item["request"]?.stringValue) }
+            } ?? []
     }
 }
 
@@ -520,7 +521,8 @@ enum WordDiff {
                     result.append(offset..<(offset + length))
                 }
             } else if keep[index], isSpace, let last = result.last, last.upperBound == offset,
-                      index + 1 < tokens.count, !keep[index + 1] {
+                index + 1 < tokens.count, !keep[index + 1]
+            {
                 result[result.count - 1] = last.lowerBound..<(offset + length)
             }
             offset += length
@@ -554,12 +556,27 @@ enum CodeSyntax {
     }
 
     private static let keywords: [String: Set<String>] = [
-        "ts": ["import", "export", "from", "const", "let", "var", "function", "return", "if", "else", "for", "while", "await", "async", "new", "class", "extends", "interface", "type", "default", "switch", "case", "break", "continue", "throw", "try", "catch", "finally", "of", "in", "as", "satisfies", "true", "false", "null", "undefined", "this", "typeof", "void", "enum", "readonly", "private", "public", "static", "yield"],
-        "swift": ["import", "struct", "class", "enum", "func", "let", "var", "return", "if", "else", "guard", "for", "while", "in", "switch", "case", "default", "break", "continue", "true", "false", "nil", "self", "Self", "private", "fileprivate", "public", "static", "extension", "protocol", "some", "any", "async", "await", "throws", "try", "init", "where", "@MainActor", "@Observable", "@State", "@Environment", "@Binding", "@Bindable"],
-        "sql": ["select", "from", "where", "and", "or", "not", "insert", "into", "values", "update", "set", "delete", "create", "table", "alter", "add", "column", "drop", "index", "on", "join", "left", "right", "inner", "outer", "group", "by", "order", "limit", "as", "null", "is", "in", "with", "returning", "primary", "key", "references", "default", "unique", "if", "exists", "begin", "commit"],
+        "ts": [
+            "import", "export", "from", "const", "let", "var", "function", "return", "if", "else", "for", "while", "await", "async", "new", "class", "extends", "interface", "type", "default",
+            "switch", "case", "break", "continue", "throw", "try", "catch", "finally", "of", "in", "as", "satisfies", "true", "false", "null", "undefined", "this", "typeof", "void", "enum",
+            "readonly", "private", "public", "static", "yield",
+        ],
+        "swift": [
+            "import", "struct", "class", "enum", "func", "let", "var", "return", "if", "else", "guard", "for", "while", "in", "switch", "case", "default", "break", "continue", "true", "false", "nil",
+            "self", "Self", "private", "fileprivate", "public", "static", "extension", "protocol", "some", "any", "async", "await", "throws", "try", "init", "where", "@MainActor", "@Observable",
+            "@State", "@Environment", "@Binding", "@Bindable",
+        ],
+        "sql": [
+            "select", "from", "where", "and", "or", "not", "insert", "into", "values", "update", "set", "delete", "create", "table", "alter", "add", "column", "drop", "index", "on", "join", "left",
+            "right", "inner", "outer", "group", "by", "order", "limit", "as", "null", "is", "in", "with", "returning", "primary", "key", "references", "default", "unique", "if", "exists", "begin",
+            "commit",
+        ],
         "css": ["@media", "@import", "@layer", "@theme", "@apply", "!important"],
         "json": ["true", "false", "null"],
-        "py": ["def", "class", "import", "from", "return", "if", "elif", "else", "for", "while", "in", "not", "and", "or", "None", "True", "False", "with", "as", "try", "except", "raise", "async", "await", "lambda", "self"],
+        "py": [
+            "def", "class", "import", "from", "return", "if", "elif", "else", "for", "while", "in", "not", "and", "or", "None", "True", "False", "with", "as", "try", "except", "raise", "async",
+            "await", "lambda", "self",
+        ],
         "sh": ["if", "then", "else", "fi", "for", "do", "done", "case", "esac", "while", "function", "export", "local", "return"],
     ]
 

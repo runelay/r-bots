@@ -40,9 +40,10 @@ struct CharacterGlyph: Sendable {
         guard dimension == 9 else { return self }
         let groups: [[Int]] = [[0], [1, 2], [3], [4], [5], [6, 7], [8]]
         let rows = groups.map { rowGroup in
-            String(groups.map { colGroup in
-                rowGroup.contains { row in colGroup.contains { col in lit[row][col] } } ? "#" : "."
-            })
+            String(
+                groups.map { colGroup in
+                    rowGroup.contains { row in colGroup.contains { col in lit[row][col] } } ? "#" : "."
+                })
         }
         let mapRow: (Int) -> Int = { row in groups.firstIndex { $0.contains(row) } ?? row }
         var eyes: [Int] = []
@@ -67,7 +68,7 @@ struct CharacterGlyph: Sendable {
 
     private static let faceRecipes: [(eyes: Int, mouth: Int, accessory: Int)] = [
         (0, 0, 0), (1, 1, 0), (2, 2, 1), (3, 0, 2), (4, 1, 3),
-        (0, 3, 4), (1, 4, 5), (2, 0, 3), (3, 2, 0), (4, 4, 1), (0, 1, 2)
+        (0, 3, 4), (1, 4, 5), (2, 0, 3), (3, 2, 0), (4, 4, 1), (0, 1, 2),
     ]
 
     static func face(_ id: String) -> CharacterGlyph? {
@@ -128,10 +129,10 @@ struct CharacterGlyph: Sendable {
     }
 
     static func generated(seed: String) -> CharacterGlyph {
-        var hash: UInt64 = 0xcbf29ce484222325
+        var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in seed.utf8 {
             hash ^= UInt64(byte)
-            hash = hash &* 0x100000001b3
+            hash = hash &* 0x100_0000_01b3
         }
         let eyes = eyeParts[Int(hash % UInt64(eyeParts.count))]
         let mouth = mouthParts[Int((hash >> 8) % UInt64(mouthParts.count))]
@@ -161,7 +162,7 @@ struct CharacterGlyph: Sendable {
         ([(3, ".##...##.")], [3]),
         ([(3, "..##.##.."), (4, "..##.##..")], [3, 4]),
         ([(2, "..#...#.."), (3, ".###.###."), (4, "..#...#..")], [2, 3, 4]),
-        ([(3, ".#.....#."), (4, ".##...##.")], [3, 4])
+        ([(3, ".#.....#."), (4, ".##...##.")], [3, 4]),
     ]
 
     private static let mouthParts: [(rows: [(Int, String)], mouthRow: Int)] = [
@@ -169,7 +170,7 @@ struct CharacterGlyph: Sendable {
         ([(6, "..#...#.."), (7, "...###...")], 7),
         ([(6, "..#####..")], 6),
         ([(6, "....#....")], 6),
-        ([(6, "...#.#..."), (7, "....#....")], 7)
+        ([(6, "...#.#..."), (7, "....#....")], 7),
     ]
 
     private static let accessoryParts: [[(Int, String)]] = [
@@ -178,7 +179,7 @@ struct CharacterGlyph: Sendable {
         [(3, "#.......#"), (4, "#.......#")],
         [(1, ".##...##.")],
         [(5, ".#.....#.")],
-        [(0, "...#.#..."), (1, "....#....")]
+        [(0, "...#.#..."), (1, "....#....")],
     ]
 
     static let crown = CharacterGlyph(
@@ -191,7 +192,7 @@ struct CharacterGlyph: Sendable {
             ".........",
             "..#####..",
             ".........",
-            "........."
+            ".........",
         ],
         eyeRows: [3, 4],
         mouthRow: 6
@@ -207,7 +208,7 @@ struct CharacterGlyph: Sendable {
             ".........",
             "...###...",
             ".........",
-            "........."
+            ".........",
         ],
         eyeRows: [2, 3, 4],
         mouthRow: 6
@@ -223,7 +224,7 @@ struct CharacterGlyph: Sendable {
             ".#.....#.",
             "..#...#..",
             "...###...",
-            "........."
+            ".........",
         ],
         eyeRows: [3, 4],
         mouthRow: 7
@@ -239,7 +240,7 @@ struct CharacterGlyph: Sendable {
             ".........",
             "...###...",
             ".........",
-            "........."
+            ".........",
         ],
         eyeRows: [3, 4],
         mouthRow: 6

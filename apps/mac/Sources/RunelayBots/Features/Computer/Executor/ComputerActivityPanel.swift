@@ -182,7 +182,8 @@ final class ComputerControlTab {
 
     private func probe(_ prompt: IslandPrompt, step: Int, limits: [CGFloat]?) -> CGFloat {
         let width = Self.contentWidth(expandedWidth: expandedWidth)
-        let wizard = prompt.approval?.isQuestion == true
+        let wizard =
+            prompt.approval?.isQuestion == true
             ? QuestionWizard(store: prompt.store, approvalID: prompt.approvalID, index: step, revealOther: true)
             : nil
         let card = IslandPromptCard(prompt: prompt, width: width, avatar: nil, bodyLimits: limits, wizard: wizard, open: {})
@@ -247,10 +248,13 @@ struct ControlTabView: View {
                 .id(prompt.id)
                 .padding(.horizontal, TabShape.flare + ComputerControlTab.cardPadding)
                 .padding(.vertical, ComputerControlTab.cardPadding)
-                .transition(state.reduceMotion ? .opacity : .asymmetric(
-                    insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .top)).animation(morph.delay(0.06)),
-                    removal: .opacity.animation(.easeOut(duration: 0.12))
-                ))
+                .transition(
+                    state.reduceMotion
+                        ? .opacity
+                        : .asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .top)).animation(morph.delay(0.06)),
+                            removal: .opacity.animation(.easeOut(duration: 0.12))
+                        ))
             }
         }
         .frame(width: expanded ? expandedWidth : tabWidth, alignment: .top)
@@ -339,9 +343,11 @@ struct ControlTabView: View {
             .contentShape(Capsule())
         }
         .buttonStyle(PressableButtonStyle())
-        .background(AlwaysHover { hovering in
-            isHoveringStop = hovering
-        })
+        .background(
+            AlwaysHover { hovering in
+                isHoveringStop = hovering
+            }
+        )
         .animation(state.reduceMotion ? nil : Motion.spring, value: isHoveringStop)
         .accessibilityLabel("Parar o bot")
     }

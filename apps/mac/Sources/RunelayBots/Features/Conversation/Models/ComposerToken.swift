@@ -131,8 +131,10 @@ enum InlineTokens {
             var best: (range: NSRange, segment: InlineSegment)?
             for candidate in candidates {
                 guard let range = firstMatch(of: candidate, in: source, from: cursor) else { continue }
-                if let current = best, current.range.location < range.location
-                    || (current.range.location == range.location && current.range.length >= range.length) {
+                if let current = best,
+                    current.range.location < range.location
+                        || (current.range.location == range.location && current.range.length >= range.length)
+                {
                     continue
                 }
                 best = (range, candidate.segment)

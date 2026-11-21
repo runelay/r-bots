@@ -237,8 +237,8 @@ final class CanvasEditor {
 
     static func fetch(client: BotsClient, path: String) async -> CanvasDoc? {
         guard let request = try? client.request(path: path),
-              let result = try? await URLSession.shared.data(for: request),
-              (result.1 as? HTTPURLResponse)?.statusCode == 200
+            let result = try? await URLSession.shared.data(for: request),
+            (result.1 as? HTTPURLResponse)?.statusCode == 200
         else { return nil }
         return try? JSONDecoder().decode(CanvasDoc.self, from: result.0)
     }
@@ -380,23 +380,29 @@ final class CanvasEditor {
 
     func startMonitors() {
         guard monitors.isEmpty else { return }
-        if let keys = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
-            guard let self, ArtifactCenter.shared.canvas === self else { return event }
-            return self.handleKey(event) ? nil : event
-        }) {
+        if let keys = NSEvent.addLocalMonitorForEvents(
+            matching: .keyDown,
+            handler: { [weak self] event in
+                guard let self, ArtifactCenter.shared.canvas === self else { return event }
+                return self.handleKey(event) ? nil : event
+            })
+        {
             monitors.append(keys)
         }
-        if let wheel = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self] event in
-            guard let self, ArtifactCenter.shared.canvas === self, let pointer = self.pointer else { return event }
-            let precise = event.hasPreciseScrollingDeltas
-            if event.modifierFlags.contains(.command) {
-                self.zoom(to: self.scale * exp(-event.scrollingDeltaY * (precise ? 0.01 : 0.08)), around: pointer)
-            } else {
-                let factor: CGFloat = precise ? 1 : 12
-                self.scroll(dx: event.scrollingDeltaX * factor, dy: event.scrollingDeltaY * factor)
-            }
-            return nil
-        }) {
+        if let wheel = NSEvent.addLocalMonitorForEvents(
+            matching: .scrollWheel,
+            handler: { [weak self] event in
+                guard let self, ArtifactCenter.shared.canvas === self, let pointer = self.pointer else { return event }
+                let precise = event.hasPreciseScrollingDeltas
+                if event.modifierFlags.contains(.command) {
+                    self.zoom(to: self.scale * exp(-event.scrollingDeltaY * (precise ? 0.01 : 0.08)), around: pointer)
+                } else {
+                    let factor: CGFloat = precise ? 1 : 12
+                    self.scroll(dx: event.scrollingDeltaX * factor, dy: event.scrollingDeltaY * factor)
+                }
+                return nil
+            })
+        {
             monitors.append(wheel)
         }
     }
@@ -710,14 +716,15 @@ final class CanvasEditor {
         guard !selection.isEmpty || !selectedEdges.isEmpty else { return }
         let nodes = selection
         let edges = selectedEdges
-        mutate({ doc in
-            doc.nodes.removeAll { nodes.contains($0.id) }
-            doc.edges.removeAll { edges.contains($0.id) || nodes.contains($0.from) || nodes.contains($0.to) }
-            if let groups = doc.groups {
-                let kept = groups.map { CanvasGroup(id: $0.id, label: $0.label, nodeIds: $0.nodeIds.filter { !nodes.contains($0) }) }.filter { !$0.nodeIds.isEmpty }
-                doc.groups = kept.isEmpty ? nil : kept
-            }
-        }, animated: true)
+        mutate(
+            { doc in
+                doc.nodes.removeAll { nodes.contains($0.id) }
+                doc.edges.removeAll { edges.contains($0.id) || nodes.contains($0.from) || nodes.contains($0.to) }
+                if let groups = doc.groups {
+                    let kept = groups.map { CanvasGroup(id: $0.id, label: $0.label, nodeIds: $0.nodeIds.filter { !nodes.contains($0) }) }.filter { !$0.nodeIds.isEmpty }
+                    doc.groups = kept.isEmpty ? nil : kept
+                }
+            }, animated: true)
         selection.removeAll()
         selectedEdges.removeAll()
     }
@@ -730,47 +737,50 @@ final class CanvasEditor {
             mapping[id] = newID("n")
         }
         let source = doc
-        mutate({ doc in
-            for node in source.nodes where mapping[node.id] != nil {
-                var copy = node
-                copy.id = mapping[node.id]!
-                copy.x += 32
-                copy.y += 32
-                doc.nodes.append(copy)
-            }
-            for edge in source.edges {
-                if let from = mapping[edge.from], let to = mapping[edge.to] {
-                    doc.edges.append(CanvasEdge(id: self.newID("e"), from: from, to: to, label: edge.label, style: edge.style))
+        mutate(
+            { doc in
+                for node in source.nodes where mapping[node.id] != nil {
+                    var copy = node
+                    copy.id = mapping[node.id]!
+                    copy.x += 32
+                    copy.y += 32
+                    doc.nodes.append(copy)
                 }
-            }
-        }, animated: true)
+                for edge in source.edges {
+                    if let from = mapping[edge.from], let to = mapping[edge.to] {
+                        doc.edges.append(CanvasEdge(id: self.newID("e"), from: from, to: to, label: edge.label, style: edge.style))
+                    }
+                }
+            }, animated: true)
         selection = Set(mapping.values)
     }
 
     func setShape(_ shape: CanvasShapeKind) {
         let ids = selection
         guard !ids.isEmpty else { return }
-        mutate({ doc in
-            for index in doc.nodes.indices where ids.contains(doc.nodes[index].id) {
-                let center = doc.nodes[index].center
-                let size = Self.size(for: doc.nodes[index].text, shape: shape.rawValue)
-                doc.nodes[index].shape = shape.rawValue
-                doc.nodes[index].w = size.width
-                doc.nodes[index].h = size.height
-                doc.nodes[index].x = center.x - size.width / 2
-                doc.nodes[index].y = center.y - size.height / 2
-            }
-        }, animated: true)
+        mutate(
+            { doc in
+                for index in doc.nodes.indices where ids.contains(doc.nodes[index].id) {
+                    let center = doc.nodes[index].center
+                    let size = Self.size(for: doc.nodes[index].text, shape: shape.rawValue)
+                    doc.nodes[index].shape = shape.rawValue
+                    doc.nodes[index].w = size.width
+                    doc.nodes[index].h = size.height
+                    doc.nodes[index].x = center.x - size.width / 2
+                    doc.nodes[index].y = center.y - size.height / 2
+                }
+            }, animated: true)
     }
 
     func setColor(_ color: String?) {
         let ids = selection
         guard !ids.isEmpty else { return }
-        mutate({ doc in
-            for index in doc.nodes.indices where ids.contains(doc.nodes[index].id) {
-                doc.nodes[index].color = color
-            }
-        }, animated: true)
+        mutate(
+            { doc in
+                for index in doc.nodes.indices where ids.contains(doc.nodes[index].id) {
+                    doc.nodes[index].color = color
+                }
+            }, animated: true)
     }
 
     var targetEdges: Set<String> {
@@ -783,11 +793,12 @@ final class CanvasEditor {
     func setEdgeStyle(dashed: Bool) {
         let ids = targetEdges
         guard !ids.isEmpty else { return }
-        mutate({ doc in
-            for index in doc.edges.indices where ids.contains(doc.edges[index].id) {
-                doc.edges[index].style = dashed ? "dashed" : nil
-            }
-        }, animated: true)
+        mutate(
+            { doc in
+                for index in doc.edges.indices where ids.contains(doc.edges[index].id) {
+                    doc.edges[index].style = dashed ? "dashed" : nil
+                }
+            }, animated: true)
     }
 
     var selectionShape: String? {
@@ -814,18 +825,19 @@ final class CanvasEditor {
         body.version = nil
         request.httpBody = try? JSONEncoder().encode(Payload(doc: body))
         guard let result = try? await URLSession.shared.data(for: request),
-              (result.1 as? HTTPURLResponse)?.statusCode == 200,
-              let arranged = try? JSONDecoder().decode(CanvasDoc.self, from: result.0)
+            (result.1 as? HTTPURLResponse)?.statusCode == 200,
+            let arranged = try? JSONDecoder().decode(CanvasDoc.self, from: result.0)
         else { return }
         let positions = Dictionary(uniqueKeysWithValues: arranged.nodes.map { ($0.id, $0) })
-        mutate({ doc in
-            for index in doc.nodes.indices {
-                if let placed = positions[doc.nodes[index].id] {
-                    doc.nodes[index].x = placed.x
-                    doc.nodes[index].y = placed.y
+        mutate(
+            { doc in
+                for index in doc.nodes.indices {
+                    if let placed = positions[doc.nodes[index].id] {
+                        doc.nodes[index].x = placed.x
+                        doc.nodes[index].y = placed.y
+                    }
                 }
-            }
-        }, animated: true)
+            }, animated: true)
         fit(animated: true)
     }
 
@@ -1021,13 +1033,14 @@ final class CanvasEditor {
         }
         for node in doc.nodes {
             let text = "\"\(escape(node.text.isEmpty ? " " : node.text))\""
-            let body: String = switch node.shape {
-            case "round": "(\(text))"
-            case "diamond": "{\(text)}"
-            case "ellipse": "([\(text)])"
-            case "note": ">\(text)]"
-            default: "[\(text)]"
-            }
+            let body: String =
+                switch node.shape {
+                case "round": "(\(text))"
+                case "diamond": "{\(text)}"
+                case "ellipse": "([\(text)])"
+                case "note": ">\(text)]"
+                default: "[\(text)]"
+                }
             lines.append("    \(safe(node.id))\(body)")
         }
         for edge in doc.edges {

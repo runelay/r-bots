@@ -117,14 +117,15 @@ final class BrowserFrameView: NSView {
 
     private func sendMouse(_ kind: String, _ event: NSEvent, button: String = "left") {
         guard isInteractive, let point = pagePoint(event) else { return }
-        onInput?(.object([
-            "type": .string("mouse"),
-            "event": .string(kind),
-            "x": .number(point.x),
-            "y": .number(point.y),
-            "button": .string(button),
-            "clickCount": .number(Double(max(event.clickCount, kind == "move" ? 0 : 1)))
-        ]))
+        onInput?(
+            .object([
+                "type": .string("mouse"),
+                "event": .string(kind),
+                "x": .number(point.x),
+                "y": .number(point.y),
+                "button": .string(button),
+                "clickCount": .number(Double(max(event.clickCount, kind == "move" ? 0 : 1))),
+            ]))
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -166,16 +167,17 @@ final class BrowserFrameView: NSView {
             return
         }
         let factor: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 40
-        onInput?(.object([
-            "type": .string("mouse"),
-            "event": .string("wheel"),
-            "x": .number(point.x),
-            "y": .number(point.y),
-            "button": .string("left"),
-            "clickCount": .number(0),
-            "deltaX": .number(-event.scrollingDeltaX * factor),
-            "deltaY": .number(-event.scrollingDeltaY * factor)
-        ]))
+        onInput?(
+            .object([
+                "type": .string("mouse"),
+                "event": .string("wheel"),
+                "x": .number(point.x),
+                "y": .number(point.y),
+                "button": .string("left"),
+                "clickCount": .number(0),
+                "deltaX": .number(-event.scrollingDeltaX * factor),
+                "deltaY": .number(-event.scrollingDeltaY * factor),
+            ]))
     }
 
     override func keyDown(with event: NSEvent) {
@@ -185,7 +187,8 @@ final class BrowserFrameView: NSView {
         }
         sendKey("down", event)
         if let text = event.characters, !text.isEmpty, Self.namedKey(event.keyCode) == nil,
-           !event.modifierFlags.contains(.command), !event.modifierFlags.contains(.control) {
+            !event.modifierFlags.contains(.command), !event.modifierFlags.contains(.control)
+        {
             sendKey("char", event, text: text)
         }
     }
@@ -205,7 +208,7 @@ final class BrowserFrameView: NSView {
             "event": .string(kind),
             "key": .string(key),
             "code": .string(Self.code(for: event)),
-            "modifiers": .number(Double(Self.modifiers(event.modifierFlags)))
+            "modifiers": .number(Double(Self.modifiers(event.modifierFlags))),
         ]
         if let text {
             payload["text"] = .string(text)

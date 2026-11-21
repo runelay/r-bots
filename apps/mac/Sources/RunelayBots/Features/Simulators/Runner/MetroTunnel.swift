@@ -122,9 +122,11 @@ final class MetroTunnel: @unchecked Sendable {
                     case .string(let text): data = Data(text.utf8)
                     @unknown default: data = Data()
                     }
-                    connection.send(content: data, completion: .contentProcessed { error in
-                        if error != nil { close() }
-                    })
+                    connection.send(
+                        content: data,
+                        completion: .contentProcessed { error in
+                            if error != nil { close() }
+                        })
                     readRemote()
                 case .failure:
                     close()

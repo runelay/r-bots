@@ -79,7 +79,9 @@ struct AccountPhotoGroup: View {
                 guard let url = urls.first, let image = NSImage(contentsOf: url) else { return false }
                 upload(image)
                 return true
-            } isTargeted: { targeted = $0 }
+            } isTargeted: {
+                targeted = $0
+            }
         }
         .animation(Motion.animation(reduceMotion: reduceMotion), value: targeted)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: failure)

@@ -282,13 +282,15 @@ final class ConnectorCatalogStore {
             }
         ]
         if item.auth == "oauth" {
-            items.append(GlassMenuItem("Reconectar", systemImage: "arrow.clockwise") { [weak self] in
-                self?.reconnect(item, model: model)
-            })
+            items.append(
+                GlassMenuItem("Reconectar", systemImage: "arrow.clockwise") { [weak self] in
+                    self?.reconnect(item, model: model)
+                })
         }
-        items.append(GlassMenuItem("Remover", systemImage: "trash", destructive: true) { [weak self] in
-            self?.pendingRemoval = item
-        })
+        items.append(
+            GlassMenuItem("Remover", systemImage: "trash", destructive: true) { [weak self] in
+                self?.pendingRemoval = item
+            })
         return items
     }
 

@@ -26,11 +26,12 @@ enum ComputerPermission: String, CaseIterable, Identifiable, Sendable {
     }
 
     var settingsURL: URL {
-        let anchor = switch self {
-        case .accessibility: "Privacy_Accessibility"
-        case .screenRecording: "Privacy_ScreenCapture"
-        case .automation: "Privacy_Automation"
-        }
+        let anchor =
+            switch self {
+            case .accessibility: "Privacy_Accessibility"
+            case .screenRecording: "Privacy_ScreenCapture"
+            case .automation: "Privacy_Automation"
+            }
         return URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)")!
     }
 }

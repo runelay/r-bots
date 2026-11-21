@@ -115,8 +115,9 @@ final class ServerStore {
 
     private func browserURL(_ server: DevServerInfo, location: String?) async -> URL? {
         guard let client,
-              let path = try? await client.previewLink(id: server.id),
-              let root = try? client.request(path: path).url else { return nil }
+            let path = try? await client.previewLink(id: server.id),
+            let root = try? client.request(path: path).url
+        else { return nil }
         guard let location else { return root }
         return PreviewAddress.proxyURL(root: root, location: location) ?? root
     }

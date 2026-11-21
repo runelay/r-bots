@@ -13,7 +13,8 @@ struct BotCharacter: View {
 
     var body: some View {
         let fullGlyph = CharacterGlyph.forBot(id: botID, glyph: glyph)
-        let compactKey = glyph.flatMap { CharacterGlyph.compactPreset($0) != nil ? $0 : nil }
+        let compactKey =
+            glyph.flatMap { CharacterGlyph.compactPreset($0) != nil ? $0 : nil }
             ?? (glyph?.hasPrefix("face-") == true ? "" : botID)
         let resolvedGlyph = size < 18 ? fullGlyph.compacted(for: compactKey) : fullGlyph
         let glows = size >= 24
@@ -134,7 +135,8 @@ enum CharacterRenderer {
     private static func drawSleepMarks(in context: inout GraphicsContext, size: CGSize, color: Color, frame: CharacterFrame) {
         let side = min(size.width, size.height)
         for index in 0..<2 {
-            let phase = frame.reduceMotion
+            let phase =
+                frame.reduceMotion
                 ? 0.5
                 : (frame.time / 2.4 + Double(index) * 0.5).truncatingRemainder(dividingBy: 1)
             let opacity = frame.reduceMotion ? 0.55 : sin(phase * .pi) * 0.75

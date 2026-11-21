@@ -8,7 +8,7 @@ enum ResourceBundle {
         let roots = [
             Bundle.main.resourceURL,
             Bundle.main.bundleURL,
-            Bundle.main.executableURL?.deletingLastPathComponent()
+            Bundle.main.executableURL?.deletingLastPathComponent(),
         ]
         for root in roots.compactMap({ $0 }) {
             if let bundle = Bundle(url: root.appendingPathComponent(name)) {
@@ -95,7 +95,7 @@ enum BrandAssets {
 
     private static func simpleIcon(_ slug: String) -> NSImage? {
         guard let url = ResourceBundle.bundle?.url(forResource: slug, withExtension: "svg", subdirectory: "Logos/si"),
-              let image = NSImage(contentsOf: url)
+            let image = NSImage(contentsOf: url)
         else { return nil }
         image.isTemplate = true
         return image
@@ -104,7 +104,8 @@ enum BrandAssets {
     static func connector(_ key: String) -> NSImage? {
         for ext in ["svg", "png"] {
             if let url = ResourceBundle.bundle?.url(forResource: key, withExtension: ext, subdirectory: "Logos/connectors"),
-               let image = NSImage(contentsOf: url) {
+                let image = NSImage(contentsOf: url)
+            {
                 return image
             }
         }
@@ -239,7 +240,6 @@ struct RunelayWordmark: View {
     }
 }
 
-
 struct ProviderLogo: View {
     let provider: String
     var size: CGFloat = 16
@@ -351,7 +351,7 @@ struct ConnectorLogo: View {
         let guesses: [String: String] = [
             "google_calendar": "googlecalendar",
             "cloudflare_docs": "cloudflare",
-            "meta_social_technologies": "meta"
+            "meta_social_technologies": "meta",
         ]
         return guesses[key] ?? (key.contains("_") ? nil : key)
     }

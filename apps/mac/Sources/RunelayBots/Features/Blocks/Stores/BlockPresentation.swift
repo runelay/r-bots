@@ -79,7 +79,8 @@ final class BlockPresentation {
         let blocks = BlockCenter.shared
         if !(blocks.noteEditor?.suggestions.isEmpty ?? true) || (blocks.sheetEditor?.editing ?? false) { return false }
         if let canvas = ArtifactCenter.shared.canvas,
-           canvas.editingNode != nil || canvas.editingEdge != nil || !canvas.selection.isEmpty || !canvas.selectedEdges.isEmpty {
+            canvas.editingNode != nil || canvas.editingEdge != nil || !canvas.selection.isEmpty || !canvas.selectedEdges.isEmpty
+        {
             return false
         }
         return true

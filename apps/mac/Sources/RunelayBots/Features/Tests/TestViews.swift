@@ -93,7 +93,8 @@ final class TestStore {
     func file(_ run: TestRunInfo, _ name: String, client: BotsClient) async -> Data? {
         guard let request = try? client.request(path: "/tests/\(run.id)/files/\(name)") else { return nil }
         guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, http.statusCode == 200 else { return nil }
+            let http = response as? HTTPURLResponse, http.statusCode == 200
+        else { return nil }
         return data
     }
 
@@ -117,7 +118,8 @@ final class TestStore {
             if var request = try? client.request(path: "/tests/\(run.id)/rerun") {
                 request.httpMethod = "POST"
                 if let (data, _) = try? await URLSession.shared.data(for: request),
-                   let json = try? JSONDecoder().decode(JSONValue.self, from: data) {
+                    let json = try? JSONDecoder().decode(JSONValue.self, from: data)
+                {
                     apply(json["run"])
                 }
             }

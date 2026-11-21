@@ -792,27 +792,33 @@ struct CanvasToolbar: View {
         let hasNodes = !editor.selection.isEmpty
         let hasEdges = !editor.targetEdges.isEmpty
         HStack(spacing: Spacing.xxs) {
-            GlassMenuButton(help: "Forma", items: {
-                CanvasShapeKind.allCases.map { kind in
-                    GlassMenuItem(kind.label, systemImage: kind.symbol, isOn: editor.selectionShape == kind.rawValue) {
-                        editor.setShape(kind)
+            GlassMenuButton(
+                help: "Forma",
+                items: {
+                    CanvasShapeKind.allCases.map { kind in
+                        GlassMenuItem(kind.label, systemImage: kind.symbol, isOn: editor.selectionShape == kind.rawValue) {
+                            editor.setShape(kind)
+                        }
                     }
                 }
-            }) { _ in
+            ) { _ in
                 CanvasToolIcon(systemImage: CanvasShapeKind(rawValue: editor.selectionShape ?? "box")?.symbol ?? "square")
             }
             .disabled(!hasNodes)
             .opacity(hasNodes ? 1 : 0.4)
             .clickable()
 
-            GlassMenuButton(help: "Cor", items: {
-                [GlassMenuItem("Cor da forma", systemImage: "circle.dashed") { editor.setColor(nil) }]
-                    + (["neutral"] + CanvasPalette.colors).map { name in
-                        GlassMenuItem(CanvasPalette.label(name), id: name, leading: AnyView(Image(nsImage: Self.swatch(name)))) {
-                            editor.setColor(name)
+            GlassMenuButton(
+                help: "Cor",
+                items: {
+                    [GlassMenuItem("Cor da forma", systemImage: "circle.dashed") { editor.setColor(nil) }]
+                        + (["neutral"] + CanvasPalette.colors).map { name in
+                            GlassMenuItem(CanvasPalette.label(name), id: name, leading: AnyView(Image(nsImage: Self.swatch(name)))) {
+                                editor.setColor(name)
+                            }
                         }
-                    }
-            }) { _ in
+                }
+            ) { _ in
                 CanvasToolIcon(systemImage: "circle.lefthalf.filled")
             }
             .disabled(!hasNodes)
@@ -975,7 +981,9 @@ struct CanvasSnapshot: View {
                 if CanvasPalette.hachured(color) {
                     context.drawLayer { layer in
                         layer.clip(to: base)
-                        layer.stroke(CanvasRough.hachure(in: node.rect, spacing: 9, seed: seed, amplitude: 1), with: .color(CanvasPalette.stroke(color).opacity(0.38)), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+                        layer.stroke(
+                            CanvasRough.hachure(in: node.rect, spacing: 9, seed: seed, amplitude: 1), with: .color(CanvasPalette.stroke(color).opacity(0.38)),
+                            style: StrokeStyle(lineWidth: 1, lineCap: .round))
                     }
                 }
                 context.stroke(CanvasRough.outline(base, seed: seed, amplitude: 1.1), with: .color(CanvasPalette.stroke(color)), style: stroke)
@@ -1091,7 +1099,7 @@ enum CanvasExporter {
             renderer.render { size, render in
                 var box = CGRect(origin: .zero, size: size)
                 guard let consumer = CGDataConsumer(data: data as CFMutableData),
-                      let context = CGContext(consumer: consumer, mediaBox: &box, nil)
+                    let context = CGContext(consumer: consumer, mediaBox: &box, nil)
                 else { return }
                 context.beginPDFPage(nil)
                 render(context)

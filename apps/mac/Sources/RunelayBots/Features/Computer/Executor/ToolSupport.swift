@@ -16,14 +16,22 @@ struct ToolFailure: Error, Sendable {
     }
 
     static let stopped = ToolFailure(409, code: "stopped", "A pessoa apertou Parar.")
-    static let userBusy = ToolFailure(409, code: "user_busy", "A pessoa está usando o Mac agora (clicando, rolando ou digitando) e não parou em 15 s. Nada foi feito. Espere um pouco, tire um print novo e tente de novo. Não é falta de permissão.")
+    static let userBusy = ToolFailure(
+        409, code: "user_busy",
+        "A pessoa está usando o Mac agora (clicando, rolando ou digitando) e não parou em 15 s. Nada foi feito. Espere um pouco, tire um print novo e tente de novo. Não é falta de permissão.")
 
     static func userInterrupted(typed: Int, total: Int) -> ToolFailure {
-        ToolFailure(409, code: "user_interrupted", "A pessoa clicou ou digitou enquanto eu digitava e parei para não escrever no lugar errado: saíram \(typed) de \(total) caracteres. Tire um print, confira o campo em foco e digite só o que faltou.")
+        ToolFailure(
+            409, code: "user_interrupted",
+            "A pessoa clicou ou digitou enquanto eu digitava e parei para não escrever no lugar errado: saíram \(typed) de \(total) caracteres. Tire um print, confira o campo em foco e digite só o que faltou."
+        )
     }
 
     static func missing(_ permission: ComputerPermission) -> ToolFailure {
-        ToolFailure(403, code: "permission_denied", "O macOS não liberou \(permission.title) para o r/bots, então a ação não aconteceu. Abri Ajustes do Sistema → Privacidade e Segurança → \(permission.title) no Mac: a pessoa precisa ligar o r/bots ali (se já estiver ligado, desligar e ligar de novo) e depois você tenta outra vez.")
+        ToolFailure(
+            403, code: "permission_denied",
+            "O macOS não liberou \(permission.title) para o r/bots, então a ação não aconteceu. Abri Ajustes do Sistema → Privacidade e Segurança → \(permission.title) no Mac: a pessoa precisa ligar o r/bots ali (se já estiver ligado, desligar e ligar de novo) e depois você tenta outra vez."
+        )
     }
 
     var json: JSONValue {
@@ -81,8 +89,9 @@ struct ExecutorCall: Sendable {
     func rect(_ key: String) throws -> CGRect? {
         guard let object = args[key]?.objectValue else { return nil }
         guard let x = object["x"]?.doubleValue, let y = object["y"]?.doubleValue,
-              let width = object["width"]?.doubleValue, let height = object["height"]?.doubleValue,
-              width >= 1, height >= 1 else {
+            let width = object["width"]?.doubleValue, let height = object["height"]?.doubleValue,
+            width >= 1, height >= 1
+        else {
             throw ToolFailure.badArgs("\"\(key)\" precisa de x, y, width e height.")
         }
         return CGRect(x: x, y: y, width: width, height: height)

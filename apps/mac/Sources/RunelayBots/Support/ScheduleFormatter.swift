@@ -25,7 +25,7 @@ enum ScheduleFormatter {
         var scheduleCalendar = Calendar(identifier: .gregorian)
         scheduleCalendar.timeZone = schedule.timeZone ?? .current
         guard let cron = CronSchedule(schedule.cron),
-              let next = cron.nextDate(after: now, calendar: scheduleCalendar)
+            let next = cron.nextDate(after: now, calendar: scheduleCalendar)
         else {
             return fallback(for: schedule)
         }

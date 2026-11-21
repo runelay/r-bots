@@ -149,7 +149,8 @@ final class NoteTextNSView: NSTextView {
                 }
             }
             if index < storage.length, event.clickCount == 1, !event.modifierFlags.contains(.shift),
-               let target = storage.attribute(.noteLink, at: index, effectiveRange: nil) as? String {
+                let target = storage.attribute(.noteLink, at: index, effectiveRange: nil) as? String
+            {
                 let glyph = layoutManager.glyphIndexForCharacter(at: index)
                 var glyphRect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: textContainer)
                 glyphRect.origin.x += textContainerOrigin.x

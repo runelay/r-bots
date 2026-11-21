@@ -59,10 +59,11 @@ struct AgendaSliding<Content: View>: View {
         ZStack {
             content
                 .id(store.navigation)
-                .transition(.asymmetric(
-                    insertion: .offset(x: shift).combined(with: .opacity),
-                    removal: .offset(x: -shift).combined(with: .opacity)
-                ))
+                .transition(
+                    .asymmetric(
+                        insertion: .offset(x: shift).combined(with: .opacity),
+                        removal: .offset(x: -shift).combined(with: .opacity)
+                    ))
         }
         .clipped()
         .animation(Motion.animation(reduceMotion: reduceMotion), value: store.navigation)
@@ -929,7 +930,8 @@ struct AgendaEventPopover: View {
 
     private var cleanDescription: String? {
         guard let raw = event.description, !raw.isEmpty else { return nil }
-        let stripped = raw
+        let stripped =
+            raw
             .replacingOccurrences(of: "<br\\s*/?>", with: "\n", options: [.regularExpression, .caseInsensitive])
             .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
             .replacingOccurrences(of: "&nbsp;", with: " ")

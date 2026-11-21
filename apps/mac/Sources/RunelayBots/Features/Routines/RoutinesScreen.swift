@@ -63,7 +63,8 @@ struct RoutineDay: Identifiable {
     let items: [RoutineItem]
 
     static func build(bots: [Bot], now: Date) -> [RoutineDay] {
-        let items = bots
+        let items =
+            bots
             .flatMap { bot in bot.schedules.map { RoutineItem(bot: bot, schedule: $0, next: ScheduleFormatter.nextDate(for: $0, now: now)) } }
             .sorted { ($0.next ?? .distantFuture) < ($1.next ?? .distantFuture) }
         var days: [RoutineDay] = []

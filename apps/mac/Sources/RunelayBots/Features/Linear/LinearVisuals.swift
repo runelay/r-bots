@@ -13,7 +13,9 @@ enum LinearPalette {
     }
 
     private static func liftedHex(_ value: Int) -> Int {
-        let red = (value >> 16) & 0xFF, green = (value >> 8) & 0xFF, blue = value & 0xFF
+        let red = (value >> 16) & 0xFF
+        let green = (value >> 8) & 0xFF
+        let blue = value & 0xFF
         let luminance = 0.2126 * Double(red) + 0.7152 * Double(green) + 0.0722 * Double(blue)
         guard luminance < 90 else { return value }
         func lift(_ channel: Int) -> Int { min(255, channel + (255 - channel) * 35 / 100) }
@@ -180,7 +182,8 @@ enum LinearIcons {
         }
         let key = icon.lowercased().filter(\.isLetter)
         if let match = symbols.first(where: { $0.0 == key }) ?? symbols.first(where: { key.contains($0.0) }),
-           NSImage(systemSymbolName: match.1, accessibilityDescription: nil) != nil {
+            NSImage(systemSymbolName: match.1, accessibilityDescription: nil) != nil
+        {
             return .symbol(match.1)
         }
         return .monogram(initial(name))

@@ -67,8 +67,9 @@ enum CodeActions {
     @discardableResult
     static func openInVSCode(absolutePath: String) -> Bool {
         guard !editorHost.isEmpty,
-              NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.VSCode") != nil,
-              let url = URL(string: "vscode://vscode-remote/ssh-remote+\(editorHost)\(absolutePath)") else { return false }
+            NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.VSCode") != nil,
+            let url = URL(string: "vscode://vscode-remote/ssh-remote+\(editorHost)\(absolutePath)")
+        else { return false }
         return NSWorkspace.shared.open(url)
     }
 

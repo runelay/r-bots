@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
-import SwiftUI
 import Observation
+import SwiftUI
 
 extension BotsClient {
     func linearViews(refresh: Bool) async throws -> [LNView] {

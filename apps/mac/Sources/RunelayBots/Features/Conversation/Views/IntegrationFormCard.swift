@@ -158,7 +158,8 @@ struct IntegrationFormCard: View {
     }
 
     private var outcomeLine: some View {
-        let saved = approval.resolution == .answering("approve")
+        let saved =
+            approval.resolution == .answering("approve")
             || approval.resolution == .settled("\(form.name) configurado", .approved)
         return HStack(spacing: Spacing.s) {
             Image(systemName: saved ? "key.horizontal.fill" : "key.horizontal")

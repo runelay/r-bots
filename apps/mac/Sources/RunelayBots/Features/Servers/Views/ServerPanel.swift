@@ -109,10 +109,11 @@ struct ServerPanel: View {
     private func menuItems(_ server: DevServerInfo) -> [GlassMenuItem] {
         var items: [GlassMenuItem] = []
         if server.status == .running, !server.isMobile {
-            items.append(GlassMenuItem("Recarregar a prévia", systemImage: "arrow.clockwise.circle") {
-                reloadToken += 1
-                store.panelTabs[ref.id] = .preview
-            })
+            items.append(
+                GlassMenuItem("Recarregar a prévia", systemImage: "arrow.clockwise.circle") {
+                    reloadToken += 1
+                    store.panelTabs[ref.id] = .preview
+                })
         }
         items += ServerActions.items(server, botID: ref.botID).filter { $0.id != "Abrir no painel" && $0.id != "Logs" && $0.id != "Abrir no navegador" }
         return items

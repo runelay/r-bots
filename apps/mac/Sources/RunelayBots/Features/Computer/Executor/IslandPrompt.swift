@@ -365,9 +365,11 @@ private struct IslandChoiceRow: View {
         }
         .buttonStyle(.plain)
         .clickable()
-        .background(AlwaysHover { hovering in
-            isHovering = hovering
-        })
+        .background(
+            AlwaysHover { hovering in
+                isHovering = hovering
+            }
+        )
         .springAnimation(value: isHovering)
         .accessibilityLabel(recommended ? "\(label), recomendado" : label)
     }

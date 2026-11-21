@@ -83,10 +83,13 @@ struct ServerProfileCommands: Commands {
     var body: some Commands {
         CommandMenu("Servidor") {
             ForEach(Array(profiles.profiles.enumerated()), id: \.element.id) { index, profile in
-                Toggle(profile.name, isOn: Binding(
-                    get: { profiles.active.id == profile.id },
-                    set: { if $0 { profiles.activate(profile.id) } }
-                ))
+                Toggle(
+                    profile.name,
+                    isOn: Binding(
+                        get: { profiles.active.id == profile.id },
+                        set: { if $0 { profiles.activate(profile.id) } }
+                    )
+                )
                 .keyboardShortcut(index < 9 ? KeyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.control, .command]) : nil)
             }
             Divider()

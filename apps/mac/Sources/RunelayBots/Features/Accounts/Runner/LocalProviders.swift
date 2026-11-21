@@ -16,11 +16,12 @@ struct LocalTurn: Sendable {
 
     init?(_ value: JSONValue) {
         guard let turnId = value["turnId"]?.stringValue,
-              let provider = value["provider"]?.stringValue,
-              let model = value["model"]?.stringValue,
-              let systemPrompt = value["systemPrompt"]?.stringValue,
-              let prompt = value["prompt"]?.stringValue,
-              let workKey = value["workKey"]?.stringValue else { return nil }
+            let provider = value["provider"]?.stringValue,
+            let model = value["model"]?.stringValue,
+            let systemPrompt = value["systemPrompt"]?.stringValue,
+            let prompt = value["prompt"]?.stringValue,
+            let workKey = value["workKey"]?.stringValue
+        else { return nil }
         self.turnId = turnId
         self.provider = provider
         self.model = model
@@ -282,13 +283,14 @@ enum LocalProviders {
             return emit(done(false, handle.cancelled ? "cancelled" : tail(result.stderr, fallback: "O modelo não respondeu.")))
         }
         if let usage = final["usage"]?.objectValue {
-            emit(Self.usage(
-                input: number(usage, "input_tokens"),
-                output: number(usage, "output_tokens"),
-                cacheRead: number(usage, "cache_read_input_tokens"),
-                cacheWrite: number(usage, "cache_creation_input_tokens"),
-                context: state.contextTokens
-            ))
+            emit(
+                Self.usage(
+                    input: number(usage, "input_tokens"),
+                    output: number(usage, "output_tokens"),
+                    cacheRead: number(usage, "cache_read_input_tokens"),
+                    cacheWrite: number(usage, "cache_creation_input_tokens"),
+                    context: state.contextTokens
+                ))
         }
         if let id = final["session_id"]?.stringValue { emit(session(id)) }
         if handle.cancelled { return emit(done(false, "cancelled")) }
@@ -342,21 +344,23 @@ enum LocalProviders {
                     } else {
                         let exitCode = item["exit_code"] ?? .null
                         let outputText = String((item["aggregated_output"]?.stringValue ?? "").suffix(4000))
-                        emit(.object([
-                            "type": .string("tool"), "id": .string(id), "name": .string("Bash"), "phase": .string("end"), "input": input,
-                            "output": .object(["output": .string(outputText), "exitCode": exitCode]),
-                            "ok": .bool((exitCode.doubleValue ?? 0) == 0),
-                        ]))
+                        emit(
+                            .object([
+                                "type": .string("tool"), "id": .string(id), "name": .string("Bash"), "phase": .string("end"), "input": input,
+                                "output": .object(["output": .string(outputText), "exitCode": exitCode]),
+                                "ok": .bool((exitCode.doubleValue ?? 0) == 0),
+                            ]))
                     }
                 } else if itemType == "file_change", type == "item.completed" {
                     let files = (item["changes"]?.arrayValue ?? []).map { JSONValue.string($0["path"]?.stringValue ?? "") }
                     let input: JSONValue = .object(["files": .array(files)])
                     let status = item["status"]?.stringValue ?? "completed"
                     emit(.object(["type": .string("tool"), "id": .string(id), "name": .string("Edit"), "phase": .string("start"), "input": input]))
-                    emit(.object([
-                        "type": .string("tool"), "id": .string(id), "name": .string("Edit"), "phase": .string("end"), "input": input,
-                        "output": .object(["status": .string(status)]), "ok": .bool(status != "failed"),
-                    ]))
+                    emit(
+                        .object([
+                            "type": .string("tool"), "id": .string(id), "name": .string("Edit"), "phase": .string("end"), "input": input,
+                            "output": .object(["status": .string(status)]), "ok": .bool(status != "failed"),
+                        ]))
                 }
             } else if type == "turn.completed" {
                 state.finished = true
@@ -550,7 +554,9 @@ enum LocalProviders {
             if ready {
                 let list = await LocalCLI.capture(bin, ["models"], timeout: .seconds(30))
                 let parsed = matches(LocalCLI.clean(list.stdout), pattern: #"^([a-z0-9][\w.\-\[\]=,]*)\s+-\s+(.+)$"#).map { groups in
-                    model(groups[0], groups[1].replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).replacingOccurrences(of: "\u{200B}", with: "").trimmingCharacters(in: .whitespaces))
+                    model(
+                        groups[0],
+                        groups[1].replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression).replacingOccurrences(of: "\u{200B}", with: "").trimmingCharacters(in: .whitespaces))
                 }
                 if !parsed.isEmpty { models = parsed }
             }

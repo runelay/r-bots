@@ -139,7 +139,8 @@ final class AnalyzerBackend: VoiceBackend, @unchecked Sendable {
 
     static func make(locale: Locale, inputFormat: AVAudioFormat, onText: @escaping @Sendable (String) -> Void) async throws -> AnalyzerBackend? {
         guard SpeechTranscriber.isAvailable,
-              let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
+            let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+        else {
             return nil
         }
         let transcriber = SpeechTranscriber(

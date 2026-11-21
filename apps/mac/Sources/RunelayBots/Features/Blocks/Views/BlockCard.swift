@@ -177,7 +177,8 @@ struct BlockCard: View {
                 }
             }
             let widths = (0..<6).map { tab.colWidths[SheetAddress.columnName($0)] ?? 96 }
-            center.storePreview(.sheet(SheetPreview(tab: tab.name, tabs: sheet.tabs.count, rows: rows, rowCount: tab.rowCount, colCount: tab.colCount, frozenRows: tab.frozenRows, colWidths: widths)), for: ref)
+            center.storePreview(
+                .sheet(SheetPreview(tab: tab.name, tabs: sheet.tabs.count, rows: rows, rowCount: tab.rowCount, colCount: tab.colCount, frozenRows: tab.frozenRows, colWidths: widths)), for: ref)
         case .agenda:
             let start = Calendar.current.startOfDay(for: Date())
             let end = start.addingTimeInterval(86400)

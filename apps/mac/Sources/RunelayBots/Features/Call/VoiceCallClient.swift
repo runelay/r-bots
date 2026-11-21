@@ -181,13 +181,15 @@ struct VoiceCallClient: Sendable {
     }
 
     func updateVoice(botID: String, settings: BotVoiceSettings) async throws -> BotVoiceSettings {
-        let json = try await send("/bots/\(Self.escape(botID))", method: "PATCH", body: .object([
-            "voice": .object([
-                "voiceId": .string(settings.voiceId),
-                "speed": .number(settings.speed),
-                "language": .string(settings.language)
-            ])
-        ]))
+        let json = try await send(
+            "/bots/\(Self.escape(botID))", method: "PATCH",
+            body: .object([
+                "voice": .object([
+                    "voiceId": .string(settings.voiceId),
+                    "speed": .number(settings.speed),
+                    "language": .string(settings.language),
+                ])
+            ]))
         return BotVoiceSettings(json: json["voice"])
     }
 

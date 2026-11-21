@@ -1,5 +1,5 @@
-import UniformTypeIdentifiers
 import Foundation
+import UniformTypeIdentifiers
 
 struct BotsClient: Sendable {
     enum ClientError: LocalizedError {
@@ -115,14 +115,14 @@ struct BotsClient: Sendable {
 
     func meta() async -> ServerMeta? {
         guard let result = try? await perform(try request(path: "/meta")),
-              (200..<300).contains(result.1.statusCode)
+            (200..<300).contains(result.1.statusCode)
         else { return nil }
         return try? JSONDecoder().decode(ServerMeta.self, from: result.0)
     }
 
     func thread(botID: String) async -> BotThread? {
         guard let result = try? await perform(try request(path: "/bots/\(Self.escape(botID))/thread")),
-              (200..<300).contains(result.1.statusCode)
+            (200..<300).contains(result.1.statusCode)
         else { return nil }
         return try? JSONDecoder().decode(BotThread.self, from: result.0)
     }
@@ -142,8 +142,8 @@ struct BotsClient: Sendable {
     private func threadSwap(_ path: String, body: JSONValue?) async throws -> ThreadSwap {
         let (json, _) = try await post(path, body: body)
         guard let json, let encoded = try? JSONEncoder().encode(json),
-              let thread = try? JSONDecoder().decode(BotThread.self, from: encoded),
-              thread.sessionId != nil
+            let thread = try? JSONDecoder().decode(BotThread.self, from: encoded),
+            thread.sessionId != nil
         else { throw ClientError.invalidResponse }
         return ThreadSwap(thread: thread, archiveID: json["archiveId"]?.stringValue)
     }
@@ -171,7 +171,7 @@ struct BotsClient: Sendable {
 
     func groups() async -> [BotGroup]? {
         guard let result = try? await perform(try request(path: "/groups")),
-              (200..<300).contains(result.1.statusCode)
+            (200..<300).contains(result.1.statusCode)
         else { return nil }
         let decoder = JSONDecoder()
         if let list = try? decoder.decode([Lossy<BotGroup>].self, from: result.0) {
@@ -181,10 +181,12 @@ struct BotsClient: Sendable {
     }
 
     func createGroup(name: String, members: [String]) async throws -> BotGroup {
-        try await groupMutation("/groups", method: "POST", body: .object([
-            "name": .string(name),
-            "members": .array(members.map { .string($0) })
-        ]))
+        try await groupMutation(
+            "/groups", method: "POST",
+            body: .object([
+                "name": .string(name),
+                "members": .array(members.map { .string($0) }),
+            ]))
     }
 
     func updateGroup(id: String, body: JSONValue) async throws {
@@ -297,7 +299,7 @@ struct BotsClient: Sendable {
 
     func sections() async -> [BotSection]? {
         guard let result = try? await perform(try request(path: "/sections")),
-              (200..<300).contains(result.1.statusCode)
+            (200..<300).contains(result.1.statusCode)
         else { return nil }
         let decoder = JSONDecoder()
         if let list = try? decoder.decode([Lossy<BotSection>].self, from: result.0) {
@@ -475,7 +477,7 @@ struct BotsClient: Sendable {
     func answer(basePath: String, sessionId: String, interactionId: String, optionId: String) async throws {
         let answer = JSONValue.object([
             "interactionId": .string(interactionId),
-            "optionId": .string(optionId)
+            "optionId": .string(optionId),
         ])
         let body = JSONValue.object(["answers": .array([answer])])
         _ = try await post("\(basePath)/session/\(Self.escape(sessionId))", body: body)
@@ -497,7 +499,7 @@ struct BotsClient: Sendable {
         }
         let answer = JSONValue.object([
             "interactionId": .string(interactionId),
-            "questions": .array(questions)
+            "questions": .array(questions),
         ])
         _ = try await post("\(basePath)/session/\(Self.escape(sessionId))", body: .object(["answers": .array([answer])]))
     }
@@ -520,10 +522,11 @@ struct BotsClient: Sendable {
         if let before {
             query.append(URLQueryItem(name: "before", value: String(before)))
         }
-        let (data, response) = try await perform(try request(
-            path: "\(basePath)/session/\(Self.escape(sessionId))/events",
-            query: query
-        ))
+        let (data, response) = try await perform(
+            try request(
+                path: "\(basePath)/session/\(Self.escape(sessionId))/events",
+                query: query
+            ))
         if response.statusCode == 404 || response.statusCode == 405 {
             return nil
         }

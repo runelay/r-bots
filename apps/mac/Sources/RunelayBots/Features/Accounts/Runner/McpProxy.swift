@@ -102,9 +102,11 @@ final class McpProxy: @unchecked Sendable {
         head += "content-length: \(reply.body.count)\r\nconnection: close\r\n\r\n"
         var payload = Data(head.utf8)
         payload.append(reply.body)
-        connection.send(content: payload, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
+        connection.send(
+            content: payload,
+            completion: .contentProcessed { _ in
+                connection.cancel()
+            })
     }
 }
 
@@ -149,7 +151,8 @@ struct HTTPRequest: Sendable {
         let newline = Data("\r\n".utf8)
         while true {
             guard let end = data.range(of: newline, in: index..<data.endIndex) else { return nil }
-            let sizeText = String(decoding: data[index..<end.lowerBound], as: UTF8.self)
+            let sizeText =
+                String(decoding: data[index..<end.lowerBound], as: UTF8.self)
                 .split(separator: ";").first.map(String.init) ?? ""
             guard let size = Int(sizeText.trimmingCharacters(in: .whitespaces), radix: 16) else { return nil }
             let chunkStart = end.upperBound

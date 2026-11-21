@@ -11,7 +11,7 @@ enum ErrorMessage {
             case .timedOut:
                 return "O servidor demorou demais para responder."
             case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
-                 .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot:
+                .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot:
                 return "A conexão segura com o servidor falhou."
             case .badURL, .unsupportedURL:
                 return "O endereço do servidor não parece válido."

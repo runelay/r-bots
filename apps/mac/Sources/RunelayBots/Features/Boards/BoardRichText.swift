@@ -38,7 +38,8 @@ enum BoardRichParser {
         for match in htmlImage?.matches(in: text, range: NSRange(location: 0, length: ns.length)) ?? [] {
             let tag = ns.substring(with: match.range)
             let url = ns.substring(with: match.range(at: 1))
-            let alt = htmlAlt?.firstMatch(in: tag, range: NSRange(location: 0, length: (tag as NSString).length))
+            let alt =
+                htmlAlt?.firstMatch(in: tag, range: NSRange(location: 0, length: (tag as NSString).length))
                 .map { (tag as NSString).substring(with: $0.range(at: 1)) } ?? ""
             hits.append((match.range, .image(url: url, alt: alt)))
         }
@@ -80,7 +81,7 @@ enum BoardRichParser {
 
     private static func replacement(tag: String, inner: String) -> String {
         guard let data = inner.trimmingCharacters(in: .whitespacesAndNewlines).data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
             let plain = inner.trimmingCharacters(in: .whitespacesAndNewlines)
             return plain.hasPrefix("{") ? "" : plain
@@ -149,7 +150,8 @@ actor BoardImageCache {
     func file(for source: String, request: URLRequest) async throws -> URL {
         let key = Self.key(for: source)
         if let existing = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .first(where: { $0.deletingPathExtension().lastPathComponent == key }) {
+            .first(where: { $0.deletingPathExtension().lastPathComponent == key })
+        {
             return existing
         }
         if let running = pending[key] { return try await running.value }

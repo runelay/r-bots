@@ -291,9 +291,11 @@ private struct QuestionChoiceRow: View {
         }
         .buttonStyle(.plain)
         .clickable()
-        .background(AlwaysHover { hovering in
-            isHovering = hovering
-        })
+        .background(
+            AlwaysHover { hovering in
+                isHovering = hovering
+            }
+        )
         .springAnimation(value: isHovering)
         .springAnimation(value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -320,7 +322,9 @@ private struct PageDots: View {
     var body: some View {
         HStack(spacing: 5) {
             ForEach(0..<count, id: \.self) { item in
-                Button { go(item) } label: {
+                Button {
+                    go(item)
+                } label: {
                     Capsule()
                         .fill(item == current ? Theme.brandAccent : Theme.textTertiary.opacity(0.45))
                         .frame(width: item == current ? 16 : 6, height: 6)

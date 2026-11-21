@@ -44,10 +44,11 @@ final class MirrorOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
         guard type == .screen, sampleBuffer.isValid,
-              let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
-              let raw = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete,
-              let buffer = sampleBuffer.imageBuffer,
-              let io = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue() else { return }
+            let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false) as? [[SCStreamFrameInfo: Any]],
+            let raw = attachments.first?[.status] as? Int, SCFrameStatus(rawValue: raw) == .complete,
+            let buffer = sampleBuffer.imageBuffer,
+            let io = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
+        else { return }
         surface.show(io)
     }
 

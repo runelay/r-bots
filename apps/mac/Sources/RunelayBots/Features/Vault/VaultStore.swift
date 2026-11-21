@@ -249,16 +249,17 @@ final class VaultStore {
             policy.touchId = VaultTouchPolicy(rawValue: server["touchId"]?.stringValue ?? "") ?? .hourly
             policy.expiresAt = VaultDates.parse(server["expiresAt"]?.stringValue)
             policy.keepOnServer = server["storage"]?.stringValue == "mac+server"
-            merged.append(VaultSecret(
-                name: name,
-                policy: policy,
-                onMac: false,
-                onServer: policy.keepOnServer,
-                lastUsedAt: VaultDates.parse(server["lastUsedAt"]?.stringValue),
-                lastUsedBy: server["lastUsedBy"]?.stringValue,
-                lastTool: server["lastTool"]?.stringValue,
-                updatedAt: VaultDates.parse(server["updatedAt"]?.stringValue)
-            ))
+            merged.append(
+                VaultSecret(
+                    name: name,
+                    policy: policy,
+                    onMac: false,
+                    onServer: policy.keepOnServer,
+                    lastUsedAt: VaultDates.parse(server["lastUsedAt"]?.stringValue),
+                    lastUsedBy: server["lastUsedBy"]?.stringValue,
+                    lastTool: server["lastTool"]?.stringValue,
+                    updatedAt: VaultDates.parse(server["updatedAt"]?.stringValue)
+                ))
         }
         secrets = merged.sorted { $0.name < $1.name }
     }
@@ -388,7 +389,9 @@ final class VaultStore {
         }
         if !VaultText.hostAllowed(policy.domains, host: domain) {
             let allowed = policy.domains.joined(separator: ", ")
-            throw VaultFailure(code: "denied_domain", message: domain.map { "O segredo:\(name) só pode ser usado em \(allowed), não em \($0)." } ?? "O segredo:\(name) só pode ser usado em \(allowed), e não deu para saber o site aberto.")
+            throw VaultFailure(
+                code: "denied_domain",
+                message: domain.map { "O segredo:\(name) só pode ser usado em \(allowed), não em \($0)." } ?? "O segredo:\(name) só pode ser usado em \(allowed), e não deu para saber o site aberto.")
         }
         let place = domain.map { " em \($0)" } ?? ""
         let context = try await authorize(name, policy: policy.touchId, reason: "\(botName) quer usar “\(name)”\(place).", force: false)

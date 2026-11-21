@@ -325,8 +325,8 @@ private struct CodeRepoPillLabel: View {
     }
 }
 
-private extension View {
-    func codeRepoPillChrome(running: Bool, lifted: Bool) -> some View {
+extension View {
+    fileprivate func codeRepoPillChrome(running: Bool, lifted: Bool) -> some View {
         overlay {
             if running {
                 GlassShimmer()
@@ -462,7 +462,9 @@ struct CodeWorkspacePopover: View {
             }
             .buttonStyle(.plain)
             .clickable()
-            .help(workspace.pr?.status == .merged || workspace.pr?.status == .closed ? "Remove a worktree. A branch continua no GitHub" : "Sai do repositório nesta conversa. A branch e a pasta continuam guardadas")
+            .help(
+                workspace.pr?.status == .merged || workspace.pr?.status == .closed
+                    ? "Remove a worktree. A branch continua no GitHub" : "Sai do repositório nesta conversa. A branch e a pasta continuam guardadas")
             if let problem {
                 Text(problem)
                     .font(TypeScale.caption)
@@ -485,11 +487,15 @@ struct CodeWorkspacePopover: View {
 
     private func finish(_ pr: PullRequestInfo) {
         let merged = pr.status == .merged
-        guard CodeActions.confirm(
-            "Fechar o repositório?",
-            message: merged ? "O PR #\(pr.number) já foi mergeado. A worktree sai do disco; a branch continua no GitHub." : "O PR #\(pr.number) foi fechado sem merge. A worktree sai do disco; a branch continua no GitHub.",
-            action: "Fechar"
-        ) else { return }
+        guard
+            CodeActions.confirm(
+                "Fechar o repositório?",
+                message: merged
+                    ? "O PR #\(pr.number) já foi mergeado. A worktree sai do disco; a branch continua no GitHub."
+                    : "O PR #\(pr.number) foi fechado sem merge. A worktree sai do disco; a branch continua no GitHub.",
+                action: "Fechar"
+            )
+        else { return }
         problem = nil
         Task {
             do {
@@ -532,7 +538,7 @@ struct CodeWorkspacePopover: View {
                 } + [
                     GlassMenuItem("Copiar caminho", systemImage: "doc.on.doc", startsSection: !CodeEditorApp.installed.isEmpty) {
                         copy(workspace.path, tag: "path")
-                    },
+                    }
                 ]
             }
         }
@@ -772,8 +778,9 @@ struct CodeChangesView: View {
         .task {
             await store?.refreshCode()
             if let path = model.codeFocusPath, let store, let state = store.codeState,
-               workspace?.changes.contains(where: { $0.path == path }) != true,
-               let owner = state.workspaces.first(where: { $0.changes.contains { $0.path == path } }) {
+                workspace?.changes.contains(where: { $0.path == path }) != true,
+                let owner = state.workspaces.first(where: { $0.changes.contains { $0.path == path } })
+            {
                 store.changesWorkspaceID = owner.id
             }
             await selectFirst(focus: model.codeFocusPath)

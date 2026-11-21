@@ -221,16 +221,19 @@ private struct SetupRail: View {
                     .tracking(-0.2)
                     .foregroundStyle(Theme.textPrimary)
                 Spacer(minLength: Spacing.s)
-                GlassMenuButton(edge: .trailing, help: "Sua conta", items: {
-                    [
-                        GlassMenuItem("Terminar depois", systemImage: "clock") {
-                            store.finish()
-                        },
-                        GlassMenuItem("Sair da conta", systemImage: "rectangle.portrait.and.arrow.right", startsSection: true) {
-                            Task { await session.signOut() }
-                        },
-                    ]
-                }) { _ in
+                GlassMenuButton(
+                    edge: .trailing, help: "Sua conta",
+                    items: {
+                        [
+                            GlassMenuItem("Terminar depois", systemImage: "clock") {
+                                store.finish()
+                            },
+                            GlassMenuItem("Sair da conta", systemImage: "rectangle.portrait.and.arrow.right", startsSection: true) {
+                                Task { await session.signOut() }
+                            },
+                        ]
+                    }
+                ) { _ in
                     UserAvatar(size: 26)
                 }
             }

@@ -17,10 +17,13 @@ struct InlineTokenText: View {
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .tint(ink)
-            .environment(\.openURL, OpenURLAction { url in
-                open(url)
-                return .handled
-            })
+            .environment(
+                \.openURL,
+                OpenURLAction { url in
+                    open(url)
+                    return .handled
+                }
+            )
             .popover(item: $shownSkill, arrowEdge: .bottom) { skill in
                 SkillDescriptionCard(skill: skill)
             }

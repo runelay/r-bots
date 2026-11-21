@@ -14,11 +14,13 @@ enum FriendlyError {
         }
 
         if haystack.contains("api_key") || haystack.contains("api key") || haystack.contains("credential")
-            || haystack.contains("unauthorized") || haystack.contains("authentication") {
+            || haystack.contains("unauthorized") || haystack.contains("authentication")
+        {
             return TranscriptNotice(text: "O servidor ainda não tem acesso ao modelo.", detail: detail, tone: .error)
         }
         if haystack.contains("rate limit") || haystack.contains("rate_limit") || haystack.contains("429")
-            || haystack.contains("overloaded") {
+            || haystack.contains("overloaded")
+        {
             return TranscriptNotice(text: "O modelo está ocupado agora. Tente de novo em instantes.", detail: detail, tone: .error)
         }
         if haystack.contains("context") && (haystack.contains("window") || haystack.contains("length")) {

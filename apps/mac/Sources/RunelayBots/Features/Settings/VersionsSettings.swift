@@ -123,7 +123,8 @@ struct VersionsSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             if store.serverState == .unavailable && store.cliState == .unavailable {
-                EmptyStateView(systemImage: "arrow.down.circle", title: "Este servidor ainda não mostra versões", description: "Depois de atualizar o servidor, as versões e as atualizações aparecem aqui.")
+                EmptyStateView(
+                    systemImage: "arrow.down.circle", title: "Este servidor ainda não mostra versões", description: "Depois de atualizar o servidor, as versões e as atualizações aparecem aqui.")
             } else {
                 serverSection
                 cliSection
@@ -224,7 +225,9 @@ private struct ServerVersionGroup: View {
                         .buttonStyle(SettingsButtonStyle(kind: .plain))
                     }
                 }
-                SettingsRow(title: "Como atualizar", icon: SettingsIcon("terminal.fill", SettingsTint.slate), detail: "Rode no servidor. Ele guarda um backup antes e volta sozinho se a versão nova não subir.") {
+                SettingsRow(
+                    title: "Como atualizar", icon: SettingsIcon("terminal.fill", SettingsTint.slate), detail: "Rode no servidor. Ele guarda um backup antes e volta sozinho se a versão nova não subir."
+                ) {
                     commandChip
                 }
             }

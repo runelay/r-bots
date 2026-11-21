@@ -7,61 +7,61 @@ struct UsageScreen: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-        ScrollView {
-            PageContainer {
-                VStack(alignment: .leading, spacing: Spacing.xl) {
-                    HStack(alignment: .center, spacing: Spacing.l) {
-                        ScreenTitle(title: "Uso", subtitle: "Limites de cada conta e tokens gastos pelos bots.")
-                        Spacer(minLength: Spacing.l)
-                        UsageRefreshButton(isBusy: store.summaryLoading) {
-                            Task { await store.refreshLimits(force: true) }
-                            store.reloadSummary()
+            ScrollView {
+                PageContainer {
+                    VStack(alignment: .leading, spacing: Spacing.xl) {
+                        HStack(alignment: .center, spacing: Spacing.l) {
+                            ScreenTitle(title: "Uso", subtitle: "Limites de cada conta e tokens gastos pelos bots.")
+                            Spacer(minLength: Spacing.l)
+                            UsageRefreshButton(isBusy: store.summaryLoading) {
+                                Task { await store.refreshLimits(force: true) }
+                                store.reloadSummary()
+                            }
                         }
-                    }
 
-                    HStack(alignment: .center, spacing: Spacing.m) {
-                        UsageSegmented(options: UsageTab.allCases.map { ($0, $0.title) }, selection: $store.tab, namespaceID: "tab")
-                        Spacer(minLength: Spacing.m)
-                        if store.tab != .limits {
-                            UsageSegmented(options: UsageRange.allCases.map { ($0, $0.title) }, selection: $store.range, namespaceID: "range")
+                        HStack(alignment: .center, spacing: Spacing.m) {
+                            UsageSegmented(options: UsageTab.allCases.map { ($0, $0.title) }, selection: $store.tab, namespaceID: "tab")
+                            Spacer(minLength: Spacing.m)
+                            if store.tab != .limits {
+                                UsageSegmented(options: UsageRange.allCases.map { ($0, $0.title) }, selection: $store.range, namespaceID: "range")
+                            }
+                            UsageFilterMenu(title: "Provedor", options: [(nil, "Todos"), ("claude", "Claude"), ("codex", "Codex")], selection: $store.provider)
+                            if store.accounts.count > 1 {
+                                UsageFilterMenu(title: "Conta", options: [(nil, "Todas")] + store.accounts.map { ($0.id, $0.label) }, selection: $store.account)
+                            }
                         }
-                        UsageFilterMenu(title: "Provedor", options: [(nil, "Todos"), ("claude", "Claude"), ("codex", "Codex")], selection: $store.provider)
-                        if store.accounts.count > 1 {
-                            UsageFilterMenu(title: "Conta", options: [(nil, "Todas")] + store.accounts.map { ($0.id, $0.label) }, selection: $store.account)
-                        }
-                    }
 
-                    Group {
-                        switch store.tab {
-                        case .limits:
-                            UsageLimitsTab(store: store)
-                        case .tokens:
-                            UsageTokensTab(store: store, mode: .tokens)
-                        case .cost:
-                            UsageTokensTab(store: store, mode: .cost)
+                        Group {
+                            switch store.tab {
+                            case .limits:
+                                UsageLimitsTab(store: store)
+                            case .tokens:
+                                UsageTokensTab(store: store, mode: .tokens)
+                            case .cost:
+                                UsageTokensTab(store: store, mode: .cost)
+                            }
                         }
+                        .transition(Motion.insertion(reduceMotion: reduceMotion))
+                        .id(store.tab)
                     }
-                    .transition(Motion.insertion(reduceMotion: reduceMotion))
-                    .id(store.tab)
+                }
+                .padding(.top, Spacing.xl + 4)
+                .padding(.bottom, Spacing.xxl)
+            }
+            .scrollEdgesHidden()
+            .background(Theme.background)
+            .animation(Motion.animation(reduceMotion: reduceMotion), value: store.tab)
+            .task {
+                if !store.limitsLoaded {
+                    await store.refreshLimits()
+                }
+                reveal(store.focusAccount, proxy)
+                if store.summary == nil {
+                    store.reloadSummary()
                 }
             }
-            .padding(.top, Spacing.xl + 4)
-            .padding(.bottom, Spacing.xxl)
-        }
-        .scrollEdgesHidden()
-        .background(Theme.background)
-        .animation(Motion.animation(reduceMotion: reduceMotion), value: store.tab)
-        .task {
-            if !store.limitsLoaded {
-                await store.refreshLimits()
-            }
-            reveal(store.focusAccount, proxy)
-            if store.summary == nil {
-                store.reloadSummary()
-            }
-        }
-        .onChange(of: store.focusAccount) { reveal(store.focusAccount, proxy) }
-        .onChange(of: store.limitsLoaded) { reveal(store.focusAccount, proxy) }
+            .onChange(of: store.focusAccount) { reveal(store.focusAccount, proxy) }
+            .onChange(of: store.limitsLoaded) { reveal(store.focusAccount, proxy) }
         }
         .onChange(of: store.range) { store.reloadSummary() }
         .onChange(of: store.provider) { store.reloadSummary() }
@@ -238,7 +238,6 @@ private struct UsageAccountLimits: View {
         }
         return seen
     }
-
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.m) {
@@ -421,11 +420,13 @@ private struct UsageTokensTab: View {
                         .foregroundStyle(Theme.textPrimary)
                         .contentTransition(.numericText())
                 }
-                Text(mode == .tokens
-                     ? "\(Int(totals.sessions)) sessões · \(UsageFormat.tokens(totals.requests)) chamadas"
-                     : "pelo preço de API, sem a assinatura")
-                    .font(TypeScale.rowSubtitle)
-                    .foregroundStyle(Theme.textSecondary)
+                Text(
+                    mode == .tokens
+                        ? "\(Int(totals.sessions)) sessões · \(UsageFormat.tokens(totals.requests)) chamadas"
+                        : "pelo preço de API, sem a assinatura"
+                )
+                .font(TypeScale.rowSubtitle)
+                .foregroundStyle(Theme.textSecondary)
                 Spacer(minLength: 0)
                 if store.summaryLoading {
                     ProgressView()
@@ -454,12 +455,14 @@ private struct UsageTokensTab: View {
                     UsageStat(title: "Output", value: UsageFormat.tokens(totals.output)),
                     UsageStat(title: "Economia do cache", value: UsageFormat.usd(totals.savingsUsd), detail: cacheShare(totals)),
                 ])
-                UsageTypeBar(title: "Tokens por tipo", segments: [
-                    ("Fora do cache", totals.input, UsagePalette.uncached),
-                    ("Escrita no cache", totals.cacheWrite, UsagePalette.cacheWrite),
-                    ("Leitura do cache", totals.cacheRead, UsagePalette.cacheRead),
-                    ("Output", totals.output, UsagePalette.output),
-                ], format: UsageFormat.tokens)
+                UsageTypeBar(
+                    title: "Tokens por tipo",
+                    segments: [
+                        ("Fora do cache", totals.input, UsagePalette.uncached),
+                        ("Escrita no cache", totals.cacheWrite, UsagePalette.cacheWrite),
+                        ("Leitura do cache", totals.cacheRead, UsagePalette.cacheRead),
+                        ("Output", totals.output, UsagePalette.output),
+                    ], format: UsageFormat.tokens)
             } else {
                 UsageStatGrid(stats: [
                     UsageStat(title: "Custo total", value: UsageFormat.usd(totals.costUsd)),
@@ -467,12 +470,14 @@ private struct UsageTokensTab: View {
                     UsageStat(title: "Por sessão", value: UsageFormat.usd(totals.sessions > 0 ? totals.costUsd / totals.sessions : 0)),
                     UsageStat(title: "Por chamada", value: UsageFormat.usd(totals.requests > 0 ? totals.costUsd / totals.requests : 0)),
                 ])
-                UsageTypeBar(title: "Custo por tipo", segments: [
-                    ("Input fora do cache", summary.costByType.input, UsagePalette.uncached),
-                    ("Escrita no cache", summary.costByType.cacheWrite, UsagePalette.cacheWrite),
-                    ("Leitura do cache", summary.costByType.cacheRead, UsagePalette.cacheRead),
-                    ("Output", summary.costByType.output, UsagePalette.output),
-                ], format: UsageFormat.usd)
+                UsageTypeBar(
+                    title: "Custo por tipo",
+                    segments: [
+                        ("Input fora do cache", summary.costByType.input, UsagePalette.uncached),
+                        ("Escrita no cache", summary.costByType.cacheWrite, UsagePalette.cacheWrite),
+                        ("Leitura do cache", summary.costByType.cacheRead, UsagePalette.cacheRead),
+                        ("Output", summary.costByType.output, UsagePalette.output),
+                    ], format: UsageFormat.usd)
                 UsageSpeedCard(speeds: summary.speeds)
             }
 
@@ -1047,12 +1052,14 @@ private struct UsageDetailTable: View {
         var map: [String: DetailLine] = [:]
         for row in rows {
             let key = grouping == .model ? "\(row.provider)|\(row.model)" : row.day
-            var line = map[key] ?? DetailLine(
-                id: key,
-                title: grouping == .model ? UsageFormat.modelName(row.model) : UsageFormat.dayLabel(row.day),
-                subtitle: grouping == .model ? UsageFormat.providerName(row.provider) : "",
-                provider: grouping == .model ? row.provider : nil
-            )
+            var line =
+                map[key]
+                ?? DetailLine(
+                    id: key,
+                    title: grouping == .model ? UsageFormat.modelName(row.model) : UsageFormat.dayLabel(row.day),
+                    subtitle: grouping == .model ? UsageFormat.providerName(row.provider) : "",
+                    provider: grouping == .model ? row.provider : nil
+                )
             line.input += row.input + row.cacheWrite
             line.cacheRead += row.cacheRead
             line.output += row.output

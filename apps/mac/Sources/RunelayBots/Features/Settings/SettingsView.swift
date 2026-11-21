@@ -130,7 +130,8 @@ extension SettingsSection {
     var info: String? {
         switch self {
         case .server: "Cada servidor guarda o próprio login neste Mac. Trocar de servidor recarrega o app sem misturar bots, conversas e caches. Atalho: ⌃⌘1 a ⌃⌘9."
-        case .computer: "Bots com \"Seu Mac\" ligado podem ver a tela, clicar, digitar e mexer nas pastas liberadas. O botão Parar aparece no topo da tela enquanto um bot age. Depois de reinstalar o app, o macOS pode pedir as permissões de novo."
+        case .computer:
+            "Bots com \"Seu Mac\" ligado podem ver a tela, clicar, digitar e mexer nas pastas liberadas. O botão Parar aparece no topo da tela enquanto um bot age. Depois de reinstalar o app, o macOS pode pedir as permissões de novo."
         case .aiAccounts: "As contas de IA logadas no servidor. Cada bot escolhe uma conta e um modelo; se ela acabar ou cair, o pedido segue na outra conta do mesmo provedor."
         case .vault: "Os valores ficam no Keychain deste Mac e nunca aparecem sem Touch ID. Abrir o cofre pede confirmação e ele tranca de novo em 5 minutos ou quando o app sai da frente."
         case .integrations: "Serviços opcionais. Os bots funcionam sem eles; cada chave liga uma parte a mais. A chave fica cifrada no servidor e nunca volta para o app."
@@ -851,7 +852,7 @@ struct ShortcutsSettings: View {
         ("Trocar de servidor", "server.rack", "⌃⌘1…9"),
         ("Ajustes", "gearshape.fill", "⌘,"),
         ("Fechar janela aberta por cima", "xmark", "Esc"),
-        ("Falar com o bot (segure)", "mic.fill", "⌥Espaço")
+        ("Falar com o bot (segure)", "mic.fill", "⌥Espaço"),
     ]
     @AppStorage(VoicePreferenceKeys.autoSend) private var voiceAutoSend = false
 
@@ -948,7 +949,9 @@ struct NotificationSettings: View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             if !Notifier.shared.isAvailable {
                 SettingsGroup {
-                    SettingsRow(title: "Só no app instalado", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: "As notificações funcionam no r/bots instalado em Aplicativos.") {
+                    SettingsRow(
+                        title: "Só no app instalado", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: "As notificações funcionam no r/bots instalado em Aplicativos."
+                    ) {
                         EmptyView()
                     }
                 }

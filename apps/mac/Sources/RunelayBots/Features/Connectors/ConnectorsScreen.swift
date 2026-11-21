@@ -83,10 +83,12 @@ struct ConnectorsCatalog<Header: View>: View {
         } message: { _ in
             Text("As tools dela somem de todos os agentes da organização. O login dessa conexão é apagado.")
         }
-        .sheet(item: Binding(
-            get: { store.tokenRequest },
-            set: { store.tokenRequest = $0 }
-        )) { item in
+        .sheet(
+            item: Binding(
+                get: { store.tokenRequest },
+                set: { store.tokenRequest = $0 }
+            )
+        ) { item in
             CatalogTokenSheet(connector: item)
         }
     }
@@ -688,7 +690,7 @@ private struct RunelayOffState: View {
                 description: "Conecte o runelay para os bots usarem Linear, GitHub, Supabase e o resto das suas contas, além da memória e das skills compartilhadas."
             )
             Button("Conectar runelay", action: action)
-            .buttonStyle(.brandPrimary)
+                .buttonStyle(.brandPrimary)
         }
         .frame(maxWidth: .infinity)
         .padding(.bottom, Spacing.xxl)
@@ -782,11 +784,13 @@ struct SourceDetailView: View {
                             .foregroundStyle(Theme.textPrimary)
                             .lineLimit(1)
                     }
-                    Text([SourceStatus.label(connector.status), SourceStatus.tools(connector.toolCount), connector.name]
-                        .compactMap { $0 }
-                        .joined(separator: " · "))
-                        .font(BrandFonts.sans(13))
-                        .foregroundStyle(Theme.textSecondary)
+                    Text(
+                        [SourceStatus.label(connector.status), SourceStatus.tools(connector.toolCount), connector.name]
+                            .compactMap { $0 }
+                            .joined(separator: " · ")
+                    )
+                    .font(BrandFonts.sans(13))
+                    .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: Spacing.m)
                 IconActionButton(systemImage: "arrow.clockwise", label: "Testar de novo", spinning: model.isRefreshingConnectors) {
@@ -830,10 +834,13 @@ struct SourceDetailView: View {
                                 }
                             }
                             Spacer(minLength: Spacing.m)
-                            Toggle(bot.name, isOn: Binding(
-                                get: { model.bot(id: bot.id)?.connectors?.allowed.contains(connector.name) ?? false },
-                                set: { model.setConnector(connector.name, allowed: $0, for: bot) }
-                            ))
+                            Toggle(
+                                bot.name,
+                                isOn: Binding(
+                                    get: { model.bot(id: bot.id)?.connectors?.allowed.contains(connector.name) ?? false },
+                                    set: { model.setConnector(connector.name, allowed: $0, for: bot) }
+                                )
+                            )
                             .toggleStyle(.switch)
                             .labelsHidden()
                             .tint(Theme.brandAccent)
@@ -851,4 +858,3 @@ struct SourceDetailView: View {
         }
     }
 }
-

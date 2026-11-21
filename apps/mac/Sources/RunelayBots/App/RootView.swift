@@ -123,7 +123,8 @@ struct RootView: View {
                         .frame(width: sidebarCollapsed ? 0 : 1)
                     GeometryReader { geometry in
                         let blockInset = BlockPresentation.shared.inset(available: geometry.size.width)
-                        let showsInspector = model.inspectorPresented
+                        let showsInspector =
+                            model.inspectorPresented
                             && blockInset == 0
                             && geometry.size.width >= Metrics.conversationMinWidth + Metrics.inspectorWidth
                         ZStack(alignment: .trailing) {
@@ -346,7 +347,6 @@ struct DetailView: View {
         }
     }
 }
-
 
 struct ChromeTabShape: Shape {
     static let flare: CGFloat = 10

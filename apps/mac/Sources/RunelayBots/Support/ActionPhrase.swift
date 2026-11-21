@@ -43,7 +43,10 @@ struct ActionPhrase: Equatable {
         String(text.characters)
     }
 
-    init(verb: String, object: String? = nil, extra: String? = nil, place: String? = nil, url: URL? = nil, app: String? = nil, bundleID: String? = nil, surface: Surface = .other, symbol: String = "sparkles") {
+    init(
+        verb: String, object: String? = nil, extra: String? = nil, place: String? = nil, url: URL? = nil, app: String? = nil, bundleID: String? = nil, surface: Surface = .other,
+        symbol: String = "sparkles"
+    ) {
         self.verb = verb
         self.object = object
         self.extra = extra
@@ -161,7 +164,10 @@ struct ActionPhrase: Equatable {
             object = input["cmd"]?.stringValue.map { Self.clip($0, 48) }
             symbol = "terminal"
         case "files_list", "files_read", "files_write", "files_move", "files_rename", "files_mkdir", "files_trash":
-            let verbs = ["files_list": "Ver a pasta", "files_read": "Ler", "files_write": "Salvar", "files_move": "Mover", "files_rename": "Renomear", "files_mkdir": "Criar a pasta", "files_trash": "Mandar para a Lixeira"]
+            let verbs = [
+                "files_list": "Ver a pasta", "files_read": "Ler", "files_write": "Salvar", "files_move": "Mover", "files_rename": "Renomear", "files_mkdir": "Criar a pasta",
+                "files_trash": "Mandar para a Lixeira",
+            ]
             verb = verbs[name] ?? "Mexer em"
             let path = input["path"]?.stringValue ?? input["from"]?.stringValue
             object = path.map { ($0 as NSString).lastPathComponent }
@@ -268,7 +274,10 @@ struct ActionPhrase: Equatable {
     }
 
     static func prettyCombo(_ combo: String) -> String {
-        let symbols = ["cmd": "⌘", "command": "⌘", "super": "⌘", "ctrl": "⌃", "control": "⌃", "alt": "⌥", "option": "⌥", "shift": "⇧", "return": "↩", "enter": "↩", "tab": "⇥", "escape": "Esc", "esc": "Esc", "left": "←", "right": "→", "up": "↑", "down": "↓", "backspace": "⌫", "delete": "⌫", "space": "Espaço"]
+        let symbols = [
+            "cmd": "⌘", "command": "⌘", "super": "⌘", "ctrl": "⌃", "control": "⌃", "alt": "⌥", "option": "⌥", "shift": "⇧", "return": "↩", "enter": "↩", "tab": "⇥", "escape": "Esc", "esc": "Esc",
+            "left": "←", "right": "→", "up": "↑", "down": "↓", "backspace": "⌫", "delete": "⌫", "space": "Espaço",
+        ]
         return combo.split(separator: "+").map { part in
             let key = part.trimmingCharacters(in: .whitespaces)
             return symbols[key.lowercased()] ?? key.uppercased()
@@ -277,7 +286,8 @@ struct ActionPhrase: Equatable {
     }
 
     static func humanizeIdentifier(_ value: String) -> String {
-        let spaced = value
+        let spaced =
+            value
             .replacingOccurrences(of: "_", with: " ")
             .replacingOccurrences(of: "-", with: " ")
             .replacingOccurrences(of: ".", with: " ")

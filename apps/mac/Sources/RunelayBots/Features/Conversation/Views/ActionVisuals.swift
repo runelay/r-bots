@@ -24,9 +24,9 @@ final class FaviconStore {
             var components = URLComponents(string: "https://www.google.com/s2/favicons")
             components?.queryItems = [URLQueryItem(name: "domain", value: host), URLQueryItem(name: "sz", value: "64")]
             guard let url = components?.url,
-                  let (data, response) = try? await URLSession.shared.data(from: url),
-                  (response as? HTTPURLResponse)?.statusCode == 200,
-                  let image = NSImage(data: data)
+                let (data, response) = try? await URLSession.shared.data(from: url),
+                (response as? HTTPURLResponse)?.statusCode == 200,
+                let image = NSImage(data: data)
             else {
                 missing.insert(host)
                 return
@@ -266,7 +266,7 @@ struct ReadableResult: View {
         var hidden = 0
         for item in items {
             guard let object = item.objectValue, let name = object["name"]?.stringValue,
-                  let type = object["type"]?.stringValue, kinds.contains(type)
+                let type = object["type"]?.stringValue, kinds.contains(type)
             else { return nil }
             if object["hidden"] == .bool(true) || name.hasPrefix(".") {
                 hidden += 1

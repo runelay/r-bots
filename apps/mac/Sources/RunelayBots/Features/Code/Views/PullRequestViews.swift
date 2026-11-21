@@ -211,10 +211,12 @@ struct PullRequestRow: View {
             }
         }
         .popover(isPresented: $showsCard, arrowEdge: .trailing) {
-            PullRequestCard(store: store, workspaceID: workspaceID, pr: pr, closeRepository: {
-                showsCard = false
-                closeRepository()
-            })
+            PullRequestCard(
+                store: store, workspaceID: workspaceID, pr: pr,
+                closeRepository: {
+                    showsCard = false
+                    closeRepository()
+                })
         }
         .help(pr.title)
     }

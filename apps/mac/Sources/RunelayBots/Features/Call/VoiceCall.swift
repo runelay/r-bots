@@ -1,8 +1,8 @@
-import AppKit
 import AVFoundation
+import AppKit
 import Foundation
-import Observation
 import OSLog
+import Observation
 
 enum CallPhase: Equatable {
     case idle
@@ -764,7 +764,9 @@ final class VoiceCall {
         guard let audio else { return }
         let stats = audio.takeStats()
         let scribeReady = scribe?.hasStarted == true
-        CallDebug.log("buffers=\(stats.buffers) chunks=\(stats.chunks) pico=\(String(format: "%.5f", stats.peak)) engine=\(stats.engineRunning) vp=\(stats.echoCancelled) formato=\(stats.inputFormat) scribe=\(scribeReady) fase=\(phase)")
+        CallDebug.log(
+            "buffers=\(stats.buffers) chunks=\(stats.chunks) pico=\(String(format: "%.5f", stats.peak)) engine=\(stats.engineRunning) vp=\(stats.echoCancelled) formato=\(stats.inputFormat) scribe=\(scribeReady) fase=\(phase)"
+        )
         if scribeReady || scribe == nil {
             scribeWaitSeconds = 0
         } else {

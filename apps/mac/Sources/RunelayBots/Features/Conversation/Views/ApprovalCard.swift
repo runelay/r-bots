@@ -51,10 +51,11 @@ struct ApprovalCard: View {
                 )
                 .scaleEffect(hasEntered || reduceMotion ? 1 : 0.94, anchor: .topLeading)
                 .opacity(hasEntered ? 1 : 0)
-                .transition(.asymmetric(
-                    insertion: .opacity,
-                    removal: reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9, anchor: .leading))
-                ))
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity,
+                        removal: reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.9, anchor: .leading))
+                    ))
             } else {
                 ApprovalOutcomeLine(approval: approval, phrase: phrase, connector: call?.connectorName)
                     .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: -4)))

@@ -271,8 +271,8 @@ struct DelegationSummary: View {
 
     private func duration(_ calls: [ToolCall]) -> String? {
         guard let start = calls.compactMap(\.requestedAt).min(),
-              let end = calls.compactMap(\.settledAt).max(),
-              end >= start
+            let end = calls.compactMap(\.settledAt).max(),
+            end >= start
         else { return nil }
         let seconds = Int(end.timeIntervalSince(start).rounded())
         return seconds < 60 ? "\(max(seconds, 1)) s" : "\(seconds / 60) min"

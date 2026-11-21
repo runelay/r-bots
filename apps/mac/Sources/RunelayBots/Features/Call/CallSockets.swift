@@ -229,8 +229,8 @@ final class SpeechSocket: @unchecked Sendable {
             "voice_settings": .object([
                 "stability": .number(0.5),
                 "similarity_boost": .number(0.8),
-                "speed": .number(speed)
-            ])
+                "speed": .number(speed),
+            ]),
         ])
     }
 
@@ -345,7 +345,11 @@ final class SpeechSocket: @unchecked Sendable {
         guard let json = JSONValue.parse(text) else { return }
         let id = json["contextId"]?.stringValue ?? json["context_id"]?.stringValue ?? ""
         if let base64 = json["audio"]?.stringValue, let data = Data(base64Encoded: base64), !data.isEmpty {
-            enum Route { case drop, play(first: Bool), hold }
+            enum Route {
+                case drop
+                case play(first: Bool)
+                case hold
+            }
             let route: Route = lock.withLock {
                 if cancelled.contains(id) || !order.contains(id) {
                     return .drop
@@ -373,7 +377,11 @@ final class SpeechSocket: @unchecked Sendable {
 
     private func drain() {
         while true {
-            enum Step { case stop, play(String, [Data], Bool), done(String) }
+            enum Step {
+                case stop
+                case play(String, [Data], Bool)
+                case done(String)
+            }
             let step: Step = lock.withLock {
                 guard let head = order.first else { return .stop }
                 if let pendingAudio = buffered[head], !pendingAudio.isEmpty {

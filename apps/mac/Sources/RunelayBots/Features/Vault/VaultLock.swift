@@ -22,25 +22,28 @@ final class VaultLock {
     private init() {
         let center = NotificationCenter.default
         for name in [NSApplication.didResignActiveNotification, NSApplication.didHideNotification] {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { _ in
-                MainActor.assumeIsolated {
-                    VaultLock.shared.lockUnlessAuthenticating()
-                }
-            })
+            observers.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated {
+                        VaultLock.shared.lockUnlessAuthenticating()
+                    }
+                })
         }
         let workspace = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification, NSWorkspace.willSleepNotification] {
-            observers.append(workspace.addObserver(forName: name, object: nil, queue: .main) { _ in
+            observers.append(
+                workspace.addObserver(forName: name, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated {
+                        VaultLock.shared.lock()
+                    }
+                })
+        }
+        observers.append(
+            DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
                 MainActor.assumeIsolated {
                     VaultLock.shared.lock()
                 }
             })
-        }
-        observers.append(DistributedNotificationCenter.default().addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated {
-                VaultLock.shared.lock()
-            }
-        })
     }
 
     func unlock() async {

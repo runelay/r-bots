@@ -74,14 +74,16 @@ struct UserBubble: View {
 
     var body: some View {
         let segments = InlineTokens.segments(in: message.text, attachments: message.attachments, skills: message.skills)
-        let inlineFiles = Set((segments ?? []).compactMap { segment -> String? in
-            if case .file(let ref) = segment { return ref.id }
-            return nil
-        })
-        let inlineSkills = Set((segments ?? []).compactMap { segment -> String? in
-            if case .skill(let skill) = segment { return skill.slug }
-            return nil
-        })
+        let inlineFiles = Set(
+            (segments ?? []).compactMap { segment -> String? in
+                if case .file(let ref) = segment { return ref.id }
+                return nil
+            })
+        let inlineSkills = Set(
+            (segments ?? []).compactMap { segment -> String? in
+                if case .skill(let skill) = segment { return skill.slug }
+                return nil
+            })
         let looseSkills = message.skills.filter { !inlineSkills.contains($0.slug) }
         let looseAttachments = message.attachments.filter { $0.kind != .file || !inlineFiles.contains($0.id) }
         VStack(alignment: .trailing, spacing: Spacing.xs) {
@@ -96,23 +98,23 @@ struct UserBubble: View {
                     .padding(.trailing, avatarInset)
             }
             if segments != nil || (!message.isSkillOnly && !message.text.isEmpty) {
-            HStack(alignment: .bottom, spacing: Spacing.s) {
-                Spacer(minLength: 0)
-                Group {
-                    if let segments {
-                        InlineTokenText(segments: segments, fontSize: fontSize, ink: Theme.onAccent)
-                    } else {
-                        FoldedMarkdown(
-                            text: message.text,
-                            plan: fold == nil ? nil : MessageFolding.plan(message.text, keepsTail: true),
-                            expanded: expanded,
-                            fontSize: fontSize,
-                            bubble: Theme.userBubble
-                        ) {
-                            setExpanded(true)
+                HStack(alignment: .bottom, spacing: Spacing.s) {
+                    Spacer(minLength: 0)
+                    Group {
+                        if let segments {
+                            InlineTokenText(segments: segments, fontSize: fontSize, ink: Theme.onAccent)
+                        } else {
+                            FoldedMarkdown(
+                                text: message.text,
+                                plan: fold == nil ? nil : MessageFolding.plan(message.text, keepsTail: true),
+                                expanded: expanded,
+                                fontSize: fontSize,
+                                bubble: Theme.userBubble
+                            ) {
+                                setExpanded(true)
+                            }
                         }
                     }
-                }
                     .foregroundStyle(Theme.onAccent)
                     .environment(\.markdownInk, Theme.onAccent)
                     .environment(\.markdownOnAccent, true)
@@ -130,17 +132,17 @@ struct UserBubble: View {
                     .frame(maxWidth: BubbleShape.maxWidth, alignment: .trailing)
                     .fixedSize(horizontal: false, vertical: true)
                     .opacity(message.state == .sending ? 0.8 : 1)
-                if showsAvatar {
-                    Group {
-                        if meta.isLast {
-                            UserAvatar(size: 20)
-                        } else {
-                            Spacer(minLength: 0)
+                    if showsAvatar {
+                        Group {
+                            if meta.isLast {
+                                UserAvatar(size: 20)
+                            } else {
+                                Spacer(minLength: 0)
+                            }
                         }
+                        .frame(width: 20, height: 20)
                     }
-                    .frame(width: 20, height: 20)
                 }
-            }
             }
             if fold != nil, segments == nil, !message.isSkillOnly, MessageFolding.plan(message.text, keepsTail: true) != nil {
                 FoldToggle(expanded: expanded) {
@@ -255,25 +257,25 @@ struct ReplyCard: View {
                         }
                     }
                 }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(Theme.surface, in: BubbleShape.make(meta: meta, trailing: false))
-                    .overlay(alignment: .bottomTrailing) {
-                        HStack(spacing: 0) {
-                            ReactionPickerButton(edge: .leading, isOpen: $pickerOpen, pick: react)
-                            HoverAction(systemImage: copied ? "checkmark" : "doc.on.doc", help: "Copiar") {
-                                copy()
-                            }
-                            HoverAction(systemImage: "arrow.clockwise", help: "Pedir de novo") {
-                                regenerate()
-                            }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Theme.surface, in: BubbleShape.make(meta: meta, trailing: false))
+                .overlay(alignment: .bottomTrailing) {
+                    HStack(spacing: 0) {
+                        ReactionPickerButton(edge: .leading, isOpen: $pickerOpen, pick: react)
+                        HoverAction(systemImage: copied ? "checkmark" : "doc.on.doc", help: "Copiar") {
+                            copy()
                         }
-                        .alignmentGuide(.trailing) { $0[.leading] - Spacing.xs }
-                        .opacity((isHovered || pickerOpen) && !part.isStreaming ? 1 : 0)
-                        .allowsHitTesting((isHovered || pickerOpen) && !part.isStreaming)
+                        HoverAction(systemImage: "arrow.clockwise", help: "Pedir de novo") {
+                            regenerate()
+                        }
                     }
-                    .frame(maxWidth: BubbleShape.maxWidth, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .alignmentGuide(.trailing) { $0[.leading] - Spacing.xs }
+                    .opacity((isHovered || pickerOpen) && !part.isStreaming ? 1 : 0)
+                    .allowsHitTesting((isHovered || pickerOpen) && !part.isStreaming)
+                }
+                .frame(maxWidth: BubbleShape.maxWidth, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 0)
             }

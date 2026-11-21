@@ -165,13 +165,16 @@ private struct LinearIssueContent: View {
     private var properties: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             PropertyRow(label: "Status") {
-                GlassMenuButton(help: "Mudar o status", items: {
-                    detail.states.map { state in
-                        GlassMenuItem(state.name, id: state.id, isOn: state.name == card.state, leading: AnyView(StateIcon(type: state.type, name: state.name, size: 12))) {
-                            Task { await store.move(card.id, to: "\(state.type):\(state.name)") }
+                GlassMenuButton(
+                    help: "Mudar o status",
+                    items: {
+                        detail.states.map { state in
+                            GlassMenuItem(state.name, id: state.id, isOn: state.name == card.state, leading: AnyView(StateIcon(type: state.type, name: state.name, size: 12))) {
+                                Task { await store.move(card.id, to: "\(state.type):\(state.name)") }
+                            }
                         }
                     }
-                }) { isOpen in
+                ) { isOpen in
                     HStack(spacing: 6) {
                         StateIcon(type: card.stateType, name: card.state, size: 11)
                         Text(card.state)
@@ -267,8 +270,8 @@ private struct PropertyRow<Value: View>: View {
     }
 }
 
-private extension Text {
-    func propertyValue(muted: Bool = false) -> some View {
+extension Text {
+    fileprivate func propertyValue(muted: Bool = false) -> some View {
         self
             .font(TypeScale.rowSubtitle)
             .foregroundStyle(muted ? Theme.textTertiary : Theme.textPrimary)

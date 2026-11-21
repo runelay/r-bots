@@ -166,7 +166,7 @@ final class NoteEditorStore {
 
     func loadMoreBacklinks() async {
         guard let cursor = backlinksNext,
-              let page = try? await client.backlinks(botID: botID, id: noteID, cursor: cursor)
+            let page = try? await client.backlinks(botID: botID, id: noteID, cursor: cursor)
         else { return }
         backlinks += page.items
         backlinksNext = page.nextCursor
@@ -253,7 +253,8 @@ enum TextRebase {
         while prefix < baseChars.count, prefix < localChars.count, baseChars[prefix] == localChars[prefix] { prefix += 1 }
         var suffix = 0
         while suffix < baseChars.count - prefix, suffix < localChars.count - prefix,
-              baseChars[baseChars.count - 1 - suffix] == localChars[localChars.count - 1 - suffix] { suffix += 1 }
+            baseChars[baseChars.count - 1 - suffix] == localChars[localChars.count - 1 - suffix]
+        { suffix += 1 }
         let removed = String(utf16CodeUnits: Array(baseChars[prefix..<(baseChars.count - suffix)]), count: baseChars.count - suffix - prefix)
         let inserted = String(utf16CodeUnits: Array(localChars[prefix..<(localChars.count - suffix)]), count: localChars.count - suffix - prefix)
         let before = String(utf16CodeUnits: Array(baseChars[max(0, prefix - 24)..<prefix]), count: prefix - max(0, prefix - 24))

@@ -55,7 +55,8 @@ extension BotsClient {
     }
 
     func pullRequest(botID: String, sessionID: String?, workspaceID: String? = nil, refresh: Bool) async throws -> PullRequestInfo? {
-        let json = try await codeSend(Self.codeRoot(botID) + "/pr", query: Self.sessionQuery(sessionID, workspaceID: workspaceID) + (refresh ? [URLQueryItem(name: "refresh", value: "1")] : []), timeout: 60)
+        let json = try await codeSend(
+            Self.codeRoot(botID) + "/pr", query: Self.sessionQuery(sessionID, workspaceID: workspaceID) + (refresh ? [URLQueryItem(name: "refresh", value: "1")] : []), timeout: 60)
         return PullRequestInfo(json["pr"])
     }
 

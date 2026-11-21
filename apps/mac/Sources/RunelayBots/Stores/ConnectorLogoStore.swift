@@ -39,9 +39,9 @@ final class ConnectorLogoStore {
         Task {
             defer { inFlight.remove(key) }
             guard let request = try? client.request(path: "/connectors/logos/\(file)"),
-                  let (data, response) = try? await URLSession.shared.data(for: request),
-                  (response as? HTTPURLResponse)?.statusCode == 200,
-                  let image = NSImage(data: data)
+                let (data, response) = try? await URLSession.shared.data(for: request),
+                (response as? HTTPURLResponse)?.statusCode == 200,
+                let image = NSImage(data: data)
             else {
                 missing.insert(key)
                 return

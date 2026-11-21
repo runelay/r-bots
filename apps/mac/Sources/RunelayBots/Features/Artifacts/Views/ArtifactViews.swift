@@ -258,16 +258,19 @@ struct ArtifactPanelHeader: View {
     }
 
     private var exportMenu: some View {
-        GlassMenuButton(edge: .trailing, help: "Exportar", items: {
-            [
-                GlassMenuItem("PDF", systemImage: "arrow.down.doc") {
-                    Task { await center.exportPDF() }
-                },
-                GlassMenuItem("Abrir no navegador", systemImage: "safari") {
-                    Task { await center.openInBrowser() }
-                },
-            ]
-        }) { _ in
+        GlassMenuButton(
+            edge: .trailing, help: "Exportar",
+            items: {
+                [
+                    GlassMenuItem("PDF", systemImage: "arrow.down.doc") {
+                        Task { await center.exportPDF() }
+                    },
+                    GlassMenuItem("Abrir no navegador", systemImage: "safari") {
+                        Task { await center.openInBrowser() }
+                    },
+                ]
+            }
+        ) { _ in
             HStack(spacing: Spacing.xs) {
                 if center.busy != nil {
                     ProgressView()
@@ -311,9 +314,10 @@ struct ArtifactPanelHeader: View {
         items.append(GlassMenuItem("Copiar link desta versão", systemImage: "link", startsSection: !items.isEmpty) { center.copyLink() })
         if let botID = center.current?.botID {
             let client = model.client
-            items.append(GlassMenuItem("Todos os arquivos", systemImage: "square.stack") {
-                ArtifactCenter.shared.openFiles(botID: botID, client: client)
-            })
+            items.append(
+                GlassMenuItem("Todos os arquivos", systemImage: "square.stack") {
+                    ArtifactCenter.shared.openFiles(botID: botID, client: client)
+                })
         }
         return items
     }

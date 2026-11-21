@@ -26,9 +26,9 @@ struct MessageReaction: Equatable, Hashable, Sendable {
 
     init?(json: JSONValue) {
         guard let target = json["target"]?.stringValue,
-              let emoji = json["emoji"]?.stringValue,
-              let kind = json["author"]?["kind"]?.stringValue.flatMap(AuthorKind.init(rawValue:)),
-              let author = json["author"]?["id"]?.stringValue
+            let emoji = json["emoji"]?.stringValue,
+            let kind = json["author"]?["kind"]?.stringValue.flatMap(AuthorKind.init(rawValue:)),
+            let author = json["author"]?["id"]?.stringValue
         else { return nil }
         self.init(target: target, emoji: emoji, authorKind: kind, authorID: author, at: json["at"]?.stringValue ?? "")
     }
@@ -38,7 +38,7 @@ struct MessageReaction: Equatable, Hashable, Sendable {
             "target": .string(target),
             "emoji": .string(emoji),
             "author": .object(["kind": .string(authorKind.rawValue), "id": .string(authorID)]),
-            "at": .string(at)
+            "at": .string(at),
         ])
     }
 
