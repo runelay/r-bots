@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## v0.1.8
+
+### Server and Mac
+
+- Update the server from the Mac app (Settings › Versions): the server queues the update and `rbots update-agent` (systemd watcher) applies it on the host.
+
+### iPhone
+
+- The r/bots mark sits left of the server switcher, and search and shortcuts are two round buttons at the bottom right; search opens as a capsule.
+- `install-device.sh` finds the paired iPhone again (the id came with a "(UDID)" suffix).
+
 ### Fixes
 
 - New conversations on a box no longer fail with "permission denied": the server creates the conversation folder before the box starts. Before, Docker created it as root and the bot could not write to it.
