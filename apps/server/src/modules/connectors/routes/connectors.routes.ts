@@ -1,5 +1,6 @@
-import { notFound, type Req, type Res, readBody, runelayFailure, sendJson } from "../../../shared/http";
+import { notFound, type Req, type Res, readBody, runelayFailure, sendFile, sendJson } from "../../../shared/http";
 import {
+  connectorLogo,
   getCatalog,
   installCatalogItem,
   listConnections,
@@ -13,6 +14,16 @@ export async function handleConnectorActions(req: Req, res: Res, url: URL, metho
   try {
     if (parts.length === 2 && parts[1] === "catalog" && method === "GET") {
       return sendJson(res, 200, await getCatalog((url.searchParams.get("query") ?? "").trim().slice(0, 100)));
+    }
+    if (parts.length === 3 && parts[1] === "logos" && method === "GET") {
+      const logo = await connectorLogo(parts[2] ?? "");
+      if (!logo) return notFound(res);
+      return sendFile(res, new Blob([logo.data], { type: logo.type }), {
+        "content-type": logo.type,
+        "cache-control": "private, max-age=86400",
+        "x-content-type-options": "nosniff",
+        "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+      });
     }
     const name = parts[1] ?? "";
     if (!/^[a-z0-9_-]{1,60}$/.test(name))

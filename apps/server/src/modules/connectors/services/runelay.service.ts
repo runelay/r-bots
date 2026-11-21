@@ -88,9 +88,6 @@ const labels: Record<string, string> = {
   resend: "Resend",
   cloudflare: "Cloudflare",
   cloudflare_docs: "Cloudflare Docs",
-  conty: "Conty",
-  conty_backoffice: "Conty Backoffice",
-  conty_ben: "Conty BEN",
   doop: "Doop",
   meta_social_technologies: "Meta",
 };
@@ -143,6 +140,39 @@ export async function listConnections(force = false): Promise<Connection[]> {
   cache = { at: Date.now(), list };
   setKnownConnectors(list.filter((item) => item.status === "ok").map((item) => item.name));
   return list;
+}
+
+const logoCache = new Map<string, { type: string; data: Uint8Array }>();
+const logoLimit = 512 * 1024;
+
+function logoOrigins() {
+  const origins: string[] = [];
+  for (const candidate of [url(), apiBase()]) {
+    try {
+      const origin = candidate ? new URL(candidate).origin : "";
+      if (origin && !origins.includes(origin)) origins.push(origin);
+    } catch {}
+  }
+  return origins;
+}
+
+export async function connectorLogo(file: string) {
+  if (!/^[a-z0-9_-]{1,60}\.(png|svg)$/.test(file)) return null;
+  const cached = logoCache.get(file);
+  if (cached) return cached;
+  for (const origin of logoOrigins()) {
+    try {
+      const response = await fetch(`${origin}/logos/${file}`, { signal: AbortSignal.timeout(8000) });
+      const type = response.headers.get("content-type")?.split(";")[0].trim() ?? "";
+      if (!response.ok || !type.startsWith("image/")) continue;
+      const data = new Uint8Array(await response.arrayBuffer());
+      if (data.byteLength === 0 || data.byteLength > logoLimit) continue;
+      const logo = { type, data };
+      logoCache.set(file, logo);
+      return logo;
+    } catch {}
+  }
+  return null;
 }
 
 export interface FoundTool {

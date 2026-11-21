@@ -8,6 +8,7 @@ import { type BotDefinition, connectorsOf } from "../../bots/services/bots.servi
 import { resetIntegrationCache, writeStored } from "../../integrations/services/integration-store.service";
 import {
   classifyTool,
+  connectorLogo,
   getCatalog,
   installCatalogItem,
   isReadOnlySql,
@@ -435,6 +436,55 @@ describe("routes", () => {
 
     const putList = await request("/connectors", { method: "PUT" });
     expect(putList.status).toBe(404);
+  });
+});
+
+describe("connector logos", () => {
+  test("proxies logos from the runelay origin and caches them", async () => {
+    const served = new Map<string, () => Response | Promise<Response>>([
+      ["/logos/brand.png", () => new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } })],
+      ["/logos/page.png", () => new Response("<html>", { headers: { "content-type": "text/html" } })],
+      ["/logos/missing.png", () => new Response("no", { status: 404 })],
+      ["/logos/empty.svg", () => new Response(new Uint8Array(), { headers: { "content-type": "image/svg+xml" } })],
+      ["/logos/huge.png", () => new Response(new Uint8Array(600 * 1024), { headers: { "content-type": "image/png" } })],
+      ["/logos/notype.png", () => new Response(new Uint8Array([1]), { headers: { "content-type": "" } })],
+      ["/logos/down.png", () => Promise.reject(new TypeError("refused"))],
+    ]);
+    const fetched: string[] = [];
+    const spy = spyOn(globalThis, "fetch").mockImplementation((async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      const target = new URL(input instanceof Request ? input.url : String(input));
+      const respond = served.get(target.pathname);
+      if (!respond) return realFetch(input, init);
+      fetched.push(target.pathname);
+      return respond();
+    }) as typeof fetch);
+    restores.push(() => spy.mockRestore());
+
+    const logo = await request<string>("/connectors/logos/brand.png");
+    expect(logo.status).toBe(200);
+    expect(logo.headers.get("content-type")).toBe("image/png");
+    expect(logo.headers.get("x-content-type-options")).toBe("nosniff");
+    expect((await connectorLogo("brand.png"))?.data).toEqual(new Uint8Array([1, 2, 3]));
+    expect(fetched.filter((path) => path === "/logos/brand.png")).toHaveLength(1);
+
+    for (const file of ["page.png", "missing.png", "empty.svg", "huge.png", "notype.png", "down.png"])
+      expect(await connectorLogo(file)).toBeNull();
+    expect(await connectorLogo("../secret.png")).toBeNull();
+    expect(await connectorLogo("brand.gif")).toBeNull();
+    expect((await request("/connectors/logos/page.png")).status).toBe(404);
+    expect((await request("/connectors/logos/Bad.png")).status).toBe(404);
+  });
+
+  test("skips an API base that is not a url", async () => {
+    const saved = process.env.RUNELAY_API_URL;
+    process.env.RUNELAY_API_URL = "not a url";
+    restores.push(() => {
+      process.env.RUNELAY_API_URL = saved;
+    });
+    expect(await connectorLogo("absent.png")).toBeNull();
   });
 });
 
