@@ -49,7 +49,7 @@ final class MirrorOutput: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked
             let buffer = sampleBuffer.imageBuffer,
             let io = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         else { return }
-        surface.show(io)
+        surface.show(unsafeBitCast(io, to: IOSurface.self))
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
