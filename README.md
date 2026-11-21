@@ -19,6 +19,10 @@
 </p>
 
 <p align="center">
+  <img src="docs/media/features/teaser.webp" alt="r/bots in action: code preview, questions, the bot's browser, images and spreadsheets" width="100%" />
+</p>
+
+<p align="center">
   <a href="#-quick-start"><b>Quick start</b></a> ·
   <a href="#-install-the-mac-app"><b>Mac app</b></a> ·
   <a href="#-development"><b>Development</b></a> ·
@@ -59,6 +63,91 @@ flowchart LR
   classDef hub fill:#f0a050,stroke:#f0a050,color:#111,font-weight:bold
   class S hub
 ```
+
+## 🎬 Features
+
+<table>
+<tr>
+<td width="45%">
+<h3>A team that configures itself</h3>
+<p>Create a bot with just a name, then tell it what it is for. It writes its own role and instructions, and any setting it changes in conversation shows up as a line you can undo.</p>
+<p><a href="docs/protocol/bots.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/team.webp" alt="The Boss bot setting its own role and changing its color on request" width="100%" /></td>
+</tr>
+<tr>
+<td width="45%">
+<h3>From request to running preview</h3>
+<p>Point a bot at a repo and ask for a change. It works in its own git worktree, shows the diff while it edits and starts the app so you can try it.</p>
+<p><a href="docs/protocol/code.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/code.webp" alt="A bot translating a to-do app, showing the diff and opening the preview" width="100%" /></td>
+</tr>
+<tr>
+<td width="45%">
+<h3>It asks before it guesses</h3>
+<p>When a decision is yours, the bot asks with options in a card that takes the place of the message box, one step at a time. With the app in the background, the question appears at the top of the screen.</p>
+<p><a href="docs/protocol/approvals.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/questions.webp" alt="A multi-step question card with options" width="100%" /></td>
+</tr>
+<tr>
+<td width="45%">
+<h3>A browser per bot</h3>
+<p>Each bot has its own Chromium with a persistent profile. Watch it browse live in the app and take control whenever you want.</p>
+<p><a href="docs/protocol/computer.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/browser.webp" alt="A bot opening Wikipedia in its own browser" width="100%" /></td>
+</tr>
+<tr>
+<td width="45%">
+<h3>The Boss splits the work</h3>
+<p>Ask the coordinator for something big and it delegates parts to the other bots, each in its own thread, then answers with a short summary of what came back.</p>
+<p><a href="docs/protocol/conversations.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/delegation.webp" alt="The Boss delegating to two bots and summarizing the result" width="100%" /></td>
+</tr>
+<tr>
+<td width="45%">
+<h3>Side questions with <code>/side</code></h3>
+<p>Ask something while the bot is busy. <code>/side</code> opens a child conversation with the parent's context in a panel next to it, without stopping the main turn.</p>
+<p><a href="docs/protocol/conversations.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/side.webp" alt="A side conversation answering a question while the main bot works" width="100%" /></td>
+</tr>
+<tr>
+<td width="45%">
+<h3>Images and cutouts</h3>
+<p>Bots running on Codex generate images, and <code>image_cutout</code> removes the background with a local model. Files come back as attachments in the conversation.</p>
+<p><a href="docs/protocol/uploads.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/images.webp" alt="A bot generating an app icon and a transparent version" width="100%" /></td>
+</tr>
+<tr>
+<td width="45%">
+<h3>Notes and spreadsheets</h3>
+<p>Bots create notes and spreadsheets that you edit next to the conversation. Formulas are computed on the server; notes export to DOCX, PDF or Markdown, sheets to XLSX, CSV or PDF.</p>
+<p><a href="docs/protocol/blocks.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/blocks.webp" alt="Editing values in a spreadsheet the bot created, with the total updating" width="100%" /></td>
+</tr>
+<tr>
+<td width="45%">
+<h3>Routines</h3>
+<p>Ask for something on a schedule and the bot creates the routine. It runs on the server even with the Mac closed, and <b>Run now</b> triggers it on demand.</p>
+<p><a href="docs/protocol/schedules-groups-sections.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/routines.webp" alt="A routine created from chat and run on demand" width="100%" /></td>
+</tr>
+<tr>
+<td width="45%">
+<h3>Uses your Mac, with your OK</h3>
+<p>Through the runner inside the app, a bot opens apps and types on your Mac. Each action asks first, or Jev approves the routine ones for you.</p>
+<p><a href="docs/protocol/computer.md">Docs →</a></p>
+</td>
+<td><img src="docs/media/features/mac.webp" alt="A bot writing a list in TextEdit on the Mac" width="100%" /></td>
+</tr>
+</table>
 
 ## 🧩 What you get
 
