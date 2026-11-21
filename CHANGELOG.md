@@ -2,10 +2,19 @@
 
 ## Unreleased
 
+## v0.1.1
+
 ### Install and update
 
-- One image, `ghcr.io/runelay/r-bots:<version>`, replaces the server, runner and box images. The role comes from the command: the server by default, the runner with `rbots-runner` as entrypoint, the box with `rbbox-init`. Layers are zstd and ordered so a release that only changes r/bots code downloads one layer of about 70 MB. Tags: `<version>`, `<major>.<minor>` and `latest` on stable. `RBOTS_IMAGE` (or the old `BOTS_IMAGE`) overrides it; `BOTS_RUNNER_IMAGE` is gone.
+- One image, `ghcr.io/runelay/r-bots:<version>`, replaces the server, runner and box images. The role comes from the command: the server by default, the runner with `rbots-runner` as entrypoint, the box with `rbbox-init`. Layers are zstd and ordered so a release that only changes r/bots code downloads one layer of about 15 MB. The whole image is about 940 MB compressed, down from about 2.9 GB for the three images of v0.1.0. Tags: `<version>`, `<major>.<minor>` and `latest` on stable. `RBOTS_IMAGE` (or the old `BOTS_IMAGE`) overrides it; `BOTS_RUNNER_IMAGE` is gone.
 - The runner no longer mounts `~/.docker`. While the repo is private, the installer and `rbots update` save the GitHub token for it as `RBOTS_REGISTRY_TOKEN` in the persistent `.env.local`. Images and checksums are signed with cosign only once the repo is public.
+- Chrome and the image cutout model left the image: they download on first use into `~/.local/share/runelay-bots-tools`, mounted at `/opt/rbots-tools` in the server and read only in the boxes.
+- The server and the runner run as Bun bundles with bytecode instead of compiled binaries.
+- The runner pulls the box image itself, recreates idle boxes built from an older image and removes old boxes and images.
+
+### Project
+
+- MIT license, contributing guide, security policy, issue and PR templates, Dependabot, and CI with Biome, typecheck, tests, shellcheck, hadolint, actionlint, CodeQL (once public) and swift-format.
 
 ## v0.1.0
 
