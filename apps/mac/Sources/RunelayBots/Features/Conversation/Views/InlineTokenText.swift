@@ -57,7 +57,11 @@ struct InlineTokenText: View {
     }
 
     private func open(_ url: URL) {
-        guard url.scheme == Self.scheme, let index = Int(url.lastPathComponent), segments.indices.contains(index) else { return }
+        guard url.scheme == Self.scheme else {
+            model.openLink(url)
+            return
+        }
+        guard let index = Int(url.lastPathComponent), segments.indices.contains(index) else { return }
         switch segments[index] {
         case .file(let ref):
             let client = model.client

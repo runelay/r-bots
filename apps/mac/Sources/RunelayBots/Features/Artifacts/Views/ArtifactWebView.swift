@@ -32,6 +32,7 @@ struct ArtifactWebView: View {
     var zoom: CGFloat = 1
     var focusToken = 0
     var sameOrigin = false
+    var browsing = false
     var navigator: WebNavigator?
     var onLoad: () -> Void = {}
 
@@ -50,6 +51,7 @@ struct ArtifactWebView: View {
                     focusToken: focusToken,
                     reloadToken: reloadToken,
                     sameOrigin: sameOrigin,
+                    browsing: browsing,
                     navigator: navigator,
                     onLoad: onLoad,
                     onFailure: handle
@@ -122,6 +124,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
     var focusToken = 0
     var reloadToken = 0
     var sameOrigin = false
+    var browsing = false
     var navigator: WebNavigator?
     var onLoad: () -> Void = {}
     var onFailure: (WebPageFailure) -> Void = { _ in }
@@ -136,6 +139,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
         view.pageZoom = zoom
         view.setValue(false, forKey: "drawsBackground")
         view.navigationDelegate = context.coordinator
+        view.uiDelegate = context.coordinator
         context.coordinator.sync(self)
         context.coordinator.loadedURL = url
         context.coordinator.focusToken = focusToken
@@ -166,12 +170,13 @@ struct AuthenticatedWebView: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, WKNavigationDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         var loadedURL: URL?
         var interactive = true
         var focusToken = 0
         var reloadToken = 0
         var sameOrigin = false
+        var browsing = false
         weak var navigator: WebNavigator?
         var onLoad: () -> Void = {}
         var onFailure: (WebPageFailure) -> Void = { _ in }
@@ -180,6 +185,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
         func sync(_ parent: AuthenticatedWebView) {
             interactive = parent.interactive
             sameOrigin = parent.sameOrigin
+            browsing = parent.browsing
             navigator = parent.navigator
             onLoad = parent.onLoad
             onFailure = parent.onFailure
@@ -197,6 +203,10 @@ struct AuthenticatedWebView: NSViewRepresentable {
                 decisionHandler(.cancel)
                 return
             }
+            if browsing {
+                decisionHandler(browse(target, mainFrame: navigationAction.targetFrame?.isMainFrame ?? true))
+                return
+            }
             if let navigator, navigator.permits(target, type: navigationAction.navigationType) {
                 decisionHandler(.allow)
                 return
@@ -209,6 +219,28 @@ struct AuthenticatedWebView: NSViewRepresentable {
                 NSWorkspace.shared.open(target)
             }
             decisionHandler(.cancel)
+        }
+
+        private func browse(_ target: URL, mainFrame: Bool) -> WKNavigationActionPolicy {
+            if Self.renders(target) { return .allow }
+            if mainFrame {
+                NSWorkspace.shared.open(target)
+            }
+            return .cancel
+        }
+
+        private static func renders(_ url: URL) -> Bool {
+            ["http", "https", "about", "data", "blob"].contains(url.scheme?.lowercased() ?? "")
+        }
+
+        func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+            guard browsing, let target = navigationAction.request.url else { return nil }
+            if Self.renders(target) {
+                webView.load(navigationAction.request)
+            } else {
+                NSWorkspace.shared.open(target)
+            }
+            return nil
         }
 
         private static func sameOrigin(_ target: URL, _ loaded: URL?) -> Bool {
@@ -229,6 +261,25 @@ struct AuthenticatedWebView: NSViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping @MainActor (WKNavigationResponsePolicy) -> Void) {
+            if browsing, navigationResponse.isForMainFrame {
+                if !navigationResponse.canShowMIMEType, let target = navigationResponse.response.url {
+                    refused = true
+                    decisionHandler(.cancel)
+                    NSWorkspace.shared.open(target)
+                    return
+                }
+                if let http = navigationResponse.response as? HTTPURLResponse, http.statusCode == 401,
+                    let target = http.url, Self.sameOrigin(target, ServerConfig.currentURL())
+                {
+                    refused = true
+                    decisionHandler(.cancel)
+                    onFailure(.status(401))
+                    return
+                }
+                refused = false
+                decisionHandler(.allow)
+                return
+            }
             if navigationResponse.isForMainFrame, let http = navigationResponse.response as? HTTPURLResponse, http.statusCode >= 400 {
                 refused = true
                 decisionHandler(.cancel)
@@ -260,6 +311,7 @@ struct AuthenticatedWebView: NSViewRepresentable {
 @Observable
 final class WebNavigator {
     private(set) var url: URL?
+    private(set) var title: String?
     private(set) var canGoBack = false
     private(set) var canGoForward = false
     private(set) var isLoading = false
@@ -277,6 +329,9 @@ final class WebNavigator {
         observations = [
             view.observe(\.url, options: [.initial, .new]) { [weak self] view, _ in
                 MainActor.assumeIsolated { self?.url = view.url }
+            },
+            view.observe(\.title, options: [.initial, .new]) { [weak self] view, _ in
+                MainActor.assumeIsolated { self?.title = view.title }
             },
             view.observe(\.canGoBack, options: [.initial, .new]) { [weak self] view, _ in
                 MainActor.assumeIsolated { self?.canGoBack = view.canGoBack }

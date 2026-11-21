@@ -31,6 +31,7 @@ final class ServerStore {
 
     static func isPaneKind(_ kind: String) -> Bool {
         kind == panelKind || kind == SimulatorStore.panelKind || kind == TestStore.panelKind || kind == SideThread.panelKind
+            || kind == WebPageStore.panelKind
     }
 
     func attach(_ client: BotsClient) {
