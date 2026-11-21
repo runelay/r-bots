@@ -12,6 +12,11 @@ struct BotConversationScreen: View {
     @State private var calling = false
     @State private var showsDetails = false
 
+    init(botID: String, sessionID: String? = nil) {
+        self.botID = botID
+        _sessionID = State(initialValue: sessionID)
+    }
+
     private var bot: Bot? { model.bot(id: botID) }
 
     private var conversation: BotConversation? {
@@ -86,8 +91,10 @@ struct BotConversationScreen: View {
             }
         }
         .task(id: bot != nil) {
-            guard let bot, sessionID == nil, !isDraft, active == nil else { return }
-            sessionID = await model.resolveMainSession(for: bot)
+            guard let bot, !isDraft, active == nil else { return }
+            if sessionID == nil {
+                sessionID = await model.resolveMainSession(for: bot)
+            }
             resolving = false
             activate()
         }

@@ -641,41 +641,71 @@ struct DevicesScreen: View {
     }
 }
 
+enum ServerEditTarget: Identifiable {
+    case new
+    case existing(ServerProfile)
+
+    var id: String {
+        switch self {
+        case .new: "new"
+        case .existing(let profile): profile.id
+        }
+    }
+}
+
 struct ServersScreen: View {
     private let session = AuthSession.shared
-    @State private var adding = false
-    @State private var name = ""
-    @State private var address = ""
+    @State private var editing: ServerEditTarget?
 
     var body: some View {
         let book = ServerConfig.book()
         List {
             Section {
                 ForEach(book.profiles) { profile in
-                    Button {
-                        Task { await session.switchServer(to: profile) }
-                    } label: {
-                        HStack(spacing: Spacing.m) {
-                            ServerBadge(profile: profile, size: 29)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(profile.name)
-                                    .foregroundStyle(Theme.textPrimary)
-                                Text(profile.address)
-                                    .font(BrandFonts.mono(12))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .lineLimit(1)
+                    HStack(spacing: Spacing.m) {
+                        Button {
+                            Task { await session.switchServer(to: profile) }
+                        } label: {
+                            HStack(spacing: Spacing.m) {
+                                ServerBadge(profile: profile, size: 29)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(profile.name)
+                                        .foregroundStyle(Theme.textPrimary)
+                                    Text(profile.address)
+                                        .font(BrandFonts.mono(12))
+                                        .foregroundStyle(Theme.textSecondary)
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                if profile.id == book.activeID {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Theme.brandText)
+                                }
                             }
-                            Spacer()
-                            if profile.id == book.activeID {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(Theme.brandText)
-                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        Button {
+                            editing = .existing(profile)
+                        } label: {
+                            Image(systemName: "info.circle")
+                                .font(.system(size: 18))
+                                .foregroundStyle(Theme.brandText)
+                        }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("Editar \(profile.name)")
                     }
                     .swipeActions {
                         if profile.id != book.activeID {
                             Button("Remover", role: .destructive) { session.removeServer(profile) }
+                        }
+                        Button("Editar") { editing = .existing(profile) }
+                    }
+                    .contextMenu {
+                        Button("Editar", systemImage: "pencil") { editing = .existing(profile) }
+                        if profile.id != book.activeID {
+                            Button("Remover", systemImage: "trash", role: .destructive) { session.removeServer(profile) }
                         }
                     }
                 }
@@ -684,29 +714,154 @@ struct ServersScreen: View {
             }
             .settingsRow()
             Section {
-                if adding {
-                    TextField("Nome (ex.: Casa)", text: $name)
-                    TextField("http://100.64.0.1:2000", text: $address)
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Adicionar") {
-                        if session.addServer(name: name, address: address) != nil {
-                            name = ""
-                            address = ""
-                            adding = false
-                        }
-                    }
-                    .disabled(ServerConfig.parse(AuthSession.normalized(address)) == nil)
-                } else {
-                    Button("Adicionar servidor", systemImage: "plus") { adding = true }
-                }
+                Button("Adicionar servidor", systemImage: "plus") { editing = .new }
             }
             .settingsRow()
         }
         .settingsList()
         .navigationTitle("Servidores")
         .id(session.serverRevision)
+        .sheet(item: $editing) { target in
+            ServerProfileSheet(target: target)
+        }
+    }
+}
+
+struct ServerProfileSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    private let session = AuthSession.shared
+    let target: ServerEditTarget
+
+    @State private var name: String
+    @State private var address: String
+    @State private var color: String
+    @State private var symbol: String
+
+    init(target: ServerEditTarget) {
+        self.target = target
+        switch target {
+        case .existing(let profile):
+            _name = State(initialValue: profile.name)
+            _address = State(initialValue: profile.address)
+            _color = State(initialValue: profile.color)
+            _symbol = State(initialValue: profile.symbol)
+        case .new:
+            let style = AuthSession.nextStyle(in: ServerConfig.book())
+            _name = State(initialValue: "")
+            _address = State(initialValue: "")
+            _color = State(initialValue: style.color)
+            _symbol = State(initialValue: style.symbol)
+        }
+    }
+
+    private var parsed: URL? { ServerConfig.parse(AuthSession.normalized(address)) }
+    private var placeholder: String { parsed.map(AuthSession.defaultName(for:)) ?? "Local, VPS…" }
+    private var preview: ServerProfile {
+        ServerProfile(id: target.id, name: name, address: address, color: color, symbol: symbol)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    HStack {
+                        Spacer()
+                        ServerBadge(profile: preview, size: 64)
+                        Spacer()
+                    }
+                    .padding(.vertical, Spacing.s)
+                }
+                .listRowBackground(Color.clear)
+                Section("Nome") {
+                    TextField(placeholder, text: $name)
+                }
+                .settingsRow()
+                Section("Endereço") {
+                    TextField("http://100.64.0.1:2000", text: $address)
+                        .font(BrandFonts.mono(15))
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+                .settingsRow()
+                Section("Cor") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: Spacing.s) {
+                        ForEach(ServerProfile.colors, id: \.self) { option in
+                            Button {
+                                color = option
+                            } label: {
+                                Circle()
+                                    .fill(Theme.accent(option).gradient)
+                                    .frame(width: 28, height: 28)
+                                    .padding(3)
+                                    .background(color == option ? Theme.surfaceRaised : Color.clear, in: Circle())
+                                    .contentShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(Theme.accentName(option))
+                            .accessibilityAddTraits(color == option ? .isSelected : [])
+                        }
+                    }
+                    .padding(.vertical, Spacing.xs)
+                }
+                .settingsRow()
+                Section("Ícone") {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: Spacing.s) {
+                        ForEach(ServerProfile.symbols, id: \.self) { option in
+                            Button {
+                                symbol = option
+                            } label: {
+                                Image(systemName: option)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundStyle(symbol == option ? Theme.textPrimary : Theme.textTertiary)
+                                    .frame(width: 34, height: 34)
+                                    .background(symbol == option ? Theme.surfaceRaised : Color.clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(symbol == option ? .isSelected : [])
+                        }
+                    }
+                    .padding(.vertical, Spacing.xs)
+                }
+                .settingsRow()
+            }
+            .settingsList()
+            .navigationTitle(isNew ? "Novo servidor" : "Editar servidor")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancelar") { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(isNew ? "Adicionar" : "Salvar") { save() }
+                        .disabled(parsed == nil)
+                }
+            }
+        }
+        .presentationBackground(Theme.background)
+    }
+
+    private var isNew: Bool {
+        if case .new = target { return true }
+        return false
+    }
+
+    private func save() {
+        switch target {
+        case .new:
+            guard parsed != nil else { return }
+            dismiss()
+            _ = session.addServer(name: name, address: address, color: color, symbol: symbol)
+        case .existing(let original):
+            var updated = original
+            updated.name = name
+            updated.address = address
+            updated.color = color
+            updated.symbol = symbol
+            dismiss()
+            Task { _ = await session.updateServer(updated) }
+        }
     }
 }
 

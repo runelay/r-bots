@@ -22,11 +22,27 @@ final class AppModel {
     private(set) var notice: String?
     private(set) var meta: ServerMeta = .fallback
     private(set) var accounts: [AIAccount] = []
+    private(set) var sections: [BotSection] = []
+    private(set) var searchResults: LoadState<[Bot]> = .idle
+    var searchQuery = "" {
+        didSet { scheduleSearch() }
+    }
+
+    var groupBySection = UserDefaults.standard.object(forKey: "sidebar.groupBySection") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(groupBySection, forKey: "sidebar.groupBySection") }
+    }
+    var collapsedBots: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "sidebar.collapsedBots") ?? []) {
+        didSet { UserDefaults.standard.set(Array(collapsedBots), forKey: "sidebar.collapsedBots") }
+    }
+    var collapsedThreads: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "sidebar.collapsedThreads") ?? []) {
+        didSet { UserDefaults.standard.set(Array(collapsedThreads), forKey: "sidebar.collapsedThreads") }
+    }
 
     @ObservationIgnored private var stores: [String: ConversationStore] = [:]
     @ObservationIgnored private var drafts: [String: ConversationStore] = [:]
     @ObservationIgnored private var statusTask: Task<Void, Never>?
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private(set) var openSessions: Set<String> = []
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
@@ -44,10 +60,54 @@ final class AppModel {
             }
     }
 
+    var pinnedBots: [Bot] {
+        visibleBots.filter(\.pinned)
+    }
+
+    var activeSections: [BotSection] {
+        sections.filter { $0.archivedAt == nil }
+    }
+
+    private func scheduleSearch() {
+        searchTask?.cancel()
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            searchResults = .idle
+            return
+        }
+        if case .loaded = searchResults {
+        } else {
+            searchResults = .loading
+        }
+        let client = client
+        searchTask = Task {
+            do {
+                try await Task.sleep(for: .milliseconds(250))
+            } catch {
+                return
+            }
+            do {
+                let found = try await client.searchBots(query).filter { !$0.isArchived }
+                guard !Task.isCancelled else { return }
+                searchResults = .loaded(found)
+            } catch {
+                guard !Task.isCancelled else { return }
+                searchResults = .failed("A busca não respondeu agora.")
+            }
+        }
+    }
+
+    func loadSections() async {
+        if let list = await client.sections() {
+            withAnimation(Motion.spring) { sections = list }
+        }
+    }
+
     func start() async {
         startStatusStream()
         async let loadedMeta = client.meta()
         await loadBots()
+        await loadSections()
         if let value = await loadedMeta { meta = value }
     }
 
@@ -66,6 +126,10 @@ final class AppModel {
         drafts = [:]
         bots = []
         conversationLists = [:]
+        sections = []
+        searchTask?.cancel()
+        searchQuery = ""
+        searchResults = .idle
         liveStatuses = [:]
         sessionStatuses = [:]
         listState = .idle
@@ -126,6 +190,7 @@ final class AppModel {
 
     func refresh() async {
         await loadBots()
+        await loadSections()
     }
 
     private func scheduleRefresh() {
@@ -140,13 +205,69 @@ final class AppModel {
     private func syncConversations(from list: [Bot]) {
         var next: [String: [BotConversation]] = [:]
         for bot in list where !bot.isGroup {
-            next[bot.id] = bot.conversations
+            next[bot.id] = bot.conversations.filter { $0.archivedAt == nil }
         }
         conversationLists = next
     }
 
     func conversations(for botID: String) -> [BotConversation] {
         conversationLists[botID] ?? []
+    }
+
+    func showsConversations(_ bot: Bot) -> Bool {
+        !bot.isGroup && conversations(for: bot.id).count > 1
+    }
+
+    func latestConversation(for botID: String) -> BotConversation? {
+        conversations(for: botID).max { ($0.activityDate ?? .distantPast) < ($1.activityDate ?? .distantPast) }
+    }
+
+    func conversationTree(for botID: String) -> [(conversation: BotConversation, depth: Int)] {
+        let list = conversations(for: botID)
+        let ids = Set(list.map(\.sessionId))
+        var children: [String: [BotConversation]] = [:]
+        var roots: [BotConversation] = []
+        for item in list {
+            if let parent = item.parentSessionId, parent != item.sessionId, ids.contains(parent) {
+                children[parent, default: []].append(item)
+            } else {
+                roots.append(item)
+            }
+        }
+        var result: [(conversation: BotConversation, depth: Int)] = []
+        var seen: Set<String> = []
+        func walk(_ item: BotConversation, depth: Int) {
+            guard seen.insert(item.sessionId).inserted else { return }
+            result.append((item, depth))
+            guard !collapsedThreads.contains(item.sessionId) else { return }
+            for child in (children[item.sessionId] ?? []).sorted(by: { $0.createdAt < $1.createdAt }) {
+                walk(child, depth: depth + 1)
+            }
+        }
+        for root in roots {
+            walk(root, depth: 0)
+        }
+        return result
+    }
+
+    func childThreadCount(of conversation: BotConversation) -> Int {
+        conversations(for: conversation.botId).filter { $0.parentSessionId == conversation.sessionId }.count
+    }
+
+    func toggleThreadChildren(_ conversation: BotConversation) {
+        if collapsedThreads.contains(conversation.sessionId) {
+            collapsedThreads.remove(conversation.sessionId)
+        } else {
+            collapsedThreads.insert(conversation.sessionId)
+        }
+    }
+
+    func toggleCollapsed(_ botID: String) {
+        if collapsedBots.contains(botID) {
+            collapsedBots.remove(botID)
+        } else {
+            collapsedBots.insert(botID)
+        }
     }
 
     func loadConversations(for botID: String) async {
@@ -417,6 +538,9 @@ final class AppModel {
             let areas = value["areas"]?.arrayValue?.compactMap(\.stringValue) ?? []
             if areas.contains(where: { ["bots", "conversations"].contains($0) }) {
                 scheduleRefresh()
+            }
+            if areas.contains("sections") {
+                Task { await loadSections() }
             }
         default:
             break

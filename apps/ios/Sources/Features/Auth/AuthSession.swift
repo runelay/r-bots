@@ -119,13 +119,15 @@ final class AuthSession {
         if let existing = book.profiles.first(where: { $0.origin == origin }) {
             book.activeID = existing.id
         } else if book.profiles.count == 1, AuthStore.read(.session, server: book.profiles[0].url ?? url) == nil {
+            if book.profiles[0].name == book.profiles[0].url?.host() {
+                book.profiles[0].name = "Principal"
+            }
             book.profiles[0].address = url.absoluteString
-            book.profiles[0].name = url.host() ?? "Principal"
         } else {
             let colors = ServerProfile.colors
             let profile = ServerProfile(
                 id: UUID().uuidString,
-                name: url.host() ?? "Servidor",
+                name: defaultName(for: url),
                 address: url.absoluteString,
                 color: colors[book.profiles.count % colors.count],
                 symbol: ServerProfile.symbols[book.profiles.count % ServerProfile.symbols.count]
@@ -134,6 +136,22 @@ final class AuthSession {
             book.activeID = profile.id
         }
         ServerConfig.save(book)
+    }
+
+    static func defaultName(for url: URL) -> String {
+        guard let host = url.host()?.lowercased(), !host.isEmpty else { return "Servidor" }
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" { return "Local" }
+        let isIP = host.contains(":") || host.split(separator: ".").allSatisfy { !$0.isEmpty && $0.allSatisfy(\.isNumber) }
+        if isIP { return "Servidor" }
+        guard let first = host.split(separator: ".").first, !first.isEmpty else { return "Servidor" }
+        if first == "vps" { return "VPS" }
+        return first.prefix(1).uppercased() + first.dropFirst()
+    }
+
+    static func nextStyle(in book: ServerProfileBook) -> (color: String, symbol: String) {
+        let used = Set(book.profiles.map(\.color))
+        let color = ServerProfile.colors.first { !used.contains($0) } ?? ServerProfile.colors[book.profiles.count % ServerProfile.colors.count]
+        return (color, "cloud")
     }
 
     func switchServer(to profile: ServerProfile) async {
@@ -146,19 +164,41 @@ final class AuthSession {
         await bootstrap()
     }
 
-    func addServer(name: String, address: String) -> ServerProfile? {
+    func addServer(name: String, address: String, color: String? = nil, symbol: String? = nil) -> ServerProfile? {
         guard let url = ServerConfig.parse(Self.normalized(address)) else { return nil }
         var book = ServerConfig.book()
+        let style = Self.nextStyle(in: book)
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let profile = ServerProfile(
             id: UUID().uuidString,
-            name: name.isEmpty ? (url.host() ?? "Servidor") : name,
+            name: trimmed.isEmpty ? Self.defaultName(for: url) : trimmed,
             address: url.absoluteString,
-            color: ServerProfile.colors[book.profiles.count % ServerProfile.colors.count],
-            symbol: ServerProfile.symbols[book.profiles.count % ServerProfile.symbols.count]
+            color: color ?? style.color,
+            symbol: symbol ?? style.symbol
         )
         book.profiles.append(profile)
         ServerConfig.save(book)
+        serverRevision += 1
         return profile
+    }
+
+    func updateServer(_ profile: ServerProfile) async -> Bool {
+        guard let url = ServerConfig.parse(Self.normalized(profile.address)) else { return false }
+        var book = ServerConfig.book()
+        guard let index = book.profiles.firstIndex(where: { $0.id == profile.id }) else { return false }
+        let previous = book.profiles[index]
+        var updated = profile
+        let trimmed = profile.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        updated.name = trimmed.isEmpty ? Self.defaultName(for: url) : trimmed
+        updated.address = url.absoluteString
+        book.profiles[index] = updated
+        ServerConfig.save(book)
+        serverRevision += 1
+        if updated.id == book.activeID, previous.address != updated.address {
+            state = .checking
+            await bootstrap()
+        }
+        return true
     }
 
     func removeServer(_ profile: ServerProfile) {
