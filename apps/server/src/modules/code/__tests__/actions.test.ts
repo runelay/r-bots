@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { codeProcesses, gitArgs, gitSync, makeRepo, newSession } from "../../../../test/code-helpers";
 import type { ProcessCall, ProcessReply } from "../../../../test/helpers";
 import { resetData } from "../../../../test/helpers";
-import { listWorktrees } from "../repositories/code.repository";
+import { listWorktrees, touchWorktree } from "../repositories/code.repository";
 import {
   closeTaskWorkspace,
   type DeliverInput,
@@ -61,6 +61,68 @@ describe("task workspaces", () => {
     expect((await mentionedRepo("email@act-open @ACT-OPEN", []))?.name).toBe("act-open");
     expect(await mentionedRepo("@act-open", ["Act-Open"])).toBeNull();
     expect(await mentionedRepo("@nothing-here", [])).toBeNull();
+  });
+});
+
+describe("previous task worktree", () => {
+  async function leftBehind(name: string, origin = false) {
+    await makeRepo(name, { origin });
+    await listRepos(true);
+    const first = await newSession(`bot-${name}`);
+    const { workspace } = await openTaskWorkspace(first, `bot-${name}`, name, "same task");
+    await waitForInstall(workspace);
+    return { first, workspace };
+  }
+
+  test("a new session takes over the worktree a closed session left with pending work", async () => {
+    const { first, workspace } = await leftBehind("act-claim");
+    change(workspace);
+    await closeTaskWorkspace(first);
+    const second = await newSession("bot-act-claim");
+    const { workspace: claimed, created } = await openTaskWorkspace(second, "bot-act-claim", "act-claim", "same task");
+    expect(created).toBe(false);
+    expect(claimed.path).toBe(workspace.path);
+    expect(claimed.task).toBe("same task");
+    expect(activeWorkspace(second)?.id).toBe(workspace.id);
+    const record = (await listWorktrees()).find((item) => item.id === workspace.id);
+    expect(record).toMatchObject({ status: "alive", sessionId: second.meta.sessionId });
+    const again = await openTaskWorkspace(second, "bot-act-claim", "act-claim", "same task");
+    expect(again.workspace.id).toBe(workspace.id);
+  });
+
+  test("leaves alone worktrees still open elsewhere, clean, removed, gone or from another bot", async () => {
+    const { first, workspace } = await leftBehind("act-keep", true);
+    const busy = await openTaskWorkspace(await newSession("bot-act-keep"), "bot-act-keep", "act-keep", "same task");
+    expect(busy.workspace.id).not.toBe(workspace.id);
+
+    await closeTaskWorkspace(first);
+    const clean = await openTaskWorkspace(await newSession("bot-act-keep"), "bot-act-keep", "act-keep", "same task");
+    expect(clean.workspace.id).not.toBe(workspace.id);
+
+    gitSync(workspace.path, ["commit", "-q", "--allow-empty", "-m", "wip"]);
+    gitSync(workspace.path, ["push", "-q", "-u", "origin", workspace.branch]);
+    await touchWorktree(workspace.id, { status: "delivered" });
+    const pushed = await openTaskWorkspace(await newSession("bot-act-keep"), "bot-act-keep", "act-keep", "same task");
+    expect(pushed.workspace.id).not.toBe(workspace.id);
+
+    gitSync(workspace.path, ["commit", "-q", "--allow-empty", "-m", "more"]);
+    const other = await openTaskWorkspace(await newSession("bot-other"), "bot-other", "act-keep", "same task");
+    expect(other.workspace.id).not.toBe(workspace.id);
+    const ahead = await openTaskWorkspace(await newSession("bot-act-keep"), "bot-act-keep", "act-keep", "same task");
+    expect(ahead.workspace.id).toBe(workspace.id);
+  });
+
+  test("skips removed records and worktrees whose folder is gone", async () => {
+    const { first, workspace } = await leftBehind("act-gone");
+    change(workspace);
+    await closeTaskWorkspace(first);
+    await touchWorktree(workspace.id, { status: "removed" });
+    const removed = await openTaskWorkspace(await newSession("bot-act-gone"), "bot-act-gone", "act-gone", "same task");
+    expect(removed.workspace.id).not.toBe(workspace.id);
+
+    await touchWorktree(workspace.id, { status: "closed", path: join(workspace.path, "missing") });
+    const gone = await openTaskWorkspace(await newSession("bot-act-gone"), "bot-act-gone", "act-gone", "same task");
+    expect(gone.workspace.id).not.toBe(workspace.id);
   });
 });
 
