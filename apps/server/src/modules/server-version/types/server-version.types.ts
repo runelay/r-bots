@@ -35,5 +35,6 @@ export interface ServerVersionDeps {
   now: () => number;
   checks: () => boolean;
   settings: () => ReleaseSettings;
+  ghToken: () => Promise<string | null>;
   timeoutMs: number;
 }

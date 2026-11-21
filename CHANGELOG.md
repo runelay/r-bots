@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixes
+
+- The update notice works with a private release repo: without `RBOTS_GITHUB_TOKEN`, the server checks GitHub with its `gh` login. Before, GitHub answered 404 and the app never offered the update.
+
 ## v0.1.6
 
 ### iPhone

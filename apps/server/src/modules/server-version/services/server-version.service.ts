@@ -1,3 +1,4 @@
+import { run } from "@runelay-bots/providers/proc";
 import { env } from "../../../config/env";
 import { rememberSecretValue } from "../../../shared/redact";
 import {
@@ -27,6 +28,7 @@ const defaults: ServerVersionDeps = {
     token: env.RBOTS_GITHUB_TOKEN ?? null,
     repo: env.RBOTS_RELEASE_REPO,
   }),
+  ghToken: () => ghAuthToken(),
   timeoutMs: registryTimeoutMs,
 };
 
@@ -36,6 +38,15 @@ const cache = new Map<string, { value: LatestRelease | null; expiresAt: number }
 export function useServerVersionDeps(overrides: Partial<ServerVersionDeps> | null) {
   deps = overrides ? { ...defaults, ...overrides } : defaults;
   cache.clear();
+}
+
+export async function ghAuthToken(runner: typeof run = run) {
+  try {
+    const result = await runner("gh", ["auth", "token"], { timeoutMs: registryTimeoutMs });
+    return result.code === 0 ? result.stdout.trim() || null : null;
+  } catch {
+    return null;
+  }
 }
 
 export function normalizeVersion(value: string | null | undefined) {
@@ -90,7 +101,7 @@ async function fetchLatest(settings: ReleaseSettings) {
   try {
     const response = await deps.fetch(`${githubApiUrl}/repos/${settings.repo}/${path}`, {
       signal: AbortSignal.timeout(deps.timeoutMs),
-      headers: headersFor(settings.token),
+      headers: headersFor(settings.token ?? (await deps.ghToken())),
     });
     if (!response.ok) return null;
     const body = (await response.json()) as unknown;
