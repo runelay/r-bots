@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, e.g. v0.2.0 (needs the matching package.json version and ## heading in CHANGELOG.md)"
+        description: "Version to release, e.g. v0.2.0. Bumps every version, moves ## Unreleased in CHANGELOG.md under it, commits to main and tags."
         required: true
 
 permissions: {}
@@ -25,21 +25,31 @@ env:
 jobs:
   tag:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.event_name == 'workflow_dispatch'
-      - name: Create the tag
+        with:
+          ref: main
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - name: Bump, commit and tag
         if: github.event_name == 'workflow_dispatch'
         run: |
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" > /dev/null; then
             echo "::error::tag $TAG already exists"
             exit 1
           fi
+          bun scripts/release/bump.ts "$TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): $TAG"
           git tag "$TAG"
-          git push origin "refs/tags/$TAG"
+          git push origin HEAD:main "refs/tags/$TAG"
 
   meta:
     needs: tag

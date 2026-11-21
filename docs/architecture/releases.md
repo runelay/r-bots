@@ -43,9 +43,7 @@ e o `RBOX_IMAGE` do runner usa `${RBOX_IMAGE:-<a mesma imagem>}`. O servidor rec
 
 ### R3. Workflow `.github/workflows/release.yml`
 
-Disparo: `workflow_dispatch` com a versão (`vX.Y.Z`), o caminho normal, ou push de tag `v*`. Pelo dispatch, o job `tag` cria a tag no commit da main e o resto roda no mesmo run. Permissões por job: `contents: write` no `tag` e na publicação, `packages: write` e `id-token: write` no build.
-
-Antes do dispatch vem o PR de release, igual à runelay: branch `chore/release-vX.Y.Z`, `bun scripts/release/bump.ts X.Y.Z` (sobe a versão de todos os `package.json` dos workspaces, das versões de workspace no `bun.lock` e do app do iPhone, e move o `## Unreleased` do `CHANGELOG.md` para `## vX.Y.Z`), commit `chore(release): vX.Y.Z`, PR para a main. Nada de commit de release ou tag direto na main.
+Disparo: `workflow_dispatch` com a versão (`vX.Y.Z`), o caminho normal, ou push de tag `v*`. Pelo dispatch, o job `tag` roda `scripts/release/bump.ts` (sobe a versão de todos os `package.json` dos workspaces, das versões de workspace no `bun.lock` e do app do iPhone, e move o `## Unreleased` do `CHANGELOG.md` para `## vX.Y.Z`), commita `chore(release): vX.Y.Z` na main, cria a tag e o resto roda no mesmo run. Sem PR de release e sem bump ou tag à mão. Permissões por job: `contents: write` no `tag` e na publicação, `packages: write` e `id-token: write` no build.
 
 1. Confere tag × `package.json`, exige a seção `## vX.Y.Z` no `CHANGELOG.md` e roda os testes de `scripts/release`.
 2. Build e push da imagem (R2) por digest, com SBOM e proveniência (`mode=max`). Trivy: relatório de HIGH/CRITICAL no resumo e falha com CRITICAL que tem correção. Confere que toda camada é zstd e escreve no resumo o número de camadas e o tamanho comprimido. Depois aplica as tags (`<versão>`, e `<major>.<minor>` e `latest` no stable) e confere que todas apontam para o digest.

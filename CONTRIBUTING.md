@@ -33,7 +33,7 @@ CI runs the same three steps on every pull request, plus shellcheck, CodeQL (onc
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org): `feat(server): add emoji reactions to messages`.
 - A change to a route, event or bot tool updates [docs/protocol](docs/protocol/README.md) in the same PR.
 - User-facing changes get a line under `## Unreleased` in `CHANGELOG.md`.
-- Releases go through a `chore/release-vX.Y.Z` PR made with `bun scripts/release/bump.ts X.Y.Z`; after the merge a maintainer runs the `release` workflow with `vX.Y.Z`.
+- A maintainer releases by running the `release` workflow with `vX.Y.Z`; it bumps the versions, moves `## Unreleased` and tags.
 
 The full rules for code, tests and security are in [AGENTS.md](AGENTS.md).
 
