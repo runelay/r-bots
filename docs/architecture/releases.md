@@ -43,9 +43,11 @@ e o `RBOX_IMAGE` do runner usa `${RBOX_IMAGE:-<a mesma imagem>}`. O servidor rec
 
 ### R3. Workflow `.github/workflows/release.yml`
 
-Disparo: push de tag `v*`. Permissões por job: `packages: write` e `id-token: write` no build, `contents: write` na publicação.
+Disparo: `workflow_dispatch` com a versão (`vX.Y.Z`), o caminho normal, ou push de tag `v*`. Pelo dispatch, o job `tag` cria a tag no commit da main e o resto roda no mesmo run. Permissões por job: `contents: write` no `tag` e na publicação, `packages: write` e `id-token: write` no build.
 
-1. Confere tag × `package.json` e roda o teste do `render-compose`.
+Antes do dispatch vem o PR de release, igual à runelay: branch `chore/release-vX.Y.Z`, `bun scripts/release/bump.ts X.Y.Z` (sobe a versão de todos os `package.json` dos workspaces, das versões de workspace no `bun.lock` e do app do iPhone, e move o `## Unreleased` do `CHANGELOG.md` para `## vX.Y.Z`), commit `chore(release): vX.Y.Z`, PR para a main. Nada de commit de release ou tag direto na main.
+
+1. Confere tag × `package.json`, exige a seção `## vX.Y.Z` no `CHANGELOG.md` e roda os testes de `scripts/release`.
 2. Build e push da imagem (R2) por digest, com SBOM e proveniência (`mode=max`). Trivy: relatório de HIGH/CRITICAL no resumo e falha com CRITICAL que tem correção. Confere que toda camada é zstd e escreve no resumo o número de camadas e o tamanho comprimido. Depois aplica as tags (`<versão>`, e `<major>.<minor>` e `latest` no stable) e confere que todas apontam para o digest.
 3. **cosign só com o repo público** (`if: github.event.repository.private == false`): a assinatura keyless grava o nome do repo e do workflow no Rekor, que é público. Vale para a imagem e para o `SHA256SUMS`. Com o repo privado, as notas dizem que não há assinatura e mostram só o `sha256sum -c`.
 4. Monta `r-bots-<versão>.tar.gz` com:
@@ -53,7 +55,7 @@ Disparo: push de tag `v*`. Permissões por job: `packages: write` e `id-token: w
    - `deploy/` inteiro (secrets, postgres, redis, garage, observability);
    - `infra/docker/install.sh` e `infra/docker/rbots`;
    - `VERSION` com a versão.
-5. Anexa à release: o tarball, o `install.sh` da raiz, `images.txt` (uma linha, `ghcr.io/runelay/r-bots@<digest>`), `SHA256SUMS` e, com o repo público, `SHA256SUMS.sigstore.json`. Notas com a imagem, o digest e as tags, mais as geradas pelo GitHub. Pre-release quando a tag tem sufixo.
+5. Anexa à release: o tarball, o `install.sh` da raiz, `images.txt` (uma linha, `ghcr.io/runelay/r-bots@<digest>`), `SHA256SUMS` e, com o repo público, `SHA256SUMS.sigstore.json`. Notas = a seção da versão no `CHANGELOG.md`, seguida da imagem, do digest, das tags e de como conferir a assinatura (título `r/bots vX.Y.Z`). Pre-release quando a tag tem sufixo.
 
 ### R4. Layout na máquina
 
