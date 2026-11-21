@@ -29,10 +29,9 @@ struct BotListScreen: View {
                 .environment(model)
             }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarLeading) {
                     ServerSwitcher(managing: $managingServers)
                 }
-                ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         creating = true

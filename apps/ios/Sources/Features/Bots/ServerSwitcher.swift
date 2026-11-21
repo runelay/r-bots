@@ -50,6 +50,13 @@ struct ServerSwitcher: View {
                             .background(Theme.background, in: Circle())
                             .offset(x: 3, y: 3)
                     }
+                Text(active.name)
+                    .font(BrandFonts.sans(15, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 150, alignment: .leading)
+                    .padding(.leading, 2)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
