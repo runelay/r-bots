@@ -42,7 +42,7 @@ struct SessionStream: Sendable {
 
             do {
                 let request = try client.streamRequest(basePath: basePath, sessionId: sessionId, startIndex: cursor)
-                let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                let (bytes, response) = try await HTTPSessions.streaming.bytes(for: request)
                 AuthStore.reportUnauthorized(response)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
 

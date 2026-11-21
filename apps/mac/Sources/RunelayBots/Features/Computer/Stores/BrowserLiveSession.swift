@@ -72,7 +72,7 @@ final class BrowserLiveSession {
                 }
                 var request = URLRequest(url: url)
                 AuthStore.authorize(&request)
-                let socket = URLSession.shared.webSocketTask(with: request)
+                let socket = HTTPSessions.streaming.webSocketTask(with: request)
                 self.socket = socket
                 socket.resume()
                 let outcome = await Self.receive(on: socket) { [weak self] event in

@@ -90,7 +90,8 @@ final class ConversationStore {
     @ObservationIgnored private var turnIsSchedule = false
     @ObservationIgnored var onNotify: (@MainActor (StoreNotification) -> Void)?
     @ObservationIgnored var onDelegation: (@MainActor (String, String?) -> Void)?
-    @ObservationIgnored var createSession: (@MainActor (String, [String], [String]) async throws -> String)?
+    @ObservationIgnored var createSession: (@MainActor @Sendable (String, [String], [String]) async throws -> String)?
+    nonisolated static let deliveryDeadline: Double = 30
     @ObservationIgnored private var progressStopShown: Set<String> = []
     private(set) var lastTurnEndedAt: Date?
     private(set) var voiceRatings: [String: String] = [:]
@@ -696,16 +697,19 @@ final class ConversationStore {
         if existing == nil {
             isCreating = true
         }
+        let create = createSession
         Task {
             do {
                 if let existing {
-                    try await client.sendMessage(basePath: basePath, sessionId: existing, message: text, skills: skills, attachments: attachments)
+                    _ = try await Deadline.run(seconds: Self.deliveryDeadline) {
+                        try await client.sendMessage(basePath: basePath, sessionId: existing, message: text, skills: skills, attachments: attachments)
+                    }
                 } else {
-                    let newID: String
-                    if let createSession {
-                        newID = try await createSession(text, skills, attachments)
-                    } else {
-                        newID = try await client.createSession(basePath: basePath, message: text, skills: skills, attachments: attachments)
+                    let newID = try await Deadline.run(seconds: Self.deliveryDeadline) {
+                        if let create {
+                            return try await create(text, skills, attachments)
+                        }
+                        return try await client.createSession(basePath: basePath, message: text, skills: skills, attachments: attachments)
                     }
                     sessionId = newID
                     isCreating = false

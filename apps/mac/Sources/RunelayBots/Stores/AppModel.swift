@@ -2194,7 +2194,7 @@ final class AppModel {
             while !Task.isCancelled {
                 do {
                     let request = try client.statusStreamRequest()
-                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    let (bytes, response) = try await HTTPSessions.streaming.bytes(for: request)
                     AuthStore.reportUnauthorized(response)
                     guard (response as? HTTPURLResponse)?.statusCode == 200 else {
                         throw BotsClient.ClientError.http((response as? HTTPURLResponse)?.statusCode ?? 0, nil)

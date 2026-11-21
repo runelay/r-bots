@@ -102,7 +102,7 @@ final class ServerLogStore {
                 guard let self else { return }
                 do {
                     let request = try client.serverLogStreamRequest(id: self.serverID)
-                    let (bytes, response) = try await URLSession.shared.bytes(for: request)
+                    let (bytes, response) = try await HTTPSessions.streaming.bytes(for: request)
                     AuthStore.reportUnauthorized(response)
                     if let http = response as? HTTPURLResponse, http.statusCode != 200 {
                         self.connected = false
