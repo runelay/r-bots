@@ -95,6 +95,7 @@ Contrato verificado entre o servidor do r/bots (gateway em `127.0.0.1:2000`, exp
 | v57 | Git e Linear no app: `GET /github/summary`, `GET /github/pulls`, `GET/POST /github/repos/:dono/:nome/pulls/:n[/merge\|review\|comment\|reply\|ready\|rerun]`, `GET /linear/summary\|views\|board`, `GET/POST /linear/issues/:id[/state\|assign\|start]`, só do dono | [github-linear](github-linear.md) |
 | v58 | `icon`/`color` nas visões do Linear, visões `project:<uuid>`, `GET /linear/labels\|projects\|users`, `label`/`project` no quadro, `<linear-image>` vira imagem, `GET /github/asset`, review: `GET /review`, `PUT /review/presets`, `POST /review/run` | [github-linear](github-linear.md) |
 | v59 | reações com emoji: tabela `message_reactions`, `POST/DELETE <base>/session/:id/reactions`, `reactions` no `events` e no `GET /bots/:id/thread`, eventos `reaction.added`/`reaction.removed`, ferramentas `react`/`unreact`, sinal no próximo turno e na captura de memória | [conversations](conversations.md) |
+| v60 | atualizar o servidor pelo app: `POST /server/update`, `update` no `GET /server/version`, vigia do host (`rbots update-agent`, `rbots-update.path`) | [usage-status-limits](usage-status-limits.md) |
 
 ## Contrato
 

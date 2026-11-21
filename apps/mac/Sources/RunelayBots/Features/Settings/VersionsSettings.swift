@@ -16,12 +16,29 @@ final class VersionsStore {
         case rollback
     }
 
+    enum ServerUpdatePhase: Equatable {
+        case requesting
+        case waiting(String?)
+        case restarting
+        case succeeded(String)
+        case failed(String)
+
+        var isActive: Bool {
+            switch self {
+            case .requesting, .waiting, .restarting: true
+            case .succeeded, .failed: false
+            }
+        }
+    }
+
     var serverState: LoadState = .loading
     var server: ServerVersionInfo?
     var cliState: LoadState = .loading
     var clis: [CliVersion] = []
     var pending: [String: PendingAction] = [:]
     var errors: [String: String] = [:]
+    var serverPhase: ServerUpdatePhase?
+    var serverTurnsRunning: Int?
 
     var isUpdating: Bool {
         pending.values.contains(.update) || clis.contains(where: \.updating)
@@ -51,6 +68,10 @@ final class VersionsStore {
             if let info = try await model.client.serverVersion() {
                 server = info
                 serverState = .loaded
+                if let update = info.update, update.isInProgress, serverPhase?.isActive != true {
+                    serverPhase = .waiting(update.step)
+                    Task { await followServerUpdate(model: model) }
+                }
             } else {
                 server = nil
                 serverState = .unavailable
@@ -76,6 +97,54 @@ final class VersionsStore {
         } catch {
             if clis.isEmpty { cliState = .failed(ErrorMessage.describe(error)) }
         }
+    }
+
+    func updateServer(model: AppModel, force: Bool = false) async {
+        guard serverPhase?.isActive != true else { return }
+        serverPhase = .requesting
+        serverTurnsRunning = nil
+        do {
+            switch try await model.client.requestServerUpdate(force: force) {
+            case .turnsRunning(let count):
+                serverPhase = nil
+                serverTurnsRunning = count
+                return
+            case .queued:
+                serverPhase = .waiting(nil)
+            }
+        } catch {
+            serverPhase = .failed(ErrorMessage.describe(error))
+            return
+        }
+        await followServerUpdate(model: model)
+    }
+
+    private func followServerUpdate(model: AppModel) async {
+        let deadline = Date.now.addingTimeInterval(4 * 60)
+        while Date.now < deadline {
+            try? await Task.sleep(for: .seconds(2))
+            do {
+                guard let info = try await model.client.serverVersion() else {
+                    serverPhase = .restarting
+                    continue
+                }
+                server = info
+                serverState = .loaded
+                guard let update = info.update else { continue }
+                if update.isInProgress {
+                    serverPhase = .waiting(update.step)
+                } else if update.succeeded {
+                    serverPhase = .succeeded(update.to ?? info.current)
+                    return
+                } else if update.failed {
+                    serverPhase = .failed(update.message ?? "A atualização não deu certo.")
+                    return
+                }
+            } catch {
+                serverPhase = .restarting
+            }
+        }
+        serverPhase = .failed("O servidor não voltou em 4 minutos. Veja rbots status no servidor.")
     }
 
     func update(_ cli: CliVersion, model: AppModel) async {
@@ -162,7 +231,7 @@ struct VersionsSettings: View {
             }
         case .loaded:
             if let info = store.server {
-                ServerVersionGroup(info: info)
+                ServerVersionGroup(info: info, store: store)
             }
         }
     }
@@ -201,8 +270,31 @@ private struct VersionsPlaceholder: View {
 }
 
 private struct ServerVersionGroup: View {
+    @Environment(AppModel.self) private var model
     let info: ServerVersionInfo
+    let store: VersionsStore
     @State private var copied = false
+
+    private var phase: VersionsStore.ServerUpdatePhase? { store.serverPhase }
+
+    private var showsUpdater: Bool {
+        if phase?.isActive == true { return true }
+        if case .failed = phase { return info.updateAvailable }
+        return info.updateAvailable && info.canUpdateFromApp
+    }
+
+    private var showsCommand: Bool {
+        guard info.updateAvailable, phase?.isActive != true else { return false }
+        if case .failed = phase { return true }
+        return !info.canUpdateFromApp
+    }
+
+    private var confirmTurns: Binding<Bool> {
+        Binding(
+            get: { store.serverTurnsRunning != nil },
+            set: { if !$0 { store.serverTurnsRunning = nil } }
+        )
+    }
 
     var body: some View {
         SettingsGroup(caption: "r/bots") {
@@ -225,18 +317,84 @@ private struct ServerVersionGroup: View {
                         .buttonStyle(SettingsButtonStyle(kind: .plain))
                     }
                 }
+            }
+            if showsUpdater {
+                updaterRow
+                    .transition(.opacity)
+            }
+            if showsCommand {
                 SettingsRow(
                     title: "Como atualizar", icon: SettingsIcon("terminal.fill", SettingsTint.slate), detail: "Rode no servidor. Ele guarda um backup antes e volta sozinho se a versão nova não subir."
                 ) {
                     commandChip
                 }
+                .transition(.opacity)
+            }
+        }
+        .springAnimation(value: phase)
+    }
+
+    @ViewBuilder
+    private var updaterRow: some View {
+        let target = info.latest ?? "versão nova"
+        switch phase {
+        case .requesting, .waiting, .restarting:
+            SettingsRow(title: "Atualizando para a \(target)", icon: SettingsIcon("arrow.down.circle.fill", SettingsTint.blue), detail: progressDetail) {
+                HStack(spacing: Spacing.s) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Atualizando…")
+                        .font(BrandFonts.sans(12, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+        case .failed(let message):
+            SettingsRow(title: "A atualização não deu certo", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: message) {
+                if info.canUpdateFromApp {
+                    updateButton(title: "Tentar de novo")
+                }
+            }
+        case .succeeded, nil:
+            SettingsRow(
+                title: "Atualizar o servidor", icon: SettingsIcon("arrow.down.circle.fill", SettingsTint.blue), detail: "Guarda um backup antes e volta sozinho se a versão nova não subir."
+            ) {
+                updateButton(title: "Atualizar para \(target)")
             }
         }
     }
 
+    private var progressDetail: String {
+        switch phase {
+        case .restarting: "Reiniciando o servidor…"
+        case .waiting(let step?): step
+        default: "Pedindo ao servidor…"
+        }
+    }
+
+    private func updateButton(title: String) -> some View {
+        Button {
+            Task { await store.updateServer(model: model) }
+        } label: {
+            Text(title)
+        }
+        .buttonStyle(SettingsButtonStyle(kind: .primary))
+        .glassPopup(isPresented: confirmTurns, edge: .trailing) {
+            GlassConfirm(title: turnsTitle, message: "Os turnos em andamento são interrompidos.", confirmTitle: "Atualizar") {
+                Task { await store.updateServer(model: model, force: true) }
+            }
+        }
+    }
+
+    private var turnsTitle: String {
+        let count = store.serverTurnsRunning ?? 1
+        return count == 1 ? "Há 1 turno rodando. Atualizar mesmo assim?" : "Há \(count) turnos rodando. Atualizar mesmo assim?"
+    }
+
     private var detail: String? {
         var parts: [String] = []
-        if info.isDevelopment {
+        if case .succeeded(let version) = phase, !info.updateAvailable {
+            parts.append("Atualizado para \(version)")
+        } else if info.isDevelopment {
             parts.append("Rodando direto do código")
         } else if !info.updateAvailable, info.latest != nil {
             parts.append("Está na versão mais recente")
