@@ -723,7 +723,7 @@ function normalized(text: string) {
 const courtesy =
   /^(ok|okay|beleza|blz|certo|show|perfeito|otimo|tchau|tchau tchau|ate mais|ate logo|ate amanha|valeu|obrigad[oa]|muito obrigad[oa]|brigad[oa]|obrigad[oa] viu|bom dia|boa tarde|boa noite|oi|ola|e ai|tudo bem|tudo certo|de nada|por nada)( (ok|beleza|tchau|valeu|obrigad[oa]|entao|viu|mesmo|ai|pela ajuda|por tudo))*$/;
 const hangupClause =
-  /^((ok|okay|beleza|entao|bom|e|ja|agora|tchau|obrigad[oa]|valeu|pode|podemos|voce pode|pode ja|ja pode|pode ir|vou|vamos|por favor|pode sim)\s+)*(desliga|desligar|desligue|encerra|encerrar|encerre|finaliza|finalizar|finalize)( (a|essa|esta|nossa) (chamada|ligacao)| a chamada| a ligacao)?( (ai|agora|ja|entao|por favor|ok|obrigad[oa]|valeu|tchau|ta|beleza))*$/;
+  /^((ok|okay|beleza|entao|bom|e|ja|agora|tchau|obrigad[oa]|valeu|pode|podemos|voce pode|pode ir|vou|vamos|por favor|pode sim)\s+)*(desliga|desligar|desligue|encerra|encerrar|encerre|finaliza|finalizar|finalize)( (a|essa|esta|nossa) (chamada|ligacao)| a chamada| a ligacao)?( (ai|agora|ja|entao|por favor|ok|obrigad[oa]|valeu|tchau|ta|beleza))*$/;
 const hangupBlock = /\b(nao|espera|perai|ainda|antes)\b/;
 
 export function isCourtesy(text: string) {

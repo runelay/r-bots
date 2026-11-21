@@ -335,6 +335,14 @@ describe("hang up by voice", () => {
       expect([text, wantsHangup(text)]).toEqual([text, false]);
   });
 
+  test("wantsHangup handles chained fillers and long adversarial input fast", () => {
+    expect(wantsHangup("ja pode desligar")).toBe(true);
+    expect(wantsHangup("pode ja desligar")).toBe(true);
+    const started = performance.now();
+    expect(wantsHangup(`${"ja pode ".repeat(5000)}x`)).toBe(false);
+    expect(performance.now() - started).toBeLessThan(500);
+  });
+
   test("isCourtesy spots thanks and goodbyes only", () => {
     expect(isCourtesy("Ok, obrigado.")).toBe(true);
     expect(isCourtesy("valeu, tchau")).toBe(true);

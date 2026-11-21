@@ -1,6 +1,5 @@
 import { constants } from "node:fs";
 import { type FileHandle, open, readlink, realpath } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { botDir, botsDir, dataDir } from "../../../config/env";
 import { botWorktreePaths } from "../repositories/uploads.repository";
@@ -12,7 +11,7 @@ export function outboxDir(botId: string) {
 }
 
 export function exportsTmpDir(botId: string) {
-  return join(tmpdir(), "runelay-exports", botId);
+  return join(botDir(botId), "exports-tmp");
 }
 
 const protectedPart = /(^|\/)(\.env[^/]*|\.git|\.ssh|\.claude|\.codex|\.aws|\.gnupg|\.npmrc|\.netrc)(\/|$)/;

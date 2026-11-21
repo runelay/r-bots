@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, fstatSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { redactText } from "../../../shared/redact";
@@ -10,6 +10,15 @@ import { createSetupToken } from "../services/setup-token.service";
 const dir = mkdtempSync(join(tmpdir(), "rb-limits-"));
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+function readToken(path: string) {
+  const fd = openSync(path, "r");
+  try {
+    return { mode: fstatSync(fd).mode & 0o777, value: readFileSync(fd, "utf8").trim() };
+  } finally {
+    closeSync(fd);
+  }
+}
 
 describe("window limiter", () => {
   test("counts per key, resets after the window and evicts expired buckets", () => {
@@ -109,11 +118,11 @@ describe("setup token", () => {
     expect(token.exists()).toBe(false);
     expect(token.verify("anything")).toBe(false);
     expect(token.issue()).toBe(file);
-    expect(statSync(file).mode & 0o777).toBe(0o600);
-    const value = readFileSync(file, "utf8").trim();
+    const { mode, value } = readToken(file);
+    expect(mode).toBe(0o600);
     expect(value.length).toBeGreaterThanOrEqual(43);
     expect(token.issue()).toBe(file);
-    expect(readFileSync(file, "utf8").trim()).toBe(value);
+    expect(readToken(file).value).toBe(value);
     expect(redactText(`code ${value}`)).not.toContain(value);
     expect(token.verify(value)).toBe(true);
     expect(token.verify(` ${value} `)).toBe(true);
@@ -121,11 +130,11 @@ describe("setup token", () => {
     expect(token.verify("")).toBe(false);
     expect(token.verify(42)).toBe(false);
     token.consume();
-    expect(existsSync(file)).toBe(false);
+    expect(() => readToken(file)).toThrow();
     expect(token.verify(value)).toBe(false);
-    writeFileSync(file, "short\n");
+    writeFileSync(file, "short\n", { flag: "wx" });
     expect(token.exists()).toBe(false);
     token.issue();
-    expect(readFileSync(file, "utf8").trim()).not.toBe("short");
+    expect(readToken(file).value).not.toBe("short");
   });
 });

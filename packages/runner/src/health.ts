@@ -1,9 +1,12 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { constants, readFileSync, writeFileSync } from "node:fs";
 import { defaultHealthFile, healthMaxAgeMs } from "./constants";
 
 export function writeBeat(file: string, now = Date.now()) {
   try {
-    writeFileSync(file, String(now));
+    writeFileSync(file, String(now), {
+      mode: 0o600,
+      flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
+    });
   } catch {}
 }
 

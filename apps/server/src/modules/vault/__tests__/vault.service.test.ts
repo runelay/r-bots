@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { createCipheriv, randomBytes } from "node:crypto";
 import * as fs from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, open, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { eq } from "drizzle-orm";
@@ -324,6 +324,15 @@ describe("server copy and key", () => {
 
 describe("key file setup", () => {
   const realExists = fs.existsSync;
+
+  async function keyOnDisk() {
+    const handle = await open(keyFile);
+    try {
+      return { text: await handle.readFile("utf8"), mode: (await handle.stat()).mode & 0o777 };
+    } finally {
+      await handle.close();
+    }
+  }
   const legacyKey = join(process.env.HOST_HOME as string, ".config", "runelay-bots", "vault.key");
 
   function hideMachineKeys() {
@@ -342,14 +351,12 @@ describe("key file setup", () => {
       await mkdir(dirname(legacyKey), { recursive: true });
       await writeFile(legacyKey, testKey.toString("hex"));
       await loadVault();
-      expect(await readFile(keyFile, "utf8")).toBe(testKey.toString("hex"));
-      expect(fs.statSync(keyFile).mode & 0o777).toBe(0o600);
+      expect(await keyOnDisk()).toEqual({ text: testKey.toString("hex"), mode: 0o600 });
       expect(log).toHaveBeenCalledWith(`vault key copied from ${legacyKey}`);
       await rm(legacyKey, { force: true });
       await useKey(null);
       await loadVault();
-      expect(await readFile(keyFile, "utf8")).toMatch(/^[0-9a-f]{64}\n$/);
-      expect(fs.statSync(keyFile).mode & 0o777).toBe(0o600);
+      expect(await keyOnDisk()).toEqual({ text: expect.stringMatching(/^[0-9a-f]{64}\n$/), mode: 0o600 });
       expect(log).toHaveBeenCalledWith("vault key created");
       expect(serverStorageAvailable()).toBe(true);
       await saveSecretMeta("kept", {});

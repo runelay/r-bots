@@ -79,6 +79,7 @@ function docText(data: Uint8Array) {
         .replace(/&lt;/g, "<")
         .replace(/&gt;/g, ">")
         .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
         .replace(/&amp;/g, "&"),
     )
     .filter(Boolean);
@@ -167,6 +168,11 @@ describe("note exports", () => {
     expect(fromZero).toEqual(["Contagem", "0. zero", "1. um"]);
     const titled = docText(await noteDocx("Ignorado", "# Já tem título\n\ntexto"));
     expect(titled).toEqual(["Já tem título", "texto"]);
+  });
+
+  test("docx decodes each entity once", async () => {
+    const text = docText(await noteDocx("Entidades", "a &amp;lt;b&amp;gt; &lt;i&gt; &quot;q&quot; &#39;s&#39; & d"));
+    expect(text).toEqual(["Entidades", "a &lt;b&gt; <i> \"q\" 's' & d"]);
   });
 
   test("md, docx and pdf exports are stored and downloadable", async () => {
