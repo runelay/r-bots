@@ -505,7 +505,11 @@ describe("default gh runner", () => {
 });
 
 describe("GitHub assets", () => {
-  type AssetReply = { status: number; headers?: Record<string, string>; body?: BodyInit | null };
+  interface AssetReply {
+    status: number;
+    headers?: Record<string, string>;
+    body?: ConstructorParameters<typeof Response>[0];
+  }
   const seen: Array<{ url: string; headers: Record<string, string> }> = [];
   let assets: (url: string) => AssetReply = () => ({ status: 404 });
   let fetchSpy: Mock<typeof fetch> | null = null;
@@ -543,7 +547,7 @@ describe("GitHub assets", () => {
 
   test("serves an attachment through the route, following the signed redirect", async () => {
     handler = (call) => (call.args[0] === "auth" ? { code: 0, stdout: "gho_secret\n", stderr: "" } : ok({}));
-    assets = (url) =>
+    assets = (url): AssetReply =>
       url.startsWith("https://github.com/")
         ? { status: 302, headers: { location: "https://private-user-images.githubusercontent.com/1/a.png?jwt=x" } }
         : { status: 200, headers: { "content-type": "image/png" }, body: new Uint8Array([1, 2, 3]) };
@@ -575,7 +579,7 @@ describe("GitHub assets", () => {
 
   test("sends no token when gh is not logged in and follows S3 redirects", async () => {
     handler = () => ({ code: 1, stdout: "", stderr: "not logged in" });
-    assets = (url) =>
+    assets = (url): AssetReply =>
       url.includes("amazonaws")
         ? { status: 200, headers: { "content-type": "video/mp4" }, body: "v" }
         : { status: 301, headers: { location: "https://bucket.s3.amazonaws.com/v.mp4" } };

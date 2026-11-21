@@ -27,6 +27,7 @@ import {
   githubContext,
   linearContext,
   presetOf,
+  type ReviewPreset,
   type ReviewWindow,
   readPresets,
   savePresets,
@@ -177,7 +178,7 @@ describe("review presets", () => {
     expect(saved[0].id).toBe("same");
     expect(saved[1].id).not.toBe("same");
     expect(await readPresets()).toEqual(saved);
-    expect(await readSetting("review.presets", null)).toEqual(saved);
+    expect(await readSetting<ReviewPreset[] | null>("review.presets", null)).toEqual(saved);
     await expect(savePresets({ presets: "x" })).rejects.toThrow("Mande a lista em presets.");
     await expect(savePresets([])).rejects.toThrow("Mande a lista em presets.");
     await expect(savePresets(null)).rejects.toThrow("Mande a lista em presets.");
