@@ -1,12 +1,14 @@
-import { constants, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants, openSync, readFileSync, writeSync } from "node:fs";
 import { defaultHealthFile, healthMaxAgeMs } from "./constants";
 
 export function writeBeat(file: string, now = Date.now()) {
   try {
-    writeFileSync(file, String(now), {
-      mode: 0o600,
-      flag: constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
-    });
+    const fd = openSync(file, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600);
+    try {
+      writeSync(fd, String(now));
+    } finally {
+      closeSync(fd);
+    }
   } catch {}
 }
 
