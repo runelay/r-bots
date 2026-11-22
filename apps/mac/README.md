@@ -84,3 +84,5 @@ cd apps/mac
 ```
 
 Compila em release, monta `rbots.app` (nome exibido: r/bots) com o ícone (`Packaging/AppIcon.svg` vira `AppIcon.icns`), assina ad-hoc, instala em `~/Applications` e abre.
+
+O app leva junto o `bun` (versão e sha256 fixos no script, cache em `~/Library/Caches/rbots-build`) em `Contents/Resources/bun/` e o runner (`packages/runner`, `bun build --target=bun`) em `Contents/Resources/runner/`, que rodam os bots neste Mac quando "Rodar agentes neste Mac" está ligado em Ajustes › Bots. Por isso o script precisa do checkout inteiro. `RBOTS_INSTALL=0` só monta o `.app` em `.build/` sem instalar nem fechar o app aberto.
