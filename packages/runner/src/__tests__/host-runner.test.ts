@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { checkHealth } from "../health";
-import { logLine, startHostRunner } from "../host-runner";
+import { logLine, memoryOf, startHostRunner } from "../host-runner";
 import { readEnv, runnerVersion } from "../runner";
-import type { RunnerEnv } from "../types";
+import type { ExecOptions, GitResult, RunnerEnv } from "../types";
 import { boxSpec, FakeClock, FakeExec, type FakeServer, fakeServer, tempDir, turnRequest, until } from "./helpers";
 
 const agentSource = `
@@ -98,6 +99,7 @@ describe("startHostRunner", () => {
           boxesPaused: 0,
           maxBoxes: 3,
         },
+        environment: "vps",
       },
     });
     await until(() => checkHealth(`${temp.dir}/health`).ok, "heartbeat");
@@ -169,5 +171,187 @@ describe("startHostRunner", () => {
     expect(argv.slice(-2)).toEqual(["/usr/bin/bun", "/opt/rbots/runner/box-agent.js"]);
     runner.stop();
     expect(await runner.stopped).toBe("stopped");
+  });
+});
+
+describe("memoryOf", () => {
+  test("reads /proc/meminfo when it exists and the OS counters otherwise", async () => {
+    const temp = tempDir("rb-mem-");
+    await Bun.write(`${temp.dir}/meminfo`, "MemTotal: 2097152 kB\nMemAvailable: 1048576 kB\n");
+    expect(await memoryOf(`${temp.dir}/meminfo`)).toEqual({ totalMb: 2048, availableMb: 1024 });
+    const os = await memoryOf(`${temp.dir}/none`);
+    expect(os.totalMb).toBeGreaterThan(0);
+    expect(os.availableMb).toBeGreaterThan(0);
+    temp.remove();
+  });
+});
+
+describe("startHostRunner on the Mac", () => {
+  let server: FakeServer;
+  let temp: ReturnType<typeof tempDir>;
+
+  beforeEach(() => {
+    server = fakeServer();
+    temp = tempDir("rb-mac-runner-");
+  });
+
+  afterEach(() => {
+    server.stop();
+    temp.remove();
+  });
+
+  test("skips systemd and bwrap, prepares the worktree, runs as the Mac user and sends the work back", async () => {
+    const logs: string[] = [];
+    const gitCalls: string[][] = [];
+    const ghSeen: Array<string | null> = [];
+    const execs: FakeExec[] = [];
+    let login = '{"loggedIn":true}';
+    const workspaces = `${temp.dir}/workspaces`;
+    const bin = `${temp.dir}/bin`;
+    const exists = (path: string) =>
+      path === `${bin}/gh` || path === `${temp.dir}/.local/bin/claude` || existsSync(path);
+    const runner = await startHostRunner(
+      {
+        ...readEnv({
+          RBOTS_URL: server.url,
+          RBOTS_DEVICE_TOKEN: "rbk_device",
+          RBOTS_PROVIDER: "host",
+          RBOTS_ENVIRONMENT: "mac",
+          RBOTS_WORKSPACES_DIR: workspaces,
+        }),
+        name: "Mac do dono",
+        healthFile: `${temp.dir}/health`,
+      },
+      {
+        clock: new FakeClock(),
+        home: temp.dir,
+        user: "dono",
+        env: { PATH: bin },
+        exists,
+        run: async () => {
+          throw new Error("sem probe no Mac");
+        },
+        memory: async () => ({ totalMb: 16_384, availableMb: 8192 }),
+        capture: async () => ({ code: 0, stdout: login, stderr: "" }),
+        gitRunner: (gh) => {
+          ghSeen.push(gh);
+          return async (args): Promise<GitResult> => {
+            gitCalls.push(args);
+            return { code: 0, stdout: args[0] === "commit-tree" ? "mac1" : "", stderr: "" };
+          };
+        },
+        spawn: (argv: string[], options: ExecOptions) => {
+          const exec = new FakeExec("bot-1", argv, options);
+          execs.push(exec);
+          return exec;
+        },
+        log: (line) => logs.push(line),
+      },
+    );
+    expect(runner.probe).toEqual({ scope: false, bwrap: false });
+    expect(logs).toEqual([`Este Mac: turnos direto como dono, sem systemd e sem bwrap (worktrees em ${workspaces})`]);
+    expect(ghSeen).toEqual([`${bin}/gh`]);
+    const hello = await server.waitFor(({ type }) => type === "hello", "hello");
+    expect(hello).toMatchObject({
+      runner: { name: "Mac do dono", environment: "mac", providers: ["claude"], capacity: { memFreeMb: 8192 } },
+    });
+    const sync = {
+      repo: "acme/app",
+      cloneUrl: "https://github.com/acme/app.git",
+      name: "app",
+      branch: "feat/x",
+      ref: "refs/rbots/sync/feat/x",
+      commit: "vps1",
+      cwd: "/srv/worktrees/app/app-bot-x",
+    };
+    const start = (turnId: string, code: string | null, extra: Record<string, unknown> = {}) =>
+      server.send({
+        type: "request",
+        id: turnId,
+        op: "turn.start",
+        turnId,
+        botId: "bot-1",
+        request: turnRequest({ turnId, configDir: "/home/vps/.claude", ...(code ? { code: { cwd: code } } : {}) }),
+        box: boxSpec({ mounts: [] }),
+        hooks: true,
+        ...extra,
+      });
+    start("t1", sync.cwd, { sync });
+    await until(() => execs.length === 1, "exec");
+    const [exec] = execs;
+    expect(exec?.options.cwd).toBe(temp.dir);
+    expect(exec?.options.env).toMatchObject({
+      HOME: temp.dir,
+      CLAUDE_CODE_EXECUTABLE: `${temp.dir}/.local/bin/claude`,
+      BOTS_DATA_DIR: `${temp.dir}/data`,
+    });
+    expect(exec?.argv[0]).not.toBe("systemd-run");
+    const local = `${workspaces}/.worktrees/app/feat-x`;
+    expect(exec?.messages()[0]).toMatchObject({ request: { code: { cwd: local }, configDir: null } });
+    expect(gitCalls[0]).toEqual(["clone", "--quiet", "--no-checkout", sync.cloneUrl, `${workspaces}/app`]);
+    exec?.emit({ type: "end", ok: true });
+    exec?.exit(0);
+    const end = await server.waitFor(({ type, id }) => type === "turn.end" && id === "t1", "turn.end");
+    expect(end).toEqual({ type: "turn.end", id: "t1", ok: true, sync: { ref: sync.ref, commit: "mac1" } });
+    expect(gitCalls.at(-1)).toEqual(["push", "--no-verify", "--quiet", "--force", "origin", `mac1:${sync.ref}`]);
+    start("t2", "/srv/worktrees/.bots/bot-1");
+    await until(() => execs.length === 2, "exec 2");
+    expect(execs[1]?.messages()[0]).toMatchObject({ request: { code: { cwd: `${workspaces}/.homes/bot-1` } } });
+    expect(existsSync(`${workspaces}/.homes/bot-1`)).toBe(true);
+    execs[1]?.exit(0);
+    start("t3", null);
+    await until(() => execs.length === 3, "exec 3");
+    expect(execs[2]?.messages()[0]).toMatchObject({ request: { configDir: null } });
+    execs[2]?.exit(0);
+    login = '{"loggedIn":false}';
+    start("t4", null, { request: turnRequest({ turnId: "t4", provider: "codex" }) });
+    await until(() => execs.length === 4, "exec 4");
+    execs[3]?.exit(0);
+    runner.stop();
+    expect(await runner.stopped).toBe("stopped");
+  });
+
+  test("refuses Claude turns when the Mac CLI is missing", async () => {
+    const runner = await startHostRunner(
+      {
+        ...readEnv({
+          RBOTS_URL: server.url,
+          RBOTS_DEVICE_TOKEN: "rbk_device",
+          RBOTS_PROVIDER: "host",
+          RBOTS_ENVIRONMENT: "mac",
+          RBOTS_WORKSPACES_DIR: `${temp.dir}/w`,
+          RBOTS_CLAUDE_BIN: `${temp.dir}/claude`,
+        }),
+        healthFile: `${temp.dir}/health`,
+      },
+      {
+        clock: new FakeClock(),
+        home: temp.dir,
+        env: { PATH: "" },
+        exists: () => false,
+        memory: async () => ({ totalMb: 8192, availableMb: 4096 }),
+        capture: async () => ({ code: 0, stdout: '{"loggedIn":false}', stderr: "" }),
+        log: () => undefined,
+      },
+    );
+    await server.waitFor(({ type }) => type === "hello", "hello");
+    server.send({
+      type: "request",
+      id: "t1",
+      op: "turn.start",
+      turnId: "t1",
+      botId: "bot-1",
+      request: turnRequest({ turnId: "t1" }),
+      box: boxSpec({ mounts: [] }),
+      hooks: false,
+    });
+    const refusal = await server.waitFor(({ type }) => type === "response", "refusal");
+    expect(refusal).toMatchObject({
+      ok: false,
+      code: "turn.prepare",
+      error: expect.stringContaining("não está instalado"),
+    });
+    runner.stop();
+    await runner.stopped;
   });
 });

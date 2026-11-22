@@ -3,7 +3,7 @@ import type { BoxSpec } from "@runelay-bots/protocol";
 import { boxAgentArgv } from "../constants";
 import { BoxError } from "../lifecycle";
 import { type TurnDeps, TurnManager } from "../turns";
-import type { ExecOptions, JsonRecord } from "../types";
+import type { ExecOptions, JsonRecord, PreparedTurn } from "../types";
 import { boxSpec, boxStatus, FakeClock, FakeExec, turnRequest, until } from "./helpers";
 
 function setup(
@@ -272,5 +272,135 @@ describe("TurnManager", () => {
     expect(seen).toEqual([["bot-1", "turn-1", 512]]);
     execs[0]?.exit(0);
     await until(() => manager.active === 0, "settled");
+  });
+});
+
+describe("TurnManager on a machine that prepares the turn", () => {
+  const paths = { local: "/mac/wt", remote: "/vps/wt" };
+
+  function prepared(sync: PreparedTurn["sync"]): TurnDeps["agent"] {
+    return {
+      argv: () => ["bun", "/opt/agent.js"],
+      cwd: "/home/u",
+      env: {},
+      prepare: async (request, frame) => ({
+        request: { ...request, code: { cwd: paths.local }, prompt: String(frame.note ?? request.prompt) },
+        paths,
+        sync,
+      }),
+    };
+  }
+
+  test("maps the Mac paths for the server, sends the snapshot at the end and on request", async () => {
+    const snapshots: string[] = [];
+    const sync = async () => {
+      snapshots.push("s");
+      return { ref: "refs/rbots/sync/feat/x", commit: `c${snapshots.length}` };
+    };
+    const { sent, execs, manager } = setup(undefined, prepared(sync));
+    manager.handle(startFrame({ note: "olá", box: boxSpec({ mounts: [] }) }));
+    await until(() => execs.length === 1, "exec");
+    const [exec] = execs;
+    expect(exec?.messages()[0]).toMatchObject({ request: { code: { cwd: "/mac/wt" }, prompt: "olá" } });
+    exec?.emit({
+      type: "hook.request",
+      id: "h1",
+      phase: "before",
+      tool: "Edit",
+      input: { file_path: "/mac/wt/a.ts" },
+      toolUseId: "t1",
+    });
+    await until(() => sent.some(({ type }) => type === "hook.request"), "hook");
+    const hook = sent.find(({ type }) => type === "hook.request");
+    expect(hook?.input).toEqual({ file_path: "/vps/wt/a.ts" });
+    manager.handle({
+      type: "hook.response",
+      id: hook?.id,
+      gate: { allow: true, input: { file_path: "/vps/wt/b.ts" } },
+    });
+    expect(exec?.messages()[1]).toEqual({
+      type: "hook.response",
+      id: "h1",
+      gate: { allow: true, input: { file_path: "/mac/wt/b.ts" } },
+    });
+    manager.handle({ type: "request", op: "workspace.sync", id: "q1", turnId: "turn-1" });
+    await until(() => sent.some(({ id }) => id === "q1"), "sync reply");
+    expect(sent.find(({ id }) => id === "q1")).toEqual({
+      type: "response",
+      id: "q1",
+      ok: true,
+      result: { ref: "refs/rbots/sync/feat/x", commit: "c1" },
+    });
+    exec?.emit({ type: "end", ok: true });
+    exec?.exit(0);
+    await until(() => manager.active === 0, "settled");
+    expect(sent.filter(({ type }) => type === "turn.end")).toHaveLength(1);
+    expect(sent.at(-1)).toEqual({
+      type: "turn.end",
+      id: "turn-1",
+      ok: true,
+      sync: { ref: "refs/rbots/sync/feat/x", commit: "c2" },
+    });
+  });
+
+  test("still sends the Mac work when the agent dies and says when the snapshot fails", async () => {
+    let fail = false;
+    const sync = async () => {
+      if (fail) throw new Error("sem rede");
+      return { ref: "r", commit: "c" };
+    };
+    const { sent, logs, execs, manager } = setup(undefined, prepared(sync));
+    manager.handle(startFrame({ box: boxSpec({ mounts: [] }) }));
+    await until(() => execs.length === 1, "exec");
+    execs[0]?.exit(1);
+    await until(() => manager.active === 0, "settled");
+    expect(sent.at(-1)).toEqual({
+      type: "turn.end",
+      id: "turn-1",
+      ok: false,
+      message: "A caixa encerrou o turno sem resposta.",
+      sync: { ref: "r", commit: "c" },
+    });
+    fail = true;
+    manager.handle(startFrame({ id: "turn-2", turnId: "turn-2", box: boxSpec({ mounts: [] }) }));
+    await until(() => execs.length === 2, "exec 2");
+    manager.handle({ type: "request", op: "workspace.sync", id: "q2", turnId: "turn-2" });
+    await until(() => sent.some(({ id }) => id === "q2"), "sync failure");
+    expect(sent.find(({ id }) => id === "q2")).toEqual({ type: "response", id: "q2", ok: false, error: "sem rede" });
+    execs[1]?.emit({ type: "end", ok: false });
+    execs[1]?.exit(0);
+    await until(() => manager.active === 0, "settled 2");
+    expect(sent.at(-1)).toEqual({ type: "turn.end", id: "turn-2", ok: false, syncError: "sem rede" });
+    expect(logs).toContain("turno turn-2: sem rede");
+  });
+
+  test("refuses the turn when preparing fails and a sync for an unknown turn", async () => {
+    const { sent, execs, released, manager } = setup(undefined, {
+      argv: () => ["bun"],
+      cwd: "/",
+      env: {},
+      prepare: async () => {
+        throw new Error("Claude sem login");
+      },
+    });
+    manager.handle(startFrame());
+    await until(() => sent.length === 1, "refusal");
+    expect(sent[0]).toEqual({
+      type: "response",
+      id: "turn-1",
+      ok: false,
+      code: "turn.prepare",
+      error: "Claude sem login",
+    });
+    expect(execs).toHaveLength(0);
+    expect(released).toEqual(["bot-1"]);
+    manager.handle({ type: "request", op: "workspace.sync", id: "q3", turnId: "ghost" });
+    await until(() => sent.length === 2, "sync refusal");
+    expect(sent[1]).toEqual({
+      type: "response",
+      id: "q3",
+      ok: false,
+      error: "Esse turno não tem worktree para mandar.",
+    });
   });
 });
