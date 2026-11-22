@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.15
+
 ### Boxes
 
 - Images you paste or attach reach the model again when the bot runs in a box. The box now mounts the bot's uploads folder read-only. Before, the agent inside the box could not read the image, dropped it without a word, and the bot answered that it could not see it.
