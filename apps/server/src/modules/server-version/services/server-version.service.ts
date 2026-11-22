@@ -1,18 +1,14 @@
 import { run } from "@runelay-bots/providers/proc";
 import { env } from "../../../config/env";
 import { rememberSecretValue } from "../../../shared/redact";
-import {
-  latestFailureTtlMs,
-  latestTtlMs,
-  registryTimeoutMs,
-  versionPattern,
-} from "../../providers/constants/providers.constants";
+import { latestFailureTtlMs, registryTimeoutMs, versionPattern } from "../../providers/constants/providers.constants";
 import { compareVersions } from "../../providers/services/cli-versions.service";
 import {
   devVersion,
   githubApiUrl,
   notesLimit,
   releasesPageSize,
+  releaseTtlMs,
   tokenSecretKey,
   updateCommand,
 } from "../constants/server-version.constants";
@@ -118,7 +114,7 @@ async function latestRelease(settings: ReleaseSettings) {
   const cached = cache.get(key);
   if (cached && deps.now() < cached.expiresAt) return cached.value;
   const value = await fetchLatest(settings);
-  cache.set(key, { value, expiresAt: deps.now() + (value ? latestTtlMs : latestFailureTtlMs) });
+  cache.set(key, { value, expiresAt: deps.now() + (value ? releaseTtlMs : latestFailureTtlMs) });
   return value;
 }
 
