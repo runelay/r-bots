@@ -75,6 +75,6 @@ export async function writeFixture(path: string, content: unknown) {
 export async function resetUsageTables() {
   const { getDb } = await import("../src/db");
   const { sql } = await import("drizzle-orm");
-  await getDb().execute(sql`truncate usage_buckets, usage_sessions, usage_cursors, usage_seen`);
+  await getDb().execute(sql`truncate usage_cursors, usage_buckets, usage_sessions, usage_seen`);
   await getDb().execute(sql`delete from settings where key like 'usage.%'`);
 }
