@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { cpus, homedir, hostname } from "node:os";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
-import type { EnvironmentCapacity, EnvironmentHello } from "@runelay-bots/protocol";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { type EnvironmentCapacity, type EnvironmentHello, environmentIds } from "@runelay-bots/protocol";
 import pkg from "../package.json" with { type: "json" };
 import { connectUrl } from "./backoff";
 import { realClock } from "./clock";
@@ -24,6 +24,7 @@ import {
   meminfoPath,
   runnerCapabilities,
   runnerConnectPath,
+  runnerProviders,
 } from "./constants";
 import { DockerSandboxProvider, detectRuntime, imageProviders } from "./docker";
 import { DockerApi } from "./docker-api";
@@ -32,7 +33,7 @@ import { parseImageRef, registryAuth } from "./image";
 import { BoxLifecycle } from "./lifecycle";
 import { readMeminfo } from "./meminfo";
 import { TurnManager } from "./turns";
-import type { Clock, RunnerEnv } from "./types";
+import type { Clock, RunnerEnv, RunnerProvider } from "./types";
 
 export interface RunnerDeps {
   clock: Clock;
@@ -67,6 +68,20 @@ function accountRootsOf(value: string | undefined) {
   return roots;
 }
 
+function providerOf(value: string | undefined): RunnerProvider {
+  if (!value) return "docker";
+  const found = runnerProviders.find((name) => name === value);
+  if (!found) throw new Error(`RBOTS_PROVIDER inválido: ${value} (use ${runnerProviders.join(", ")}).`);
+  return found;
+}
+
+function environmentOf(value: string | undefined) {
+  if (!value) return "vps";
+  const found = environmentIds.find((name) => name === value);
+  if (!found) throw new Error(`RBOTS_ENVIRONMENT inválido: ${value} (use ${environmentIds.join(", ")}).`);
+  return found;
+}
+
 function runtimeOf(value: string | undefined) {
   if (!value) return null;
   const found = boxRuntimes.find((name) => name === value);
@@ -89,7 +104,15 @@ export function readEnv(env: Record<string, string | undefined>): RunnerEnv {
   const { RBOTS_URL: url, RBOTS_DEVICE_TOKEN: token, RBOTS_DEVICE_TOKEN_FILE: tokenFile } = env;
   if (!url) throw new Error("Falta RBOTS_URL.");
   if (!token && !tokenFile) throw new Error("Falta RBOTS_DEVICE_TOKEN_FILE ou RBOTS_DEVICE_TOKEN.");
+  const environment = environmentOf(env.RBOTS_ENVIRONMENT);
+  const home = env.HOME || homedir();
+  const workspacesDir = env.RBOTS_WORKSPACES_DIR || join(home, "runelay-bots", "workspaces");
+  const fallbackData =
+    environment === "mac" ? join(dirname(workspacesDir), "data") : join(home, ".local", "share", "runelay-bots");
   return {
+    provider: providerOf(env.RBOTS_PROVIDER),
+    dataDir: env.BOTS_DATA_DIR || fallbackData,
+    boxAgent: env.RBOTS_BOX_AGENT || null,
     url,
     token: token || null,
     tokenFile: tokenFile || null,
@@ -106,6 +129,9 @@ export function readEnv(env: Record<string, string | undefined>): RunnerEnv {
     registry: { user: env.RBOTS_REGISTRY_USER || null, token: env.RBOTS_REGISTRY_TOKEN || null },
     removeAfterMs: numberOf(env.BOX_REMOVE_AFTER_MS, boxRemoveAfterMs),
     healthFile: env.RBOTS_HEALTH_FILE || defaultHealthFile,
+    environment,
+    workspacesDir,
+    claudeBin: env.RBOTS_CLAUDE_BIN || null,
   };
 }
 

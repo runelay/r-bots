@@ -8,6 +8,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
         ComputerExecutor.shared.start()
         RunnerConnection.shared.start()
+        HostRunner.shared.start()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        HostRunner.shared.shutdown()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -72,6 +77,7 @@ extension RunelayBotsApp {
         model = fresh
         ComputerExecutor.shared.attach(fresh)
         RunnerConnection.shared.restart()
+        HostRunner.shared.restart()
         Task { await AuthSession.shared.bootstrap(force: true) }
     }
 }

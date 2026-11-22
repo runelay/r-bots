@@ -1,7 +1,31 @@
 import type { BoxRuntime } from "@runelay-bots/protocol";
 
 export const runnerCapabilities = ["turns", "boxes", "mcp-proxy", "hooks"];
+export const hostCapabilities = ["turns", "host", "mcp-proxy", "hooks"];
+export const runnerProviders = ["docker", "host"] as const;
+export const hostAgentFile = "box-agent.js";
+export const hostAgentSource = "box-agent-main.ts";
+export const hostProbeMemory = "64M";
+export const hostProviderBinaries = { claude: ["claude"], codex: ["codex"] };
 export const runnerConnectPath = "/runner/connect";
+export const runnerRoleHeader = "x-rbots-role";
+export const runnerRole = "runner";
+export const macExtraPath = ["/opt/homebrew/bin", "/usr/local/bin"];
+export const macClaudeCandidates = [".local/bin/claude", ".claude/local/claude"];
+export const macBootLine = "Este Mac: turnos direto como";
+export const claudeMissingMessage =
+  "O Claude Code não está instalado neste Mac. Abra o Terminal, instale com `curl -fsSL https://claude.ai/install.sh | bash` e rode `claude` uma vez para entrar na sua conta.";
+export const claudeLoggedOutMessage =
+  "O Claude Code deste Mac não está logado. Abra o Terminal, rode `claude` uma vez e entre na sua conta; depois mande a mensagem de novo.";
+export const claudeLoginTtlMs = 300_000;
+export const syncCommitMessage = "r/bots sync";
+export const syncAuthorEnv = {
+  GIT_AUTHOR_NAME: "r/bots",
+  GIT_AUTHOR_EMAIL: "bots@runelay.local",
+  GIT_COMMITTER_NAME: "r/bots",
+  GIT_COMMITTER_EMAIL: "bots@runelay.local",
+};
+export const syncTimeoutMs = 600_000;
 export const revokedCloseCode = 4001;
 export const fatalUpgradeStatuses = [401, 403];
 export const reconnectMinMs = 1000;

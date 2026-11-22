@@ -18,6 +18,8 @@ struct BotsSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
+            HostRunnerSettings()
+
             SettingsGroup(caption: "No time") {
                 Text("Auto")
                     .font(BrandFonts.sans(11, weight: .medium))
@@ -199,5 +201,49 @@ struct SettingsBotRow<Actions: View>: View {
         }
         .padding(.horizontal, Spacing.m)
         .frame(height: 38)
+    }
+}
+
+struct HostRunnerSettings: View {
+    private let runner = HostRunner.shared
+
+    var body: some View {
+        SettingsGroup(caption: "Onde roda") {
+            SettingsRow(
+                title: "Rodar agentes neste Mac",
+                icon: SettingsIcon("laptopcomputer", SettingsTint.graphite),
+                detail: "Executa os bots neste Mac. Desligado, eles rodam só na VPS."
+            ) {
+                SettingsToggle(
+                    title: "Rodar agentes neste Mac",
+                    isOn: Binding(get: { runner.enabled }, set: { runner.enabled = $0 })
+                )
+            }
+            if runner.enabled {
+                SettingsRow(title: "Status", icon: SettingsIcon("dot.radiowaves.left.and.right", SettingsTint.green), detail: runner.state.hint) {
+                    HStack(spacing: Spacing.s) {
+                        if runner.state == .needsClaude || runner.state == .disconnected {
+                            Button("Tentar de novo") {
+                                runner.restart()
+                            }
+                            .buttonStyle(SettingsButtonStyle(kind: .plain))
+                        }
+                        SettingsPill(text: runner.state.label, color: color, pulsing: runner.state == .starting)
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .springAnimation(value: runner.enabled)
+        .springAnimation(value: runner.state)
+    }
+
+    private var color: Color {
+        switch runner.state {
+        case .connected: Theme.success
+        case .starting, .off: Theme.textTertiary
+        case .needsClaude, .signedOut: Theme.warning
+        case .disconnected, .unavailable: Theme.danger
+        }
     }
 }

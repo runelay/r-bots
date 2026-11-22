@@ -243,6 +243,7 @@ jobs:
         run: |
           mkdir -p dist
           printf '%s@%s\n' "$IMAGE" "$DIGEST" > dist/images.txt
+      - run: bun install --frozen-lockfile
       - run: bash scripts/release/pack.sh "$VERSION" dist
       - if: github.event.repository.private == false
         uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3

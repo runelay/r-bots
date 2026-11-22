@@ -1,12 +1,24 @@
 import { afterEach, describe, expect, jest, test } from "bun:test";
 import type { BoxSpec, BoxStatus, NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
-import { boxHello, capacity, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
 import {
+  boxHello,
+  capacity,
+  dropAllRunners,
+  fakeRunner,
+  hostHello,
+  runnerDevice,
+} from "../../../../test/runner-helpers";
+import { macDroppedMessage } from "../../environments/constants/environments.constants";
+import {
+  disconnectMacDevice,
+  environmentStates,
   macRunnerConnected,
   macRunnerInfo,
   type RemoteTurnInput,
   runnerEnvironments,
+  runnerSync,
   runRemoteTurn,
+  syncResultOf,
 } from "../services/mac-runner.service";
 
 const box: BoxSpec = { memMb: 2048, cpus: 1, mounts: [] };
@@ -44,6 +56,109 @@ describe("box runners in the hub", () => {
     const mac = fakeRunner(runnerDevice("mac-1", 5));
     mac.say({ type: "hello", version: "9", capabilities: ["computer"] });
     expect(macRunnerInfo()).toMatchObject({ connected: true, version: "9" });
+  });
+
+  test("host runners stay out of the Mac operations and define each environment", async () => {
+    const offline = { key: null, online: false, canRun: false };
+    expect(environmentStates()).toEqual({ vps: offline, mac: offline });
+    const host = fakeRunner(runnerDevice("host-1"));
+    host.say(hostHello());
+    expect(macRunnerConnected()).toBe(false);
+    expect(runnerEnvironments().map(({ key }) => key)).toEqual(["host-1"]);
+    expect(environmentStates()).toEqual({ vps: { key: "host-1", online: true, canRun: true }, mac: offline });
+    const app = fakeRunner(runnerDevice("mac-1", 5));
+    app.say({ type: "hello", version: "9", capabilities: ["computer", "host"] });
+    expect(environmentStates().mac).toEqual(offline);
+    expect(await runRemoteTurn("mac-1", remote("m0"), new AbortController().signal, () => {})).toBe("refused");
+    const macRunner = fakeRunner(runnerDevice("mac-1:runner", 5, { deviceId: "mac-1" }));
+    macRunner.say(hostHello({ name: "Mac", environment: "mac" }));
+    expect(environmentStates()).toEqual({
+      vps: { key: "host-1", online: true, canRun: true },
+      mac: { key: "mac-1:runner", online: true, canRun: true },
+    });
+    expect(macRunnerConnected()).toBe(true);
+    const events: ProviderEvent[] = [];
+    const finished = runRemoteTurn("host-1", remote("h1"), new AbortController().signal, (e) => events.push(e));
+    expect(await host.next("request")).toMatchObject({ op: "turn.start", turnId: "h1" });
+    host.say({ type: "turn.event", id: "h1", event: { type: "done", ok: true } });
+    host.say({ type: "turn.end", id: "h1" });
+    expect(await finished).toBe("ran");
+    expect(events).toEqual([{ type: "done", ok: true }]);
+    expect(disconnectMacDevice("mac-1")).toBe(true);
+    expect(environmentStates().mac).toEqual(offline);
+    expect(disconnectMacDevice("mac-1")).toBe(false);
+  });
+
+  test("sends the workspace snapshot with the turn and reads the one the runner sends back", async () => {
+    const runner = fakeRunner(runnerDevice("mac-1:runner", 5, { deviceId: "mac-1" }));
+    runner.say(hostHello({ environment: "mac" }));
+    const sync = {
+      repo: "acme/app",
+      cloneUrl: "https://github.com/acme/app.git",
+      name: "app",
+      branch: "feat/x",
+      ref: "refs/rbots/sync/feat/x",
+      commit: "c1",
+      cwd: "/srv/wt",
+    };
+    const seen: Array<[unknown, unknown]> = [];
+    const finished = runRemoteTurn(
+      "mac-1:runner",
+      { ...remote("s1"), sync, onSync: (result, error) => seen.push([result, error]) },
+      new AbortController().signal,
+      () => {},
+    );
+    expect(await runner.next("request")).toMatchObject({ turnId: "s1", sync });
+    runner.say({ type: "turn.event", id: "s1", event: { type: "done", ok: true } });
+    runner.say({ type: "turn.end", id: "s1", ok: true, sync: { ref: sync.ref, commit: "c2" } });
+    expect(await finished).toBe("ran");
+    const failed = runRemoteTurn(
+      "mac-1:runner",
+      { ...remote("s2"), sync, onSync: (result, error) => seen.push([result, error]) },
+      new AbortController().signal,
+      () => {},
+    );
+    await runner.next("request");
+    runner.say({ type: "turn.end", id: "s2", ok: false, syncError: "sem rede" });
+    await failed;
+    expect(seen).toEqual([
+      [{ ref: sync.ref, commit: "c2" }, null],
+      [null, "sem rede"],
+    ]);
+    const asked = runnerSync("mac-1:runner", "s3");
+    const request = await runner.next("request");
+    expect(request).toMatchObject({ op: "workspace.sync", turnId: "s3" });
+    runner.say({ type: "response", id: request.id, ok: true, result: { ref: sync.ref, commit: "c3" } });
+    expect(await asked).toEqual({ ref: sync.ref, commit: "c3" });
+    const refused = runnerSync("mac-1:runner", "s4");
+    const second = await runner.next("request");
+    runner.say({ type: "response", id: second.id, ok: false, error: "Esse turno não tem worktree para mandar." });
+    await expect(refused).rejects.toThrow("Esse turno não tem worktree para mandar.");
+    const empty = runnerSync("mac-1:runner", "s5");
+    const third = await runner.next("request");
+    runner.say({ type: "response", id: third.id, ok: true });
+    await expect(empty).rejects.toThrow("O Mac não enviou o código.");
+    expect(syncResultOf(null)).toBeNull();
+    expect(syncResultOf({ ref: "r", commit: "" })).toBeNull();
+    const events: ProviderEvent[] = [];
+    const dropped = runRemoteTurn("mac-1:runner", remote("s6"), new AbortController().signal, (e) => events.push(e));
+    await runner.next("request");
+    runner.drop();
+    await dropped;
+    expect(events).toEqual([{ type: "done", ok: false, message: macDroppedMessage }]);
+  });
+
+  test("fails a running host turn with the runner message when the runner drops", async () => {
+    const host = fakeRunner(runnerDevice("host-1"));
+    host.say(hostHello());
+    const events: ProviderEvent[] = [];
+    const finished = runRemoteTurn("host-1", remote("h2"), new AbortController().signal, (e) => events.push(e));
+    expect(await host.next("request")).toMatchObject({ op: "turn.start", turnId: "h2" });
+    host.drop();
+    await finished;
+    expect(events).toEqual([
+      { type: "done", ok: false, message: "O runner desta máquina desconectou no meio do turno." },
+    ]);
   });
 
   test("track capacity and boxes, keeping the last good value", () => {

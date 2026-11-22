@@ -1,6 +1,40 @@
 import type { NativeToolGate, Provider, TurnRequest } from "./index";
 
-export type BoxRuntime = "kata" | "runsc" | "runc";
+export type BoxRuntime = "kata" | "runsc" | "runc" | "host";
+
+export const hostCapability = "host";
+
+export const environmentIds = ["vps", "mac"] as const;
+export type EnvironmentId = (typeof environmentIds)[number];
+
+export const environmentLabels: Record<EnvironmentId, string> = { vps: "VPS", mac: "Este Mac" };
+
+export interface EnvironmentOption {
+  id: EnvironmentId;
+  label: string;
+  online: boolean;
+  canRun: boolean;
+}
+
+export interface EnvironmentsResponse {
+  selected: EnvironmentId;
+  environments: EnvironmentOption[];
+}
+
+export interface WorkspaceSync {
+  repo: string;
+  cloneUrl: string;
+  name: string;
+  branch: string;
+  ref: string;
+  commit: string;
+  cwd: string;
+}
+
+export interface SyncResult {
+  ref: string;
+  commit: string;
+}
 
 export interface EnvironmentCapacity {
   cpus: number;
@@ -22,6 +56,7 @@ export interface EnvironmentHello {
     providers: Provider[];
     workspaceRoots: string[];
     capacity: EnvironmentCapacity;
+    environment?: EnvironmentId;
   };
 }
 
@@ -78,6 +113,7 @@ export interface RemoteTurnStart {
   request: TurnRequest;
   box: BoxSpec;
   hooks: boolean;
+  sync?: WorkspaceSync;
 }
 
 export interface ExecHandle {
@@ -108,7 +144,10 @@ export interface PlacementInput {
   memMb: number;
 }
 
-export type Placement = { kind: "local" } | { kind: "remote"; environmentId: string };
+export type Placement =
+  | { kind: "local"; notice?: string }
+  | { kind: "remote"; environmentId: string; host?: boolean; environment?: EnvironmentId }
+  | { kind: "offline"; message: string };
 
 export interface EnvironmentInfo {
   id: string;

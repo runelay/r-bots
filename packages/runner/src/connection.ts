@@ -1,5 +1,12 @@
 import { backoffDelay, upgradeStatus } from "./backoff";
-import { capacityIntervalMs, fatalUpgradeStatuses, revokedCloseCode, tokenWaitMs } from "./constants";
+import {
+  capacityIntervalMs,
+  fatalUpgradeStatuses,
+  revokedCloseCode,
+  runnerRole,
+  runnerRoleHeader,
+  tokenWaitMs,
+} from "./constants";
 import { parseRecord } from "./json";
 import type { ConnectionOptions, JsonRecord, TimerHandle } from "./types";
 
@@ -54,7 +61,9 @@ export class RunnerConnection {
       return;
     }
     this.waiting = false;
-    const socket = new WebSocket(url, { headers: { Authorization: `Bearer ${token}` } });
+    const socket = new WebSocket(url, {
+      headers: { Authorization: `Bearer ${token}`, [runnerRoleHeader]: runnerRole },
+    });
     let refused: number | null = null;
     this.socket = socket;
     socket.addEventListener("open", () => void this.onOpen(socket));

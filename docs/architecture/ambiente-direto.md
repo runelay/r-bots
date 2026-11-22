@@ -14,27 +14,27 @@ Quando uma ferramenta falha, o modelo improvisa (conector, Mac, `md5sum`) em vez
 
 ## Proposta
 
-- **O servidor é o ambiente.** "Principal" é o servidor na VPS, e os bots dele rodam na VPS. "Pessoal" é um servidor no Mac do dono, e os bots dele rodam no Mac (Xcode, simulador, iPhone). Trocar de ambiente é trocar de servidor no menu de perfis que o app já tem. Não existe outro seletor.
-- Cada servidor roda os turnos **direto na própria máquina, como o dono**: o mesmo usuário, o mesmo home, os mesmos `git`, `gh`, `supabase`, `wrangler`, Node e Docker do host.
-- De qualquer servidor, o bot continua alcançando o Mac pelas ferramentas de aparelho que já existem (`shell_run`, computador, simulador, Maestro), como os ambientes ligados do T3.
+- Os bots rodam **direto na máquina, como o dono**: o mesmo usuário, o mesmo home, os mesmos `git`, `gh`, `supabase`, `wrangler`, Node e Docker do host.
+- Dois lugares de execução, escolhidos no menu do servidor que o app já tem: **VPS** (padrão) e **Este Mac** (Xcode, simulador, iPhone). Bots, conversas e memória ficam sempre no servidor da VPS; o Mac não roda servidor nem Postgres/Redis, só o runner dentro do app.
+- De qualquer lugar, o bot continua alcançando o Mac pelas ferramentas de aparelho que já existem (`shell_run`, computador, simulador, Maestro).
 - A caixa sai: primeiro desligada, depois apagada.
 
 O que não muda: worktree por tarefa, `workspace_deliver`, cards da lista dura (deploy, escrita em prod, dinheiro, mensagem para fora) e o Jev.
 
 ## Design
 
-### D1. Ambiente = servidor
+### D1. Onde roda
 
-| Servidor | Onde roda | Usuário | Para quê |
+| Alvo | Onde roda | Usuário | Para quê |
 |---|---|---|---|
-| Principal | VPS, runner de host | o dono | o dia a dia |
-| Pessoal | Mac, servidor nativo com runner de host | o dono no Mac | iOS/macOS, simulador, iPhone |
+| VPS | runner de host na VPS (`rbots-runner.service`) | o dono | o dia a dia |
+| Este Mac | runner filho do app do Mac | o dono no Mac | iOS/macOS, simulador, iPhone |
 
-Cada servidor tem os próprios bots e conversas. O runner de host conecta no servidor da mesma máquina em `/runner/connect` e anuncia `host`. Sem ele no ar, o turno roda no container do servidor com uma linha de aviso no chat.
+O runner conecta no servidor em `/runner/connect` e anuncia `host` (no Mac, com `environment: "mac"`). Sem o runner da VPS no ar, o turno roda no container do servidor com uma linha de aviso no chat.
 
-### D2. Sem seletor novo
+### D2. Escolha no menu do servidor
 
-O menu de perfis do app ("Principal ●") já troca de servidor. O ponto verde continua dizendo se o servidor responde. Nada de preferência de ambiente nem de `/environments`.
+"VPS" e "Este Mac" aparecem como itens do próprio menu de servidor do app ("Principal ●"), com ponto de status; não há um segundo menu. A escolha fica no servidor (`environment` em `/preferences`, lista em `GET /environments`) e vale a partir do próximo turno. No Mac, "Rodar agentes neste Mac" (Ajustes › Bots) liga o runner.
 
 ### D3. Runner de host
 
@@ -42,7 +42,7 @@ O mesmo `packages/runner`, com um provider `host` no lugar do Docker:
 
 - `exec` roda o `box-agent` direto, como o usuário do processo, com o `cwd` da worktree. Nada de `docker exec`, montagem, roots ou `specKey`.
 - Na VPS, sobe como serviço `systemd --user` (`rbots-runner.service`), instalado pelo `install.sh` e pelo `rbots update`. O container `runner` sai do compose.
-- No Mac (Etapa 3), o servidor Pessoal sobe o mesmo runner como agente do launchd, sem systemd nem `bwrap`.
+- No Mac, o app sobe o mesmo runner como processo filho (`RBOTS_ENVIRONMENT=mac`), com o token do dispositivo do app. Ver Etapa 3.
 - Os CLIs vêm do PATH do host (`claude`, `codex`), com reserva em `<dados>/clis`.
 
 ### D4. O que continua escondido
@@ -69,9 +69,15 @@ O resto do home fica à vista, incluindo `~/.ssh`, `~/.claude*` e `~/.codex`, co
 
 ## Etapas
 
-1. **Runner de host na VPS** (PR #45). A caixa continua no código, desligada.
+1. **Runner de host na VPS** (PR #45). A caixa continua no código, desligada (`BOTS_SANDBOX=off`).
 2. **Remover a caixa** depois do deploy da etapa 1 e de um bot abrir PR de ponta a ponta: `docker.ts`, `box-spec.service.ts`, `rbbox-init`, `rb-sandbox-exec`, o usuário `runelaytool`, `BOTS_TOOL_SANDBOX`, as roots e o serviço `runner` do compose.
-3. **Servidor Pessoal no Mac**: instalação nativa (Homebrew `postgresql@17` e `redis`, blobs em disco, servidor e runner como agentes do launchd em `127.0.0.1`), login do `claude` no Mac e o perfil "Pessoal" no app.
+3. **Este Mac.** O app do Mac vira executor; os dados continuam no servidor. Detalhes em "Etapa 3 · Este Mac".
+
+## Etapa 3 · Este Mac
+
+Não existe servidor nativo no Mac: bots, conversas e memória ficam no servidor da VPS, e o Mac só precisa do `claude` logado. Com "Rodar agentes neste Mac" ligado, o app sobe `bun runner/main.js` com `RBOTS_PROVIDER=host`, `RBOTS_ENVIRONMENT=mac` e o token do dispositivo do app; o runner conecta em `/runner/connect` com `x-rbots-role: runner` (chave `<dispositivo>:runner`, sem derrubar a conexão do app) e anuncia `host` com `environment: "mac"`. No menu do servidor o dono escolhe VPS ou Este Mac (`PATCH /preferences {environment}`, lista em `GET /environments`); vale a partir do próximo turno. Mac escolhido e fora do ar: o turno não roda e o chat diz "Este Mac está desconectado; abra o app no Mac ou troque para VPS.", sem cair para a VPS. No Mac não há scope do systemd nem `bwrap`, o turno roda com o `HOME` do usuário e o login do próprio `claude` (`RBOTS_CLAUDE_BIN`, o `PATH`, `~/.local/bin/claude` ou `~/.claude/local/claude`); a pasta de conta da VPS é ignorada e a sessão do Claude no Mac é separada da VPS (chave `#mac`).
+
+Regra da worktree: a worktree da tarefa vive na VPS e o GitHub é o único caminho entre as máquinas, sem commit novo na branch. Antes de um turno no Mac, o servidor tira um retrato do que está pendente (índice temporário com `git add -A`, `commit-tree` com pai no `HEAD`) e manda para a ref escondida `refs/rbots/sync/<branch>` no `origin` com `--no-verify`. O runner clona o repositório em `$RBOTS_WORKSPACES_DIR/<repo>` com as credenciais do Mac, busca a ref, cria ou reaproveita a worktree em `.worktrees/<repo>/<branch>` no pai do retrato e aplica os arquivos dele (inclusive os não rastreados e as remoções), deixando tudo como mudança pendente. Ao fim do turno (ou quando o servidor pede, antes de um `workspace_deliver` no meio do turno), o runner tira o retrato da worktree do Mac do mesmo jeito e empurra para a mesma ref; o servidor busca e aplica na worktree da VPS: se o `HEAD` do Mac descende do da VPS, a branch avança até ele, senão fica o da VPS; os arquivos ficam iguais aos do Mac. `workspace_deliver` roda sempre na VPS, depois de aplicar o último retrato, e depois de um push ou PR apaga a ref escondida no `origin` e no repositório local. Repositório sem remoto no GitHub ou worktree fora de uma branch não vai para o Mac: o turno para com o motivo. Caminhos nos hooks são traduzidos pelo runner (Mac ↔ VPS) para o portão do servidor continuar valendo.
 
 ## Tarefas da Etapa 1
 

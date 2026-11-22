@@ -3,6 +3,7 @@ import { childEnv, run } from "@runelay-bots/providers/proc";
 import { getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import { recordWorktree, touchWorktree, worktreeById } from "../repositories/code.repository";
 import { stopDevServers } from "./dev-server.service";
+import { applyPendingSync, cleanSyncAfterDeliver } from "./mac-sync.service";
 import {
   activeWorkspace,
   activeWorkspaces,
@@ -204,6 +205,7 @@ export async function deliverRisk(workspace: WorkspaceState) {
 }
 
 export async function deliverWorkspace(workspace: WorkspaceState, input: DeliverInput) {
+  await applyPendingSync(workspace.path);
   const message = input.message.trim();
   const pending = (await git(workspace.path, ["status", "--porcelain"])).stdout.trim();
   const problem = deliverProblem(input, Boolean(pending));
@@ -229,6 +231,9 @@ export async function deliverWorkspace(workspace: WorkspaceState, input: Deliver
     const pushed = await git(workspace.path, ["push", "--no-verify", "-u", "origin", workspace.branch], 300_000);
     if (pushed.code !== 0)
       throw new CodeError(`O push falhou: ${(pushed.stderr || pushed.stdout).trim().slice(-600)}`, 500);
+    await cleanSyncAfterDeliver(workspace.path).catch((error) =>
+      console.warn(`mac sync: ref não apagada: ${error instanceof Error ? error.message : error}`),
+    );
     const pulls = await branchPullRequests(workspace);
     const open = pulls.find((pull) => pull.state === "OPEN");
     if (open) {

@@ -53,6 +53,7 @@ describe("runner frames", () => {
     });
     expect(runnerOf(undefined)).toBeNull();
     expect(runnerOf({ ...runner, runtime: "kata" })).toBeNull();
+    expect(runnerOf({ ...runner, runtime: "host" })).toMatchObject({ runtime: "host" });
     expect(runnerOf({ ...runner, kvm: "yes" })).toBeNull();
     expect(runnerOf({ ...runner, capacity: {} })).toBeNull();
     expect(runnerOf({ ...runner, providers: "claude" })).toBeNull();

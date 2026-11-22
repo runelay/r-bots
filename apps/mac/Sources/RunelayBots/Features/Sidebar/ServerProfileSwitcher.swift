@@ -69,18 +69,42 @@ struct ServerProfileSwitcher: View {
     private var environmentItems: [GlassMenuItem] {
         guard let snapshot = environments.snapshot else { return [] }
         return snapshot.environments.enumerated().map { index, environment in
-            GlassMenuItem(
+            let color = environment.online ? Theme.success : Theme.danger
+            return GlassMenuItem(
                 environment.label,
                 id: "environment-\(environment.id)",
-                shortcut: environment.canRun ? nil : "fora do ar",
+                subtitle: subtitle(for: environment),
                 isOn: snapshot.selected == environment.id,
                 isEnabled: environment.canRun,
-                sectionTitle: index == 0 ? "Onde roda" : nil,
-                badge: environment.online ? Theme.success : Theme.danger
+                startsSection: index == 0,
+                leading: AnyView(
+                    SettingsTile(symbol: environment.symbol, color: Theme.textSecondary, size: 20)
+                        .overlay(alignment: .bottomTrailing) {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 6, height: 6)
+                                .offset(x: 2, y: 2)
+                                .springAnimation(value: color)
+                        }
+                )
             ) {
                 environments.select(environment.id)
             }
         }
+    }
+
+    private func subtitle(for environment: RunEnvironment) -> String {
+        if environment.isMac {
+            if environment.online { return "Conectado · \(DeviceIdentity.name)" }
+            let runner = HostRunner.shared
+            guard runner.enabled else { return "Desconectado · ligue em Ajustes › Bots" }
+            switch runner.state {
+            case .needsClaude, .signedOut, .unavailable: return "Desconectado · \(runner.state.label)"
+            case .starting: return runner.state.label
+            default: return "Desconectado"
+            }
+        }
+        return "\(environment.online ? "Conectado" : "Desconectado") · \(profiles.active.host)"
     }
 
     private var items: [GlassMenuItem] {
