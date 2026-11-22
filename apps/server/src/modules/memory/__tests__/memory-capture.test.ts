@@ -129,6 +129,13 @@ describe("capture", () => {
   test("writes new and updated memories and logs the team summary", async () => {
     fakeJev(() => durableAnswers);
     fakeRunelay.tool("write_memory", () => "ok");
+    fakeRunelay.tool("read_memory", () => ({
+      name: "Tabelas",
+      description: "Números em tabela",
+      type: "feedback",
+      body: "Texto original.\n",
+      pinned: false,
+    }));
     extraction(
       `Aqui: ${JSON.stringify({
         facts: [
@@ -148,9 +155,14 @@ describe("capture", () => {
     expect(request.prompt).toContain("- pref-tabela: Prefere números em tabela");
     const writes = fakeRunelay.toolCalls.filter((call) => call.name === "write_memory").map((call) => call.args);
     expect(writes.map((item) => item.slug)).toEqual(["pref-tabela", `rb-${bot.id}-usa-linear`]);
-    expect(writes[0]).toMatchObject({ name: "Prefere números em tabela", type: "feedback" });
+    expect(writes[0]).toMatchObject({ name: "Tabelas", description: "Números em tabela", type: "feedback" });
+    expect(String(writes[0].body)).toMatch(
+      new RegExp(
+        `^Texto original\\.\\n\\nAtualização de ${bot.name} \\(r/bots\\), \\d{4}-\\d{2}-\\d{2}: A pessoa prefere tabela\\.$`,
+      ),
+    );
     expect(writes[1]).toMatchObject({ name: "Usa Linear", type: "project" });
-    expect(String(writes[0].body)).toContain(`Tags: runelay-bots, ${bot.id}, formato`);
+    expect(String(writes[1].body)).toContain(`Tags: runelay-bots, ${bot.id}`);
     const saved = (await factsOfType(log, "memory.saved"))[0];
     expect(saved.data).toMatchObject({
       titles: ["Prefere números em tabela", "Usa Linear"],
@@ -171,6 +183,7 @@ describe("capture", () => {
       { slug: "usa-linear", name: "**Usa** Linear" },
       { name: "sem slug" },
     ]);
+    fakeRunelay.tool("read_memory", () => ({ name: "Usa Linear", description: "d", type: "user", body: "Antes." }));
     extraction(JSON.stringify({ facts: [{ title: "Usa Linear", body: "Agora no time Conty.", type: "user" }] }));
     await capture(input([{ slug: "pref-tabela", name: "Prefere números em tabela", description: "" }]));
     const search = fakeRunelay.toolCalls.find((call) => call.name === "search_context");
@@ -181,6 +194,64 @@ describe("capture", () => {
     expect(prompt).not.toContain("sem slug");
     const writes = fakeRunelay.toolCalls.filter((call) => call.name === "write_memory").map((call) => call.args);
     expect(writes).toMatchObject([{ slug: "usa-linear", type: "user" }]);
+    expect(String(writes[0].body)).toStartWith("Antes.\n\nAtualização de ");
+    expect(fakeRunelay.toolCalls.find((call) => call.name === "read_memory")?.args).toEqual({ slug: "usa-linear" });
+  });
+
+  test("never rewrites a pinned memory or one it cannot read", async () => {
+    fakeJev(() => durableAnswers);
+    fakeRunelay.tool("write_memory", () => "ok");
+    const stored: Record<string, unknown> = {
+      fixada: { name: "Regra", description: "d", type: "feedback", body: "Regra de ouro.", pinned: true },
+      texto: "não é JSON",
+      "sem-corpo": { name: "x" },
+    };
+    fakeRunelay.tool("read_memory", (args) => {
+      const value = stored[String(args.slug)];
+      if (value === undefined) throw new Error("não achou");
+      return value;
+    });
+    extraction(
+      JSON.stringify({
+        facts: [
+          { title: "Regra", body: "Sobrescreve." },
+          { title: "Texto", body: "Sobrescreve." },
+        ],
+      }),
+    );
+    await capture(
+      input([
+        { slug: "fixada", name: "Regra", description: "" },
+        { slug: "texto", name: "Texto", description: "" },
+      ]),
+    );
+    extraction(
+      JSON.stringify({
+        facts: [
+          { title: "Sem corpo", body: "Sobrescreve." },
+          { title: "Sumiu", body: "Sobrescreve." },
+        ],
+      }),
+    );
+    await capture(
+      input([
+        { slug: "sem-corpo", name: "Sem corpo", description: "" },
+        { slug: "sumiu", name: "Sumiu", description: "" },
+      ]),
+    );
+    expect(fakeRunelay.toolCalls.filter((call) => call.name === "read_memory")).toHaveLength(4);
+    expect(fakeRunelay.toolCalls.filter((call) => call.name === "write_memory")).toHaveLength(0);
+    expect(await factsOfType(log, "memory.saved")).toHaveLength(0);
+  });
+
+  test("keeps the stored name and falls back on a missing name, description or type", async () => {
+    fakeJev(() => durableAnswers);
+    fakeRunelay.tool("write_memory", () => "ok");
+    fakeRunelay.tool("read_memory", () => ({ type: "estranho", body: "Corpo." }));
+    extraction(JSON.stringify({ facts: [{ title: "Usa Ação", body: "Novo." }] }));
+    await capture(input([{ slug: "usa-acao", name: "Usa Ação", description: "" }]));
+    const writes = fakeRunelay.toolCalls.filter((call) => call.name === "write_memory").map((call) => call.args);
+    expect(writes).toMatchObject([{ slug: "usa-acao", name: "usa-acao", description: "", type: "project" }]);
   });
 
   test("keeps going when the similar-memory search is not a list", async () => {
@@ -197,6 +268,7 @@ describe("capture", () => {
   test("updates a recalled memory matched by slug", async () => {
     fakeJev(() => durableAnswers);
     fakeRunelay.tool("write_memory", () => "ok");
+    fakeRunelay.tool("read_memory", () => ({ name: "Outro nome", description: "", type: "project", body: "Antes." }));
     extraction(JSON.stringify({ facts: [{ title: "Usa Ação", body: "Por slug." }] }));
     await capture(input([{ slug: "usa-acao", name: "Outro nome", description: "" }]));
     const writes = fakeRunelay.toolCalls.filter((call) => call.name === "write_memory").map((call) => call.args);

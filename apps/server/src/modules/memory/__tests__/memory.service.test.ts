@@ -306,6 +306,7 @@ describe("capture", () => {
   test("writes new and updated memories and logs the team summary", async () => {
     fakeJev(() => ({ answers: { durable: { type: "noul", noul: 0.9 }, secret: { type: "noul", noul: 0 } } }));
     fakeRunelay.tool("write_memory", () => "ok");
+    fakeRunelay.tool("read_memory", () => ({ name: "Prefere números em tabela", type: "feedback", body: "Antes." }));
     fakeProviders.next(({ emit }) => {
       emit({
         type: "text",
