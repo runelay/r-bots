@@ -147,6 +147,13 @@ export function hostAgentEnv(
   return { ...env, BOTS_DATA_DIR: dataDir, ...(claude ? { CLAUDE_CODE_EXECUTABLE: claude } : {}) };
 }
 
+export async function writeLine(sink: { write(text: string): unknown; flush(): unknown }, line: string) {
+  try {
+    sink.write(line);
+    await sink.flush();
+  } catch {}
+}
+
 export function spawnAgent(argv: string[], { cwd, env, signal }: ExecOptions): BoxExecHandle {
   const proc = Bun.spawn(argv, {
     cwd: existsSync(cwd) ? cwd : "/",
@@ -171,13 +178,7 @@ export function spawnAgent(argv: string[], { cwd, env, signal }: ExecOptions): B
     exited: proc.exited,
     kill,
     write(line: string) {
-      const sink = proc.stdin;
-      void Promise.resolve()
-        .then(() => {
-          sink.write(line);
-          return sink.flush();
-        })
-        .catch(() => undefined);
+      void writeLine(proc.stdin, line);
     },
   };
 }

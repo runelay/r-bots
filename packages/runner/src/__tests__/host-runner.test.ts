@@ -1,6 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { checkHealth } from "../health";
-import { startHostRunner } from "../host-runner";
+import { logLine, startHostRunner } from "../host-runner";
 import { readEnv, runnerVersion } from "../runner";
 import type { RunnerEnv } from "../types";
 import { boxSpec, FakeClock, FakeExec, type FakeServer, fakeServer, tempDir, turnRequest, until } from "./helpers";
@@ -23,6 +23,15 @@ out({ type: "end", ok: true });
 await writer.flush();
 process.exit(0);
 `;
+
+describe("logLine", () => {
+  test("prefixes the line with the time", () => {
+    const log = spyOn(console, "log").mockImplementation(() => undefined);
+    logLine("oi");
+    expect(log.mock.calls[0]?.[0]).toMatch(/^\d{4}-\d{2}-\d{2}T.* oi$/);
+    log.mockRestore();
+  });
+});
 
 describe("startHostRunner", () => {
   let server: FakeServer;

@@ -49,8 +49,12 @@ const defaultDeps: HostRunnerDeps = {
   exists: existsSync,
   run: runQuiet,
   spawn: spawnAgent,
-  log: (line) => console.log(`${new Date().toISOString()} ${line}`),
+  log: logLine,
 };
+
+export function logLine(line: string) {
+  console.log(`${new Date().toISOString()} ${line}`);
+}
 
 function idleStatus(botId: string): BoxStatus {
   const now = new Date().toISOString();

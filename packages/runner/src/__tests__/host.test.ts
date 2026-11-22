@@ -14,6 +14,7 @@ import {
   runQuiet,
   scopeArgv,
   spawnAgent,
+  writeLine,
 } from "../host";
 import { readLines } from "../json";
 import { boxSpec, tempDir, turnRequest } from "./helpers";
@@ -41,9 +42,8 @@ describe("host probe", () => {
     expect(ok).toEqual({ scope: true, bwrap: true });
     expect(calls.map(([bin]) => bin).sort()).toEqual(["bwrap", "systemd-run"]);
     expect(probeWarnings(ok)).toEqual([]);
-    const none = await probeHost(async ([bin]) => {
-      if (bin === "bwrap") throw new Error("missing");
-      return 1;
+    const none = await probeHost(async () => {
+      throw new Error("missing");
     });
     expect(none).toEqual({ scope: false, bwrap: false });
     const warnings = probeWarnings(none);
@@ -174,6 +174,23 @@ describe("host lookup", () => {
       "/opt/claude",
     );
     expect(hostAgentEnv({}, data, () => false)).toEqual({ BOTS_DATA_DIR: data });
+  });
+});
+
+describe("writeLine", () => {
+  test("writes and flushes, and ignores a closed pipe", async () => {
+    const written: string[] = [];
+    await writeLine({ write: (text: string) => written.push(text), flush: async () => undefined }, "a\n");
+    expect(written).toEqual(["a\n"]);
+    await writeLine(
+      {
+        write: () => undefined,
+        flush: async () => {
+          throw new Error("EPIPE");
+        },
+      },
+      "b\n",
+    );
   });
 });
 
