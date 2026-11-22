@@ -13,15 +13,32 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().delegate = self
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    // Variantes com completion handler de propósito: a versão async chama o handler fora da main thread
+    // e o UIKit derruba o app ao abrir pela notificação.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
         let botID = response.notification.request.content.userInfo["botID"] as? String
-        await MainActor.run {
-            self.pendingBotID = botID
+        nonisolated(unsafe) let done = completionHandler
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                NotificationRouter.shared.pendingBotID = botID
+            }
+            done()
         }
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        []
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        nonisolated(unsafe) let done = completionHandler
+        DispatchQueue.main.async {
+            done([])
+        }
     }
 }
 
