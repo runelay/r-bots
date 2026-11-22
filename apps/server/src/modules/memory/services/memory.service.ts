@@ -183,6 +183,30 @@ async function similarMemories(query: string, recalled: RecallItem[]) {
   }
 }
 
+interface StoredMemory {
+  name: string;
+  description: string;
+  type: MemoryType;
+  body: string;
+  pinned: boolean;
+}
+
+async function storedMemory(slug: string): Promise<StoredMemory | null> {
+  try {
+    const raw = (await runelayCall("read_memory", { slug }, 3000)) as Partial<StoredMemory> | string;
+    if (!raw || typeof raw !== "object" || typeof raw.body !== "string") return null;
+    return {
+      name: String(raw.name || slug),
+      description: String(raw.description ?? ""),
+      type: memoryTypes.includes(raw.type as MemoryType) ? (raw.type as MemoryType) : "project",
+      body: raw.body,
+      pinned: raw.pinned === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function parseFacts(text: string) {
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) return null;
@@ -342,13 +366,26 @@ export async function capture(input: CaptureInput) {
     );
     const slug = match?.slug ?? `rb-${bot.id}-${slugify(fact.title)}`;
     const tags = ["runelay-bots", bot.id, ...fact.tags];
-    await runelayCall("write_memory", {
-      slug,
-      name: fact.title,
-      description: `${fact.body.slice(0, 300)}`,
-      type: fact.type,
-      body: `${fact.body}\n\nOrigem: ${bot.name} (r/bots), ${new Date().toISOString().slice(0, 10)}. Tags: ${tags.join(", ")}`,
-    });
+    const origin = `${bot.name} (r/bots), ${new Date().toISOString().slice(0, 10)}`;
+    if (match) {
+      const current = await storedMemory(slug);
+      if (!current || current.pinned) continue;
+      await runelayCall("write_memory", {
+        slug,
+        name: current.name,
+        description: current.description,
+        type: current.type,
+        body: `${current.body.trimEnd()}\n\nAtualização de ${origin}: ${fact.body}`,
+      });
+    } else {
+      await runelayCall("write_memory", {
+        slug,
+        name: fact.title,
+        description: `${fact.body.slice(0, 300)}`,
+        type: fact.type,
+        body: `${fact.body}\n\nOrigem: ${origin}. Tags: ${tags.join(", ")}`,
+      });
+    }
     saved.push({ title: fact.title, slug, updated: Boolean(match) });
   }
   if (saved.length > 0) {
