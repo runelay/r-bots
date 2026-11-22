@@ -2,7 +2,9 @@ import SwiftUI
 
 struct ServerProfileSwitcher: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
     private let profiles = ServerProfiles.shared
+    private let environments = RunEnvironmentStore.shared
     @State private var open = false
     @State private var isHovering = false
 
@@ -11,6 +13,7 @@ struct ServerProfileSwitcher: View {
             open.toggle()
             if open {
                 profiles.refreshStatuses()
+                Task { await environments.refresh() }
             }
         } label: {
             HStack(spacing: Spacing.s) {
@@ -20,8 +23,9 @@ struct ServerProfileSwitcher: View {
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
                 Circle()
-                    .fill(Theme.connection(model.connection))
+                    .fill(statusColor)
                     .frame(width: 6, height: 6)
+                    .springAnimation(value: statusColor)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Theme.textTertiary)
@@ -40,6 +44,42 @@ struct ServerProfileSwitcher: View {
         .accessibilityValue(profiles.active.name)
         .glassMenu(isPresented: $open, title: "Servidores", minWidth: 280) {
             items
+        }
+        .task(id: PollKey(server: profiles.active.id, active: scenePhase == .active)) {
+            guard scenePhase == .active else { return }
+            await environments.poll()
+        }
+        .onChange(of: environments.failure) { _, failure in
+            if let failure {
+                model.showNotice(failure)
+            }
+        }
+    }
+
+    private struct PollKey: Hashable {
+        let server: String
+        let active: Bool
+    }
+
+    private var statusColor: Color {
+        guard let snapshot = environments.snapshot else { return Theme.connection(model.connection) }
+        return snapshot.currentOnline ? Theme.success : Theme.danger
+    }
+
+    private var environmentItems: [GlassMenuItem] {
+        guard let snapshot = environments.snapshot else { return [] }
+        return snapshot.environments.enumerated().map { index, environment in
+            GlassMenuItem(
+                environment.label,
+                id: "environment-\(environment.id)",
+                shortcut: environment.canRun ? nil : "fora do ar",
+                isOn: snapshot.selected == environment.id,
+                isEnabled: environment.canRun,
+                sectionTitle: index == 0 ? "Onde roda" : nil,
+                badge: environment.online ? Theme.success : Theme.danger
+            ) {
+                environments.select(environment.id)
+            }
         }
     }
 
@@ -65,6 +105,7 @@ struct ServerProfileSwitcher: View {
                 profiles.activate(profile.id)
             }
         }
+        list.append(contentsOf: environmentItems)
         list.append(
             GlassMenuItem("Gerenciar servidores…", id: "manage", systemImage: "slider.horizontal.3", startsSection: true) {
                 model.openSettings(.server)

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Apps
+
+- The server menu at the top of the sidebar (Mac) and of the bot list (iPhone) has a "Onde roda" section that lists where the active server can run bots, each with its status dot. Picking one switches it for every bot on that server, and the dot on the closed menu now shows whether that place is online. Servers that do not list environments keep the menu as before.
+
 ## v0.1.16
 
 ### Boxes

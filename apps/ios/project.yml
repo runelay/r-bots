@@ -54,6 +54,8 @@ targets:
         group: Shared
       - path: ../mac/Sources/RunelayBots/Support/ServerConfig.swift
         group: Shared
+      - path: ../mac/Sources/RunelayBots/Stores/RunEnvironmentStore.swift
+        group: Shared
       - path: ../mac/Sources/RunelayBots/Support/ErrorMessage.swift
         group: Shared
       - path: ../mac/Sources/RunelayBots/Support/FriendlyError.swift
