@@ -1487,6 +1487,7 @@ final class AppModel {
     func serverURLChanged() {
         refreshTask?.cancel()
         RunnerConnection.shared.restart()
+        HostRunner.shared.restart()
         for store in threads.values {
             store.stop()
         }

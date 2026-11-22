@@ -1,5 +1,6 @@
 import type { Placement } from "@runelay-bots/protocol";
 import { boxesCapability } from "../constants/environments.constants";
+import { environmentsText } from "../constants/environments-messages.constants";
 import type { PlacementContext, RunnerEnvironment } from "../types/environments.types";
 
 const local: Placement = { kind: "local" };
@@ -17,7 +18,19 @@ function memFreeOf({ capacity }: RunnerEnvironment) {
   return capacity?.memFreeMb ?? Number.NEGATIVE_INFINITY;
 }
 
-export function decidePlacement({ sandbox, codeCwd, environments }: PlacementContext): Placement {
+export function decidePlacement({
+  sandbox,
+  codeCwd,
+  environments,
+  environment = "vps",
+  hosts,
+}: PlacementContext): Placement {
+  const chosen = hosts?.[environment];
+  if (environment === "mac")
+    return chosen?.canRun && chosen.key
+      ? { kind: "remote", environmentId: chosen.key, host: true, environment }
+      : { kind: "offline", message: environmentsText("macOffline") };
+  if (chosen?.canRun && chosen.key) return { kind: "remote", environmentId: chosen.key, host: true };
   if (sandbox === "off") return local;
   const eligible = environments.filter(
     (environment) => environment.capabilities.includes(boxesCapability) && reaches(environment, codeCwd),

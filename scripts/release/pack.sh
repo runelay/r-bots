@@ -16,6 +16,8 @@ bun "$root/scripts/release/render-compose.ts" "$root/compose.yaml" "$stage/$name
 cp -R "$root/deploy" "$stage/$name/deploy"
 cp "$root/infra/docker/install.sh" "$root/infra/docker/rbots" "$stage/$name/infra/docker/"
 chmod 0755 "$stage/$name/infra/docker/install.sh" "$stage/$name/infra/docker/rbots"
+bun build --target=bun "$root/packages/runner/src/main.ts" --outfile "$stage/$name/runner/main.js"
+bun build --target=bun "$root/packages/runner/src/box-agent-main.ts" --outfile "$stage/$name/runner/box-agent.js"
 printf '%s\n' "$version" > "$stage/$name/VERSION"
 
 tar -C "$stage" --owner=0 --group=0 --numeric-owner -czf "$out_dir/$name.tar.gz" "$name"

@@ -40,14 +40,12 @@ struct ServerSwitcher: View {
                 }
             }
             if let snapshot = environments.snapshot {
-                Section("Onde roda") {
+                Section {
                     ForEach(snapshot.environments) { environment in
                         Toggle(isOn: selection(environment.id, in: snapshot)) {
                             Label {
                                 Text(environment.label)
-                                if !environment.canRun {
-                                    Text("fora do ar")
-                                }
+                                Text(environment.online ? "Conectado" : "Desconectado")
                             } icon: {
                                 dot(environment.online ? Theme.success : Theme.danger)
                             }

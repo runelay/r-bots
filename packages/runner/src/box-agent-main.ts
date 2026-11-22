@@ -1,5 +1,5 @@
 import { runTurn } from "@runelay-bots/providers";
-import { runBoxAgent } from "./box-agent";
+import { agentDataDir, runBoxAgent } from "./box-agent";
 import { realClock } from "./clock";
 import { boxDataDir, hookTimeoutMs } from "./constants";
 
@@ -11,7 +11,7 @@ const code = await runBoxAgent({
     writer.flush();
   },
   runTurn,
-  dataDir: boxDataDir,
+  dataDir: agentDataDir(process.env, boxDataDir),
   hookTimeoutMs,
   clock: realClock,
 });

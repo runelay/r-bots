@@ -5,6 +5,14 @@ struct RunEnvironment: Decodable, Equatable, Identifiable, Sendable {
     let label: String
     let online: Bool
     let canRun: Bool
+
+    var isMac: Bool {
+        id == "mac"
+    }
+
+    var symbol: String {
+        isMac ? "laptopcomputer" : "server.rack"
+    }
 }
 
 struct RunEnvironments: Decodable, Equatable, Sendable {

@@ -16,6 +16,10 @@ export interface BoxAgentOptions {
 
 const invalidGate: NativeToolGate = { allow: false, message: "O servidor respondeu ao hook sem decisão." };
 
+export function agentDataDir(env: Record<string, string | undefined>, fallback: string) {
+  return env.BOTS_DATA_DIR?.trim() || fallback;
+}
+
 export function proxiedMcp(request: TurnRequest, port: number): TurnRequest {
   const { mcp } = request;
   if (!mcp) return request;

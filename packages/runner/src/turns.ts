@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BoxSpec, BoxStatus } from "@runelay-bots/protocol";
+import type { BoxSpec, BoxStatus, TurnRequest } from "@runelay-bots/protocol";
 import {
   boxAgentArgv,
   boxAgentCwd,
@@ -8,10 +8,11 @@ import {
   mountErrorCode,
   startErrorCode,
 } from "./constants";
-import { isBoxSpec, isProviderEvent, isTurnRequest } from "./guards";
+import { isBoxSpec, isProviderEvent, isToolGate, isTurnRequest } from "./guards";
 import { isRecord, line, parseRecord, readLines, stringMap, stringOf } from "./json";
+import { mapStrings } from "./mac";
 import { rejectedMount, usableMounts } from "./mounts";
-import type { BoxExecHandle, BoxProvider, Clock, JsonRecord, Send, TimerHandle } from "./types";
+import type { BoxExecHandle, BoxProvider, Clock, JsonRecord, PathMap, PreparedTurn, Send, TimerHandle } from "./types";
 
 export interface TurnDeps {
   lifecycle: {
@@ -24,6 +25,12 @@ export interface TurnDeps {
   workspaceRoots: string[];
   accountRoots: string[];
   forbiddenMounts: string[];
+  agent?: {
+    argv: (botId: string, request: TurnRequest, box: BoxSpec) => string[];
+    cwd: string;
+    env: Record<string, string>;
+    prepare?: (request: TurnRequest, frame: JsonRecord) => Promise<PreparedTurn>;
+  };
   log: (line: string) => void;
 }
 
@@ -33,7 +40,10 @@ interface ActiveTurn {
   handle: BoxExecHandle;
   cancelled: boolean;
   ended: boolean;
+  ok: boolean;
   killTimer: TimerHandle | null;
+  paths: PathMap | null;
+  sync: PreparedTurn["sync"];
 }
 
 interface Route {
@@ -65,6 +75,10 @@ export class TurnManager {
     const { type, op } = frame;
     if (type === "request" && op === "turn.start") {
       void this.start(frame);
+      return true;
+    }
+    if (type === "request" && op === "workspace.sync") {
+      void this.syncNow(frame);
       return true;
     }
     if (type === "turn.cancel") {
@@ -115,30 +129,63 @@ export class TurnManager {
       this.fail(id, "turn.cancelled", "cancelled");
       return;
     }
+    const { agent } = this.deps;
+    let prepared: PreparedTurn = { request, paths: null, sync: null };
+    try {
+      if (agent?.prepare) prepared = await agent.prepare(request, frame);
+    } catch (error) {
+      lifecycle.release(botId);
+      this.fail(id, "turn.prepare", messageOf(error));
+      return;
+    }
     const controller = new AbortController();
-    const handle = provider.exec(botId, boxAgentArgv, { cwd: boxAgentCwd, env: {}, signal: controller.signal });
-    const turn: ActiveTurn = { turnId, botId, handle, cancelled: false, ended: false, killTimer: null };
+    const handle = provider.exec(botId, agent ? agent.argv(botId, prepared.request, box) : boxAgentArgv, {
+      cwd: agent?.cwd ?? boxAgentCwd,
+      env: agent?.env ?? {},
+      signal: controller.signal,
+    });
+    const turn: ActiveTurn = {
+      turnId,
+      botId,
+      handle,
+      cancelled: false,
+      ended: false,
+      ok: false,
+      killTimer: null,
+      paths: prepared.paths,
+      sync: prepared.sync,
+    };
     this.turns.set(turnId, turn);
-    handle.write(line({ type: "start", request, hooks: hooks === true }));
+    handle.write(line({ type: "start", request: prepared.request, hooks: hooks === true }));
     const logs = this.drainLogs(turn);
     for await (const raw of readLines(handle.stdout)) this.onAgent(turn, raw);
     await Promise.all([handle.exited, logs]);
-    this.finish(turn);
+    await this.finish(turn);
   }
 
   private async drainLogs({ botId, handle }: ActiveTurn) {
     for await (const raw of readLines(handle.stderr)) this.deps.log(`caixa ${botId}: ${raw}`);
   }
 
-  private finish(turn: ActiveTurn) {
+  private async synced(turn: ActiveTurn) {
+    if (!turn.sync) return {};
+    try {
+      return { sync: await turn.sync() };
+    } catch (error) {
+      this.deps.log(`turno ${turn.turnId}: ${messageOf(error)}`);
+      return { syncError: messageOf(error) };
+    }
+  }
+
+  private async finish(turn: ActiveTurn) {
     const { turnId, botId, ended, cancelled, killTimer } = turn;
     const { send, lifecycle } = this.deps;
     killTimer?.cancel();
     if (!ended) {
       const message = cancelled ? "cancelled" : "A caixa encerrou o turno sem resposta.";
       send({ type: "turn.event", id: turnId, event: { type: "done", ok: false, message } });
-      send({ type: "turn.end", id: turnId, ok: false, message });
-    }
+      send({ type: "turn.end", id: turnId, ok: false, message, ...(await this.synced(turn)) });
+    } else if (turn.sync) send({ type: "turn.end", id: turnId, ok: turn.ok, ...(await this.synced(turn)) });
     for (const [frameId, route] of this.routes) if (route.turnId === turnId) this.routes.delete(frameId);
     this.turns.delete(turnId);
     lifecycle.release(botId);
@@ -162,13 +209,14 @@ export class TurnManager {
     }
     if (type === "hook.request") {
       const { id, phase, tool, input, toolUseId, response, failed } = message;
+      const { paths } = turn;
       send({
         type: "hook.request",
         id: this.route(turnId, stringOf(id)),
         turnId,
         phase: phase === "after" ? "after" : "before",
         tool: stringOf(tool),
-        input: isRecord(input) ? input : {},
+        input: isRecord(input) ? (paths ? mapStrings(input, paths.local, paths.remote) : input) : {},
         toolUseId: stringOf(toolUseId),
         ...(phase === "after" ? { response, failed: failed === true } : {}),
       });
@@ -188,7 +236,8 @@ export class TurnManager {
     }
     if (type === "end") {
       turn.ended = true;
-      send({ type: "turn.end", id: turnId, ok: message.ok === true });
+      turn.ok = message.ok === true;
+      if (!turn.sync) send({ type: "turn.end", id: turnId, ok: turn.ok });
     }
   }
 
@@ -198,7 +247,27 @@ export class TurnManager {
     this.routes.delete(stringOf(frame.id));
     const turn = this.turns.get(route.turnId);
     if (!turn) return;
-    turn.handle.write(line({ ...frame, id: route.agentId }));
+    const { paths } = turn;
+    const gate = frame.gate;
+    const mapped =
+      paths && isToolGate(gate) && gate.input
+        ? { ...frame, gate: { ...gate, input: mapStrings(gate.input, paths.remote, paths.local) } }
+        : frame;
+    turn.handle.write(line({ ...mapped, id: route.agentId }));
+  }
+
+  async syncNow(frame: JsonRecord) {
+    const id = stringOf(frame.id);
+    const turn = this.turns.get(stringOf(frame.turnId));
+    if (!turn?.sync) {
+      this.deps.send({ type: "response", id, ok: false, error: "Esse turno não tem worktree para mandar." });
+      return;
+    }
+    try {
+      this.deps.send({ type: "response", id, ok: true, result: await turn.sync() });
+    } catch (error) {
+      this.deps.send({ type: "response", id, ok: false, error: messageOf(error) });
+    }
   }
 
   cancel(turnId: string) {

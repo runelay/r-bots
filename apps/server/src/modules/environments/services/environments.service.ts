@@ -1,6 +1,12 @@
-import type { EnvironmentInfo } from "@runelay-bots/protocol";
-import { onRunnerEnvironmentsChange, runnerEnvironments } from "../../accounts/services/mac-runner.service";
+import type { EnvironmentId, EnvironmentInfo, EnvironmentsResponse } from "@runelay-bots/protocol";
+import {
+  environmentStates,
+  onRunnerEnvironmentsChange,
+  runnerEnvironments,
+} from "../../accounts/services/mac-runner.service";
+import { readPreferences } from "../../settings/services/preferences.service";
 import { localCapabilities, localEnvironmentId } from "../constants/environments.constants";
+import { environmentsText } from "../constants/environments-messages.constants";
 import type { RunnerEnvironment } from "../types/environments.types";
 import { readLocalCapacity } from "./local-capacity.service";
 
@@ -36,4 +42,19 @@ export function listEnvironments(): EnvironmentInfo[] {
 
 export function onEnvironmentsChange(listener: () => void) {
   return onRunnerEnvironmentsChange(listener);
+}
+
+export async function readEnvironments(): Promise<EnvironmentsResponse> {
+  const { environment } = await readPreferences();
+  const { mac } = environmentStates();
+  const option = (id: EnvironmentId, online: boolean, canRun: boolean) => ({
+    id,
+    label: environmentsText(id),
+    online,
+    canRun,
+  });
+  return {
+    selected: environment,
+    environments: [option("vps", true, true), option("mac", mac.online, mac.canRun)],
+  };
 }

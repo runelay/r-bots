@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { codeProcesses, gitArgs, gitSync, makeRepo, newSession } from "../../../../test/code-helpers";
@@ -16,6 +16,7 @@ import {
   openTaskWorkspace,
   resolvePrBase,
 } from "../services/actions.service";
+import * as macSync from "../services/mac-sync.service";
 import { activeWorkspace, listRepos, type WorkspaceState, waitForInstall } from "../services/workspace.service";
 
 beforeEach(async () => {
@@ -202,6 +203,26 @@ describe("delivering", () => {
     await expect(deliverWorkspace(workspace, commit)).rejects.toThrow("git add falhou: index.lock exists");
     codeProcesses((call) => (gitArgs(call, "commit") ? { code: 1, stdout: "hook rejected" } : undefined));
     await expect(deliverWorkspace(workspace, commit)).rejects.toThrow("O commit falhou: hook rejected");
+  });
+
+  test("applies the Mac work first and keeps the push when the hidden ref cannot be removed", async () => {
+    const { workspace } = await task("act-push-sync");
+    change(workspace);
+    withGh((args) => (args.startsWith("pr list") ? { stdout: "[]" } : undefined));
+    const pending = spyOn(macSync, "applyPendingSync");
+    const clean = spyOn(macSync, "cleanSyncAfterDeliver").mockRejectedValue(new Error("sem rede"));
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const result = await deliverWorkspace(workspace, { action: "push", message: "feat: push" });
+      expect(result).toMatchObject({ action: "push", prUrl: null });
+      expect(pending).toHaveBeenCalledWith(workspace.path);
+      expect(clean).toHaveBeenCalledWith(workspace.path);
+      expect(warn).toHaveBeenCalledWith("mac sync: ref não apagada: sem rede");
+    } finally {
+      pending.mockRestore();
+      clean.mockRestore();
+      warn.mockRestore();
+    }
   });
 
   test("pushes and opens a PR, or reuses the open one", async () => {

@@ -28,6 +28,7 @@ unset RBOTS_GITHUB_TOKEN
 harden=0
 assume_yes=0
 observability=0
+only_runner=0
 sudo_cmd=()
 [ "$(id -u)" -eq 0 ] || sudo_cmd=(sudo)
 
@@ -50,6 +51,7 @@ Opções:
                     e reinicia o Docker. Pede sudo e derruba os containers da máquina.
   --observability   sobe também cAdvisor, Prometheus e Grafana (cerca de 1 GB de memória).
   --yes             não pergunta antes de reiniciar o Docker (com --harden).
+  --host-runner     só instala ou reinicia o rbots-runner.service (usado pelo rbots update).
   -h, --help        mostra esta ajuda.
 
 Rodar de novo é seguro: não duplica linha no .env.local e só recria o que mudou.
@@ -70,6 +72,7 @@ while [ $# -gt 0 ]; do
     --harden) harden=1 ;;
     --observability) observability=1 ;;
     --yes | -y) assume_yes=1 ;;
+    --host-runner) only_runner=1 ;;
     -h | --help)
       usage
       exit 0
@@ -350,6 +353,155 @@ UNIT
   fi
 }
 
+runner_unit_dir="$app_home/.config/systemd/user"
+runner_env_dir="$app_home/.config/runelay-bots"
+runner_main=""
+runner_bun=""
+
+host_bun() {
+  if command -v bun >/dev/null 2>&1; then
+    command -v bun
+    return
+  fi
+  [ -x "$app_home/.bun/bin/bun" ] && printf '%s\n' "$app_home/.bun/bin/bun"
+}
+
+user_systemd() {
+  [ "$(id -un)" = "$app_user" ] && command -v systemctl >/dev/null && systemctl --user show-environment >/dev/null 2>&1
+}
+
+runner_bundle() {
+  local out="$repo_dir/dist/host-runner"
+  if [ -f "$repo_dir/runner/main.js" ] && [ -f "$repo_dir/runner/box-agent.js" ]; then
+    printf '%s\n' "$repo_dir/runner/main.js"
+    return
+  fi
+  [ -f "$repo_dir/packages/runner/src/main.ts" ] || return 1
+  (
+    cd "$repo_dir"
+    "$runner_bun" install --frozen-lockfile >/dev/null
+    "$runner_bun" build --target=bun packages/runner/src/main.ts --outfile "$out/main.js" >/dev/null
+    "$runner_bun" build --target=bun packages/runner/src/box-agent-main.ts --outfile "$out/box-agent.js" >/dev/null
+  ) || return 1
+  printf '%s\n' "$out/main.js"
+}
+
+host_runner_ready() {
+  if ! user_systemd; then
+    say "Runner de host: sem systemd de usuário aqui; os turnos seguem no container do servidor"
+    return 1
+  fi
+  runner_bun="$(host_bun || true)"
+  if [ -z "$runner_bun" ]; then
+    say "Runner de host: bun não encontrado no host; instale com curl -fsSL https://bun.sh/install | bash e rode de novo"
+    return 1
+  fi
+  runner_main="$(runner_bundle || true)"
+  if [ -z "$runner_main" ]; then
+    say "Runner de host: não deu para montar o runner em $repo_dir; os turnos seguem no container do servidor"
+    return 1
+  fi
+}
+
+apparmor_parser_path() {
+  local candidate
+  for candidate in "$(command -v apparmor_parser || true)" /usr/sbin/apparmor_parser /sbin/apparmor_parser; do
+    [ -n "$candidate" ] && [ -x "$candidate" ] && printf '%s\n' "$candidate" && return 0
+  done
+  return 1
+}
+
+bwrap_profile() {
+  local bin parser profile=/etc/apparmor.d/rbots-bwrap
+  bin="$(command -v bwrap || true)"
+  if [ -z "$bin" ]; then
+    say "Aviso: sem bwrap, os comandos dos bots enxergam a pasta de dados do r/bots; instale com sudo apt-get install bubblewrap"
+    return
+  fi
+  "$bin" --dev-bind / / true >/dev/null 2>&1 && return
+  parser="$(apparmor_parser_path || true)"
+  if [ ! -d /etc/apparmor.d ] || [ -z "$parser" ]; then
+    say "Aviso: o bwrap não roda aqui; os comandos dos bots enxergam a pasta de dados do r/bots"
+    return
+  fi
+  if [ "${#sudo_cmd[@]}" -gt 0 ] && ! sudo -n true 2>/dev/null; then
+    say "Aviso: o bwrap precisa de um perfil do AppArmor para esconder a pasta de dados dos bots. Rode uma vez:"
+    say "  printf 'abi <abi/4.0>,\\ninclude <tunables/global>\\nprofile rbots-bwrap $bin flags=(unconfined) {\\n  userns,\\n}\\n' | sudo tee $profile"
+    say "  sudo apparmor_parser -r $profile && systemctl --user restart rbots-runner"
+    return
+  fi
+  printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile rbots-bwrap %s flags=(unconfined) {\n  userns,\n  include if exists <local/rbots-bwrap>\n}\n' "$bin" \
+    | "${sudo_cmd[@]}" tee "$profile" >/dev/null
+  if "${sudo_cmd[@]}" "$parser" -r "$profile" && "$bin" --dev-bind / / true >/dev/null 2>&1; then
+    say "AppArmor: perfil rbots-bwrap instalado; os comandos dos bots não veem a pasta de dados"
+  else
+    say "Aviso: instalei $profile, mas o bwrap ainda não roda; os comandos dos bots enxergam a pasta de dados"
+  fi
+}
+
+host_runner_env() {
+  mkdir -p "$runner_env_dir"
+  chmod 0700 "$runner_env_dir"
+  if [ "$only_runner" = 1 ] && [ -f "$runner_env_dir/runner.env" ]; then
+    return
+  fi
+  printf 'PATH=%s\n' "$app_home/.local/bin:$app_home/.bun/bin:$PATH" >"$runner_env_dir/runner.env"
+}
+
+host_runner_install() {
+  local port
+  port="$(env_value GATEWAY_PORT)"
+  port="${port:-2000}"
+  mkdir -p "$runner_unit_dir"
+  host_runner_env
+  bwrap_profile
+  cat >"$runner_unit_dir/rbots-runner.service" <<UNIT
+[Unit]
+Description=r/bots: runner que roda os turnos direto na máquina, como $app_user
+
+[Service]
+Type=simple
+EnvironmentFile=-$runner_env_dir/runner.env
+Environment=RBOTS_PROVIDER=host
+Environment=RBOTS_URL=http://127.0.0.1:$port
+Environment=RBOTS_DEVICE_TOKEN_FILE=$data_dir/runner/box-runner.token
+Environment=BOTS_DATA_DIR=$data_dir
+Environment=RBOTS_HEALTH_FILE=%t/rbots-runner.health
+ExecStart=$runner_bun $runner_main
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target
+UNIT
+  if systemctl --user daemon-reload && systemctl --user enable rbots-runner.service >/dev/null 2>&1 \
+    && systemctl --user restart rbots-runner.service; then
+    say "Runner de host: rbots-runner.service ligado (turnos direto na máquina, como $app_user)"
+  else
+    say "Aviso: não deu para ligar o rbots-runner.service; veja journalctl --user -u rbots-runner"
+    return 1
+  fi
+}
+
+host_runner_switch() {
+  set_env BOTS_HOST_RUNNER on
+  set_env BOTS_SANDBOX off
+}
+
+drop_box_runner() {
+  if docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME:-runelay-bots}" \
+    --filter "label=com.docker.compose.service=runner" --format '{{.ID}}' | grep -q .; then
+    compose --profile sandbox rm -sf runner >/dev/null && say "Container runner das caixas removido"
+  fi
+}
+
+compose_profiles() {
+  [ "$(env_value BOTS_SANDBOX)" = docker ] && printf '%s\n' --profile sandbox
+  [ "$observability" = 1 ] && printf '%s\n' --profile observability
+  return 0
+}
+
 command -v docker >/dev/null || fail "Docker não encontrado; instale o Docker Engine (https://docs.docker.com/engine/install/) e rode de novo"
 compose_major="$(docker compose version --short 2>/dev/null || true)"
 compose_major="${compose_major#v}"
@@ -364,6 +516,14 @@ if ! as_app docker info >/dev/null 2>&1; then
   printf 'Rode o comando abaixo, saia e entre de novo na sessão (ou rode newgrp docker) e repita a instalação:\n\n' >&2
   printf "  sudo usermod -aG docker \$USER\n\n" >&2
   exit 1
+fi
+
+if [ "$only_runner" = 1 ]; then
+  host_runner_ready || exit 0
+  host_runner_switch
+  drop_box_runner
+  host_runner_install || true
+  exit 0
 fi
 
 if [ "$harden" = 1 ]; then
@@ -395,7 +555,11 @@ if [ "$release_mode" = 1 ]; then
     *) fail "RBOTS_CHANNEL precisa ser stable ou beta" ;;
   esac
 fi
-ensure_env BOTS_SANDBOX docker
+host_ready=0
+if host_runner_ready; then
+  host_ready=1
+  host_runner_switch
+fi
 gid="$(socket_gid)" || exit 1
 [ -n "$gid" ] || fail "não deu para ler o gid do socket do Docker"
 ensure_env DOCKER_GID "$gid"
@@ -406,16 +570,18 @@ if [ -n "$mem_kb" ] && [ "$mem_kb" -lt $((8 * 1024 * 1024)) ]; then
   ensure_env BOTS_MAX_TURNS 2
 fi
 
+mapfile -t profiles < <(compose_profiles)
 if [ "$release_mode" = 1 ]; then
   registry_login
   say "Baixando a imagem do r/bots $release_version"
-  compose --profile sandbox pull || pull_failed
+  compose "${profiles[@]}" pull || pull_failed
 else
   say "Construindo a imagem (a primeira vez demora alguns minutos)"
-  compose --profile sandbox build
+  compose "${profiles[@]}" build
 fi
+[ "$host_ready" = 1 ] && drop_box_runner
 say "Subindo a stack"
-compose --profile sandbox up -d --remove-orphans
+compose "${profiles[@]}" up -d --remove-orphans
 
 port="$(env_value GATEWAY_PORT)"
 port="${port:-2000}"
@@ -429,10 +595,15 @@ fi
 
 if [ "$observability" = 1 ]; then
   say "Subindo a observabilidade (cAdvisor, Prometheus, Grafana)"
-  compose --profile sandbox --profile observability up -d
+  compose "${profiles[@]}" up -d
 fi
 
-runtime="$(box_runtime || true)"
+runtime=""
+if [ "$host_ready" = 1 ]; then
+  host_runner_install || true
+elif [ "$(env_value BOTS_SANDBOX)" = docker ]; then
+  runtime="$(box_runtime || true)"
+fi
 
 say ""
 if [ "$release_mode" = 1 ]; then
@@ -440,9 +611,11 @@ if [ "$release_mode" = 1 ]; then
 else
   say "Pronto. O r/bots está de pé em $address"
 fi
-if [ -n "$runtime" ]; then
+if [ "$host_ready" = 1 ]; then
+  say "Turnos dos bots: direto na máquina, como $app_user (rbots-runner.service)"
+elif [ -n "$runtime" ]; then
   say "Caixas dos bots: $runtime"
-else
+elif [ "$(env_value BOTS_SANDBOX)" = docker ]; then
   say "Caixas dos bots: o runtime aparece em rbots status quando o runner terminar de subir"
 fi
 if [ "$observability" = 1 ]; then

@@ -62,6 +62,44 @@ jobs:
       - run: bun run test
       - run: bun test scripts/release
 
+  host-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: bwrap with the AppArmor profile from the installer
+        run: |
+          sudo apt-get install -y -qq bubblewrap
+          printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile rbots-bwrap %s flags=(unconfined) {\n  userns,\n}\n' "$(command -v bwrap)" \
+            | sudo tee /etc/apparmor.d/rbots-bwrap
+          sudo apparmor_parser -r /etc/apparmor.d/rbots-bwrap
+          bwrap --dev-bind / / true
+      - name: user systemd
+        run: |
+          sudo loginctl enable-linger "$USER"
+          uid="$(id -u)"
+          timeout 30 sh -c "until [ -S /run/user/$uid/bus ]; do sleep 1; done"
+          echo "XDG_RUNTIME_DIR=/run/user/$uid" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$uid/bus" >> "$GITHUB_ENV"
+      - name: bundle the runner like the release
+        run: |
+          bun build --target=bun packages/runner/src/main.ts --outfile dist/runner/main.js
+          bun build --target=bun packages/runner/src/box-agent-main.ts --outfile dist/runner/box-agent.js
+      - name: host runner smoke
+        env:
+          SMOKE_RUNNER: dist/runner/main.js
+          SMOKE_REQUIRE_BWRAP: "1"
+          SMOKE_REQUIRE_SCOPE: "1"
+        run: bun scripts/smoke/host-runner.ts
+
   shellcheck:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

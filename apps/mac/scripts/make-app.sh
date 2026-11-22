@@ -34,6 +34,40 @@ for LPROJ in "$ROOT"/Packaging/*.lproj; do
 done
 cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
 
+BUN_VERSION="1.4.4"
+BUN_SHA256="c240d7f0ccb90c263a849fcdb09b7ee62630d921348ed6aafda86b9d577bc510"
+BUN_CACHE="${RBOTS_CACHE_DIR:-$HOME/Library/Caches/rbots-build}/bun-$BUN_VERSION"
+BUN_ZIP="$BUN_CACHE/bun-darwin-aarch64.zip"
+mkdir -p "$BUN_CACHE"
+if [ ! -f "$BUN_ZIP" ] || [ "$(shasum -a 256 "$BUN_ZIP" | cut -d' ' -f1)" != "$BUN_SHA256" ]; then
+    curl -fsSL -o "$BUN_ZIP.part" "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/bun-darwin-aarch64.zip"
+    if [ "$(shasum -a 256 "$BUN_ZIP.part" | cut -d' ' -f1)" != "$BUN_SHA256" ]; then
+        rm -f "$BUN_ZIP.part"
+        echo "erro: o sha256 do bun $BUN_VERSION não bate" >&2
+        exit 1
+    fi
+    mv "$BUN_ZIP.part" "$BUN_ZIP"
+fi
+BUN_UNPACK="$(mktemp -d)"
+trap 'rm -rf "$BUN_UNPACK"' EXIT
+ditto -x -k "$BUN_ZIP" "$BUN_UNPACK"
+mkdir -p "$APP/Contents/Resources/bun"
+cp "$BUN_UNPACK/bun-darwin-aarch64/bun" "$APP/Contents/Resources/bun/bun"
+chmod 0755 "$APP/Contents/Resources/bun/bun"
+
+REPO="$(cd "$ROOT/../.." && pwd)"
+if [ ! -f "$REPO/packages/runner/src/main.ts" ]; then
+    echo "erro: o runner fica em packages/runner; rode o make-app.sh de dentro do checkout inteiro" >&2
+    exit 1
+fi
+BUILD_BUN="$APP/Contents/Resources/bun/bun"
+if [ ! -d "$REPO/node_modules" ]; then
+    (cd "$REPO" && "$BUILD_BUN" install --frozen-lockfile)
+fi
+mkdir -p "$APP/Contents/Resources/runner"
+"$BUILD_BUN" build --target=bun "$REPO/packages/runner/src/main.ts" --outfile "$APP/Contents/Resources/runner/main.js"
+"$BUILD_BUN" build --target=bun "$REPO/packages/runner/src/box-agent-main.ts" --outfile "$APP/Contents/Resources/runner/box-agent.js"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -108,6 +142,11 @@ if [ -n "$SIGN_ID" ] && codesign --force --deep --keychain "$SIGN_KC" -s "$SIGN_
 else
     echo "aviso: sem o certificado runelay bots Local confiável, assinando ad-hoc (o macOS vai pedir as permissões de novo)" >&2
     codesign --force --deep -s - "$APP"
+fi
+
+if [ "${RBOTS_INSTALL:-1}" = "0" ]; then
+    echo "$APP"
+    exit 0
 fi
 
 pkill -x RunelayBots || true

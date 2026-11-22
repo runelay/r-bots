@@ -28,6 +28,8 @@ export const codeToolsText = defineMessages({
     commandFailed: "O comando falhou.",
     editModeCommands: "Modo Editar: comandos pedem sua confirmação.",
     editModeDeliveries: "Modo Editar: comandos e entregas pedem sua confirmação.",
+    macSecrets:
+      "Segredos do cofre ainda não chegam a comandos que rodam no Mac. Troque para VPS para usar este segredo.",
   },
   en: {
     allowPrompt: "Allow the repository {name} ({path}) for the bots? Reason: {reason}",
@@ -56,5 +58,6 @@ export const codeToolsText = defineMessages({
     commandFailed: "The command failed.",
     editModeCommands: "Edit mode: commands ask for your confirmation.",
     editModeDeliveries: "Edit mode: commands and deliveries ask for your confirmation.",
+    macSecrets: "Vault secrets don't reach commands running on the Mac yet. Switch to VPS to use this secret.",
   },
 });

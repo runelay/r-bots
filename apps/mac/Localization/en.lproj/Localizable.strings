@@ -541,6 +541,7 @@
 "Conectado" = "Connected";
 "Conectado como %@" = "Signed in as %@";
 "Conectado em %lld ms" = "Connected in %lld ms";
+"Conectado · %@" = "Connected · %@";
 "Conectado · %lld bots" = "Connected · %lld bots";
 "Conectado · %lld ferramentas" = "Connected · %lld tools";
 "Conectado · 1 bot" = "Connected · 1 bot";
@@ -558,6 +559,7 @@
 "Conectar runelay" = "Connect runelay";
 "Conecte ao seu servidor" = "Connect to your server";
 "Conecte ao seu servidor para acompanhar o time de bots." = "Connect to your server to keep up with your bot team.";
+"Conecte este Mac em Ajustes › Dispositivos." = "Connect this Mac in Settings › Devices.";
 "Conecte o ElevenLabs em Integrações para escolher vozes." = "Connect ElevenLabs in Integrations to choose voices.";
 "Conecte o ElevenLabs para voz natural" = "Connect ElevenLabs for a natural voice";
 "Conecte o ElevenLabs para voz natural." = "Connect ElevenLabs for a natural voice.";
@@ -700,6 +702,8 @@
 "Descartar" = "Discard";
 "Descartar áudio" = "Discard audio";
 "Desconectado" = "Disconnected";
+"Desconectado · %@" = "Disconnected · %@";
+"Desconectado · ligue em Ajustes › Bots" = "Disconnected · turn it on in Settings › Bots";
 "Desconectar" = "Disconnect";
 "Desconectar %@?" = "Disconnect %@?";
 "Descrição" = "Description";
@@ -800,6 +804,7 @@
 "Entrar no app" = "Enter the app";
 "Entrar no r/bots" = "Sign in to r/bots";
 "Entrar para continuar" = "Sign in to continue";
+"Entre na sua conta" = "Sign in to your account";
 "Entre na sua conta para conectar este Mac." = "Sign in to your account to connect this Mac.";
 "Entre no app em um Mac para ele aparecer aqui." = "Sign in to the app on a Mac to see it here.";
 "Enviando %lld%%" = "Uploading %lld%%";
@@ -872,6 +877,7 @@
 "Esta sessão do navegador já terminou" = "This browser session has ended";
 "Este Mac" = "This Mac";
 "Este Mac foi desconectado da conta. Conecte de novo em Ajustes › Dispositivos." = "This Mac was disconnected from the account. Connect it again in Settings › Devices.";
+"Este build não traz o runner" = "This build doesn't include the runner";
 "Este servidor ainda não mostra versões" = "This server doesn't show versions yet";
 "Este servidor está desatualizado" = "This server is out of date";
 "Este servidor está desatualizado: ele não pede login. Atualize o servidor ou use outro endereço." = "This server is out of date: it doesn't ask for a sign-in. Update the server or use another address.";
@@ -886,6 +892,7 @@
 "Ex.: http://127.0.0.1:2000 ou o endereço do tailnet." = "E.g. http://127.0.0.1:2000 or your tailnet address.";
 "Excluir" = "Delete";
 "Excluir %@?" = "Delete %@?";
+"Executa os bots neste Mac. Desligado, eles rodam só na VPS." = "Runs the bots on this Mac. When off, they run only on the VPS.";
 "Executor local" = "Local executor";
 "Expirou" = "Expired";
 "Exportar" = "Export";
@@ -908,6 +915,7 @@
 "Falta 1 etapa" = "1 step left";
 "Falta a chave do servidor neste Mac." = "This Mac is missing the server key.";
 "Falta a lista \"paths\"." = "Missing the \"paths\" list.";
+"Falta login no claude" = "claude isn't signed in";
 "Falta o campo \"%@\"." = "Missing the \"%@\" field.";
 "Falta o campo \"content\"." = "Missing the \"content\" field.";
 "Falta o campo \"text\"." = "Missing the \"text\" field.";
@@ -1007,6 +1015,7 @@
 "Instalando dependências" = "Installing dependencies";
 "Instalar" = "Install";
 "Instalar %@" = "Install %@";
+"Instale o app pelo make-app.sh." = "Install the app with make-app.sh.";
 "Instruções" = "Instructions";
 "Integrações" = "Integrations";
 "Intervalo inválido." = "Invalid range.";
@@ -1347,6 +1356,7 @@
 "Não deu para salvar. Tente de novo." = "Couldn't save. Try again.";
 "Não deu para tirar o print: %@" = "Couldn't take the screenshot: %@";
 "Não deu para tocar o áudio." = "Couldn't play the audio.";
+"Não deu para trocar para %@. Tente de novo." = "Couldn't switch to %@. Try again.";
 "Não deu para ver a versão" = "Couldn't get the version";
 "Não deu para ver os CLIs" = "Couldn't get the CLIs";
 "Não encontrado neste servidor" = "Not found on this server";
@@ -1748,6 +1758,7 @@
 "Rodar" = "Run";
 "Rodar %@ agora" = "Run %@ now";
 "Rodar AppleScript no Finder, Safari e outros apps." = "Run AppleScript in Finder, Safari and other apps.";
+"Rodar agentes neste Mac" = "Run agents on this Mac";
 "Rodar agora" = "Run now";
 "Rodar as falhas de novo" = "Rerun failed checks";
 "Rodar de novo" = "Run again";
@@ -1755,6 +1766,7 @@
 "Rodar projeto" = "Run project";
 "Rodar um comando" = "Run a command";
 "Rodar uma automação no Mac" = "Run an automation on the Mac";
+"Rode claude no Terminal e faça login." = "Run claude in Terminal and sign in.";
 "Rode no servidor. Ele guarda um backup antes e volta sozinho se a versão nova não subir." = "Run it on the server. It takes a backup first and rolls back on its own if the new version doesn't start.";
 "Rolar" = "Scroll";
 "Rolar a tela" = "Scroll";
@@ -2157,6 +2169,7 @@
 "escrevendo…" = "writing…";
 "escuro" = "dark";
 "espanhol" = "spanish";
+"este mac" = "this mac";
 "excluídos" = "deleted";
 "falhou" = "failed";
 "feito" = "done";
@@ -2208,6 +2221,7 @@
 "o navegador" = "the browser";
 "o terminal" = "the terminal";
 "ocultos" = "hidden";
+"onde roda" = "where it runs";
 "ontem" = "yesterday";
 "opcional" = "optional";
 "organiza" = "organizer";
@@ -2235,7 +2249,9 @@
 "restante" = "left";
 "restaurar" = "restore";
 "rodando" = "running";
+"rodar" = "run";
 "rotinas" = "routines";
+"runner" = "runner";
 "sair" = "sign out";
 "segredo vencido" = "secret expired";
 "segredos" = "secrets";

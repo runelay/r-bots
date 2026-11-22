@@ -2,14 +2,47 @@
 
 ## Unreleased
 
-### Apps
+### Install
 
-- The server menu at the top of the sidebar (Mac) and of the bot list (iPhone) has a "Onde roda" section that lists where the active server can run bots, each with its status dot. Picking one switches it for every bot on that server, and the dot on the closed menu now shows whether that place is online. Servers that do not list environments keep the menu as before.
+- The installer sets up the AppArmor profile for `bwrap` before it starts `rbots-runner.service`, so the runner hides the r/bots data from the first boot instead of after the next restart.
 
 ### Server
 
 - The server speaks English too. Preferences have a `language` setting (`system`, `pt-BR` or `en`), and the server answers each request in the language of its `Accept-Language` header: common errors, sign-in errors and the `/device` sign-in page (which also takes `?lang=`). Approval card buttons follow the saved language, and bots reply in English or Portuguese when it is set.
 - Every error the apps show, tool call labels, approval prompts and reasons, settings change lines and turn failure messages now come in English too. The Mac and iPhone apps no longer read Portuguese words out of tool labels to spot delegations and plain shell commands.
+
+## v0.1.18
+
+### Install
+
+- The installer finds `apparmor_parser` in `/usr/sbin` and `/sbin` when they are not on the user's `PATH`, so the `rbots-bwrap` AppArmor profile is installed on Ubuntu 24.04 and `bwrap` can hide the r/bots data from the bots' commands.
+
+## v0.1.17
+
+### Where turns run
+
+- Turns run directly on the host as the owner, like Claude Code in a terminal: the same user, home, `git`, `gh`, `supabase`, `wrangler`, Node and Docker as the machine. A new `rbots-runner.service` (systemd user unit) runs them; the Docker boxes are off by default.
+- Each turn runs in a `systemd-run --user` scope with the box memory and CPU limits, and in `bwrap` with the r/bots data, backups and config hidden from the model. Without systemd or `bwrap` the runner says so once at boot and runs without them.
+- If the VPS host runner is not connected, the turn runs in the server container and the chat says so in one line.
+- Bash on the host never goes through `sudo runelaytool`; the test lock and heavy-command limits still apply.
+- With the host runner on, bots can read files anywhere outside the protected areas (r/bots data, `/proc`, `/sys`, `/dev`, account settings), not only inside the task worktree. Writes stay inside the worktree.
+- The system prompt tells the model to stop and say which tool failed and why, instead of trying another route.
+
+### This Mac
+
+- Pick "Este Mac" in the server menu to run bots on the Mac where the app is open (Xcode, simulator, iPhone), with "Rodar agentes neste Mac" on. Bots, conversations and memory stay on the server; the Mac only needs `claude` logged in. The choice is stored on the server (`environment` in `/preferences`) and `GET /environments` lists VPS and Este Mac with their state.
+- If the Mac is chosen and offline, the turn does not run and the chat says so; it never falls back to the VPS silently.
+- Code tasks move between the VPS and the Mac through a hidden GitHub ref (`refs/rbots/sync/<branch>`), with no commit on the branch; deliveries still run on the server and remove the ref after a push or PR. Repositories without a GitHub remote stay on the VPS.
+- If the Mac has no `claude` or it is logged out, the turn stops and tells the owner to run `claude` once in Terminal.
+
+### Apps
+
+- The server menu at the top of the sidebar (Mac) and of the bot list (iPhone) lists "VPS" and "Este Mac" next to the servers, each with its status dot and a check on the one in use. Picking one switches it for every bot on that server, and the dot on the closed menu shows whether it is online. Servers that do not list environments keep the menu as before.
+- New "Rodar agentes neste Mac" in Mac Settings › Bots: on, the app starts and watches a runner on this Mac (bun and the runner ship inside the app) and shows Conectado, Desconectado or Falta login no claude; off, the bots run only on the VPS.
+
+### Upgrading
+
+- Run `rbots update` (or the installer): it installs and starts `rbots-runner.service`, sets `BOTS_HOST_RUNNER=on` and `BOTS_SANDBOX=off`, and removes the `runner` container. The host needs `bun`. On Ubuntu 24.04, `bwrap` needs the AppArmor profile in `docs/hosting.md`; the installer adds it when `sudo` works without a password.
 
 ## v0.1.16
 

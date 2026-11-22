@@ -241,6 +241,7 @@ describe("authorization", () => {
     expect(runnerUpgradeData(new Req(fromDevice))).toEqual({
       kind: "runner",
       deviceKey: "dev-1",
+      deviceId: "dev-1",
       rank: Date.parse("2026-11-19T10:00:00.000Z"),
       deviceName: "MacBook",
       userId: "u1",
@@ -260,6 +261,11 @@ describe("authorization", () => {
       owner: false,
     });
     expect(runnerUpgradeData(new Req(anonymous))).toBeNull();
+    const asRunner = new Request("http://127.0.0.1/runner/connect", {
+      headers: { authorization: "Bearer device", "x-rbots-role": "runner" },
+    });
+    expect(await gate(asRunner)).toBeNull();
+    expect(runnerUpgradeData(new Req(asRunner))).toMatchObject({ deviceKey: "dev-1:runner", deviceId: "dev-1" });
   });
 });
 

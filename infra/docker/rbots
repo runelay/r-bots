@@ -166,6 +166,10 @@ profile_args() {
 
 all_profiles=(--profile sandbox --profile observability)
 
+host_runner_step() {
+  bash "$1/infra/docker/install.sh" --host-runner || say "Aviso: o runner de host não foi atualizado; veja journalctl --user -u rbots-runner"
+}
+
 server_get() {
   [ -r "$token_file" ] || return 1
   curl -fsS --max-time 5 -H "Authorization: Bearer $(cat "$token_file")" "$address/$1" 2>/dev/null
@@ -452,6 +456,11 @@ cmd_status() {
   else
     say "Turnos rodando: não deu para ler o /status (token em $token_file)"
   fi
+  if command -v systemctl >/dev/null && systemctl --user is-active --quiet rbots-runner 2>/dev/null; then
+    say "Runner de host: de pé (rbots-runner.service)"
+  elif command -v systemctl >/dev/null && systemctl --user cat rbots-runner >/dev/null 2>&1; then
+    say "Runner de host: parado; veja journalctl --user -u rbots-runner"
+  fi
   runtime="$(compose "${profiles[@]}" logs --no-log-prefix runner 2>/dev/null | grep -o 'caixas com o runtime .*' | tail -1 || true)"
   [ -n "$runtime" ] && say "Caixas: runtime ${runtime#caixas com o runtime }"
   metrics="$(server_get metrics || true)"
@@ -490,6 +499,9 @@ update_checkout() {
   say "Reconstruindo a imagem"
   step "Reconstruindo a imagem"
   compose "${profiles[@]}" build || fail "o build da imagem falhou"
+  step "Atualizando o runner de host"
+  host_runner_step "$repo_dir"
+  mapfile -t profiles < <(profile_args)
   say "Subindo ${profiles[*]:-sem perfis extras}"
   step "Subindo o servidor"
   compose "${profiles[@]}" up -d --remove-orphans || fail "o docker compose up falhou"
@@ -565,6 +577,9 @@ update_release() {
   if [ -n "$channel_flag" ]; then
     set_env RBOTS_CHANNEL "$chan"
   fi
+  step "Atualizando o runner de host"
+  host_runner_step "$app_dir/current"
+  mapfile -t profiles < <(profile_args)
   say "Subindo a $target ${profiles[*]:-sem perfis extras}"
   step "Subindo a $target"
   if compose "${profiles[@]}" up -d --remove-orphans && wait_health; then
@@ -689,9 +704,11 @@ cmd_start() {
   mapfile -t profiles < <(profile_args)
   [ -n "$(services_present)" ] || fail "nada instalado ainda; rode $repo_dir/infra/docker/install.sh"
   compose "${profiles[@]}" start
+  systemctl --user start rbots-runner 2>/dev/null || true
 }
 
 cmd_stop() {
+  systemctl --user stop rbots-runner 2>/dev/null || true
   compose "${all_profiles[@]}" stop
 }
 

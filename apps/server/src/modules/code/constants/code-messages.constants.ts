@@ -33,6 +33,14 @@ export const codeText = defineMessages({
     checkpointFailed: "Não consegui guardar o ponto de volta: {reason}",
     checkpointGone: "Esse ponto de volta não existe mais: {reason}",
     restoreFailed: "Não consegui voltar os arquivos: {reason}",
+    macNoGithub:
+      "Este repositório não tem remoto no GitHub, então o Mac não tem como receber o código. Troque para VPS para trabalhar nele.",
+    macDetached:
+      "A worktree desta tarefa não está numa branch, então o Mac não tem como recebê-la. Troque para VPS ou volte para a branch da tarefa.",
+    snapshotFailed: "Não consegui guardar o estado da worktree: {reason}",
+    syncPushFailed: "Não consegui mandar o código para o GitHub: {reason}",
+    syncFetchFailed: "Não consegui baixar o código do Mac: {reason}",
+    syncIncomplete: "O código do Mac chegou incompleto.",
   },
   en: {
     grantMissing: "This permission doesn't exist.",
@@ -66,5 +74,13 @@ export const codeText = defineMessages({
     checkpointFailed: "Couldn't save the restore point: {reason}",
     checkpointGone: "This restore point no longer exists: {reason}",
     restoreFailed: "Couldn't restore the files: {reason}",
+    macNoGithub:
+      "This repository has no GitHub remote, so the Mac can't receive the code. Switch to VPS to work on it.",
+    macDetached:
+      "This task's worktree isn't on a branch, so the Mac can't receive it. Switch to VPS or go back to the task's branch.",
+    snapshotFailed: "Couldn't save the worktree state: {reason}",
+    syncPushFailed: "Couldn't send the code to GitHub: {reason}",
+    syncFetchFailed: "Couldn't download the code from the Mac: {reason}",
+    syncIncomplete: "The code from the Mac arrived incomplete.",
   },
 });

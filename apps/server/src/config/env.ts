@@ -40,6 +40,7 @@ const schema = z.object({
   HOST_HOME: optionalText,
   BOTS_HOST_DATA_DIR: optionalText,
   BOTS_SANDBOX: z.enum(["off", "docker"], { error: "use off ou docker." }).default("off"),
+  BOTS_HOST_RUNNER: z.enum(["off", "on"], { error: "use off ou on." }).default("off"),
   BOX_MEM_MB: positive.default(2048),
   BOX_CPUS: positive.default(1),
   BOTS_UPDATE_CHECKS: z.enum(["on", "off"], { error: "use on ou off." }).default("on"),

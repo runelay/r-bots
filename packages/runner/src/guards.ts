@@ -1,4 +1,4 @@
-import type { BoxSpec, NativeToolGate, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
+import type { BoxSpec, NativeToolGate, ProviderEvent, TurnRequest, WorkspaceSync } from "@runelay-bots/protocol";
 import { providers } from "@runelay-bots/protocol";
 import { isRecord } from "./json";
 import type { BoxMount } from "./types";
@@ -44,6 +44,13 @@ export function isBoxSpec(value: unknown): value is BoxSpec {
 
 export function isProviderEvent(value: unknown): value is ProviderEvent {
   return isRecord(value) && typeof value.type === "string" && eventTypes.includes(value.type);
+}
+
+export function isWorkspaceSync(value: unknown): value is WorkspaceSync {
+  if (!isRecord(value)) return false;
+  return ["repo", "cloneUrl", "name", "branch", "ref", "commit", "cwd"].every(
+    (key) => typeof value[key] === "string" && value[key] !== "",
+  );
 }
 
 export function isToolGate(value: unknown): value is NativeToolGate {

@@ -42,6 +42,31 @@ export function boxHello({
   };
 }
 
+export function hostHello({
+  memFreeMb = 8192,
+  name = "vps",
+  environment,
+}: {
+  memFreeMb?: number;
+  name?: string;
+  environment?: "vps" | "mac";
+} = {}) {
+  return {
+    type: "hello",
+    capabilities: ["turns", "host", "mcp-proxy", "hooks"],
+    runner: {
+      version: "1.0.0",
+      name,
+      kvm: false,
+      runtime: "host",
+      providers: ["claude"],
+      workspaceRoots: [],
+      capacity: capacity(memFreeMb),
+      ...(environment ? { environment } : {}),
+    },
+  };
+}
+
 export function fakeRunner(data: Record<string, unknown> = runnerDevice("box-1")) {
   const sent: RunnerFrame[] = [];
   const ws = {

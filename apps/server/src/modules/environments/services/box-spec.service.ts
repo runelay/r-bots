@@ -14,6 +14,28 @@ export function hostPathOf(path: string) {
   return path;
 }
 
+function hostTextOf(text: string) {
+  const base = dataDir.replace(/\/$/, "");
+  const pattern = new RegExp(`(^|[\\s"'\`(=:])${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=/|$)`, "gm");
+  return text.replace(pattern, `$1${hostDataDir}`);
+}
+
+export function hostTurnOf(request: TurnRequest): TurnRequest {
+  const { code, configDir, images } = request;
+  return {
+    ...request,
+    systemPrompt: hostTextOf(request.systemPrompt),
+    prompt: hostTextOf(request.prompt),
+    ...(images ? { images: images.map((image) => ({ ...image, path: hostPathOf(image.path) })) } : {}),
+    ...(code ? { code: { ...code, cwd: hostPathOf(code.cwd) } } : {}),
+    ...(configDir ? { configDir: hostPathOf(configDir) } : {}),
+  };
+}
+
+export function hostBoxSpec(): BoxSpec {
+  return { memMb: env.BOX_MEM_MB, cpus: env.BOX_CPUS, mounts: [] };
+}
+
 export function workDirOf({ workKey }: Pick<TurnRequest, "workKey">) {
   return join(dataDir, "work", workKey.replace(/[^\w/-]/g, "_"));
 }

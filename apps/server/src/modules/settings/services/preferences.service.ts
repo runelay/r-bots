@@ -1,3 +1,4 @@
+import { type EnvironmentId, environmentIds } from "@runelay-bots/protocol";
 import { readSetting, writeSetting } from "../../../db/settings";
 import { ValidationError } from "../../../shared/errors";
 import {
@@ -26,6 +27,8 @@ const text = defineMessages({
     notificationBoolean: "notifications.{key} precisa ser verdadeiro ou falso.",
     microphonesInvalid: "microphones precisa ser uma lista de nomes.",
     languageInvalid: "language precisa ser {options}.",
+    environmentInvalid: "environment precisa ser {options}.",
+    or: " ou ",
   },
   en: {
     replies: "Bot replies",
@@ -40,6 +43,8 @@ const text = defineMessages({
     notificationBoolean: "notifications.{key} must be true or false.",
     microphonesInvalid: "microphones must be a list of names.",
     languageInvalid: "language must be {options}.",
+    environmentInvalid: "environment must be {options}.",
+    or: " or ",
   },
 });
 
@@ -52,11 +57,13 @@ export interface AppPreferences {
   microphone: string | null;
   microphones: string[];
   language: LanguagePreference;
+  environment: EnvironmentId;
   updatedAt: string | null;
 }
 
 const preferencesKey = "app.preferences";
 const listeners = new Set<(preferences: AppPreferences) => void>();
+let environmentCache: EnvironmentId = "vps";
 
 export function defaultPreferences(): AppPreferences {
   return {
@@ -64,8 +71,13 @@ export function defaultPreferences(): AppPreferences {
     microphone: null,
     microphones: [],
     language: "system",
+    environment: "vps",
     updatedAt: null,
   };
+}
+
+function isEnvironment(value: unknown): value is EnvironmentId {
+  return environmentIds.some((id) => id === value);
 }
 
 export async function readPreferences(): Promise<AppPreferences> {
@@ -73,13 +85,19 @@ export async function readPreferences(): Promise<AppPreferences> {
   const base = defaultPreferences();
   const language = isLanguagePreference(stored.language) ? stored.language : base.language;
   setLanguagePreference(language);
+  environmentCache = isEnvironment(stored.environment) ? stored.environment : base.environment;
   return {
     notifications: { ...base.notifications, ...stored.notifications },
     microphone: stored.microphone ?? null,
     microphones: stored.microphones ?? [],
     language,
+    environment: environmentCache,
     updatedAt: stored.updatedAt ?? null,
   };
+}
+
+export function currentEnvironment() {
+  return environmentCache;
 }
 
 export function onPreferences(listener: (preferences: AppPreferences) => void) {
@@ -98,7 +116,7 @@ export async function updatePreferences(body: unknown) {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new ValidationError(text("bodyInvalid"), "body");
   const raw = body as Record<string, unknown>;
   for (const key of Object.keys(raw))
-    if (!["notifications", "microphone", "microphones", "language"].includes(key))
+    if (!["notifications", "microphone", "microphones", "language", "environment"].includes(key))
       throw new ValidationError(text("unknownField", { key }), key);
   const next = await readPreferences();
   if (raw.notifications !== undefined) {
@@ -125,9 +143,18 @@ export async function updatePreferences(body: unknown) {
       throw new ValidationError(text("languageInvalid", { options: languagePreferences.join(", ") }), "language");
     next.language = raw.language;
   }
+  if (raw.environment !== undefined) {
+    if (!isEnvironment(raw.environment))
+      throw new ValidationError(
+        text("environmentInvalid", { options: environmentIds.join(text("or")) }),
+        "environment",
+      );
+    next.environment = raw.environment;
+  }
   next.updatedAt = new Date().toISOString();
   await writeSetting(preferencesKey, next);
   setLanguagePreference(next.language);
+  environmentCache = next.environment;
   for (const listener of listeners) listener(next);
   return next;
 }

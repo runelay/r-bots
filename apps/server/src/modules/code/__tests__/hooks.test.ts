@@ -10,9 +10,13 @@ import type { PermissionMode } from "../../approvals/services/permissions.servic
 import type { BotDefinition } from "../../bots/services/bots.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
 import type { ApprovalResult, ToolContext } from "../../engine/services/mcp-gateway.service";
+import { hostPathOf } from "../../environments/services/box-spec.service";
+import { onHost } from "../../environments/services/host-turns.service";
 import * as vaultTools from "../../vault/services/vault-tools.service";
+import { codeToolsText } from "../constants/code-tools-messages.constants";
 import { listGrants } from "../repositories/code.repository";
 import { ensureBotHome } from "../services/bot-home.service";
+import { heavyLimits } from "../services/heavy-commands.service";
 import {
   approvalTimeoutMs,
   beginCall,
@@ -840,6 +844,52 @@ describe("tool sandbox", () => {
       );
       expect(background.allow).toBe(false);
       expect(background.message).toContain("dev_server_start");
+    } finally {
+      fake.restore();
+    }
+  });
+
+  test("a host turn never uses the uid sandbox and locks tests in the host data dir", async () => {
+    const fake = sandboxOn({ stdout: "ok 1502 bwrap=0\n" });
+    try {
+      const { context } = makeContext();
+      const hooks = onHost(nativeHooks(context, workspace(), { scan: async () => undefined } as unknown as CodeLive));
+      expect(await hooks.before("Bash", { command: "git status" }, "h1")).toEqual({ allow: true });
+      const tests = commandOf(await hooks.before("Bash", { command: "bun test src/a.test.ts" }, "h2"));
+      expect(tests).toContain(`flock -E 75 -w ${heavyLimits.testWaitSec} '${hostPathOf(heavyLimits.lockFile)}'`);
+      expect(tests).not.toContain("runelaytool");
+      const secret = spyOn(vaultTools, "secretBashCommand").mockResolvedValue("HELPER vitest");
+      try {
+        const rewritten = commandOf(await hooks.before("Bash", { command: "vitest x" }, "h3"));
+        expect(rewritten).toContain(hostPathOf(heavyLimits.lockFile));
+      } finally {
+        secret.mockRestore();
+      }
+      expect(fake.calls).toHaveLength(0);
+    } finally {
+      fake.restore();
+    }
+  });
+
+  test("a Mac turn runs Bash untouched and refuses vault secrets", async () => {
+    const fake = sandboxOn({ stdout: "ok 1502 bwrap=0\n" });
+    try {
+      const { context } = makeContext();
+      const hooks = onHost(
+        nativeHooks(context, workspace(), { scan: async () => undefined } as unknown as CodeLive),
+        "mac",
+      );
+      expect(await hooks.before("Bash", { command: "bun test src/a.test.ts" }, "m1")).toEqual({ allow: true });
+      const secret = spyOn(vaultTools, "secretBashCommand").mockResolvedValue("HELPER");
+      try {
+        expect(await hooks.before("Bash", { command: "curl x" }, "m2")).toEqual({
+          allow: false,
+          message: codeToolsText("macSecrets"),
+        });
+      } finally {
+        secret.mockRestore();
+      }
+      expect(fake.calls).toHaveLength(0);
     } finally {
       fake.restore();
     }

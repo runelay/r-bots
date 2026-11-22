@@ -31,6 +31,7 @@ import type { InstallState, WorkspaceState } from "../../code/services/workspace
 import * as workspaces from "../../code/services/workspace.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import * as uploads from "../../uploads/services/uploads.service";
+import { toolFailureRule } from "../services/engine.service";
 
 const root = mkdtempSync(join(tmpdir(), "rb-engine-code-"));
 let counter = 0;
@@ -320,6 +321,7 @@ describe("switching workspaces mid-turn", () => {
       bodyOf(fakeProviders.turns[1].request.prompt).startsWith(`O repositório ${opened.repoName} está aberto`),
     ).toBe(true);
     expect(fakeProviders.turns[1].request.systemPrompt).toContain("## Repositório aberto");
+    expect(fakeProviders.turns[1].request.systemPrompt).toContain(toolFailureRule);
   });
 
   test("stops switching after two workspaces", async () => {

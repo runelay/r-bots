@@ -93,7 +93,7 @@ import {
   questionInteraction,
   resolveAnswers,
 } from "../../questions/services/questions.service";
-import { readPreferences } from "../../settings/services/preferences.service";
+import { currentEnvironment, readPreferences } from "../../settings/services/preferences.service";
 import { settingsGuide } from "../../settings/services/settings-tools.service";
 import { type LoadedSkill, skillsBlock, skillsIndex } from "../../skills/services/skills.service";
 import { observeTurnDuration } from "../../status/services/metrics.service";
@@ -307,6 +307,9 @@ export const scheduleNote = [
   "Para ver o trabalho do time, use thread_list e thread_read e, nos repositórios liberados, `git -C <caminho> log --since=<data>`. Se algo falhar ou for bloqueado, diga o que não conseguiu ver em vez de concluir que não houve atividade.",
 ].join("\n");
 
+export const toolFailureRule =
+  "- Se uma ferramenta falhar (comando com erro, permissão negada, CLI sem login, conector fora do ar), pare e diga em uma linha qual ferramenta falhou e o erro. Não procure outro caminho (outro conector, o Mac, outra CLI) sem a pessoa pedir.";
+
 function shellGuide(home: string) {
   return [
     "## Terminal na VPS",
@@ -315,6 +318,7 @@ function shellGuide(home: string) {
     '- Banco de produção, leitura: `supabase db query --remote=<ref> --read-only "<sql>"` roda direto em qualquer modo (o banco garante que é só leitura). `supabase projects list` mostra os refs; suas instruções e a memória dizem quais são de produção. O conector supabase (`connector_call` → `supabase.execute_sql`) também serve.',
     "- CI e deploy: `gh run list`, `gh pr view`, `gh api`. Logs da Cloudflare: `wrangler tail <worker> --format json` com `timeout 60` na frente (nunca deixe rodando). Saúde: `curl -s <url>`.",
     "- Sem `&`, nohup ou watchers: comandos terminam no mesmo turno.",
+    toolFailureRule,
     "- Lista dura, sempre com card da pessoa, em qualquer modo: deploy (wrangler deploy, gh pr merge, gh workflow run), escrita em produção (SQL sem --read-only no banco remoto, migration, secrets), dinheiro e mensagem para fora. Pedidos de leitura nunca precisam de card: faça.",
   ].join("\n");
 }
@@ -392,6 +396,7 @@ function workspaceGuide(code: CodePrompt) {
     "- `test_playwright`, ou Playwright pelo Bash, só quando a pessoa pedir teste ou prints, ou uma vez para fechar uma feature de UI. Não é ferramenta de print a cada edição.",
     "- Antes de subir um projeto, veja o que já está no ar (`server_list` ou os servidores no contexto da mensagem) e reuse; nunca suba o mesmo projeto duas vezes e, no fim da tarefa, pare os servidores de que não precisa mais.",
     "- Rode só os testes, lint ou build da parte que mudou, no fim da rodada e não a cada edição.",
+    toolFailureRule,
     "- .git, .claude, .env* e a configuração dos bots são protegidos: não tente escrever neles.",
     '- Commits por módulo ou feature no Bash (`git add <arquivos>` + `git commit -m`), em conventional commits em inglês, curtos e sem assinatura de IA (nada de Co-Authored-By). `workspace_deliver` faz um commit só com tudo o que estiver pendente: use para um único módulo ou com action pr para push e PR depois dos commits. Base do PR: a que a pessoa pedir; se ela não disser, a base de onde a branch saiu de verdade (compare `git rev-list --left-right --count HEAD...origin/main` e `HEAD...origin/develop` e fique com a mais próxima), nunca develop por padrão. PR para a main é permitido; só o merge passa pela pessoa. Se a pessoa pedir push, dê push (`git push -u origin <branch da tarefa>` ou workspace_deliver action push); se a branch já tem PR, o push atualiza o PR e você nunca abre outro. "Só push" nunca vira PR novo. Nunca diga que não pode dar push. Uma negação antiga não vale para o próximo pedido.',
     "- No fim, diga em uma ou duas linhas o que mudou e como conferir.",
@@ -1783,12 +1788,13 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         await trackWorkspace(item);
       codeWorkspace = opened;
     }
+    const machine = currentEnvironment() === "mac" ? "#mac" : "";
     const keyFor = (workspace: WorkspaceState | null) =>
-      workspace && codeModeSupported(account.provider, account.runner)
+      (workspace && codeModeSupported(account.provider, account.runner)
         ? `${account.id}@${workspace.id}`
         : shellSupported(account.provider, account.runner)
           ? `${account.id}@home`
-          : account.id;
+          : account.id) + machine;
     let sessionKey = keyFor(codeWorkspace);
     let switching = false;
 

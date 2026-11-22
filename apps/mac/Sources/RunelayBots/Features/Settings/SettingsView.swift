@@ -105,7 +105,7 @@ extension SettingsSection {
         case .account: ["senha", "foto", "sair", "login", "primeiros passos"]
         case .appearance: ["tema", "escuro", "claro", "movimento", "texto", "fonte", "idioma", "language", "português", "english"]
         case .notifications: ["avisos", "respostas", "aprovações", "rotinas", "erros"]
-        case .bots: ["arquivados", "ocultos", "excluídos", "restaurar", "novo bot", "editar"]
+        case .bots: ["arquivados", "ocultos", "excluídos", "restaurar", "novo bot", "editar", "rodar", "este mac", "onde roda", "runner"]
         case .aiAccounts: ["contas", "claude", "codex", "grok", "cursor", "modelos", "padrão", "adicionar"]
         case .vault: ["segredos", "senhas", "tokens", "keychain", "touch id"]
         case .computer: ["acessibilidade", "gravação de tela", "automação", "permissões", "executor", "gravações"]

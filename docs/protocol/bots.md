@@ -239,9 +239,34 @@ Seção "Seus ajustes" no prompt de todo bot: pode se configurar e faz direto; c
 - "Quero trocar a chave do Jev. Abre o formulário." → `integration_setup`, `interaction.opened` `kind:"integration"`, `display:"integration_form"`; respondido `deny` sem colar nada → "A pessoa preferiu não configurar agora."
 - "Remove a rotina… e arquiva o bot" → `remove_schedule` e `bot_archive`, `archivedAt` preenchido e a rotina fora do agendador.
 
+## v61 (22/11): Este Mac
+
+- `GET /preferences` e `PATCH /preferences` ganham `environment: "vps" | "mac"` (padrão `"vps"`). Valor fora disso → 400 com `field: "environment"`. A mudança sai na linha `preferences` do `/status/stream` e vale a partir do próximo turno.
+- `GET /environments` (dono) → `{ selected, environments: [{ id, label, online, canRun }] }`, sempre com VPS e Este Mac. A VPS está sempre `online`/`canRun` (sem runner de host, o turno roda no container do servidor). Este Mac fica `online` enquanto um runner conecta com `environment: "mac"` no `hello`. O corpo antigo (`{ok, environments: [runners]}`) saiu; o app não usava.
+- Runner do Mac: o app sobe `bun runner/main.js` com `RBOTS_PROVIDER=host`, `RBOTS_URL`, `RBOTS_DEVICE_TOKEN` (o token do dispositivo do app), `RBOTS_RUNNER_NAME`, `RBOTS_ENVIRONMENT=mac`, `RBOTS_WORKSPACES_DIR` e, se quiser, `RBOTS_CLAUDE_BIN`. Ele abre `/runner/connect` com o cabeçalho `x-rbots-role: runner`, então ganha a chave `<dispositivo>:runner` e não derruba a conexão do app. Revogar o dispositivo fecha as duas.
+- `turn.start` para o Mac leva `sync {repo, cloneUrl, name, branch, ref, commit, cwd}` quando o turno tem worktree; o `turn.end` volta com `sync {ref, commit}` ou `syncError`. Pedido `op: "workspace.sync" {turnId}` → `response {ok, result: {ref, commit}}`.
+- Mac escolhido e fora: o turno termina com "Este Mac está desconectado; abra o app no Mac ou troque para VPS." e não roda na VPS. Mac sem login no `claude`: "O Claude Code deste Mac não está logado. Abra o Terminal, rode `claude` uma vez e entre na sua conta; depois mande a mensagem de novo."
+
+### Verificado
+
+```
+GET /environments (runner do Mac fora)
+{"selected":"vps","environments":[{"id":"vps","label":"VPS","online":true,"canRun":true},{"id":"mac","label":"Este Mac","online":false,"canRun":false}]}
+PATCH /preferences {"environment":"lua"} -> 400
+{"ok":false,"error":"environment precisa ser vps ou mac.","field":"environment"}
+PATCH /preferences {"environment":"mac"} -> 200
+{"notifications":{"replies":true,"approvals":true,"routines":true,"failures":true},"microphone":null,"microphones":[],"environment":"mac","updatedAt":"2026-11-22T12:25:01.585Z"}
+GET /environments (runner no Mac conectado)
+{"selected":"mac","environments":[{"id":"vps","label":"VPS","online":true,"canRun":true},{"id":"mac","label":"Este Mac","online":true,"canRun":true}]}
+log do servidor: mac runner connected (c385f87d-…:runner)
+turno no Mac com claude instalado e sem login: turn.settled {"outcome":"failed","error":{"message":"O Claude Code deste Mac não está logado. Abra o Terminal, rode `claude` uma vez e entre na sua conta; depois mande a mensagem de novo."}}
+turno no Mac com Mac desligado: turn.settled {"outcome":"failed","error":{"message":"Este Mac está desconectado; abra o app no Mac ou troque para VPS."}}
+POST /bots/assistente/code/deliver {"action":"push",…} -> {"action":"push","commit":"82c6f68",…}; refs/rbots/sync/feat/mac-sync-check some do GitHub e do repositório local
+```
+
 ---
 
-## v61 (22/11): idioma do app e das respostas
+## v62 (22/11): idioma do app e das respostas
 
 O produto deixa de ser só pt-BR: o app escolhe entre inglês e português, e o servidor responde no mesmo idioma.
 
@@ -263,6 +288,7 @@ O produto deixa de ser só pt-BR: o app escolhe entre inglês e português, e o 
 
 - Erros de validação e de rota de todos os módulos (bots, conversas, grupos, seções, review, navegador, GitHub, Linear, contas, servidores, código, notas, planilhas, agenda, exportações, cofre, anexos, integrações, jobs, voz, simuladores, testes, provedores, ferramentas) saem no idioma da requisição. Os códigos (`code`) e campos (`field`) não mudam.
 - O que nasce num turno usa o idioma guardado: `capability.label` de `call.requested`, `prompt` e `reason` dos cards de aprovação, razões das decisões, linhas `settings.changed` de todas as ferramentas de ajustes, mensagens de falha do turno (`ACCOUNT_UNAVAILABLE`, `ACCOUNT_LIMIT`, provedor) e o aviso de parada por falta de progresso. Requisições em `/mcp/*` ignoram o `Accept-Language` do CLI e seguem o idioma guardado.
+- Este Mac (v61) também segue o idioma: `label` do `GET /environments` (`Este Mac`/`This Mac`), erro de `environment` no `/preferences`, aviso de turno no container e falhas do turno com o Mac fora, desconectado ou sem como receber o código.
 - Continuam em pt-BR: descrições de ferramentas, system prompt, resultados devolvidos ao modelo e logs.
 - O app não deve ler o texto do rótulo para decidir nada. Delegação vem de `delegation.botId` (e `input.bot`); comando "cru" do Bash é o que não tem `input.description`. Para apps antigos, os rótulos mantêm o formato (`“…”` em volta do alvo, `Rótulo: argumento` com `: `), e o app aceita os prefixos dos dois idiomas (`Posso `/`Can I `, `Delegar para `/`Delegate to `).
 
