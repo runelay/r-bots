@@ -220,7 +220,9 @@ struct ComposerTextView: NSViewRepresentable {
         coordinator.parent = self
         guard let textView = coordinator.textView else { return }
         coordinator.attach(store)
-        if !textView.hasMarkedText() {
+        // draft e tokens mudam em duas escritas; um render no meio traz glifo sem token e o rebuild apagaria o chip
+        let settled = ComposerToken.glyphCount(in: draft) == tokens.count
+        if settled, !textView.hasMarkedText() {
             let current = coordinator.serialize()
             if current.text != draft || current.tokens != tokens {
                 coordinator.rebuild(text: draft, tokens: tokens)
