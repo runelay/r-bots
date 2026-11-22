@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.21
+
 ### Server
 
 - Memory capture no longer wipes existing memories. When a captured fact matches a memory that already exists, the bot reads it and appends the fact at the end, keeping its name, description and type, instead of replacing the whole text. Pinned memories (the person's golden rules) and memories it cannot read are never rewritten.
