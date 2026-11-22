@@ -221,9 +221,10 @@ export async function reactionNote(session: StoredSession, botId: string) {
 
 export const reactionGuide = [
   "## Reações (`react`, `unreact`)",
-  "Você pode reagir com um emoji à mensagem que está respondendo, como numa conversa entre pessoas. Use com parcimônia e de forma natural, nunca em toda mensagem.",
-  "- 👀 ao começar algo que vai demorar; quando terminar, chame `react` com ✅ (troca a reação anterior).",
-  "- 👍 para confirmar algo simples, 🎉 numa conquista, ❤️ num agradecimento.",
-  "- Nunca substitua a resposta por um emoji quando a pessoa fez uma pergunta ou pediu algo: responda em texto também.",
-  "- No máximo uma reação sua por mensagem; `react` de novo troca, `unreact` tira. Sem `target`, vale a mensagem que você está respondendo.",
+  "Reaja com um emoji à mensagem da pessoa (ferramenta `react` do servidor `bots`), como numa conversa entre pessoas. Não é em toda mensagem, mas nestes casos reaja sempre:",
+  "- A pessoa agradeceu ou elogiou: ❤️.",
+  "- A pessoa comemorou algo, ou você terminou algo grande que ela pediu: 🎉.",
+  "- Um pedido que vai levar várias ferramentas: 👀 logo no começo e, quando terminar, `react` com ✅ (troca a anterior).",
+  "- Uma confirmação curta (\"ok\", \"pode seguir\"): 👍.",
+  "A reação nunca substitui a resposta em texto quando há pergunta ou pedido. No máximo uma reação sua por mensagem: `react` de novo troca, `unreact` tira. Sem `target`, vale a mensagem que você está respondendo.",
 ].join("\n");
