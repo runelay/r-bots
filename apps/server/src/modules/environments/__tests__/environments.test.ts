@@ -121,7 +121,7 @@ describe("GET /environments", () => {
       selected: "vps",
       environments: [
         { id: "vps", label: "VPS", online: true, canRun: true },
-        { id: "mac", label: "Este Mac", online: false, canRun: false },
+        { id: "mac", label: "Pessoal", online: false, canRun: false },
       ],
     });
     const app = fakeRunner(runnerDevice("mac-1", 5));
@@ -133,13 +133,13 @@ describe("GET /environments", () => {
       selected: "mac",
       environments: [
         { id: "vps", label: "VPS", online: true, canRun: true },
-        { id: "mac", label: "Este Mac", online: true, canRun: true },
+        { id: "mac", label: "Pessoal", online: true, canRun: true },
       ],
     });
     runner.drop();
     expect(((await call()).body.environments as unknown[])[1]).toEqual({
       id: "mac",
-      label: "Este Mac",
+      label: "Pessoal",
       online: false,
       canRun: false,
     });

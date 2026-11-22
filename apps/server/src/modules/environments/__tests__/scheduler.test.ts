@@ -150,7 +150,7 @@ describe("place", () => {
     expect(place(input)).toEqual({ kind: "remote", environmentId: "host-1", host: true });
   });
 
-  test("runs on the Mac runner when the owner picked Este Mac", async () => {
+  test("runs on the Mac runner when the owner picked Pessoal", async () => {
     await updatePreferences({ environment: "mac" });
     expect(place(input)).toEqual({ kind: "offline", message: environmentsText("macOffline") });
     const runner = fakeRunner(runnerDevice("mac-1:runner", 5, { deviceId: "mac-1" }));

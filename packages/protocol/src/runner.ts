@@ -7,7 +7,7 @@ export const hostCapability = "host";
 export const environmentIds = ["vps", "mac"] as const;
 export type EnvironmentId = (typeof environmentIds)[number];
 
-export const environmentLabels: Record<EnvironmentId, string> = { vps: "VPS", mac: "Este Mac" };
+export const environmentLabels: Record<EnvironmentId, string> = { vps: "VPS", mac: "Pessoal" };
 
 export interface EnvironmentOption {
   id: EnvironmentId;

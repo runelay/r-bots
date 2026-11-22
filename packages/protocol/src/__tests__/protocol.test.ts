@@ -18,6 +18,6 @@ describe("protocol", () => {
   test("names the host runner capability and the environments a turn can run in", () => {
     expect(hostCapability).toBe("host");
     expect([...environmentIds]).toEqual(["vps", "mac"]);
-    expect(environmentLabels).toEqual({ vps: "VPS", mac: "Este Mac" });
+    expect(environmentLabels).toEqual({ vps: "VPS", mac: "Pessoal" });
   });
 });
