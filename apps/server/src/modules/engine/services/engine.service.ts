@@ -91,6 +91,7 @@ import {
   questionInteraction,
   resolveAnswers,
 } from "../../questions/services/questions.service";
+import { currentEnvironment } from "../../settings/services/preferences.service";
 import { settingsGuide } from "../../settings/services/settings-tools.service";
 import { type LoadedSkill, skillsBlock, skillsIndex } from "../../skills/services/skills.service";
 import { observeTurnDuration } from "../../status/services/metrics.service";
@@ -1747,12 +1748,13 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         await trackWorkspace(item);
       codeWorkspace = opened;
     }
+    const machine = currentEnvironment() === "mac" ? "#mac" : "";
     const keyFor = (workspace: WorkspaceState | null) =>
-      workspace && codeModeSupported(account.provider, account.runner)
+      (workspace && codeModeSupported(account.provider, account.runner)
         ? `${account.id}@${workspace.id}`
         : shellSupported(account.provider, account.runner)
           ? `${account.id}@home`
-          : account.id;
+          : account.id) + machine;
     let sessionKey = keyFor(codeWorkspace);
     let switching = false;
 

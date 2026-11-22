@@ -31,6 +31,7 @@ import { releaseActiveJobs, startJobs, stopJobs } from "./modules/jobs/services/
 import { startOutboxRelay, stopOutboxRelay } from "./modules/jobs/services/outbox.service";
 import { startScheduler } from "./modules/schedules/services/scheduler.service";
 import { loadSections } from "./modules/sections/services/sections.service";
+import { readPreferences } from "./modules/settings/services/preferences.service";
 import { setEnvironmentSource } from "./modules/status/services/metrics.service";
 import { startBackupSchedule } from "./modules/storage/services/backup.service";
 import { warmUsage } from "./modules/usage/services/usage.service";
@@ -93,6 +94,9 @@ export async function main() {
     });
   }
   setEnvironmentSource(listEnvironments);
+  await readPreferences().catch((error) =>
+    console.warn(`preferences: leitura falhou: ${error instanceof Error ? error.message : error}`),
+  );
   await initAuth();
   startLocalRunnerToken();
   startServer(host, port);

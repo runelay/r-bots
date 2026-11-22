@@ -21,6 +21,7 @@ import {
   stopReasons,
 } from "./dev-server.service";
 import { beginCall, endCall } from "./hooks.service";
+import { syncBeforeDeliver } from "./mac-sync.service";
 import { type Gate, gateCommand, protectedPath } from "./policy.service";
 import { kickPr } from "./pull-request.service";
 import { addAllowedRepo, allowedRepoFor, gitRepoAt, repoRootProblem } from "./repos.service";
@@ -393,6 +394,11 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
         ...(args.body ? { body: String(args.body) } : {}),
         ...(args.base ? { base: String(args.base) } : {}),
       } as const;
+      try {
+        await syncBeforeDeliver(workspace.path);
+      } catch (error) {
+        return text(`Não consegui trazer o código do Mac: ${error instanceof Error ? error.message : error}`, true);
+      }
       await changedFiles(workspace, true);
       const problem = deliverProblem(input, input.action === "commit");
       const label =
