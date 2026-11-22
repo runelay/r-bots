@@ -164,6 +164,19 @@ describe("box spec", () => {
     }
   });
 
+  test("mounts the bot uploads read-only, so pasted images reach the model in the box", () => {
+    const uploads = join(dataDir, "bots", "b1", "uploads");
+    mkdirSync(uploads, { recursive: true });
+    try {
+      expect(boxSpecFor({ request, accountPath: null }).mounts).toEqual([
+        { host: join(hostDataDir, "work", "b1"), box: join(dataDir, "work", "b1"), readOnly: false },
+        { host: join(hostDataDir, "bots", "b1", "uploads"), box: uploads, readOnly: true },
+      ]);
+    } finally {
+      rmSync(join(dataDir, "bots", "b1"), { recursive: true, force: true });
+    }
+  });
+
   test("mounts the managed clis read-only at the same path once the folder exists", () => {
     expect(clisDir).toBe(join(dataDir, "clis"));
     mkdirSync(clisDir, { recursive: true });
