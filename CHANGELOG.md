@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.11
+
 ### Brand
 
 - New r/bots icon: a light "r" with an orange slash, so the app no longer looks like runelay in the Dock. It replaces the shared mark in the Mac and iPhone app icons, the in-app logo, the device sign-in page, the README banners and the hero screenshot.
