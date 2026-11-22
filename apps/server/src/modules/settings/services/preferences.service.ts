@@ -22,6 +22,7 @@ export interface AppPreferences {
 
 const preferencesKey = "app.preferences";
 const listeners = new Set<(preferences: AppPreferences) => void>();
+let environmentCache: EnvironmentId = "vps";
 
 export function defaultPreferences(): AppPreferences {
   return {
@@ -40,13 +41,18 @@ function isEnvironment(value: unknown): value is EnvironmentId {
 export async function readPreferences(): Promise<AppPreferences> {
   const stored = await readSetting<Partial<AppPreferences>>(preferencesKey, {});
   const base = defaultPreferences();
+  environmentCache = isEnvironment(stored.environment) ? stored.environment : base.environment;
   return {
     notifications: { ...base.notifications, ...stored.notifications },
     microphone: stored.microphone ?? null,
     microphones: stored.microphones ?? [],
-    environment: isEnvironment(stored.environment) ? stored.environment : base.environment,
+    environment: environmentCache,
     updatedAt: stored.updatedAt ?? null,
   };
+}
+
+export function currentEnvironment() {
+  return environmentCache;
 }
 
 export function onPreferences(listener: (preferences: AppPreferences) => void) {
@@ -94,6 +100,7 @@ export async function updatePreferences(body: unknown) {
   }
   next.updatedAt = new Date().toISOString();
   await writeSetting(preferencesKey, next);
+  environmentCache = next.environment;
   for (const listener of listeners) listener(next);
   return next;
 }

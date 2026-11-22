@@ -4,6 +4,7 @@ import { writeSetting } from "../../../db/settings";
 import { requiresOwner } from "../../auth/services/policy.service";
 import {
   type AppPreferences,
+  currentEnvironment,
   defaultPreferences,
   onPreferences,
   readPreferences,
@@ -68,8 +69,11 @@ describe("preferences", () => {
   });
 
   test("falls back to the VPS when the stored environment is unknown", async () => {
+    await updatePreferences({ environment: "mac" });
+    expect(currentEnvironment()).toBe("mac");
     await writeSetting("app.preferences", { environment: "lua" });
     expect((await readPreferences()).environment).toBe("vps");
+    expect(currentEnvironment()).toBe("vps");
   });
 
   test("rejects invalid bodies and other methods", async () => {

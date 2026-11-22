@@ -264,7 +264,7 @@ export async function runOnAccount(
   const turn = { ...request, configDir: accountDir(id) };
   const botId = botIdOf(request);
   const codeCwd = request.code ? hostPathOf(request.code.cwd) : null;
-  const placement = await place({ botId, provider, codeCwd, memMb: env.BOX_MEM_MB });
+  const placement = place({ botId, provider, codeCwd, memMb: env.BOX_MEM_MB });
   if (placement.kind === "offline") return emit({ type: "done", ok: false, message: placement.message });
   if (placement.kind === "remote") {
     const mounted = accountPath(id);

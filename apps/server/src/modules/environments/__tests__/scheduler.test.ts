@@ -132,30 +132,30 @@ describe("place", () => {
     const box = fakeRunner(runnerDevice("box-1"));
     box.say(boxHello());
     expect(env.BOTS_SANDBOX).toBe("off");
-    expect(await place(input)).toEqual({ kind: "local" });
+    expect(place(input)).toEqual({ kind: "local" });
   });
 
   test("runs on the host runner of the chosen environment and never falls back from the Mac", async () => {
     await updatePreferences({ environment: "vps" });
     env.BOTS_HOST_RUNNER = "on";
-    expect(await place(input)).toEqual({ kind: "local", notice: vpsFallbackNotice });
+    expect(place(input)).toEqual({ kind: "local", notice: vpsFallbackNotice });
     const host = fakeRunner(runnerDevice("host-1"));
     host.say(hostHello());
-    expect(await place(input)).toEqual({ kind: "remote", environmentId: "host-1", host: true });
+    expect(place(input)).toEqual({ kind: "remote", environmentId: "host-1", host: true });
     await updatePreferences({ environment: "mac" });
-    expect(await place(input)).toEqual({ kind: "offline", message: macOfflineMessage });
+    expect(place(input)).toEqual({ kind: "offline", message: macOfflineMessage });
     const mac = fakeRunner(runnerDevice("mac-1", 5));
     mac.say({ type: "hello", version: "9", capabilities: ["computer"] });
-    expect(await place(input)).toEqual({ kind: "offline", message: macNoTurnsMessage });
+    expect(place(input)).toEqual({ kind: "offline", message: macNoTurnsMessage });
     mac.say({ type: "hello", version: "10", capabilities: ["computer", "host"] });
-    expect(await place(input)).toEqual({ kind: "remote", environmentId: "mac-1", host: true });
+    expect(place(input)).toEqual({ kind: "remote", environmentId: "mac-1", host: true });
     await updatePreferences({ environment: "vps" });
   });
 
   test("sends turns to the owner box runner with docker and warns when there is none", async () => {
     env.BOTS_SANDBOX = "docker";
     const warn = spyOn(console, "warn").mockImplementation(() => {});
-    expect(await place(input)).toEqual({ kind: "local" });
+    expect(place(input)).toEqual({ kind: "local" });
     expect(warn.mock.calls[0]?.[0]).toContain("sandbox: no box runner for bot b1, running local");
     const small = fakeRunner(runnerDevice("box-1"));
     small.say(boxHello({ memFreeMb: 5000 }));
@@ -163,8 +163,8 @@ describe("place", () => {
     bigger.say(boxHello({ memFreeMb: 50_000, workspaceRoots: ["/other"] }));
     const member = fakeRunner(runnerDevice("box-3", 3, { owner: false, userId: "u2" }));
     member.say(boxHello({ memFreeMb: 90_000 }));
-    expect(await place(input)).toEqual({ kind: "remote", environmentId: "box-2" });
-    expect(await place({ ...input, codeCwd: "/srv/repo" })).toEqual({ kind: "remote", environmentId: "box-1" });
+    expect(place(input)).toEqual({ kind: "remote", environmentId: "box-2" });
+    expect(place({ ...input, codeCwd: "/srv/repo" })).toEqual({ kind: "remote", environmentId: "box-1" });
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });

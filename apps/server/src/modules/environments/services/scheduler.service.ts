@@ -1,18 +1,17 @@
 import type { Placement, PlacementInput } from "@runelay-bots/protocol";
 import { env } from "../../../config/env";
 import { environmentStates, runnerEnvironments } from "../../accounts/services/mac-runner.service";
-import { readPreferences } from "../../settings/services/preferences.service";
+import { currentEnvironment } from "../../settings/services/preferences.service";
 import { vpsFallbackNotice } from "../constants/environments.constants";
 import { decidePlacement } from "./placement.service";
 
-export async function place({ codeCwd, botId }: PlacementInput): Promise<Placement> {
+export function place({ codeCwd, botId }: PlacementInput): Placement {
   const { BOTS_SANDBOX: sandbox } = env;
-  const { environment } = await readPreferences();
   const placement = decidePlacement({
     sandbox,
     codeCwd,
     environments: runnerEnvironments(),
-    environment,
+    environment: currentEnvironment(),
     hosts: environmentStates(),
   });
   if (sandbox === "docker" && placement.kind === "local")

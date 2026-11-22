@@ -83,13 +83,13 @@ export function fakeRunner(data: Record<string, unknown> = runnerDevice("box-1")
       runnerSocket.close(as, 1000, "");
     },
     async next(type: string) {
-      for (let tick = 0; tick < 400; tick++) {
+      for (let tick = 0; tick < 20; tick++) {
         const found = sent.find((frame) => frame.type === type);
         if (found) {
           sent.splice(sent.indexOf(found), 1);
           return found;
         }
-        await new Promise((resolve) => (tick < 20 ? setImmediate(resolve) : setTimeout(resolve, 5)));
+        await new Promise((resolve) => setImmediate(resolve));
       }
       throw new Error(`runner never received ${type}`);
     },
