@@ -96,17 +96,22 @@ struct MainView: View {
         .sheet(isPresented: $showsSettings) {
             SettingsScreen()
         }
-        .onChange(of: NotificationRouter.shared.pendingBotID) { _, botID in
-            guard let botID else { return }
-            NotificationRouter.shared.pendingBotID = nil
-            showsSettings = false
-            path = [.conversation(botID: botID)]
+        .onChange(of: NotificationRouter.shared.pendingBotID) {
+            openPendingNotification()
         }
         .task(id: AuthSession.shared.serverRevision) {
             path = []
+            openPendingNotification()
             model.stop()
             await model.start()
             await LocalNotifier.requestAuthorization()
         }
+    }
+
+    private func openPendingNotification() {
+        guard let botID = NotificationRouter.shared.pendingBotID else { return }
+        NotificationRouter.shared.pendingBotID = nil
+        showsSettings = false
+        path = [.conversation(botID: botID)]
     }
 }
