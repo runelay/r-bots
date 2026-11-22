@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Releases
+
+- A release is one run of the `release` workflow with the version: it bumps every package, the `bun.lock` and the iPhone app, moves these notes under the version, commits, tags and publishes. The GitHub release notes are now this CHANGELOG section.
+
+### Security
+
+- Route errors that are not an `Error` answer "Erro interno." instead of the raw value (code scanning `js/stack-trace-exposure`).
+
 ## v0.1.9
 
 ### Mac
