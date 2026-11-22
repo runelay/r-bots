@@ -1,7 +1,7 @@
 import { type Dirent, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { BoxSpec, TurnRequest } from "@runelay-bots/protocol";
-import { clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
+import { botDir, clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
 import { boxHome } from "../constants/environments.constants";
 import { containsPath } from "./placement.service";
 
@@ -18,9 +18,13 @@ export function workDirOf({ workKey }: Pick<TurnRequest, "workKey">) {
   return join(dataDir, "work", workKey.replace(/[^\w/-]/g, "_"));
 }
 
-function botWorkDirOf({ workKey }: Pick<TurnRequest, "workKey">) {
+function botIdOf({ workKey }: Pick<TurnRequest, "workKey">) {
   const [botId = ""] = workKey.split("/");
-  return join(dataDir, "work", botId.replace(/[^\w-]/g, "_"));
+  return botId.replace(/[^\w-]/g, "_");
+}
+
+function botWorkDirOf(request: Pick<TurnRequest, "workKey">) {
+  return join(dataDir, "work", botIdOf(request));
 }
 
 function mountOf(path: string, readOnly: boolean): Mount {
@@ -49,8 +53,10 @@ function linkedDirsOf(accountPath: string): Mount[] {
 
 export function boxSpecFor({ request, accountPath }: { request: TurnRequest; accountPath: string | null }): BoxSpec {
   const { code } = request;
+  const uploads = join(botDir(botIdOf(request)), "uploads");
   const mounts = [
     mountOf(botWorkDirOf(request), false),
+    ...(existsSync(uploads) ? [mountOf(uploads, true)] : []),
     ...(accountPath ? [mountOf(accountPath, false), ...linkedDirsOf(accountPath)] : []),
     ...(code ? [mountOf(code.cwd, code.readOnly === true)] : []),
     ...(existsSync(clisDir) ? [mountOf(clisDir, true)] : []),
