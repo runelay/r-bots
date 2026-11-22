@@ -11,3 +11,4 @@ export const updateAgentFile = "agent.json";
 export const updateStaleMs = 30 * 60_000;
 export const updatePickupMs = 5 * 60_000;
 export const updateStates = ["idle", "queued", "running", "succeeded", "failed"] as const;
+export const releaseTtlMs = 10 * 60_000;

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Updates
+
+- The server checks GitHub for a new release every 10 minutes instead of every 6 hours, so Versões offers the update soon after it is published.
+
 ## v0.1.12
 
 ### Boxes

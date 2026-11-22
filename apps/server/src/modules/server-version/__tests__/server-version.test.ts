@@ -7,8 +7,8 @@ import { env } from "../../../config/env";
 import { redactText } from "../../../shared/redact";
 import type { Principal } from "../../auth/services/auth.middleware";
 import { authorize } from "../../auth/services/policy.service";
-import { latestFailureTtlMs, latestTtlMs } from "../../providers/constants/providers.constants";
-import { notesLimit, updatePickupMs, updateStaleMs } from "../constants/server-version.constants";
+import { latestFailureTtlMs } from "../../providers/constants/providers.constants";
+import { notesLimit, releaseTtlMs, updatePickupMs, updateStaleMs } from "../constants/server-version.constants";
 import {
   parseUpdateStatus,
   readServerUpdate,
@@ -191,11 +191,11 @@ describe("server version", () => {
     expect(await serverVersion()).toMatchObject({ latest: "0.3.1", notes: null, releaseUrl: null, publishedAt: null });
   });
 
-  test("caches the release for 6 hours", async () => {
+  test("caches the release for 10 minutes", async () => {
     reply = () => Response.json(release("v0.3.0"));
     useFakes();
     await serverVersion();
-    clock += latestTtlMs - 1;
+    clock += releaseTtlMs - 1;
     await serverVersion();
     expect(calls).toHaveLength(1);
     reply = () => Response.json(release("v0.3.1"));
