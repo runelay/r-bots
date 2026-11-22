@@ -46,7 +46,7 @@ import {
 } from "../../connectors/services/runelay.service";
 import { registerThreadTools } from "../../conversations/services/handoff-tools.service";
 import { registerReactionTools } from "../../conversations/services/reaction-tools.service";
-import type { EventLog } from "../../conversations/services/sessions.service";
+import { type EventLog, getStoredSession } from "../../conversations/services/sessions.service";
 import { createGroup, listGroups, setGroupArchived, updateGroup } from "../../groups/services/groups.service";
 import {
   type QuestionOutcome,
@@ -96,6 +96,7 @@ export interface ToolContext {
   ) => Promise<ApprovalResult>;
   askUser?: (request: QuestionRequest, callId: string, origin: string | null) => Promise<QuestionOutcome>;
   delegate: (targetId: string, message: string, callId: string) => Promise<string>;
+  postGroup?: (groupId: string, message: string) => Promise<void>;
   bot: BotDefinition;
   request: string;
   asked: DeliveryAsk;
@@ -1351,6 +1352,26 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
         const members = [...new Set([...group.members, ...add])].filter((id) => !remove.has(id));
         const updated = await updateGroup(group.id, { members, ...(args.name ? { name: String(args.name) } : {}) });
         return `Grupo ${updated?.name ?? group.name} agora tem ${members.length} bots.`;
+      }),
+  );
+  server.registerTool(
+    "group_send",
+    {
+      description:
+        "Escreve uma mensagem num grupo do r/bots em seu nome. Todos os bots do grupo veem e o grupo escolhe quem responde (marque @nome para escolher). Use quando uma instrução vale para vários bots do grupo, em vez de delegar um por um. Não espera a resposta: ela fica no grupo. Não pede aprovação.",
+      inputSchema: {
+        group: z.string().min(1).describe("Nome ou id do grupo"),
+        message: z.string().min(1).describe("Mensagem completa, como se você escrevesse no grupo"),
+      },
+    },
+    (args: Record<string, unknown>) =>
+      runDirectTool(context, "group_send", `Mandar no grupo ${String(args.group)}`, args, async () => {
+        const group = resolveGroup(String(args.group));
+        if (context.groupMembers.length > 0 && getStoredSession(context.sessionId)?.meta.botId === group.id)
+          throw new Error("Você já está respondendo neste grupo. Responda aqui mesmo ou use handoff.");
+        if (!context.postGroup) throw new Error("Mandar mensagem em grupo não está disponível agora.");
+        await context.postGroup(group.id, String(args.message));
+        return `Mandei no grupo ${group.name}. As respostas aparecem lá.`;
       }),
   );
   server.registerTool(

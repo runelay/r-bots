@@ -60,16 +60,18 @@ async function childSession(parent: StoredSession) {
 }
 
 describe("delegation", () => {
-  test("runs the task in a new conversation of the target and returns its reply", async () => {
+  test("runs the task in the main conversation of the target and returns its reply", async () => {
     const boss = await makeBot({ name: "Chefe Del", role: "Coordena" });
     const worker = await makeBot({ role: "" });
     const session = await newSession(boss.id);
     session.meta.permission = "edit";
     const outcome: { reply?: string; error?: string } = {};
+    let workerPermission: string | undefined;
     fakeProviders.next(
       byBot({
         [boss.id]: delegating(worker.id, "levanta os números e faz o commit", outcome),
         [worker.id]: async (turn) => {
+          workerPermission = contextOf(turn).permission;
           const result = await contextOf(turn).requestApproval("Posso ler?", "call_w", null);
           turn.emit({ type: "text", part: "w", text: `Números ok (${result.choice}).` });
           turn.emit({ type: "done", ok: true });
@@ -95,8 +97,10 @@ describe("delegation", () => {
       callId: "call_del",
       summary: "Números ok (approve).",
     });
-    expect(child.meta.permission).toBe("edit");
-    expect(child.meta.conversation?.delegatedBy).toMatchObject({ botId: boss.id, callId: "call_del" });
+    expect(child.meta.kind).toBe("thread");
+    expect(child.meta.sessionId).toBe((await threads.peekThread(worker.id))?.sessionId as string);
+    expect(child.meta.permission).toBeUndefined();
+    expect(workerPermission).toBe("edit");
     const workerRequest = fakeProviders.turns.find((turn) => turn.request.workKey.startsWith(`${worker.id}/`));
     expect(workerRequest?.request.prompt).toContain(`Chefe Del (Coordena), outro bot do time, te passou esta tarefa:`);
     expect(workerRequest?.request.prompt).toContain("A pessoa pediu commit, push e PR");
@@ -110,7 +114,7 @@ describe("delegation", () => {
       botId: boss.id,
       name: "Chefe Del",
     });
-    expect(child.meta.conversation?.lastMessage?.text).toBeTruthy();
+    expect((await threads.peekThread(worker.id))?.lastMessage?.text).toContain("pediu:");
     expect(await repliesOf(session)).toEqual(["Resposta: Números ok (approve)."]);
   });
 
@@ -294,7 +298,7 @@ describe("delegation threads and files", () => {
     };
   }
 
-  test("reuses the target conversation for follow-ups from the same origin conversation", async () => {
+  test("keeps every delegation to a bot in its main conversation, whatever the origin", async () => {
     const boss = await makeBot();
     const worker = await makeBot();
     const session = await newSession(boss.id);
@@ -313,9 +317,8 @@ describe("delegation threads and files", () => {
     expect(second.reply).toBe("feito");
     const ids = (await updates(session)).map((item) => item.sessionId);
     expect(new Set(ids).size).toBe(1);
-    const child = getStoredSession(ids[0] as string) as StoredSession;
-    expect(child.meta.conversation?.delegatedBy).toMatchObject({ botId: boss.id, sessionId: session.meta.sessionId });
-    expect(child.meta.conversation?.unread).toBe(0);
+    expect(ids[0]).toBe((await threads.peekThread(worker.id))?.sessionId);
+    expect((await threads.peekThread(worker.id))?.unread).toBe(0);
     const workerTurns = fakeProviders.turns.filter((turn) => turn.request.workKey.startsWith(`${worker.id}/`));
     expect(workerTurns).toHaveLength(2);
     expect(workerTurns[1]?.request.resume).toBe("worker-session");
@@ -324,7 +327,8 @@ describe("delegation threads and files", () => {
     const third: { reply?: string; error?: string } = {};
     fakeProviders.next(byBot({ [boss.id]: delegating(worker.id, "outro", third), [worker.id]: worked }));
     await run(other);
-    expect((await updates(other))[0]?.sessionId).not.toBe(ids[0]);
+    expect((await updates(other))[0]?.sessionId).toBe(ids[0]);
+    expect(conversations.conversationSessions(worker.id)).toHaveLength(0);
   });
 
   test("rejects a delegation to itself", async () => {
