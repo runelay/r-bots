@@ -10,8 +10,8 @@ import { type ProcessCall, request, resetData, startTestServer, type TestServer 
 import * as macRunner from "../../accounts/services/mac-runner.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { forgetServer, getServer, listServers, stopAllDevServers } from "../../code/services/dev-server.service";
-import type { EventLog } from "../../conversations/services/sessions.service";
 import * as workspaces from "../../code/services/workspace.service";
+import type { EventLog } from "../../conversations/services/sessions.service";
 import * as sessions from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import { startProjectServer } from "../../servers/services/servers.service";
