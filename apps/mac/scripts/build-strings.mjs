@@ -117,7 +117,7 @@ function reportMissing(merged, paths) {
         const text = match[1];
         if (!/[A-Za-zÀ-ÿ]/.test(text)) continue;
         if (!/[\sÀ-ÿ]/.test(text) && !/^[A-ZÀ-Ý][a-zà-ÿ]+$/.test(text)) continue;
-        if (/^[a-z0-9_.-]+(\.[a-z0-9_.-]+)+$/.test(text)) continue;
+        if (/^[a-z0-9_-]+(\.[a-z0-9_-]+)+$/.test(text)) continue;
         const key = text.replace(/\\"/g, '"').replace(/\\n/g, "\n");
         if (merged.has(key)) continue;
         const interpolation = /\\\((?:[^()]|\([^()]*\))*\)/g;
