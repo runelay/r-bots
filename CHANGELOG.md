@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.16
+
 ### Boxes
 
 - `git` works in the bot's terminal again. The box now mounts the main `.git` of the worktree, so `git status`, `git diff` and `git commit` stop failing with "not a git repository".
