@@ -52,6 +52,8 @@ function messageOf(error: unknown) {
 export class TurnManager {
   private readonly turns = new Map<string, ActiveTurn>();
   private readonly routes = new Map<string, Route>();
+  private readonly waiting = new Set<string>();
+  private readonly dropped = new Set<string>();
 
   constructor(private readonly deps: TurnDeps) {}
 
@@ -97,10 +99,18 @@ export class TurnManager {
       this.fail(id, mountErrorCode, `O caminho ${rejected} fica fora das pastas liberadas neste runner.`);
       return;
     }
+    this.waiting.add(turnId);
     try {
       await lifecycle.acquire(botId, box);
     } catch (error) {
       this.fail(id, codeOf(error), messageOf(error));
+      return;
+    } finally {
+      this.waiting.delete(turnId);
+    }
+    if (this.dropped.delete(turnId)) {
+      lifecycle.release(botId);
+      this.fail(id, "turn.cancelled", "cancelled");
       return;
     }
     const controller = new AbortController();
@@ -190,6 +200,7 @@ export class TurnManager {
   }
 
   cancel(turnId: string) {
+    if (this.waiting.has(turnId)) this.dropped.add(turnId);
     const turn = this.turns.get(turnId);
     if (!turn || turn.cancelled) return;
     turn.cancelled = true;
@@ -198,6 +209,7 @@ export class TurnManager {
   }
 
   cancelAll() {
+    for (const turnId of this.waiting) this.dropped.add(turnId);
     for (const turnId of this.turns.keys()) this.cancel(turnId);
   }
 }

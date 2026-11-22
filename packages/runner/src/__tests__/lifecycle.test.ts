@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BoxSpec, BoxStatus } from "@runelay-bots/protocol";
-import { BoxError, BoxLifecycle } from "../lifecycle";
+import { BoxLifecycle } from "../lifecycle";
 import type { BoxExecHandle, BoxProvider, EnsureOptions, MemInfo } from "../types";
 import { boxSpec, boxStatus, FakeClock, until } from "./helpers";
 
@@ -125,12 +125,36 @@ describe("BoxLifecycle", () => {
     lifecycle.dispose();
   });
 
-  test("refuses a second spec while the box is busy", async () => {
-    const { lifecycle } = setup();
+  test("shares a busy box with a turn whose mounts it already has", async () => {
+    const { provider, lifecycle } = setup();
+    const wide = boxSpec({
+      mounts: [
+        { host: "/srv/rb/work/bot-1", box: "/data/work/bot-1", readOnly: false },
+        { host: "/srv/rb/code", box: "/code", readOnly: true },
+      ],
+    });
+    await lifecycle.acquire("bot-1", wide);
     await lifecycle.acquire("bot-1", boxSpec());
-    const error = await lifecycle.acquire("bot-1", boxSpec({ memMb: 900 })).catch((caught: unknown) => caught);
-    expect(error).toBeInstanceOf(BoxError);
-    expect(error).toMatchObject({ code: "box.busy" });
+    expect(provider.calls).toEqual(["ensure bot-1 512", "ensure bot-1 512"]);
+    expect(provider.idle).toEqual([true, false]);
+    lifecycle.dispose();
+  });
+
+  test("waits for a busy box to free up before switching to other mounts", async () => {
+    const { provider, lifecycle } = setup();
+    await lifecycle.acquire("bot-1", boxSpec());
+    let switched = false;
+    const next = lifecycle.acquire("bot-1", boxSpec({ memMb: 900 })).then(() => {
+      switched = true;
+    });
+    await Promise.resolve();
+    expect(switched).toBe(false);
+    lifecycle.release("bot-1");
+    await next;
+    expect(switched).toBe(true);
+    expect(provider.calls.at(-1)).toBe("ensure bot-1 900");
+    expect(provider.idle.at(-1)).toBe(true);
+    lifecycle.dispose();
   });
 
   test("stops the oldest paused box to make room, skipping ones that fail to stop", async () => {

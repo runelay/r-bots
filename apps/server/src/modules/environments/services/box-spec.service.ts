@@ -18,6 +18,11 @@ export function workDirOf({ workKey }: Pick<TurnRequest, "workKey">) {
   return join(dataDir, "work", workKey.replace(/[^\w/-]/g, "_"));
 }
 
+function botWorkDirOf({ workKey }: Pick<TurnRequest, "workKey">) {
+  const [botId = ""] = workKey.split("/");
+  return join(dataDir, "work", botId.replace(/[^\w-]/g, "_"));
+}
+
 function mountOf(path: string, readOnly: boolean): Mount {
   return { host: hostPathOf(path), box: path, readOnly };
 }
@@ -45,7 +50,7 @@ function linkedDirsOf(accountPath: string): Mount[] {
 export function boxSpecFor({ request, accountPath }: { request: TurnRequest; accountPath: string | null }): BoxSpec {
   const { code } = request;
   const mounts = [
-    mountOf(workDirOf(request), false),
+    mountOf(botWorkDirOf(request), false),
     ...(accountPath ? [mountOf(accountPath, false), ...linkedDirsOf(accountPath)] : []),
     ...(code ? [mountOf(code.cwd, code.readOnly === true)] : []),
     ...(existsSync(clisDir) ? [mountOf(clisDir, true)] : []),
