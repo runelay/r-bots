@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.24
+
 ### Server
 
 - `@todos` (also `@all` or `@everyone`) in a group calls every bot of the group, one after the other, instead of letting the router pick a single one.
