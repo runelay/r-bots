@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.20
+
 ### Server
 
 - Bots get the person's golden rules on every turn: the pinned runelay memories go into the system prompt, with a pointer to read each rule in full before acting on its subject.
