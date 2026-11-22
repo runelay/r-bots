@@ -8,6 +8,7 @@
 - Each turn runs in a `systemd-run --user` scope with the box memory and CPU limits, and in `bwrap` with the r/bots data, backups and config hidden from the model. Without systemd or `bwrap` the runner says so once at boot and runs without them.
 - The server is the environment: each server runs its turns directly on its own machine, and the server menu picks where bots run. If the server's host runner is not connected, the turn runs in the server container and the chat says so in one line.
 - Bash on the host never goes through `sudo runelaytool`; the test lock and heavy-command limits still apply.
+- With the host runner on, bots can read files anywhere outside the protected areas (r/bots data, `/proc`, `/sys`, `/dev`, account settings), not only inside the task worktree. Writes stay inside the worktree.
 - The system prompt tells the model to stop and say which tool failed and why, instead of trying another route.
 
 ### Upgrading

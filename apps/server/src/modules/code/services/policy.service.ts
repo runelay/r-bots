@@ -1,7 +1,7 @@
 import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { dataDir } from "../../../config/env";
+import { dataDir, env } from "../../../config/env";
 import { hostHome, insideAllowedArea, insideHome } from "./repos.service";
 import type { WorkspaceState } from "./workspace.service";
 
@@ -161,6 +161,7 @@ function readVerdict(workspace: WorkspaceState, raw: string, cwd: string, strict
   const { real, exists } = resolveReal(expanded, cwd);
   if (blocked(lexical) || blocked(real)) return blockedDeny(workspace, lexical);
   if (inWorkspace(workspace, real)) return null;
+  if (env.BOTS_HOST_RUNNER === "on") return null;
   if (outsideRepos(workspace, real) || outsideRepos(workspace, lexical)) return outsideDeny(workspace, lexical);
   if (!strict && !exists) return null;
   if (readAllowed(workspace, real)) return null;

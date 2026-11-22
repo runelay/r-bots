@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { dataDir as serverDataDir, env } from "../../../config/env";
 import {
   commandIsReadOnly,
   decodeAnsiC,
@@ -70,6 +71,23 @@ describe("protectedPath", () => {
     expect(protectedPath(join(home, ".ssh", "config"))).toBe(true);
     expect(protectedPath("/proc/1/environ")).toBe(true);
     expect(protectedPath(`${root}/src/index.ts`)).toBe(false);
+  });
+});
+
+describe("reads on the host runner", () => {
+  test("read anywhere outside the protected areas, still never the server data", () => {
+    const previous = env.BOTS_HOST_RUNNER;
+    env.BOTS_HOST_RUNNER = "on";
+    try {
+      expect(gateNative("Read", { file_path: join(home, "projects", "other", "README.md") }, ws)).toEqual({
+        kind: "allow",
+      });
+      expect(kind(`cat ${join(home, "projects", "other", "README.md")}`)).not.toBe("deny");
+      expect(gateNative("Read", { file_path: join(serverDataDir, "vault.key") }, ws).kind).toBe("deny");
+      expect(denied("echo x > ~/notes.txt")).toContain("fora dos repositórios liberados");
+    } finally {
+      env.BOTS_HOST_RUNNER = previous;
+    }
   });
 });
 
