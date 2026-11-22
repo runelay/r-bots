@@ -87,7 +87,7 @@ swift run                   # run from the terminal
 
 ## CI and releases
 
-- CI on every PR and push to main: Biome, typecheck, tests with the coverage gate (`ci.yml`), shellcheck, hadolint, actionlint, `docker compose config` and an image build (`docker.yml`), swift-format and `swift build` when `apps/mac/**` changes (`mac.yml`), CodeQL once the repo is public (`codeql.yml`). Keep all of them green; fix the cause, never disable a rule or a check to pass.
+- CI on every PR and push to main: Biome, typecheck, tests with the coverage gate (`ci.yml`), shellcheck, hadolint, actionlint, `docker compose config` (`docker.yml`, which also builds the image on push to main only), swift-format and `swift build` on PRs that change `apps/mac/**` (`mac.yml`), CodeQL once the repo is public (`codeql.yml`). Keep all of them green; fix the cause, never disable a rule or a check to pass.
 - Locally, run the test files you touched (`bun test <file>`); CI runs the whole suite.
 - Actions are pinned by commit SHA with the version in a trailing comment (the only comment allowed). Permissions minimal per job.
 - Release: run the `release` workflow with `vX.Y.Z`. It runs `scripts/release/bump.ts` (every workspace `package.json`, the `bun.lock` workspace versions, the iPhone app version, and `## Unreleased` in `CHANGELOG.md` moved under `## vX.Y.Z`), commits `chore(release): vX.Y.Z` to main, tags it, builds, scans and tags the image and publishes the release with that CHANGELOG section as its notes. Never bump or tag by hand; an empty `## Unreleased` fails the run. A suffix (`-beta.1`) is a pre-release. Details in `docs/architecture/releases.md`.

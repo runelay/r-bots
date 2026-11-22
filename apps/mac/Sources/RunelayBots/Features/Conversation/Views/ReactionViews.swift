@@ -86,6 +86,7 @@ struct ReactionPill: View {
 struct ReactionPickerButton: View {
     let edge: GlassMenuEdge
     @Binding var isOpen: Bool
+    var showsMore = true
     let pick: (String) -> Void
 
     @State private var isHovering = false
@@ -105,7 +106,7 @@ struct ReactionPickerButton: View {
         .onHover { isHovering = $0 }
         .springAnimation(value: isHovering)
         .glassPopup(isPresented: $isOpen, edge: edge) {
-            QuickReactionsPopup(pick: pick)
+            QuickReactionsPopup(showsMore: showsMore, pick: pick)
         }
         .help("Reagir")
         .accessibilityLabel("Reagir")
@@ -114,6 +115,7 @@ struct ReactionPickerButton: View {
 
 struct QuickReactionsPopup: View {
     @Environment(\.glassPopupDismiss) private var dismiss
+    let showsMore: Bool
     let pick: (String) -> Void
 
     var body: some View {
@@ -124,9 +126,11 @@ struct QuickReactionsPopup: View {
                     pick(emoji)
                 }
             }
-            MoreReactionsButton {
-                dismiss()
-                EmojiPalette.shared.pick(pick)
+            if showsMore {
+                MoreReactionsButton {
+                    dismiss()
+                    EmojiPalette.shared.pick(pick)
+                }
             }
         }
         .padding(Spacing.xs)

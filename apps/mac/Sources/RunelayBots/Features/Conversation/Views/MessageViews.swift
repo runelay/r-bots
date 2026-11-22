@@ -100,6 +100,11 @@ struct UserBubble: View {
             if segments != nil || (!message.isSkillOnly && !message.text.isEmpty) {
                 HStack(alignment: .bottom, spacing: Spacing.s) {
                     Spacer(minLength: 0)
+                    if canReact {
+                        ReactionPickerButton(edge: .trailing, isOpen: $pickerOpen, showsMore: false, pick: react)
+                            .opacity(isHovered || pickerOpen ? 1 : 0)
+                            .allowsHitTesting(isHovered || pickerOpen)
+                    }
                     Group {
                         if let segments {
                             InlineTokenText(segments: segments, fontSize: fontSize, ink: Theme.onAccent)
@@ -121,14 +126,6 @@ struct UserBubble: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(Theme.userBubble, in: BubbleShape.make(meta: meta, trailing: true))
-                    .overlay(alignment: .bottomLeading) {
-                        if canReact {
-                            ReactionPickerButton(edge: .trailing, isOpen: $pickerOpen, pick: react)
-                                .alignmentGuide(.leading) { $0[.trailing] + Spacing.xs }
-                                .opacity(isHovered || pickerOpen ? 1 : 0)
-                                .allowsHitTesting(isHovered || pickerOpen)
-                        }
-                    }
                     .frame(maxWidth: BubbleShape.maxWidth, alignment: .trailing)
                     .fixedSize(horizontal: false, vertical: true)
                     .opacity(message.state == .sending ? 0.8 : 1)
