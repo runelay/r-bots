@@ -106,7 +106,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
     env:
@@ -183,13 +182,6 @@ jobs:
           format: table
           exit-code: "1"
           skip-setup-trivy: true
-      - if: github.event.repository.private == false
-        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
-      - name: Sign
-        if: github.event.repository.private == false
-        env:
-          REF: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
-        run: cosign sign --yes "$REF"
       - name: Tag
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -278,15 +270,7 @@ jobs:
             echo "Digest: \`$DIGEST\`"
             echo
             if [ "$SIGNED" = "true" ]; then
-              echo "Ships with SBOM and provenance (SLSA, mode=max) and is signed with cosign keyless. To verify:"
-              echo
-              echo '```sh'
-              echo "cosign verify $IMAGE@$DIGEST \\"
-              echo "  --certificate-identity $identity \\"
-              echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com"
-              echo '```'
-              echo
-              echo "\`SHA256SUMS\` covers every release file and is signed in \`SHA256SUMS.sigstore.json\`:"
+              echo "Ships with SBOM and provenance (SLSA, mode=max). \`SHA256SUMS\` covers every release file and is signed with cosign keyless in \`SHA256SUMS.sigstore.json\`:"
               echo
               echo '```sh'
               echo "cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \\"
