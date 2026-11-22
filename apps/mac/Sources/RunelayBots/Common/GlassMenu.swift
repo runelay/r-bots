@@ -16,8 +16,10 @@ struct GlassMenuItem: Identifiable {
     var destructive = false
     var isEnabled = true
     var startsSection = false
+    var sectionTitle: String?
     var keepsOpen = false
     var leading: AnyView?
+    var badge: Color?
     let action: () -> Void
 
     init(
@@ -30,8 +32,10 @@ struct GlassMenuItem: Identifiable {
         destructive: Bool = false,
         isEnabled: Bool = true,
         startsSection: Bool = false,
+        sectionTitle: String? = nil,
         keepsOpen: Bool = false,
         leading: AnyView? = nil,
+        badge: Color? = nil,
         action: @escaping () -> Void
     ) {
         self.id = id ?? title
@@ -43,8 +47,10 @@ struct GlassMenuItem: Identifiable {
         self.destructive = destructive
         self.isEnabled = isEnabled
         self.startsSection = startsSection
+        self.sectionTitle = sectionTitle
         self.keepsOpen = keepsOpen
         self.leading = leading
+        self.badge = badge
         self.action = action
     }
 }
@@ -377,13 +383,7 @@ struct GlassMenuList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let title {
-                Text(title)
-                    .font(BrandFonts.sans(11, weight: .semibold))
-                    .foregroundStyle(Theme.textTertiary)
-                    .lineLimit(1)
-                    .padding(.horizontal, Spacing.s)
-                    .padding(.top, Spacing.xxs)
-                    .padding(.bottom, Spacing.xs)
+                Self.sectionLabel(title)
             }
             if items.count > Self.visibleRows {
                 ScrollViewReader { proxy in
@@ -436,12 +436,16 @@ struct GlassMenuList: View {
     private var rows: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                if index > 0, item.startsSection || (item.destructive && !items[index - 1].destructive) {
+                if index > 0, item.startsSection || item.sectionTitle != nil || (item.destructive && !items[index - 1].destructive) {
                     Rectangle()
                         .fill(Theme.paneDivider)
                         .frame(height: 1)
                         .padding(.horizontal, Spacing.xs)
                         .padding(.vertical, Spacing.xxs)
+                        .opacity(appeared ? 1 : 0)
+                }
+                if let sectionTitle = item.sectionTitle {
+                    Self.sectionLabel(sectionTitle)
                         .opacity(appeared ? 1 : 0)
                 }
                 row(item, index: index)
@@ -454,6 +458,16 @@ struct GlassMenuList: View {
                     )
             }
         }
+    }
+
+    private static func sectionLabel(_ text: String) -> some View {
+        Text(text)
+            .font(BrandFonts.sans(11, weight: .semibold))
+            .foregroundStyle(Theme.textTertiary)
+            .lineLimit(1)
+            .padding(.horizontal, Spacing.s)
+            .padding(.top, Spacing.xxs)
+            .padding(.bottom, Spacing.xs)
     }
 
     private var scrollHeight: CGFloat {
@@ -487,11 +501,19 @@ struct GlassMenuList: View {
                         .frame(width: 20, height: 1)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(item.title)
-                        .font(TypeScale.rowSubtitle)
-                        .foregroundStyle(tint)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
+                    HStack(spacing: Spacing.xs) {
+                        Text(item.title)
+                            .font(TypeScale.rowSubtitle)
+                            .foregroundStyle(tint)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                        if let badge = item.badge {
+                            Circle()
+                                .fill(badge)
+                                .frame(width: 6, height: 6)
+                                .springAnimation(value: badge)
+                        }
+                    }
                     if let subtitle = item.subtitle {
                         Text(subtitle)
                             .font(BrandFonts.sans(11))
