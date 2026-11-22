@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { LiveMessage, LivePush, Provider, ProviderEvent, Usage } from "@runelay-bots/protocol";
 import { emptyUsage } from "@runelay-bots/protocol";
@@ -83,7 +84,13 @@ import { titleFrom } from "../../conversations/services/sessions.service";
 import { recordThreadMessage } from "../../conversations/services/threads.service";
 import { activeMembers, getGroup, mentionedMembers } from "../../groups/services/groups.service";
 import { queueCapture } from "../../memory/services/capture-jobs.service";
-import { type RecallItem, recall, recallBlock, teamLogBlock } from "../../memory/services/memory.service";
+import {
+  pinnedRulesBlock,
+  type RecallItem,
+  recall,
+  recallBlock,
+  teamLogBlock,
+} from "../../memory/services/memory.service";
 import {
   type AnsweredQuestion,
   answerSummary,
@@ -377,6 +384,34 @@ function withContext(context: string, prompt: string) {
   return context ? `${context}\n\n---\n\n${prompt}` : prompt;
 }
 
+const repoInstructionsCap = 20_000;
+
+function instructionsFile(root: string, name: string, depth = 0): { path: string; text: string } | null {
+  const path = join(root, name);
+  if (!existsSync(path)) return null;
+  const text = readFileSync(path, "utf8").trim();
+  const include = text.match(/^@(\S+)$/);
+  if (include && depth === 0) return instructionsFile(root, include[1], 1);
+  return text ? { path, text } : null;
+}
+
+export function repoInstructions(root: string) {
+  try {
+    const file = instructionsFile(root, "AGENTS.md") ?? instructionsFile(root, "CLAUDE.md");
+    if (!file) return "";
+    const cut = file.text.length > repoInstructionsCap;
+    return [
+      "## Instruções do repositório",
+      `Regras de ${file.path}. Valem para todo código desta worktree, acima do seu jeito padrão.`,
+      cut
+        ? `${file.text.slice(0, repoInstructionsCap)}\n\n[cortado: leia o resto de ${file.path} com Read antes de mexer numa área que ele cobre]`
+        : file.text,
+    ].join("\n");
+  } catch {
+    return "";
+  }
+}
+
 function workspaceGuide(code: CodePrompt) {
   const workspace = code.workspace;
   if (!workspace) return "";
@@ -400,6 +435,7 @@ function workspaceGuide(code: CodePrompt) {
     "- .git, .claude, .env* e a configuração dos bots são protegidos: não tente escrever neles.",
     '- Commits por módulo ou feature no Bash (`git add <arquivos>` + `git commit -m`), em conventional commits em inglês, curtos e sem assinatura de IA (nada de Co-Authored-By). `workspace_deliver` faz um commit só com tudo o que estiver pendente: use para um único módulo ou com action pr para push e PR depois dos commits. Base do PR: a que a pessoa pedir; se ela não disser, a base de onde a branch saiu de verdade (compare `git rev-list --left-right --count HEAD...origin/main` e `HEAD...origin/develop` e fique com a mais próxima), nunca develop por padrão. PR para a main é permitido; só o merge passa pela pessoa. Se a pessoa pedir push, dê push (`git push -u origin <branch da tarefa>` ou workspace_deliver action push); se a branch já tem PR, o push atualiza o PR e você nunca abre outro. "Só push" nunca vira PR novo. Nunca diga que não pode dar push. Uma negação antiga não vale para o próximo pedido.',
     "- No fim, diga em uma ou duas linhas o que mudou e como conferir.",
+    repoInstructions(workspace.path),
   ]
     .filter(Boolean)
     .join("\n");
@@ -1893,9 +1929,9 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         workspace && codeModeSupported(account.provider, account.runner) ? workspaceStatus(workspace) : "",
         ...notes,
       ]);
-    const extraSystem = [connectorsOf(bot).memory && runelayEnabled() ? await skillsIndex() : "", side?.note ?? ""]
-      .filter(Boolean)
-      .join("\n\n");
+    const runelayContext = connectorsOf(bot).memory && runelayEnabled();
+    const [rules, skills] = runelayContext ? await Promise.all([pinnedRulesBlock(), skillsIndex()]) : ["", ""];
+    const extraSystem = [rules, skills, side?.note ?? ""].filter(Boolean).join("\n\n");
     const liveBots = [bot, ...delegatesOf(bot)]
       .filter((item) => item.capabilities.browser || (item.id === bot.id && activeWorkspace(session)))
       .map((item) => item.id);

@@ -1,7 +1,7 @@
 import { type Account, runOnAccount } from "../../accounts/services/accounts.service";
 import { askJev, jevEnabled, noul } from "../../approvals/services/jev.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
-import { runelayCall, runelayEnabled } from "../../connectors/services/runelay.service";
+import { runelayApi, runelayCall, runelayEnabled } from "../../connectors/services/runelay.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
 import { addTeamEntry, recentTeamEntries } from "../repositories/team-memory.repository";
 
@@ -38,6 +38,41 @@ export async function recall(bot: BotDefinition, message: string): Promise<Recal
       }));
   } catch {
     return [];
+  }
+}
+
+const rulesTtl = 10 * 60_000;
+let rulesCache: { at: number; block: string } | null = null;
+
+export function resetRulesCache() {
+  rulesCache = null;
+}
+
+export async function pinnedRulesBlock(timeoutMs = 3000) {
+  if (!runelayEnabled()) return "";
+  if (rulesCache && Date.now() - rulesCache.at < rulesTtl) return rulesCache.block;
+  try {
+    const page = await withTimeout(
+      runelayApi<{ items?: Array<{ slug?: string; name?: string; description?: string }> }>(
+        "GET",
+        "/memories?pinned=true&limit=100",
+      ),
+      timeoutMs,
+    );
+    const lines = (page?.items ?? [])
+      .filter((item) => item.slug)
+      .map(
+        (item) =>
+          `- ${clean(String(item.name || item.slug))}: ${clean(String(item.description ?? ""))} (\`${item.slug}\`)`,
+      );
+    const block =
+      lines.length === 0
+        ? ""
+        : `## Regras de ouro da pessoa\nValem sempre, em todo pedido, acima do seu jeito padrão de trabalhar. Quando o pedido tocar no assunto de uma delas (código, commit, branch, deploy, UI, banco), leia a regra inteira com \`memory_read(slug)\` antes de agir e siga.\n${lines.join("\n")}`;
+    rulesCache = { at: Date.now(), block };
+    return block;
+  } catch {
+    return rulesCache?.block ?? "";
   }
 }
 
@@ -129,12 +164,31 @@ export async function cheapCall(
   return texts.join("\n").trim();
 }
 
+const memoryTypes = ["user", "feedback", "project", "reference"] as const;
+type MemoryType = (typeof memoryTypes)[number];
+
+async function similarMemories(query: string, recalled: RecallItem[]) {
+  try {
+    const result = await withTimeout(
+      runelayCall("search_context", { query: query.slice(0, 300), kind: "memory", limit: 10 }, 3000),
+      3000,
+    );
+    const found = Array.isArray(result) ? (result as Array<{ slug?: string; name?: string }>) : [];
+    const seen = new Set(recalled.map((item) => item.slug));
+    return found
+      .filter((item) => item.slug && !seen.has(String(item.slug)))
+      .map((item) => ({ slug: String(item.slug), name: clean(String(item.name ?? item.slug)), description: "" }));
+  } catch {
+    return [];
+  }
+}
+
 function parseFacts(text: string) {
   const match = text.match(/\{[\s\S]*\}/);
   if (!match) return null;
   try {
     const parsed = JSON.parse(match[0]) as {
-      facts?: Array<{ title?: string; body?: string; tags?: string[] }>;
+      facts?: Array<{ title?: string; body?: string; type?: string; tags?: string[] }>;
       summary?: string;
     };
     const facts = (parsed.facts ?? [])
@@ -143,6 +197,7 @@ function parseFacts(text: string) {
       .map((fact) => ({
         title: String(fact.title).slice(0, 120),
         body: String(fact.body).slice(0, 1500),
+        type: memoryTypes.includes(String(fact.type) as MemoryType) ? (String(fact.type) as MemoryType) : "project",
         tags: (fact.tags ?? []).map(String).slice(0, 5),
       }));
     return { facts, summary: String(parsed.summary ?? "").slice(0, 240) };
@@ -254,7 +309,8 @@ export async function capture(input: CaptureInput) {
     scope: { turnId },
   });
   if (outcome !== "capture") return;
-  const existing = input.recalled.map((item) => `- ${item.slug}: ${item.name}`).join("\n") || "(nenhuma)";
+  const known = [...input.recalled, ...(await similarMemories(userText, input.recalled))];
+  const existing = known.map((item) => `- ${item.slug}: ${item.name}`).join("\n") || "(nenhuma)";
   const text = await cheapCall(
     input.account,
     cheapModel(input.account, input.model),
@@ -266,7 +322,8 @@ export async function capture(input: CaptureInput) {
       "Não repita um fato que já está nas memórias existentes sem nada novo; nesse caso devolva facts vazio.",
       "Nunca inclua senhas, tokens, chaves, cartões ou documentos.",
       "Se um fato atualiza uma memória existente, use exatamente o título dela.",
-      'Formato: {"facts":[{"title":"…","body":"…","tags":["…"]}],"summary":"uma linha do que foi tratado"}',
+      'type: "feedback" para regra ou preferência de como trabalhar, "project" para decisão ou estado de um projeto, "reference" para onde achar algo (link, caminho, painel), "user" só para fato sobre a própria pessoa.',
+      'Formato: {"facts":[{"title":"…","body":"…","type":"feedback","tags":["…"]}],"summary":"uma linha do que foi tratado"}',
       "",
       `Memórias existentes:\n${existing}`,
       "",
@@ -280,7 +337,7 @@ export async function capture(input: CaptureInput) {
   const saved: { title: string; slug: string; updated: boolean }[] = [];
   for (const fact of parsed.facts) {
     if (hasSecret(`${fact.title} ${fact.body}`)) continue;
-    const match = input.recalled.find(
+    const match = known.find(
       (item) => normalized(item.name) === normalized(fact.title) || item.slug === slugify(fact.title),
     );
     const slug = match?.slug ?? `rb-${bot.id}-${slugify(fact.title)}`;
@@ -289,7 +346,7 @@ export async function capture(input: CaptureInput) {
       slug,
       name: fact.title,
       description: `${fact.body.slice(0, 300)}`,
-      type: "user",
+      type: fact.type,
       body: `${fact.body}\n\nOrigem: ${bot.name} (r/bots), ${new Date().toISOString().slice(0, 10)}. Tags: ${tags.join(", ")}`,
     });
     saved.push({ title: fact.title, slug, updated: Boolean(match) });
