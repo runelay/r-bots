@@ -44,6 +44,8 @@ final class AppModel {
     @ObservationIgnored private var refreshTask: Task<Void, Never>?
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private(set) var openSessions: Set<String> = []
+    @ObservationIgnored private var sessionBots: [String: String] = [:]
+    @ObservationIgnored private var watchedSessions: Set<String> = []
     @ObservationIgnored private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     var client: BotsClient { BotsClient(baseURL: ServerConfig.currentURL()) }
@@ -116,6 +118,9 @@ final class AppModel {
     }
 
     func stop() {
+        BotActivityCenter.shared.detach()
+        watchedSessions = []
+        sessionBots = [:]
         statusTask?.cancel()
         statusTask = nil
         statusStreamLive = false
@@ -326,8 +331,47 @@ final class AppModel {
         if let id = store.sessionId {
             openSessions.remove(id)
             markRead(bot: store.bot, sessionID: id)
+            if watchedSessions.contains(id) { return }
         }
         store.suspend()
+    }
+
+    // MARK: Live Activity
+
+    /// Conversas em que um bot (não grupo) está trabalhando ou esperando a pessoa.
+    func liveSessions() -> [(bot: Bot, sessionID: String, status: BotStatus)] {
+        var result: [String: (bot: Bot, sessionID: String, status: BotStatus)] = [:]
+        for (sessionID, status) in sessionStatuses where status == .working || status == .awaitingApproval {
+            guard let botID = sessionBots[sessionID], let bot = bot(id: botID), !bot.isGroup else { continue }
+            result[sessionID] = (bot, sessionID, status)
+        }
+        for (sessionID, store) in stores where result[sessionID] == nil && !store.bot.isGroup {
+            let status = store.botStatus
+            guard status == .working || status == .awaitingApproval, let bot = bot(id: store.bot.id) else { continue }
+            result[sessionID] = (bot, sessionID, status)
+        }
+        return Array(result.values)
+    }
+
+    /// Mantém a conversa conectada para a ilha mostrar o passo atual e as aprovações.
+    func watch(bot: Bot, sessionID: String) -> ConversationStore {
+        let store = store(for: bot, sessionID: sessionID)
+        watchedSessions.insert(sessionID)
+        // Volta a conectar depois do app ter ido para o fundo (suspendAll); start() não duplica o stream.
+        if AppActivity.shared.isLive {
+            store.resume()
+            store.start()
+        }
+        return store
+    }
+
+    func watchedStore(_ sessionID: String) -> ConversationStore? {
+        watchedSessions.contains(sessionID) ? stores[sessionID] : nil
+    }
+
+    func unwatch(sessionID: String) {
+        guard watchedSessions.remove(sessionID) != nil, !openSessions.contains(sessionID) else { return }
+        stores[sessionID]?.suspend()
     }
 
     private func makeStore(bot: Bot, sessionID: String?, settled: Bool = false) -> ConversationStore {
@@ -335,8 +379,10 @@ final class AppModel {
         store.onBotUpdated = { [weak self] in
             self?.scheduleRefresh()
         }
-        store.onNotify = { [weak self] event in
+        store.onNotify = { [weak self, weak store] event in
             guard let self, let current = self.bot(id: bot.id) else { return }
+            // Conversa só acompanhada pela ilha: o aviso sai pelo status do bot (notify), sem duplicar.
+            if let id = store?.sessionId, !self.openSessions.contains(id), self.watchedSessions.contains(id) { return }
             switch event {
             case .reply(let text, _, _):
                 LocalNotifier.post(title: current.name, body: String(text.prefix(180)), botID: current.id)
@@ -502,6 +548,7 @@ final class AppModel {
             if case .object(let items) = value["sessions"] ?? .null {
                 for (id, item) in items {
                     sessions[id] = Self.botStatus(item["status"]?.stringValue)
+                    if let botID = item["botId"]?.stringValue { sessionBots[id] = botID }
                 }
             }
             withAnimation(Motion.spring) {
@@ -512,6 +559,7 @@ final class AppModel {
         case "session":
             guard let id = value["sessionId"]?.stringValue else { return }
             let status = Self.botStatus(value["status"]?.stringValue)
+            if let botID = value["botId"]?.stringValue { sessionBots[id] = botID }
             withAnimation(Motion.spring) {
                 sessionStatuses[id] = status == .idle ? nil : status
             }

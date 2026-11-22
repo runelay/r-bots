@@ -867,6 +867,7 @@ struct ServerProfileSheet: View {
 
 struct NotificationsScreen: View {
     @AppStorage(LocalNotifier.enabledKey) private var enabled = true
+    @AppStorage(BotActivityCenter.enabledKey) private var liveActivities = true
     @State private var status: UNAuthorizationStatus = .notDetermined
 
     var body: some View {
@@ -875,6 +876,12 @@ struct NotificationsScreen: View {
                 Toggle("Avisar quando um bot terminar ou precisar de você", isOn: $enabled)
             } footer: {
                 Text(status == .denied ? "As notificações estão bloqueadas nos Ajustes do iPhone." : "Funciona enquanto o app está aberto ou foi para o fundo há pouco tempo.")
+            }
+            .settingsRow()
+            Section {
+                Toggle("Mostrar o bot trabalhando na Dynamic Island", isOn: $liveActivities)
+            } footer: {
+                Text("Mostra o passo atual, os pedidos de permissão e as perguntas na ilha e na tela bloqueada, com botões para responder. Atualiza enquanto o app está aberto ou foi para o fundo há pouco tempo.")
             }
             .settingsRow()
         }
