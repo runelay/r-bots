@@ -5,7 +5,7 @@ import {
   macRunnerConnected,
   watchMacComputerEvents,
 } from "../../accounts/services/mac-runner.service";
-import { ParseError, parseShell, type Segment } from "../../code/services/policy.service";
+import { parseShell, type Segment } from "../../code/services/policy.service";
 
 const macOffline = "Mac desconectado: abra o app r/bots nele.";
 export class ComputerError extends Error {
@@ -145,9 +145,8 @@ const quietTargets = new Set(["/dev/null", "&1", "&2", "1", "2"]);
 function shellSegments(command: string) {
   try {
     return parseShell(command);
-  } catch (error) {
-    if (error instanceof ParseError) return null;
-    throw error;
+  } catch {
+    return null;
   }
 }
 

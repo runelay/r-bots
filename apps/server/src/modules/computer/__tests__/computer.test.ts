@@ -166,6 +166,7 @@ describe("computerShellReadOnly", () => {
       "defaults write x y z",
       "plutil -convert xml1 f",
       "sudo ls",
+      "FOO=1",
       "",
     ])
       expect(computerShellReadOnly("shell_run", { cmd })).toBe(false);
@@ -219,6 +220,7 @@ describe("computerHumanReason", () => {
       ["security find-generic-password -s x", "security"],
       ["ssh host ls", "ssh"],
       ["cat 'a", "Não deu para ler"],
+      ["cat${IFS}file", "montado na hora"],
     ])
       expect(computerHumanReason("shell_run", { cmd })).toContain(reason);
     expect(computerHumanReason("shell_run", {})).toContain("vazio");
