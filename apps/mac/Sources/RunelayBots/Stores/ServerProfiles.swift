@@ -10,11 +10,11 @@ enum ServerProfileStatus: Equatable {
 
     var label: String {
         switch self {
-        case .checking: "Verificando"
-        case .connected: "Conectado"
-        case .signedOut: "Sem login"
-        case .needsOwner: "Sem dono"
-        case .offline: "Fora do ar"
+        case .checking: tr("Verificando")
+        case .connected: tr("Conectado")
+        case .signedOut: tr("Sem login")
+        case .needsOwner: tr("Sem dono")
+        case .offline: tr("Fora do ar")
         }
     }
 }
@@ -218,8 +218,8 @@ enum ServerTestFailure: Error, Equatable {
 
     var message: String {
         switch self {
-        case .invalid: "Endereço inválido. Use http:// ou https://"
-        case .unreachable: "Não respondeu. Confira o endereço e se o servidor está ligado."
+        case .invalid: tr("Endereço inválido. Use http:// ou https://")
+        case .unreachable: tr("Não respondeu. Confira o endereço e se o servidor está ligado.")
         }
     }
 }

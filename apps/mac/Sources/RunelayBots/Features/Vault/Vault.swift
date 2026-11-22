@@ -9,17 +9,17 @@ enum VaultTouchPolicy: String, CaseIterable, Identifiable, Codable, Sendable {
 
     var label: String {
         switch self {
-        case .always: "Sempre"
-        case .hourly: "A cada 1 h"
-        case .never: "Nunca"
+        case .always: tr("Sempre")
+        case .hourly: tr("A cada 1 h")
+        case .never: tr("Nunca")
         }
     }
 
     var detail: String {
         switch self {
-        case .always: "Touch ID a cada uso."
-        case .hourly: "Touch ID no primeiro uso de cada hora."
-        case .never: "Usa sem pedir Touch ID."
+        case .always: tr("Touch ID a cada uso.")
+        case .hourly: tr("Touch ID no primeiro uso de cada hora.")
+        case .never: tr("Usa sem pedir Touch ID.")
         }
     }
 }
@@ -95,15 +95,15 @@ struct VaultAuditEntry: Identifiable, Equatable {
     var headline: String {
         let who = botName ?? botId
         switch outcome {
-        case "used": return who.map { "\($0) usou" } ?? "Usado"
-        case "denied": return who.map { "\($0) não conseguiu usar" } ?? "Uso negado"
-        case "revealed": return "Você viu o valor"
-        case "created": return "Criado"
-        case "updated": return "Regras mudaram"
-        case "rotated": return "Valor trocado"
-        case "deleted": return "Apagado"
-        case "server_copy_on": return "Passou a funcionar com o Mac fechado"
-        case "server_copy_off": return "Voltou a ficar só no Mac"
+        case "used": return who.map { tr("%@ usou", $0) } ?? tr("Usado")
+        case "denied": return who.map { tr("%@ não conseguiu usar", $0) } ?? tr("Uso negado")
+        case "revealed": return tr("Você viu o valor")
+        case "created": return tr("Criado")
+        case "updated": return tr("Regras mudaram")
+        case "rotated": return tr("Valor trocado")
+        case "deleted": return tr("Apagado")
+        case "server_copy_on": return tr("Passou a funcionar com o Mac fechado")
+        case "server_copy_off": return tr("Voltou a ficar só no Mac")
         default: return outcome
         }
     }
@@ -113,7 +113,7 @@ struct VaultAuditEntry: Identifiable, Equatable {
         if let tool { parts.append(VaultText.toolLabel(tool)) }
         if let domain, !domain.isEmpty { parts.append(domain) }
         if outcome == "denied", let reason { parts.append(VaultText.reasonLabel(reason)) }
-        if source == "server" { parts.append("cópia do servidor") }
+        if source == "server" { parts.append(tr("cópia do servidor")) }
         return parts.joined(separator: " · ")
     }
 
@@ -149,7 +149,7 @@ struct SecretFormRequest: Equatable {
             guard let id = field["id"]?.stringValue else { return nil }
             return SecretFormField(id: id, label: field["label"]?.stringValue ?? id, secure: field["secure"]?.boolValue ?? true)
         }
-        self.fields = fields.isEmpty ? [SecretFormField(id: "valor", label: "Valor", secure: true)] : fields
+        self.fields = fields.isEmpty ? [SecretFormField(id: "valor", label: tr("Valor"), secure: true)] : fields
         self.domains = value["domains"]?.arrayValue?.compactMap(\.stringValue) ?? []
         self.botId = value["botId"]?.stringValue
         self.botName = value["botName"]?.stringValue
@@ -182,23 +182,23 @@ enum VaultDates {
 enum VaultText {
     static func toolLabel(_ tool: String) -> String {
         switch tool {
-        case "browser_fill": "preencheu no navegador"
-        case "computer_type": "digitou no Mac"
-        case "http_request": "chamada a uma API"
-        case "Bash": "comando no terminal"
+        case "browser_fill": tr("preencheu no navegador")
+        case "computer_type": tr("digitou no Mac")
+        case "http_request": tr("chamada a uma API")
+        case "Bash": tr("comando no terminal")
         default: tool
         }
     }
 
     static func reasonLabel(_ reason: String) -> String {
         switch reason {
-        case "denied_domain": "site não liberado"
-        case "denied_bot": "bot não liberado"
-        case "expired": "segredo vencido"
-        case "cancelled": "Touch ID cancelado"
-        case "mac_offline": "Mac offline"
-        case "not_found": "não existe no cofre"
-        case "insecure": "conexão sem TLS"
+        case "denied_domain": tr("site não liberado")
+        case "denied_bot": tr("bot não liberado")
+        case "expired": tr("segredo vencido")
+        case "cancelled": tr("Touch ID cancelado")
+        case "mac_offline": tr("Mac offline")
+        case "not_found": tr("não existe no cofre")
+        case "insecure": tr("conexão sem TLS")
         default: reason
         }
     }
@@ -252,9 +252,9 @@ enum VaultText {
     }
 
     static func relative(_ date: Date?) -> String {
-        guard let date else { return "Nunca usado" }
+        guard let date else { return tr("Nunca usado") }
         let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = LanguageStore.shared.locale
         formatter.unitsStyle = .full
         return formatter.localizedString(for: date, relativeTo: Date())
     }

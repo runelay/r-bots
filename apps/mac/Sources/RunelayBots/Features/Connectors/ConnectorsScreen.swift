@@ -10,8 +10,8 @@ struct ConnectorsScreen: View {
             VStack(alignment: .leading, spacing: Spacing.xl) {
                 ConnectorsCatalog(onRunelayOff: model.openIntegrations) { actions in
                     PageHeaderView(
-                        title: "Catálogo",
-                        description: "Conecte suas contas uma vez. Todos os agentes da organização usam.",
+                        title: tr("Catálogo"),
+                        description: tr("Conecte suas contas uma vez. Todos os agentes da organização usam."),
                         signed: true
                     ) {
                         actions
@@ -97,7 +97,7 @@ struct ConnectorsCatalog<Header: View>: View {
         HStack(spacing: Spacing.s) {
             IconActionButton(
                 systemImage: "arrow.clockwise",
-                label: "Testar os instalados de novo",
+                label: tr("Testar os instalados de novo"),
                 spinning: model.isRefreshingConnectors
             ) {
                 model.refreshConnectors()
@@ -124,13 +124,13 @@ private struct CatalogContent: View {
                 }
             }
         case .failed(let message):
-            EmptyStateView(systemImage: "exclamationmark.triangle", title: "Não deu para carregar o catálogo", description: message)
+            EmptyStateView(systemImage: "exclamationmark.triangle", title: tr("Não deu para carregar o catálogo"), description: message)
         case .loaded(let catalog):
             if catalog.isEmpty {
                 EmptyStateView(
                     systemImage: "powerplug",
-                    title: store.query.isEmpty ? "Catálogo vazio" : "Nenhum conector com “\(store.query)”",
-                    description: "Use Adicionar e Conexão personalizada para ligar qualquer servidor MCP ou OpenAPI."
+                    title: store.query.isEmpty ? tr("Catálogo vazio") : tr("Nenhum conector com “%@”", store.query),
+                    description: tr("Use Adicionar e Conexão personalizada para ligar qualquer servidor MCP ou OpenAPI.")
                 )
             } else {
                 VStack(alignment: .leading, spacing: Spacing.xl) {
@@ -464,7 +464,7 @@ private struct ConnectorOptionsButton: View {
     let connector: CatalogConnector
 
     var body: some View {
-        GlassMenuIconButton(systemImage: "ellipsis", help: "Opções de \(connector.name)", size: 30, weight: .medium, edge: .trailing) {
+        GlassMenuIconButton(systemImage: "ellipsis", help: tr("Opções de %@", connector.name), size: 30, weight: .medium, edge: .trailing) {
             model.catalog.optionItems(for: connector.id, model: model)
         }
     }
@@ -686,8 +686,8 @@ private struct RunelayOffState: View {
         VStack(spacing: Spacing.m) {
             EmptyStateView(
                 systemImage: "powerplug",
-                title: "Conectores e memória estão desligados",
-                description: "Conecte o runelay para os bots usarem Linear, GitHub, Supabase e o resto das suas contas, além da memória e das skills compartilhadas."
+                title: tr("Conectores e memória estão desligados"),
+                description: tr("Conecte o runelay para os bots usarem Linear, GitHub, Supabase e o resto das suas contas, além da memória e das skills compartilhadas.")
             )
             Button("Conectar runelay", action: action)
                 .buttonStyle(.brandPrimary)
@@ -747,15 +747,15 @@ struct SourceStatusDot: View {
 enum SourceStatus {
     static func label(_ status: String) -> String {
         switch status {
-        case "ok": "Conectado"
-        case "error": "Com erro"
-        case "needs_auth": "Precisa de login"
-        default: "Não testado"
+        case "ok": tr("Conectado")
+        case "error": tr("Com erro")
+        case "needs_auth": tr("Precisa de login")
+        default: tr("Não testado")
         }
     }
 
     static func tools(_ count: Int?) -> String? {
-        count.map { "\($0) tools" }
+        count.map { tr("%lld tools", $0) }
     }
 }
 
@@ -793,7 +793,7 @@ struct SourceDetailView: View {
                     .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: Spacing.m)
-                IconActionButton(systemImage: "arrow.clockwise", label: "Testar de novo", spinning: model.isRefreshingConnectors) {
+                IconActionButton(systemImage: "arrow.clockwise", label: tr("Testar de novo"), spinning: model.isRefreshingConnectors) {
                     model.refreshConnectors()
                 }
                 if connector.status != "ok", let link = connector.reconnectUrl, let url = URL(string: link) {

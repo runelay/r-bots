@@ -30,7 +30,7 @@ struct ReviewButton: View {
 
     private func run(_ preset: ReviewPreset) {
         open = false
-        notify(.success("Juntando o contexto de \(preset.name)…"))
+        notify(.success(tr("Juntando o contexto de %@…", preset.name)))
         Task {
             do {
                 let reply = try await store.run(preset, view: view, project: project)
@@ -39,7 +39,7 @@ struct ReviewButton: View {
                     model.go(to: .conversations)
                 }
             } catch {
-                notify(.failure("Não deu para rodar \(preset.name): \(error.localizedDescription)"))
+                notify(.failure(tr("Não deu para rodar %1$@: %2$@", preset.name, error.localizedDescription)))
             }
         }
     }
@@ -122,7 +122,7 @@ private struct ReviewMenu: View {
                 .padding(.top, Spacing.xs)
                 .padding(.bottom, Spacing.xs)
             if store.presets.isEmpty {
-                Text(store.loadError ?? "Carregando…")
+                Text(store.loadError ?? tr("Carregando…"))
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .padding(Spacing.s)
@@ -131,7 +131,7 @@ private struct ReviewMenu: View {
                 ReviewRow(preset: preset, botName: botName(for: preset)) { run(preset) }
             }
             Rectangle().fill(Theme.paneDivider).frame(height: 1).padding(.vertical, Spacing.xs)
-            ReviewRow(title: "Editar presets…", systemImage: "slider.horizontal.3", action: edit)
+            ReviewRow(title: tr("Editar presets…"), systemImage: "slider.horizontal.3", action: edit)
         }
         .padding(Spacing.xs)
         .frame(width: 320)
@@ -139,7 +139,7 @@ private struct ReviewMenu: View {
 
     private func botName(for preset: ReviewPreset) -> String {
         let id = preset.botId ?? store.defaultBotID
-        return model.loadedBots.first { $0.id == id }?.name ?? "bot padrão"
+        return model.loadedBots.first { $0.id == id }?.name ?? tr("bot padrão")
     }
 }
 
@@ -228,7 +228,7 @@ private struct ReviewPresetEditor: View {
                         .foregroundStyle(Theme.danger)
                         .lineLimit(1)
                 }
-                BoardActionButton(title: "Salvar", prominent: true, isBusy: store.saving) {
+                BoardActionButton(title: tr("Salvar"), prominent: true, isBusy: store.saving) {
                     Task {
                         error = await store.save(drafts)
                         if error == nil { back() }
@@ -242,7 +242,7 @@ private struct ReviewPresetEditor: View {
                         Button {
                             selectedID = preset.id
                         } label: {
-                            Text(preset.name.isEmpty ? "Sem nome" : preset.name)
+                            Text(preset.name.isEmpty ? tr("Sem nome") : preset.name)
                                 .font(TypeScale.rowSubtitle)
                                 .foregroundStyle(preset.id == selectedID ? Theme.textPrimary : Theme.textSecondary)
                                 .lineLimit(1)

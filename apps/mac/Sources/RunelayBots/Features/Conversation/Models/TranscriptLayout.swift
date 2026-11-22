@@ -125,7 +125,7 @@ enum TranscriptItem: Identifiable {
                 }
                 if speakers.count >= 2 {
                     flush()
-                    items.append(.caption("summary-\(entry.id)", "\(replies) mensagens com \(speakers.count) agentes"))
+                    items.append(.caption("summary-\(entry.id)", tr("%1$lld mensagens com %2$lld agentes", replies, speakers.count)))
                 }
             }
             if let date = store.entryDates[entry.id] {

@@ -32,6 +32,7 @@ enum PreferencesSync {
                 }
             }
         }
+        LanguageStore.shared.apply(value)
         guard value["microphone"] != nil else { return }
         let wanted = value["microphone"]?.stringValue
         let catalog = MicrophoneCatalog.shared

@@ -96,6 +96,6 @@ struct InitialBadge: View {
 enum RelativeText {
     static func date(_ iso: String?) -> String? {
         guard let iso, let date = ISODate.parse(iso) else { return nil }
-        return date.formatted(.relative(presentation: .named).locale(Locale(identifier: "pt_BR")))
+        return date.formatted(.relative(presentation: .named).locale(LanguageStore.shared.locale))
     }
 }

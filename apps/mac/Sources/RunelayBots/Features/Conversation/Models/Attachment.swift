@@ -149,7 +149,7 @@ enum AttachmentPasteboard {
                 data = nil
             }
             guard let data else { return nil }
-            return writeTemporary(data, name: "Imagem colada.png")
+            return writeTemporary(data, name: tr("Imagem colada.png"))
         }
     #endif
 

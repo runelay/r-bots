@@ -245,7 +245,7 @@ final class GitHubStore {
     }
 
     func merge(method: GHMergeMethod, deleteBranch: Bool) async {
-        await perform("merge", success: "PR mergeado") { client, repo, number in
+        await perform("merge", success: tr("PR mergeado")) { client, repo, number in
             let reply = try await client.githubAction(
                 repo: repo,
                 number: number,
@@ -259,7 +259,7 @@ final class GitHubStore {
     }
 
     func review(event: String, body: String) async {
-        let success = event == "approve" ? "Você aprovou o PR" : event == "request_changes" ? "Pedido de mudanças enviado" : "Revisão enviada"
+        let success = event == "approve" ? tr("Você aprovou o PR") : event == "request_changes" ? tr("Pedido de mudanças enviado") : tr("Revisão enviada")
         await perform("review", success: success) { client, repo, number in
             try await client.githubAction(
                 repo: repo,
@@ -272,13 +272,13 @@ final class GitHubStore {
     }
 
     func comment(_ body: String) async {
-        await perform("comment", success: "Comentário enviado") { client, repo, number in
+        await perform("comment", success: tr("Comentário enviado")) { client, repo, number in
             try await client.githubAction(repo: repo, number: number, action: "comment", body: ["body": .string(body)], as: GHPullReply.self).pull
         }
     }
 
     func reply(threadID: String, body: String) async {
-        await perform("reply", success: "Resposta enviada") { client, repo, number in
+        await perform("reply", success: tr("Resposta enviada")) { client, repo, number in
             try await client.githubAction(
                 repo: repo,
                 number: number,
@@ -290,13 +290,13 @@ final class GitHubStore {
     }
 
     func markReady() async {
-        await perform("ready", success: "PR pronto para revisão") { client, repo, number in
+        await perform("ready", success: tr("PR pronto para revisão")) { client, repo, number in
             try await client.githubAction(repo: repo, number: number, action: "ready", body: [:], as: GHPullReply.self).pull
         }
     }
 
     func rerunFailed() async {
-        await perform("rerun", success: "Checks que falharam rodando de novo") { client, repo, number in
+        await perform("rerun", success: tr("Checks que falharam rodando de novo")) { client, repo, number in
             try await client.githubAction(repo: repo, number: number, action: "rerun", body: [:], as: GHRerunReply.self).pull
         }
     }

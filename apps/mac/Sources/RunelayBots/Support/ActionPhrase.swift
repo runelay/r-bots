@@ -87,113 +87,113 @@ struct ActionPhrase: Equatable {
         let element = target.flatMap { $0.label.isEmpty ? nil : $0.label } ?? quoted
         let roleNoun = target.flatMap { Self.roleNoun($0.role) }
         let sitePlace = url.flatMap { $0.host() }.map(SiteName.placePhrase)
-        let appPlace = target?.app.flatMap { $0.isEmpty ? nil : "no \($0)" }
+        let appPlace = target?.app.flatMap { $0.isEmpty ? nil : tr("no %@", $0) }
 
         self.init(verb: call.displayName, url: url, app: target?.app, bundleID: target?.bundleID, surface: surface, symbol: call.symbol)
 
         switch name {
         case "browser_open", "computer_open", "desktop_open":
             if let url {
-                verb = "Abrir"
+                verb = tr("Abrir")
                 object = SiteName.bareHost(url.host() ?? url.absoluteString)
                 symbol = "safari"
             } else if let app = input["app"]?.stringValue {
-                verb = "Abrir"
-                object = app == "terminal" ? "o terminal" : app == "browser" ? "o navegador" : app
+                verb = tr("Abrir")
+                object = app == "terminal" ? tr("o terminal") : app == "browser" ? tr("o navegador") : app
                 self.app = app == "terminal" || app == "browser" ? nil : app
                 symbol = "macwindow"
             } else if let path = input["path"]?.stringValue {
-                verb = "Abrir"
+                verb = tr("Abrir")
                 object = (path as NSString).lastPathComponent
                 symbol = "doc"
             }
         case "browser_snapshot":
-            verb = "Ler a página"
+            verb = tr("Ler a página")
             place = sitePlace
             symbol = "doc.text.magnifyingglass"
         case "browser_screenshot":
-            verb = "Ver a página"
+            verb = tr("Ver a página")
             place = sitePlace
             symbol = "camera"
         case "browser_click", "desktop_click", "computer_click":
-            verb = "Clicar em"
-            object = element ?? roleNoun ?? (surface == .browser ? "um elemento" : "um ponto da tela")
+            verb = tr("Clicar em")
+            object = element ?? roleNoun ?? (surface == .browser ? tr("um elemento") : tr("um ponto da tela"))
             place = surface == .browser ? sitePlace : appPlace
             symbol = "cursorarrow.click"
         case "browser_fill":
-            verb = "Preencher"
-            object = element ?? roleNoun ?? "um campo"
+            verb = tr("Preencher")
+            object = element ?? roleNoun ?? tr("um campo")
             if let value = input["text"]?.stringValue, !value.isEmpty {
-                extra = "com “\(Self.clip(value, 40))”"
+                extra = tr("com “%@”", Self.clip(value, 40))
             }
             place = sitePlace
             symbol = "character.cursor.ibeam"
         case "desktop_type", "computer_type":
-            verb = "Digitar"
+            verb = tr("Digitar")
             object = input["text"]?.stringValue.map { "“\(Self.clip($0, 48))”" }
             place = appPlace
             symbol = "keyboard"
         case "desktop_key", "computer_key":
-            verb = "Apertar"
+            verb = tr("Apertar")
             object = input["combo"]?.stringValue.map(Self.prettyCombo)
             place = appPlace
             symbol = "command"
         case "desktop_scroll", "computer_scroll":
-            verb = input["direction"]?.stringValue == "up" ? "Rolar para cima" : "Rolar a tela"
+            verb = input["direction"]?.stringValue == "up" ? tr("Rolar para cima") : tr("Rolar a tela")
             place = appPlace
             symbol = "arrow.up.and.down"
         case "desktop_screenshot", "computer_screenshot":
-            verb = "Olhar a tela"
-            place = surface == .desktop ? "do computador" : "do Mac"
+            verb = tr("Olhar a tela")
+            place = surface == .desktop ? tr("do computador") : tr("do Mac")
             symbol = "camera.viewfinder"
         case "computer_ui_tree":
-            verb = "Ler a tela"
-            place = input["app"]?.stringValue.map { "do \($0)" }
+            verb = tr("Ler a tela")
+            place = input["app"]?.stringValue.map { tr("do %@", $0) }
             symbol = "text.viewfinder"
         case "computer_apps":
-            verb = "Ver os apps abertos"
+            verb = tr("Ver os apps abertos")
             symbol = "square.grid.2x2"
         case "computer_windows":
-            verb = "Ver as janelas abertas"
+            verb = tr("Ver as janelas abertas")
             symbol = "macwindow.on.rectangle"
         case "computer_applescript":
-            verb = "Rodar uma automação no Mac"
+            verb = tr("Rodar uma automação no Mac")
             symbol = "applescript"
         case "shell_run":
-            verb = "Rodar um comando"
+            verb = tr("Rodar um comando")
             object = input["cmd"]?.stringValue.map { Self.clip($0, 48) }
             symbol = "terminal"
         case "files_list", "files_read", "files_write", "files_move", "files_rename", "files_mkdir", "files_trash":
             let verbs = [
-                "files_list": "Ver a pasta", "files_read": "Ler", "files_write": "Salvar", "files_move": "Mover", "files_rename": "Renomear", "files_mkdir": "Criar a pasta",
-                "files_trash": "Mandar para a Lixeira",
+                "files_list": tr("Ver a pasta"), "files_read": tr("Ler"), "files_write": tr("Salvar"), "files_move": tr("Mover"), "files_rename": tr("Renomear"), "files_mkdir": tr("Criar a pasta"),
+                "files_trash": tr("Mandar para a Lixeira"),
             ]
-            verb = verbs[name] ?? "Mexer em"
+            verb = verbs[name] ?? tr("Mexer em")
             let path = input["path"]?.stringValue ?? input["from"]?.stringValue
             object = path.map { ($0 as NSString).lastPathComponent }
             if name == "files_trash", let count = input["paths"]?.arrayValue?.count {
-                object = count == 1 ? "1 item" : "\(count) itens"
+                object = count == 1 ? tr("1 item") : tr("%lld itens", count)
             }
             symbol = "folder"
         case "record_start":
-            verb = "Gravar a tela"
+            verb = tr("Gravar a tela")
             symbol = "record.circle"
         case "record_stop":
-            verb = "Parar a gravação"
+            verb = tr("Parar a gravação")
             symbol = "stop.circle"
         case "prod_query":
-            verb = "Consultar o banco de dados"
+            verb = tr("Consultar o banco de dados")
             symbol = "cylinder.split.1x2"
         default:
             if call.isDelegation {
-                verb = "Pedir ajuda a"
-                object = call.label?.replacingOccurrences(of: "Delegar para ", with: "") ?? call.name
+                verb = tr("Pedir ajuda a")
+                object = Self.delegateName(call)
                 symbol = "person.2.fill"
             } else if surface == .connector {
                 let tool = call.connectorTool ?? call.name
                 verb = call.label.map(Self.stripPrompt) ?? Self.humanizeIdentifier(tool)
-                place = call.connectorName.map { "no \(ConnectorNames.pretty($0))" }
-            } else if call.name == "Bash", call.label?.hasPrefix("Rodar ") ?? true, let human = CommandPhrase.describe(input["command"]?.stringValue ?? "") {
+                place = call.connectorName.map { tr("no %@", ConnectorNames.pretty($0)) }
+            } else if call.name == "Bash", Self.isPlainCommand(input), let human = CommandPhrase.describe(input["command"]?.stringValue ?? "") {
                 verb = human.verb
                 object = human.object
                 symbol = "terminal"
@@ -211,14 +211,14 @@ struct ActionPhrase: Equatable {
         if name.hasSuffix("workspace_add") {
             let shown = target.flatMap { $0.label.isEmpty ? nil : $0.label } ?? input["path"]?.stringValue ?? ""
             let parts = Self.repoParts(shown)
-            verb = "Liberar o repositório"
+            verb = tr("Liberar o repositório")
             object = parts.name
-            place = parts.parent.map { "em \($0)" }
+            place = parts.parent.map { tr("em %@", $0) }
             tooltip = input["path"]?.stringValue ?? shown
             symbol = "arrow.triangle.branch"
         }
         if name.hasSuffix("add_schedule"), let cron = input["cron"]?.stringValue {
-            verb = "Criar rotina"
+            verb = tr("Criar rotina")
             object = input["name"]?.stringValue
             extra = CronSchedule.describe(cron)
             symbol = "clock"
@@ -241,13 +241,28 @@ struct ActionPhrase: Equatable {
         if let newline = value.firstIndex(of: "\n") {
             value = String(value[..<newline])
         }
-        if value.hasPrefix("Posso ") {
-            value = String(value.dropFirst("Posso ".count))
+        if let prefix = askPrefixes.first(where: { value.hasPrefix($0) }) {
+            value = String(value.dropFirst(prefix.count))
         }
         if value.hasSuffix("?") {
             value = String(value.dropLast())
         }
         return value.prefix(1).uppercased() + value.dropFirst()
+    }
+
+    static let askPrefixes = ["Posso ", "Can I "]
+    static let delegatePrefixes = ["Delegar para ", "Delegate to "]
+
+    static func delegateName(_ call: ToolCall) -> String {
+        if let label = call.label, let prefix = delegatePrefixes.first(where: { label.hasPrefix($0) }) {
+            let name = label.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty { return name }
+        }
+        return call.delegation?.botID ?? call.input["bot"]?.stringValue ?? call.name
+    }
+
+    static func isPlainCommand(_ input: JSONValue) -> Bool {
+        (input["description"]?.stringValue ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     static func quoted(in label: String?) -> String? {
@@ -259,16 +274,16 @@ struct ActionPhrase: Equatable {
     static func roleNoun(_ role: String) -> String? {
         let key = role.lowercased().replacingOccurrences(of: "ax", with: "", options: .anchored)
         switch key {
-        case "button", "popupbutton", "menubutton": return "um botão"
-        case "link": return "um link"
-        case "textbox", "searchbox", "textfield", "textarea", "combobox", "securetextfield": return "um campo"
-        case "checkbox": return "uma caixa de seleção"
-        case "radio", "radiobutton": return "uma opção"
-        case "menuitem", "menubaritem": return "um item do menu"
-        case "tab", "tabgroup": return "uma aba"
-        case "image": return "uma imagem"
-        case "row", "cell": return "um item da lista"
-        case "desktop": return "um ponto da tela"
+        case "button", "popupbutton", "menubutton": return tr("um botão")
+        case "link": return tr("um link")
+        case "textbox", "searchbox", "textfield", "textarea", "combobox", "securetextfield": return tr("um campo")
+        case "checkbox": return tr("uma caixa de seleção")
+        case "radio", "radiobutton": return tr("uma opção")
+        case "menuitem", "menubaritem": return tr("um item do menu")
+        case "tab", "tabgroup": return tr("uma aba")
+        case "image": return tr("uma imagem")
+        case "row", "cell": return tr("um item da lista")
+        case "desktop": return tr("um ponto da tela")
         default: return nil
         }
     }
@@ -276,7 +291,7 @@ struct ActionPhrase: Equatable {
     static func prettyCombo(_ combo: String) -> String {
         let symbols = [
             "cmd": "⌘", "command": "⌘", "super": "⌘", "ctrl": "⌃", "control": "⌃", "alt": "⌥", "option": "⌥", "shift": "⇧", "return": "↩", "enter": "↩", "tab": "⇥", "escape": "Esc", "esc": "Esc",
-            "left": "←", "right": "→", "up": "↑", "down": "↓", "backspace": "⌫", "delete": "⌫", "space": "Espaço",
+            "left": "←", "right": "→", "up": "↑", "down": "↓", "backspace": "⌫", "delete": "⌫", "space": tr("Espaço"),
         ]
         return combo.split(separator: "+").map { part in
             let key = part.trimmingCharacters(in: .whitespaces)
@@ -341,7 +356,7 @@ enum SiteName {
     }
 
     static func knownName(_ host: String) -> String? {
-        known[bareHost(host).lowercased()]
+        known[bareHost(host).lowercased()].map { tr($0) }
     }
 
     static func friendly(_ host: String) -> String {
@@ -350,8 +365,8 @@ enum SiteName {
 
     static func placePhrase(_ host: String) -> String {
         if let name = knownName(host) {
-            return "no \(name)"
+            return tr("no %@", name)
         }
-        return "em \(bareHost(host))"
+        return tr("em %@", bareHost(host))
     }
 }

@@ -16,10 +16,10 @@ enum ShortcutDestination: String, CaseIterable, Identifiable, Hashable {
         case .git: "GitHub"
         case .linear: "Linear"
         case .agenda: "Agenda"
-        case .notes: "Notas e planilhas"
-        case .routines: "Rotinas"
-        case .connectors: "Conectores"
-        case .usage: "Uso"
+        case .notes: tr("Notas e planilhas")
+        case .routines: tr("Rotinas")
+        case .connectors: tr("Conectores")
+        case .usage: tr("Uso")
         }
     }
 
@@ -108,36 +108,36 @@ struct ShortcutsScreen: View {
             if let counts = github?["counts"] {
                 let review = counts["review"]?.intValue ?? 0
                 let mine = counts["mine"]?.intValue ?? 0
-                if review > 0 { return review == 1 ? "1 PR esperando sua revisão" : "\(review) PRs esperando sua revisão" }
-                if mine > 0 { return mine == 1 ? "1 PR seu aberto" : "\(mine) PRs seus abertos" }
-                return "Nenhum PR pendente"
+                if review > 0 { return review == 1 ? tr("1 PR esperando sua revisão") : tr("%lld PRs esperando sua revisão", review) }
+                if mine > 0 { return mine == 1 ? tr("1 PR seu aberto") : tr("%lld PRs seus abertos", mine) }
+                return tr("Nenhum PR pendente")
             }
-            return githubFailed ? "GitHub não conectado no servidor" : "Carregando…"
+            return githubFailed ? tr("GitHub não conectado no servidor") : tr("Carregando…")
         case .linear:
             if let linear {
                 let started = linear["started"]?.intValue ?? 0
                 let more = linear["more"]?.boolValue ?? false
-                if started == 0 { return "Nada em andamento com você" }
-                return started == 1 && !more ? "1 issue em andamento" : "\(started)\(more ? "+" : "") issues em andamento"
+                if started == 0 { return tr("Nada em andamento com você") }
+                return started == 1 && !more ? tr("1 issue em andamento") : tr("%lld%@ issues em andamento", started, more ? "+" : "")
             }
             if let linearError {
-                return linearError.localizedCaseInsensitiveContains("conect") ? "Conecte o Linear em Conectores" : "Linear não conectado no servidor"
+                return linearError.localizedCaseInsensitiveContains("conect") ? tr("Conecte o Linear em Conectores") : tr("Linear não conectado no servidor")
             }
-            return "Carregando…"
+            return tr("Carregando…")
         case .agenda:
-            guard let bot else { return "Crie um bot para usar a agenda" }
-            return "Semana com suas contas do Google · \(bot.name)"
+            guard let bot else { return tr("Crie um bot para usar a agenda") }
+            return tr("Semana com suas contas do Google · %@", bot.name)
         case .notes:
-            guard let bot else { return "Crie um bot para guardar notas" }
-            return "Arquivos de \(bot.name)"
+            guard let bot else { return tr("Crie um bot para guardar notas") }
+            return tr("Arquivos de %@", bot.name)
         case .routines:
             let count = model.visibleBots.reduce(0) { $0 + $1.schedules.count }
-            return count == 0 ? "Tarefas que seus bots fazem sozinhos" : (count == 1 ? "1 rotina ativa" : "\(count) rotinas ativas")
+            return count == 0 ? tr("Tarefas que seus bots fazem sozinhos") : (count == 1 ? tr("1 rotina ativa") : tr("%lld rotinas ativas", count))
         case .connectors:
-            guard let connected else { return "Catálogo de contas e ferramentas" }
-            return connected == 1 ? "1 conta conectada" : "\(connected) contas conectadas"
+            guard let connected else { return tr("Catálogo de contas e ferramentas") }
+            return connected == 1 ? tr("1 conta conectada") : tr("%lld contas conectadas", connected)
         case .usage:
-            return "Limites e consumo das contas de IA"
+            return tr("Limites e consumo das contas de IA")
         }
     }
 

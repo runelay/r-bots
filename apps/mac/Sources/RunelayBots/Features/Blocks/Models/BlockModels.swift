@@ -12,17 +12,17 @@ enum BlockKind: String, Sendable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .note: "Nota"
-        case .sheet: "Planilha"
-        case .agenda: "Agenda"
+        case .note: tr("Nota")
+        case .sheet: tr("Planilha")
+        case .agenda: tr("Agenda")
         }
     }
 
     var pluralLabel: String {
         switch self {
-        case .note: "Notas"
-        case .sheet: "Planilhas"
-        case .agenda: "Agenda"
+        case .note: tr("Notas")
+        case .sheet: tr("Planilhas")
+        case .agenda: tr("Agenda")
         }
     }
 
@@ -182,25 +182,25 @@ enum CellFormatType: String, Codable, Sendable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .general: "Automático"
-        case .number: "Número"
-        case .brl: "Real (R$)"
-        case .percent: "Porcentagem"
-        case .date: "Data"
-        case .datetime: "Data e hora"
-        case .text: "Texto"
+        case .general: tr("Automático")
+        case .number: tr("Número")
+        case .brl: tr("Real (R$)")
+        case .percent: tr("Porcentagem")
+        case .date: tr("Data")
+        case .datetime: tr("Data e hora")
+        case .text: tr("Texto")
         }
     }
 
     var shortLabel: String {
         switch self {
-        case .general: "Auto"
-        case .number: "1.234"
+        case .general: tr("Auto")
+        case .number: tr("1.234")
         case .brl: "R$"
         case .percent: "%"
-        case .date: "Data"
-        case .datetime: "Data e hora"
-        case .text: "Texto"
+        case .date: tr("Data")
+        case .datetime: tr("Data e hora")
+        case .text: tr("Texto")
         }
     }
 }
@@ -379,7 +379,7 @@ enum ExportFormat: String, Codable, Sendable, CaseIterable, Identifiable {
         case .pdf: "PDF"
         case .md: "Markdown (.md)"
         case .xlsx: "Excel (.xlsx)"
-        case .csv: "CSV da aba"
+        case .csv: tr("CSV da aba")
         }
     }
 
@@ -568,11 +568,11 @@ enum BlockDates {
     static func relative(_ text: String) -> String {
         guard let date = parse(text) else { return "" }
         let seconds = Date().timeIntervalSince(date)
-        if seconds < 60 { return "agora" }
-        if seconds < 3600 { return "há \(Int(seconds / 60)) min" }
-        if Calendar.current.isDateInToday(date) { return "hoje, \(date.formatted(.dateTime.hour().minute()))" }
-        if Calendar.current.isDateInYesterday(date) { return "ontem" }
-        return date.formatted(.dateTime.day().month(.abbreviated))
+        if seconds < 60 { return tr("agora") }
+        if seconds < 3600 { return tr("há %lld min", Int(seconds / 60)) }
+        if Calendar.current.isDateInToday(date) { return tr("hoje, %@", date.formatted(.dateTime.hour().minute().locale(LanguageStore.shared.locale))) }
+        if Calendar.current.isDateInYesterday(date) { return tr("ontem") }
+        return date.formatted(.dateTime.day().month(.abbreviated).locale(LanguageStore.shared.locale))
     }
 }
 
@@ -627,27 +627,28 @@ enum SheetAddress {
 }
 
 enum CellText {
-    private static let numberFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
-        formatter.numberStyle = .decimal
-        return formatter
-    }()
+    nonisolated(unsafe) private static var formatters: (locale: String, number: NumberFormatter, currency: NumberFormatter)?
 
-    private static let currencyFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
-        formatter.numberStyle = .currency
-        formatter.currencyCode = "BRL"
-        return formatter
-    }()
+    private static func localized() -> (number: NumberFormatter, currency: NumberFormatter) {
+        let locale = LanguageStore.shared.locale
+        if let formatters, formatters.locale == locale.identifier { return (formatters.number, formatters.currency) }
+        let number = NumberFormatter()
+        number.locale = locale
+        number.numberStyle = .decimal
+        let currency = NumberFormatter()
+        currency.locale = locale
+        currency.numberStyle = .currency
+        currency.currencyCode = "BRL"
+        formatters = (locale.identifier, number, currency)
+        return (number, currency)
+    }
 
     static func display(_ value: CellValue, type: String?, format: CellFormat?) -> String {
         switch value {
         case .null:
             return ""
         case .bool(let flag):
-            return flag ? "VERDADEIRO" : "FALSO"
+            return flag ? tr("VERDADEIRO") : tr("FALSO")
         case .string(let text):
             if type == "d" || format?.type == .date || format?.type == .datetime, let date = BlockDates.parse(text) {
                 return dateText(date, withTime: format?.type == .datetime)
@@ -660,6 +661,7 @@ enum CellText {
 
     static func numberText(_ number: Double, format: CellFormat?) -> String {
         let decimals = format?.decimals
+        let (numberFormatter, currencyFormatter) = localized()
         switch format?.type ?? .general {
         case .brl:
             currencyFormatter.minimumFractionDigits = decimals ?? 2
@@ -685,8 +687,8 @@ enum CellText {
 
     static func dateText(_ date: Date, withTime: Bool) -> String {
         withTime
-            ? date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year().hour().minute())
-            : date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year())
+            ? date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year().hour().minute().locale(LanguageStore.shared.locale))
+            : date.formatted(.dateTime.day(.twoDigits).month(.twoDigits).year().locale(LanguageStore.shared.locale))
     }
 
     static func isNumeric(_ value: CellValue, type: String?) -> Bool {

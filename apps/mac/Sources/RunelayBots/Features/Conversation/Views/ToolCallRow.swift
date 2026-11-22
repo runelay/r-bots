@@ -47,13 +47,13 @@ struct CompactToolRow: View {
             if showsTechnical {
                 VStack(alignment: .leading, spacing: Spacing.s) {
                     if !call.input.isNull {
-                        CodeBlock(title: "Entrada", text: call.input.prettyPrinted())
+                        CodeBlock(title: tr("Entrada"), text: call.input.prettyPrinted())
                     }
                     if let output = call.output {
-                        CodeBlock(title: "Saída", text: output.prettyPrinted())
+                        CodeBlock(title: tr("Saída"), text: output.prettyPrinted())
                     }
                     if let error = call.errorMessage {
-                        CodeBlock(title: "Erro", text: error)
+                        CodeBlock(title: tr("Erro"), text: error)
                     }
                 }
                 .frame(maxWidth: 560, alignment: .leading)
@@ -101,19 +101,19 @@ struct CompactToolRow: View {
                 ActionShotPreview(call: call, phrase: phrase)
             }
 
-            GlassMenuIconButton(systemImage: "ellipsis", help: "Mais opções", iconSize: 11, size: 22, weight: .semibold, edge: .trailing) {
+            GlassMenuIconButton(systemImage: "ellipsis", help: tr("Mais opções"), iconSize: 11, size: 22, weight: .semibold, edge: .trailing) {
                 var items: [GlassMenuItem] = []
                 if let url = phrase.url {
-                    items.append(GlassMenuItem("Abrir no meu navegador", systemImage: "safari") { NSWorkspace.shared.open(url) })
+                    items.append(GlassMenuItem(tr("Abrir no meu navegador"), systemImage: "safari") { NSWorkspace.shared.open(url) })
                     items.append(
-                        GlassMenuItem("Copiar link", systemImage: "link") {
+                        GlassMenuItem(tr("Copiar link"), systemImage: "link") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(url.absoluteString, forType: .string)
                         })
                 }
                 if hasTechnical {
                     items.append(
-                        GlassMenuItem(showsTechnical ? "Ocultar detalhes técnicos" : "Detalhes técnicos", id: "technical", systemImage: "curlybraces", startsSection: phrase.url != nil) {
+                        GlassMenuItem(showsTechnical ? tr("Ocultar detalhes técnicos") : tr("Detalhes técnicos"), id: "technical", systemImage: "curlybraces", startsSection: phrase.url != nil) {
                             showsTechnical.toggle()
                         })
                 }
@@ -155,20 +155,20 @@ struct CompactToolRow: View {
         var parts: [String] = []
         switch phrase.surface {
         case .browser:
-            parts.append(phrase.host ?? "Navegador do bot")
+            parts.append(phrase.host ?? tr("Navegador do bot"))
         case .desktop:
-            parts.append("Computador do bot")
+            parts.append(tr("Computador do bot"))
         case .computer:
-            parts.append(phrase.app ?? "Seu Mac")
+            parts.append(phrase.app ?? tr("Seu Mac"))
         case .connector:
             if let connector = call.connectorName {
                 parts.append(ConnectorNames.pretty(connector))
             }
         case .other:
             if call.isDelegation {
-                parts.append("Delegação")
+                parts.append(tr("Delegação"))
             } else if call.name == "prod_query" {
-                parts.append("Banco de produção")
+                parts.append(tr("Banco de produção"))
             }
         }
         if let note = call.decisionNote {
@@ -189,13 +189,13 @@ struct CompactToolRow: View {
     private var openHint: String {
         switch phrase.surface {
         case .browser:
-            return canShowBotScreen ? "Ver no navegador do bot" : "Ver o resultado"
+            return canShowBotScreen ? tr("Ver no navegador do bot") : tr("Ver o resultado")
         case .desktop:
-            return canShowBotScreen ? "Ver o computador do bot" : "Ver o resultado"
+            return canShowBotScreen ? tr("Ver o computador do bot") : tr("Ver o resultado")
         case .computer:
-            return ActionShots.hasShot(call) ? "Ver como ficou a tela" : "Ver o resultado"
+            return ActionShots.hasShot(call) ? tr("Ver como ficou a tela") : tr("Ver o resultado")
         case .connector, .other:
-            return showsResult ? "Ocultar o resultado" : "Ver o resultado"
+            return showsResult ? tr("Ocultar o resultado") : tr("Ver o resultado")
         }
     }
 
@@ -351,7 +351,7 @@ struct ToolGroupRow: View {
 
     var body: some View {
         let nouns = Set(calls.map(\.groupNoun))
-        let noun = nouns.count == 1 ? nouns.first ?? "ferramentas" : "ferramentas"
+        let noun = nouns.count == 1 ? nouns.first ?? tr("ferramentas") : tr("ferramentas")
         let failed = calls.filter { $0.status == .failed || $0.status == .rejected }.count
         let phrases = calls.map { ActionPhrase(call: $0) }
         let hosts = phrases.compactMap(\.host).reduce(into: [String]()) { result, host in

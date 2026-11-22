@@ -153,7 +153,7 @@ struct FileCard: View {
                 .frame(width: 36, height: 36)
                 .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.small + 2, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(ref.kind == .audio ? "Mensagem de áudio" : ref.name)
+                Text(ref.kind == .audio ? tr("Mensagem de áudio") : ref.name)
                     .font(BrandFonts.sans(14, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
@@ -209,7 +209,7 @@ struct ComposerChip: View {
                 .frame(width: 32, height: 32)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
-                Text(attachment.kind == .audio ? "Áudio" : attachment.name)
+                Text(attachment.kind == .audio ? tr("Áudio") : attachment.name)
                     .font(TypeScale.captionStrong)
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
@@ -236,9 +236,9 @@ struct ComposerChip: View {
 
     private var status: String {
         switch attachment.state {
-        case .uploading(let progress): progress > 0 ? "Enviando \(Int(progress * 100))%" : "Enviando…"
+        case .uploading(let progress): progress > 0 ? tr("Enviando %lld%%", Int(progress * 100)) : tr("Enviando…")
         case .ready: attachment.sizeLabel
-        case .failed: "Falhou · tocar para repetir"
+        case .failed: tr("Falhou · tocar para repetir")
         }
     }
 

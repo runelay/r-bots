@@ -31,6 +31,7 @@ struct BotActivityAttributes: ActivityAttributes {
     let accent: String
     let sessionID: String
     let basePath: String
+    var language: String? = nil
 
     var url: URL {
         var parts = URLComponents()

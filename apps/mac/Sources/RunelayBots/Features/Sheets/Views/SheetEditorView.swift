@@ -44,10 +44,10 @@ struct SheetToolbar: View {
             }
             .padding(Spacing.xxs)
             .background(Theme.surface, in: Capsule())
-            SheetToolButton(systemImage: "bold", help: "Negrito", isActive: store.selectionFormat?.bold == true) {
+            SheetToolButton(systemImage: "bold", help: tr("Negrito"), isActive: store.selectionFormat?.bold == true) {
                 store.toggleBold()
             }
-            SheetToolButton(systemImage: "pin", help: store.frozenRows > 0 ? "Soltar a primeira linha" : "Fixar a primeira linha", isActive: store.frozenRows > 0) {
+            SheetToolButton(systemImage: "pin", help: store.frozenRows > 0 ? tr("Soltar a primeira linha") : tr("Fixar a primeira linha"), isActive: store.frozenRows > 0) {
                 store.toggleFrozenRow()
             }
             Spacer(minLength: 0)
@@ -136,7 +136,7 @@ struct SheetTabsBar: View {
                 }
             }
             .scrollEdgesHidden()
-            SheetToolButton(systemImage: "plus", help: "Nova aba") {
+            SheetToolButton(systemImage: "plus", help: tr("Nova aba")) {
                 store.addTab()
             }
         }

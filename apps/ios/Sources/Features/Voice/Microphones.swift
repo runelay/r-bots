@@ -18,11 +18,11 @@ enum Microphones {
     static func takeMissing() -> String? { nil }
 
     static func activeName() -> String {
-        AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? "microfone do iPhone"
+        AVAudioSession.sharedInstance().currentRoute.inputs.first?.portName ?? tr("microfone do iPhone")
     }
 
     static func lostNotice(_ name: String) -> String {
-        "O \(name) não está mais conectado. Voltei para o microfone do iPhone."
+        tr("O %@ não está mais conectado. Voltei para o microfone do iPhone.", name)
     }
 
     static func chosen() -> Microphone? { nil }

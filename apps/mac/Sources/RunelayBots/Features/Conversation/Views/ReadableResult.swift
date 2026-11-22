@@ -52,7 +52,7 @@ struct ReadableResult: View {
 
     static func friendlyError(_ message: String) -> String {
         if message.contains("TOOL_EXECUTION_DENIED") || message.contains("denied") {
-            return "Você não permitiu esta ação."
+            return tr("Você não permitiu esta ação.")
         }
         return message.count > 280 ? String(message.prefix(279)) + "…" : message
     }
@@ -124,7 +124,7 @@ struct ReadableResult: View {
                 guard let item = object[key] else { continue }
                 switch item {
                 case .array(let items):
-                    result.append(Line(key: humanKey(key), value: items.count == 1 ? "1 item" : "\(items.count) itens"))
+                    result.append(Line(key: humanKey(key), value: items.count == 1 ? tr("1 item") : tr("%lld itens", items.count)))
                     result.append(contentsOf: listLines(items).prefix(3))
                 case .object(let nested):
                     if let title = headline(of: nested) {
@@ -139,16 +139,16 @@ struct ReadableResult: View {
                 }
                 if result.count >= 8 { break }
             }
-            return result.isEmpty ? [Line(key: nil, value: "Concluído.")] : result
+            return result.isEmpty ? [Line(key: nil, value: tr("Concluído."))] : result
         case .null:
-            return [Line(key: nil, value: "Concluído.")]
+            return [Line(key: nil, value: tr("Concluído."))]
         default:
             return [Line(key: nil, value: value.inlineDescription ?? "")]
         }
     }
 
     private static func listLines(_ items: [JSONValue]) -> [Line] {
-        guard !items.isEmpty else { return [Line(key: nil, value: "Nenhum item.")] }
+        guard !items.isEmpty else { return [Line(key: nil, value: tr("Nenhum item."))] }
         var result = items.prefix(5).map { item -> Line in
             if let object = item.objectValue {
                 return Line(key: nil, value: "• " + (headline(of: object) ?? summary(of: object)))
@@ -156,7 +156,7 @@ struct ReadableResult: View {
             return Line(key: nil, value: "• " + (item.inlineDescription ?? ""))
         }
         if items.count > 5 {
-            result.append(Line(key: nil, value: "e mais \(items.count - 5)"))
+            result.append(Line(key: nil, value: tr("e mais %lld", items.count - 5)))
         }
         return result
     }

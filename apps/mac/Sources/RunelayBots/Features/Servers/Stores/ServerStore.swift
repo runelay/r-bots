@@ -10,7 +10,7 @@ final class ServerStore {
         case logs
 
         var id: String { rawValue }
-        var title: String { self == .preview ? "Prévia" : "Logs" }
+        var title: String { self == .preview ? tr("Prévia") : tr("Logs") }
     }
 
     static let shared = ServerStore()

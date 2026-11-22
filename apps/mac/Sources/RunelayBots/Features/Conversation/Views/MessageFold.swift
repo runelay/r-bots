@@ -143,7 +143,7 @@ struct FoldedMarkdown: View {
                     Button(action: expand) {
                         HStack(spacing: Spacing.s) {
                             Capsule().fill(.foreground.opacity(0.25)).frame(height: 1)
-                            Text("\(plan.hiddenLines) linha\(plan.hiddenLines == 1 ? "" : "s")")
+                            Text(plan.hiddenLines == 1 ? tr("1 linha") : tr("%lld linhas", plan.hiddenLines))
                                 .font(TypeScale.captionStrong)
                                 .fixedSize()
                             Capsule().fill(.foreground.opacity(0.25)).frame(height: 1)

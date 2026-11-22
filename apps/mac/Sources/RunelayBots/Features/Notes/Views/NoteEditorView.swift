@@ -54,7 +54,7 @@ struct NoteLinkSuggestions: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Theme.textTertiary)
                             .frame(width: 14)
-                        Text(hit.id.isEmpty ? "Criar “\(hit.title)”" : hit.title)
+                        Text(hit.id.isEmpty ? tr("Criar “%@”", hit.title) : hit.title)
                             .font(TypeScale.rowSubtitle)
                             .foregroundStyle(Theme.textPrimary)
                             .lineLimit(1)
@@ -117,6 +117,7 @@ struct NoteBacklinksFooter: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .appLanguage()
     }
 }
 
@@ -159,7 +160,7 @@ struct NoteSidebar: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
-            BlockSearchField(text: $store.query, prompt: "Buscar")
+            BlockSearchField(text: $store.query, prompt: tr("Buscar"))
                 .padding(.horizontal, Spacing.s)
             ScrollViewReader { proxy in
                 ScrollView {

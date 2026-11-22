@@ -191,7 +191,7 @@ struct ModelPickerPanel: View {
             AccountRailItem(
                 isSelected: activeSelection == Self.favoritesID,
                 isDimmed: false,
-                help: "Favoritos",
+                help: tr("Favoritos"),
                 namespace: railNamespace
             ) {
                 selectRail(Self.favoritesID)
@@ -313,11 +313,11 @@ struct ModelPickerPanel: View {
     }
 
     private var emptyMessage: String {
-        if isSearching { return "Nenhum modelo encontrado." }
+        if isSearching { return tr("Nenhum modelo encontrado.") }
         if activeSelection == Self.favoritesID {
-            return "Sem favoritos ainda. Passe o mouse num modelo e toque na estrela."
+            return tr("Sem favoritos ainda. Passe o mouse num modelo e toque na estrela.")
         }
-        return "Esta conta não tem modelos."
+        return tr("Esta conta não tem modelos.")
     }
 
     private var loadingState: some View {
@@ -481,7 +481,7 @@ struct ModelPickerPanel: View {
     }
 
     private var fallbackTitle: String {
-        siblingNames.isEmpty ? "Se acabar o limite, usar" : "Depois de \(siblingNames.joined(separator: " e ")), usar"
+        siblingNames.isEmpty ? tr("Se acabar o limite, usar") : tr("Depois de %@, usar", siblingNames.joined(separator: tr(" e ")))
     }
 
     private var fallbackFooter: some View {
@@ -493,15 +493,15 @@ struct ModelPickerPanel: View {
             Spacer(minLength: 0)
             GlassSelect(
                 options: fallbackChoices.map { GlassSelectOption(fallbackName($0.id), value: Optional($0.id)) }
-                    + [GlassSelectOption("Não trocar, só avisar", value: String?.none, startsSection: !fallbackChoices.isEmpty)],
+                    + [GlassSelectOption(tr("Não trocar, só avisar"), value: String?.none, startsSection: !fallbackChoices.isEmpty)],
                 selection: Binding(
                     get: { bot.engine?.fallback?.account },
                     set: { account in
                         setFallback(account.map { EngineFallback(account: $0, model: nil) })
                     }
                 ),
-                title: bot.engine?.fallback.map { fallbackName($0.account) } ?? "Só avisar",
-                help: "Se acabar o limite",
+                title: bot.engine?.fallback.map { fallbackName($0.account) } ?? tr("Só avisar"),
+                help: tr("Se acabar o limite"),
                 edge: .trailing
             )
             .help(

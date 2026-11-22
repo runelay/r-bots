@@ -206,7 +206,7 @@ enum LocalProviders {
     }
 
     static func runClaude(_ turn: LocalTurn, workDir: URL, handle: TurnHandle, emit: @escaping ProviderEmit) async {
-        guard let bin = LocalCLI.find(["claude"]) else { return emit(done(false, "Claude Code não está instalado.")) }
+        guard let bin = LocalCLI.find(["claude"]) else { return emit(done(false, tr("Claude Code não está instalado."))) }
         var servers: [String: JSONValue] = [:]
         if let url = turn.mcpURL, let token = turn.mcpToken {
             servers["bots"] = .object([
@@ -219,7 +219,7 @@ enum LocalProviders {
         do {
             try writePrivate(jsonString(.object(["mcpServers": .object(servers)])), to: configURL)
         } catch {
-            return emit(done(false, "Não deu para gravar a configuração MCP: \(error.localizedDescription)"))
+            return emit(done(false, tr("Não deu para gravar a configuração MCP: %@", error.localizedDescription)))
         }
         var args = ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--model", turn.model]
         if let effort = turn.effort { args += ["--effort", effort] }
@@ -280,7 +280,7 @@ enum LocalProviders {
             }
         }
         guard let final = state.result else {
-            return emit(done(false, handle.cancelled ? "cancelled" : tail(result.stderr, fallback: "O modelo não respondeu.")))
+            return emit(done(false, handle.cancelled ? "cancelled" : tail(result.stderr, fallback: tr("O modelo não respondeu."))))
         }
         if let usage = final["usage"]?.objectValue {
             emit(
@@ -296,13 +296,13 @@ enum LocalProviders {
         if handle.cancelled { return emit(done(false, "cancelled")) }
         if final["is_error"]?.boolValue == true {
             let errors = (final["errors"]?.arrayValue ?? []).compactMap(\.stringValue).joined(separator: " ")
-            return emit(done(false, errors.isEmpty ? (final["result"]?.stringValue ?? "Falha no Claude.") : errors))
+            return emit(done(false, errors.isEmpty ? (final["result"]?.stringValue ?? tr("Falha no Claude.")) : errors))
         }
         emit(done(true))
     }
 
     static func runCodex(_ turn: LocalTurn, workDir: URL, handle: TurnHandle, emit: @escaping ProviderEmit) async {
-        guard let bin = LocalCLI.find(["codex"]) else { return emit(done(false, "Codex CLI não está instalado.")) }
+        guard let bin = LocalCLI.find(["codex"]) else { return emit(done(false, tr("Codex CLI não está instalado."))) }
         let cwd = workDir.path(percentEncoded: false)
         var options = [
             "--json", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
@@ -368,20 +368,20 @@ enum LocalProviders {
                 let cached = number(usage, "cached_input_tokens")
                 emit(Self.usage(input: max(0, number(usage, "input_tokens") - cached), output: number(usage, "output_tokens"), cacheRead: cached, cacheWrite: 0, context: nil))
             } else if type == "turn.failed" {
-                state.failure = event["error"]?["message"]?.stringValue ?? "Falha no Codex."
+                state.failure = event["error"]?["message"]?.stringValue ?? tr("Falha no Codex.")
             } else if type == "error" {
-                state.failure = event["message"]?.stringValue ?? "Falha no Codex."
+                state.failure = event["message"]?.stringValue ?? tr("Falha no Codex.")
             }
         }
         if handle.cancelled { return emit(done(false, "cancelled")) }
         if state.failure != nil || result.code != 0 || !state.finished {
-            return emit(done(false, state.failure ?? tail(result.stderr, fallback: "Codex saiu com código \(result.code).")))
+            return emit(done(false, state.failure ?? tail(result.stderr, fallback: tr("Codex saiu com código %lld.", Int(result.code)))))
         }
         emit(done(true))
     }
 
     static func runCursor(_ turn: LocalTurn, workDir: URL, handle: TurnHandle, emit: @escaping ProviderEmit) async throws {
-        guard let bin = LocalCLI.find(["cursor-agent", "agent"]) else { return emit(done(false, "cursor-agent não está instalado.")) }
+        guard let bin = LocalCLI.find(["cursor-agent", "agent"]) else { return emit(done(false, tr("cursor-agent não está instalado."))) }
         var servers: [String: JSONValue] = [:]
         if let url = turn.mcpURL, let token = turn.mcpToken {
             servers["bots"] = .object(["url": .string(url), "headers": .object(["Authorization": .string("Bearer \(token)")])])
@@ -409,15 +409,15 @@ enum LocalProviders {
                 state.finished = true
                 if let usage = readUsage(event["usage"]) { emit(usage) }
                 if event["is_error"]?.boolValue == true || event["subtype"]?.stringValue == "error" {
-                    state.failure = event["result"]?.stringValue ?? event["error"]?.stringValue ?? "Falha no Cursor."
+                    state.failure = event["result"]?.stringValue ?? event["error"]?.stringValue ?? tr("Falha no Cursor.")
                 }
             } else if type == "error" {
-                state.failure = event["message"]?.stringValue ?? event["error"]?.stringValue ?? "Falha no Cursor."
+                state.failure = event["message"]?.stringValue ?? event["error"]?.stringValue ?? tr("Falha no Cursor.")
             }
         }
         if handle.cancelled { return emit(done(false, "cancelled")) }
         if state.failure != nil || result.code != 0 || !state.finished {
-            return emit(done(false, state.failure ?? tail(result.stderr, fallback: "cursor-agent saiu com código \(result.code).")))
+            return emit(done(false, state.failure ?? tail(result.stderr, fallback: tr("cursor-agent saiu com código %lld.", Int(result.code)))))
         }
         emit(done(true))
     }
@@ -436,7 +436,7 @@ enum LocalProviders {
     }
 
     static func runGrok(_ turn: LocalTurn, workDir: URL, handle: TurnHandle, emit: @escaping ProviderEmit) async throws {
-        guard let bin = LocalCLI.find(["grok"]) else { return emit(done(false, "Grok CLI não está instalado.")) }
+        guard let bin = LocalCLI.find(["grok"]) else { return emit(done(false, tr("Grok CLI não está instalado."))) }
         var config = ""
         if let url = turn.mcpURL, let token = turn.mcpToken {
             config = "[mcp_servers.bots]\nurl = \(toml(url))\nheaders = { Authorization = \(toml("Bearer \(token)")) }\ntool_timeout_sec = 900\n"
@@ -484,18 +484,18 @@ enum LocalProviders {
                 state.finished = true
                 flush()
                 if let usage = readUsage(event["usage"]) { emit(usage) }
-                if event["is_error"]?.boolValue == true { state.failure = event["result"]?.stringValue ?? "Falha no Grok." }
+                if event["is_error"]?.boolValue == true { state.failure = event["result"]?.stringValue ?? tr("Falha no Grok.") }
             } else if type == "error" {
-                state.failure = event["message"]?.stringValue ?? event["error"]?.stringValue ?? "Falha no Grok."
+                state.failure = event["message"]?.stringValue ?? event["error"]?.stringValue ?? tr("Falha no Grok.")
             }
         }
         flush()
         if handle.cancelled { return emit(done(false, "cancelled")) }
         if state.failure != nil || result.code != 0 {
-            return emit(done(false, state.failure ?? tail(result.stderr, fallback: "grok saiu com código \(result.code).")))
+            return emit(done(false, state.failure ?? tail(result.stderr, fallback: tr("grok saiu com código %lld.", Int(result.code)))))
         }
         if !state.finished {
-            emit(.object(["type": .string("warning"), "message": .string("Grok terminou sem evento de resultado.")]))
+            emit(.object(["type": .string("warning"), "message": .string(tr("Grok terminou sem evento de resultado."))]))
         }
         emit(done(true))
     }
@@ -520,7 +520,7 @@ enum LocalProviders {
 
     static func probe(_ provider: String) async -> JSONValue {
         guard let bin = LocalCLI.find(binaries[provider] ?? [provider]) else {
-            return account(provider, "missing", "CLI não instalada nesta máquina.", .array([]))
+            return account(provider, "missing", tr("CLI não instalada nesta máquina."), .array([]))
         }
         switch provider {
         case "claude":
@@ -530,7 +530,7 @@ enum LocalProviders {
                 return account(provider, "ready", detail, claudeModels)
             }
             let detail = String(LocalCLI.clean(result.stderr.isEmpty ? result.stdout : result.stderr).prefix(200))
-            return account(provider, "logged_out", detail.isEmpty ? "Sem login no Claude Code." : detail, claudeModels)
+            return account(provider, "logged_out", detail.isEmpty ? tr("Sem login no Claude Code.") : detail, claudeModels)
         case "codex":
             let status = await LocalCLI.capture(bin, ["login", "status"])
             let text = LocalCLI.clean("\(status.stdout)\n\(status.stderr)")
@@ -548,7 +548,7 @@ enum LocalProviders {
         case "cursor":
             let status = await LocalCLI.capture(bin, ["status"], timeout: .seconds(60))
             var text = LocalCLI.clean("\(status.stdout)\n\(status.stderr)")
-            if text.isEmpty { text = "cursor-agent status não respondeu (código \(status.code))." }
+            if text.isEmpty { text = tr("cursor-agent status não respondeu (código %lld).", Int(status.code)) }
             let ready = text.range(of: "logged in", options: .caseInsensitive) != nil && text.range(of: "not logged in", options: .caseInsensitive) == nil
             var models: [JSONValue] = [model("auto", "Auto")]
             if ready {
@@ -570,7 +570,7 @@ enum LocalProviders {
             return account(
                 provider,
                 loggedOut ? "logged_out" : "ready",
-                loggedOut ? "Grok sem login (rode grok login no Mac)." : "",
+                loggedOut ? tr("Grok sem login (rode grok login no Mac).") : "",
                 .array(models.isEmpty ? [model("grok-4.6", "grok-4.6")] : models)
             )
         }

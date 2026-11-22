@@ -15,22 +15,28 @@ struct ToolFailure: Error, Sendable {
         ToolFailure(400, code: "bad_args", message)
     }
 
-    static let stopped = ToolFailure(409, code: "stopped", "A pessoa apertou Parar.")
-    static let userBusy = ToolFailure(
-        409, code: "user_busy",
-        "A pessoa está usando o Mac agora (clicando, rolando ou digitando) e não parou em 15 s. Nada foi feito. Espere um pouco, tire um print novo e tente de novo. Não é falta de permissão.")
+    static var stopped: ToolFailure { ToolFailure(409, code: "stopped", tr("A pessoa apertou Parar.")) }
+    static var userBusy: ToolFailure {
+        ToolFailure(
+            409, code: "user_busy",
+            tr("A pessoa está usando o Mac agora (clicando, rolando ou digitando) e não parou em 15 s. Nada foi feito. Espere um pouco, tire um print novo e tente de novo. Não é falta de permissão."))
+    }
 
     static func userInterrupted(typed: Int, total: Int) -> ToolFailure {
         ToolFailure(
             409, code: "user_interrupted",
-            "A pessoa clicou ou digitou enquanto eu digitava e parei para não escrever no lugar errado: saíram \(typed) de \(total) caracteres. Tire um print, confira o campo em foco e digite só o que faltou."
+            tr(
+                "A pessoa clicou ou digitou enquanto eu digitava e parei para não escrever no lugar errado: saíram %1$lld de %2$lld caracteres. Tire um print, confira o campo em foco e digite só o que faltou.",
+                typed, total)
         )
     }
 
     static func missing(_ permission: ComputerPermission) -> ToolFailure {
         ToolFailure(
             403, code: "permission_denied",
-            "O macOS não liberou \(permission.title) para o r/bots, então a ação não aconteceu. Abri Ajustes do Sistema → Privacidade e Segurança → \(permission.title) no Mac: a pessoa precisa ligar o r/bots ali (se já estiver ligado, desligar e ligar de novo) e depois você tenta outra vez."
+            tr(
+                "O macOS não liberou %1$@ para o r/bots, então a ação não aconteceu. Abri Ajustes do Sistema → Privacidade e Segurança → %1$@ no Mac: a pessoa precisa ligar o r/bots ali (se já estiver ligado, desligar e ligar de novo) e depois você tenta outra vez.",
+                permission.title)
         )
     }
 
@@ -49,7 +55,7 @@ struct ExecutorCall: Sendable {
 
     init(tool: String, body: Data) throws {
         let parsed = try? JSONDecoder().decode(JSONValue.self, from: body.isEmpty ? Data("{}".utf8) : body)
-        guard let root = parsed?.objectValue else { throw ToolFailure.badArgs("Corpo do pedido não é um JSON válido.") }
+        guard let root = parsed?.objectValue else { throw ToolFailure.badArgs(tr("Corpo do pedido não é um JSON válido.")) }
         let context = root["context"]?.objectValue ?? [:]
         self.tool = tool
         self.args = root["args"]?.objectValue ?? [:]
@@ -69,7 +75,7 @@ struct ExecutorCall: Sendable {
     }
 
     func requiredString(_ key: String) throws -> String {
-        guard let value = string(key) else { throw ToolFailure.badArgs("Falta o campo \"\(key)\".") }
+        guard let value = string(key) else { throw ToolFailure.badArgs(tr("Falta o campo \"%@\".", key)) }
         return value
     }
 
@@ -78,7 +84,7 @@ struct ExecutorCall: Sendable {
     }
 
     func requiredNumber(_ key: String) throws -> Double {
-        guard let value = number(key) else { throw ToolFailure.badArgs("Falta o campo numérico \"\(key)\".") }
+        guard let value = number(key) else { throw ToolFailure.badArgs(tr("Falta o campo numérico \"%@\".", key)) }
         return value
     }
 
@@ -92,7 +98,7 @@ struct ExecutorCall: Sendable {
             let width = object["width"]?.doubleValue, let height = object["height"]?.doubleValue,
             width >= 1, height >= 1
         else {
-            throw ToolFailure.badArgs("\"\(key)\" precisa de x, y, width e height.")
+            throw ToolFailure.badArgs(tr("\"%@\" precisa de x, y, width e height.", key))
         }
         return CGRect(x: x, y: y, width: width, height: height)
     }

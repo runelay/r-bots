@@ -26,6 +26,8 @@ targets:
         buildPhase: resources
         group: Shared
       - path: Resources/Assets.xcassets
+      - path: Resources/InfoPlist
+        buildPhase: resources
       - path: ../mac/Sources/RunelayBots/Models
         group: Shared
       - path: ../mac/Sources/RunelayBots/Networking
@@ -65,6 +67,11 @@ targets:
       - path: ../mac/Sources/RunelayBots/Support/CommandPhrase.swift
         group: Shared
       - path: ../mac/Sources/RunelayBots/Support/Deadline.swift
+        group: Shared
+      - path: ../mac/Sources/RunelayBots/Support/Localization.swift
+        group: Shared
+      - path: ../mac/Localization
+        buildPhase: resources
         group: Shared
       - path: ../mac/Sources/RunelayBots/Design/Motion.swift
         group: Shared
@@ -135,7 +142,7 @@ targets:
       properties:
         CFBundleDisplayName: r/bots
         CFBundleDevelopmentRegion: pt-BR
-        CFBundleLocalizations: [pt-BR]
+        CFBundleLocalizations: [pt-BR, en]
         CFBundleShortVersionString: "0.1.16"
         CFBundleVersion: "1"
         UILaunchScreen:
@@ -180,11 +187,15 @@ targets:
       - path: Widgets
       - path: Sources/LiveActivity
         group: Shared
+      - path: ../mac/Localization
+        buildPhase: resources
+        group: Shared
     info:
       path: Widgets/Info.plist
       properties:
         CFBundleDisplayName: r/bots
         CFBundleDevelopmentRegion: pt-BR
+        CFBundleLocalizations: [pt-BR, en]
         CFBundleShortVersionString: "0.1.15"
         CFBundleVersion: "1"
         NSExtension:

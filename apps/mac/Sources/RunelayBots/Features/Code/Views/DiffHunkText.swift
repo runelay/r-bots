@@ -314,7 +314,7 @@ enum DiffLineText {
         let offset = (DiffHunkTextView.lineHeight - (font.ascender - font.descender)) / 2 - 1
         switch line {
         case .gap(_, let count):
-            let text = "⋯ \(count) linha\(count == 1 ? "" : "s") oculta\(count == 1 ? "" : "s")"
+            let text = count == 1 ? tr("⋯ 1 linha oculta") : tr("⋯ %lld linhas ocultas", count)
             let value = NSAttributedString(
                 string: text,
                 attributes: [

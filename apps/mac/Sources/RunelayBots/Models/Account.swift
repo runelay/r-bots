@@ -81,10 +81,10 @@ struct AIAccount: Identifiable, Hashable, Sendable, Decodable {
 
     var statusLabel: String {
         switch status {
-        case "ready": "Pronta"
-        case "logged_out": "Deslogada"
+        case "ready": tr("Pronta")
+        case "logged_out": tr("Deslogada")
         case "offline": "Offline"
-        case "missing": "Não instalada"
+        case "missing": tr("Não instalada")
         default: status
         }
     }
@@ -171,9 +171,9 @@ enum EngineEffort: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .low: "Baixo"
-        case .medium: "Médio"
-        case .high: "Alto"
+        case .low: tr("Baixo")
+        case .medium: tr("Médio")
+        case .high: tr("Alto")
         }
     }
 }

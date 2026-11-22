@@ -17,12 +17,12 @@ struct SpotifyMiniPlayer: View {
         case .unavailable:
             EmptyView()
         case .closed:
-            SpotifySlimRow(title: "Abrir Spotify", systemImage: nil) {
+            SpotifySlimRow(title: tr("Abrir Spotify"), systemImage: nil) {
                 player.openSpotify()
             }
             .transition(Motion.insertion(reduceMotion: reduceMotion))
         case .denied:
-            SpotifySlimRow(title: "Permitir controle do Spotify", systemImage: "lock") {
+            SpotifySlimRow(title: tr("Permitir controle do Spotify"), systemImage: "lock") {
                 player.openAutomationSettings()
             }
             .transition(Motion.insertion(reduceMotion: reduceMotion))
@@ -45,7 +45,7 @@ private struct SpotifyNowPlayingCard: View {
                     HStack(spacing: Spacing.s + Spacing.xxs) {
                         SpotifyArtwork(image: player.artwork, key: player.artworkKey)
                         VStack(alignment: .leading, spacing: Spacing.xxs) {
-                            Text(player.track?.name ?? "Nada tocando")
+                            Text(player.track?.name ?? tr("Nada tocando"))
                                 .font(TypeScale.captionStrong)
                                 .foregroundStyle(Theme.textPrimary)
                             if let artist = player.track?.artist, !artist.isEmpty {
@@ -64,13 +64,13 @@ private struct SpotifyNowPlayingCard: View {
                 .help("Abrir o Spotify")
 
                 HStack(spacing: Spacing.xxs) {
-                    SpotifyControlButton(systemImage: "backward.fill", help: "Anterior") {
+                    SpotifyControlButton(systemImage: "backward.fill", help: tr("Anterior")) {
                         player.previousTrack()
                     }
                     SpotifyPlayButton(isPlaying: player.isPlaying) {
                         player.togglePlayback()
                     }
-                    SpotifyControlButton(systemImage: "forward.fill", help: "Próxima") {
+                    SpotifyControlButton(systemImage: "forward.fill", help: tr("Próxima")) {
                         player.nextTrack()
                     }
                 }
@@ -150,8 +150,8 @@ private struct SpotifyPlayButton: View {
         .onHover { isHovering = $0 }
         .springAnimation(value: isHovering)
         .springAnimation(value: isPlaying)
-        .help(isPlaying ? "Pausar" : "Tocar")
-        .accessibilityLabel(isPlaying ? "Pausar" : "Tocar")
+        .help(isPlaying ? "Pausar" : "Reproduzir")
+        .accessibilityLabel(isPlaying ? "Pausar" : "Reproduzir")
     }
 }
 

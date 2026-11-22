@@ -9,9 +9,9 @@ enum FileTranscriber {
 
         var errorDescription: String? {
             switch self {
-            case .unauthorized: "Sem permissão de reconhecimento de fala no Mac."
-            case .unavailable: "O reconhecimento de fala em português não está disponível no Mac."
-            case .empty: "Não reconheci fala no áudio."
+            case .unauthorized: tr("Sem permissão de reconhecimento de fala no Mac.")
+            case .unavailable: tr("O reconhecimento de fala em português não está disponível no Mac.")
+            case .empty: tr("Não reconheci fala no áudio.")
             }
         }
     }

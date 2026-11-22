@@ -12,9 +12,9 @@ enum InspectorTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .activity: "Atividade"
-        case .library: "Biblioteca"
-        case .routines: "Rotinas"
+        case .activity: tr("Atividade")
+        case .library: tr("Biblioteca")
+        case .routines: tr("Rotinas")
         }
     }
 }
@@ -27,8 +27,8 @@ enum ProfileTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: "Geral"
-        case .routines: "Rotinas"
+        case .general: tr("Geral")
+        case .routines: tr("Rotinas")
         }
     }
 }
@@ -97,10 +97,10 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .conversations: "Conversas"
-        case .routines: "Rotinas"
-        case .connectors: "Conectores"
-        case .usage: "Uso"
+        case .conversations: tr("Conversas")
+        case .routines: tr("Rotinas")
+        case .connectors: tr("Conectores")
+        case .usage: tr("Uso")
         case .git: "GitHub"
         case .linear: "Linear"
         }
@@ -165,19 +165,19 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .server: "Servidores"
-        case .account: "Conta"
-        case .appearance: "Aparência"
-        case .notifications: "Notificações"
+        case .server: tr("Servidores")
+        case .account: tr("Conta")
+        case .appearance: tr("Aparência")
+        case .notifications: tr("Notificações")
         case .bots: "Bots"
-        case .aiAccounts: "Contas de IA"
-        case .computer: "Uso do computador"
-        case .devices: "Dispositivos"
-        case .vault: "Cofre"
-        case .integrations: "Integrações"
-        case .shortcuts: "Atalhos"
-        case .versions: "Versões"
-        case .about: "Sobre"
+        case .aiAccounts: tr("Contas de IA")
+        case .computer: tr("Uso do computador")
+        case .devices: tr("Dispositivos")
+        case .vault: tr("Cofre")
+        case .integrations: tr("Integrações")
+        case .shortcuts: tr("Atalhos")
+        case .versions: tr("Versões")
+        case .about: tr("Sobre")
         }
     }
 
@@ -375,7 +375,7 @@ final class AppModel {
                     selectedBotID = visibleBots.first?.id
                 }
                 if let clientError = error as? BotsClient.ClientError, case .unsupported = clientError {
-                    showNotice("O servidor ainda não aceita grupos.")
+                    showNotice(tr("O servidor ainda não aceita grupos."))
                 } else {
                     showNotice(ErrorMessage.describe(error))
                 }
@@ -732,13 +732,13 @@ final class AppModel {
 
     func copyThreadID(of bot: Bot) {
         guard let id = threadSessionID(for: bot) else {
-            showNotice("Essa conversa ainda não começou.")
+            showNotice(tr("Essa conversa ainda não começou."))
             return
         }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(id, forType: .string)
-        showNotice("Copiado")
+        showNotice(tr("Copiado"))
     }
 
     func deleteBot(_ bot: Bot) {
@@ -1348,7 +1348,7 @@ final class AppModel {
                 if let clientError = error as? BotsClient.ClientError {
                     switch clientError {
                     case .validation, .unsupported:
-                        showNotice("O servidor ainda não aceita trocar a conta ou o modelo.")
+                        showNotice(tr("O servidor ainda não aceita trocar a conta ou o modelo."))
                         return
                     default:
                         break
@@ -1383,7 +1383,7 @@ final class AppModel {
                 searchResults = .loaded(found)
             } catch {
                 guard !Task.isCancelled else { return }
-                searchResults = .failed("A busca não respondeu agora.")
+                searchResults = .failed(tr("A busca não respondeu agora."))
             }
         }
     }
@@ -1402,8 +1402,8 @@ final class AppModel {
             do {
                 let sessionID = try await client.runSchedule(botID: botID, name: schedule.name)
                 showNotice(
-                    "\(bot.name) está rodando \u{201C}\(schedule.name)\u{201D} agora…",
-                    action: NoticeAction(title: "Abrir conversa") { [weak self] in
+                    tr("%@ está rodando “%@” agora…", bot.name, schedule.name),
+                    action: NoticeAction(title: tr("Abrir conversa")) { [weak self] in
                         self?.openConversation(botID, sessionID: sessionID)
                     }
                 )
@@ -1416,7 +1416,7 @@ final class AppModel {
             } catch {
                 runningSchedules.remove(key)
                 if let clientError = error as? BotsClient.ClientError, case .unsupported = clientError {
-                    showNotice("O servidor ainda não aceita rodar rotinas na hora.")
+                    showNotice(tr("O servidor ainda não aceita rodar rotinas na hora."))
                 } else {
                     showNotice(ErrorMessage.describe(error))
                 }
@@ -1753,7 +1753,7 @@ final class AppModel {
     func openSide(from store: ConversationStore, text: String) {
         let botID = store.bot.id
         guard let sessionID = store.sessionId, let bot = bot(id: botID), !bot.isGroup, !bot.isPending else {
-            showNotice("Mande a primeira mensagem antes de abrir uma conversa secundária.")
+            showNotice(tr("Mande a primeira mensagem antes de abrir uma conversa secundária."))
             return
         }
         let client = client
@@ -1775,7 +1775,7 @@ final class AppModel {
         let sessionID = conversation.sessionId
         guard let bot = bot(id: botID), !bot.isGroup else { return }
         guard threads[botID]?.sessionId != sessionID else {
-            showNotice("Essa conversa já está aberta no centro.")
+            showNotice(tr("Essa conversa já está aberta no centro."))
             return
         }
         if sideStore?.sessionId != sessionID {
@@ -1885,7 +1885,7 @@ final class AppModel {
         let before = conversationLists[botID] ?? []
         let wasActive = activeConversationID(for: botID) == conversation.sessionId
         if wasActive, conversationStatus(conversation) != .idle {
-            showNotice("Essa conversa ainda está trabalhando. Pare antes de arquivar.")
+            showNotice(tr("Essa conversa ainda está trabalhando. Pare antes de arquivar."))
             return
         }
         conversationLists[botID] = before.filter { $0.sessionId != conversation.sessionId }
@@ -1898,8 +1898,8 @@ final class AppModel {
             do {
                 try await client.conversationAction(botID: botID, sessionID: conversation.sessionId, action: "archive")
                 showNotice(
-                    "Conversa arquivada",
-                    action: NoticeAction(title: "Desfazer") { [weak self] in
+                    tr("Conversa arquivada"),
+                    action: NoticeAction(title: tr("Desfazer")) { [weak self] in
                         self?.unarchiveConversation(conversation)
                     })
             } catch {
@@ -2049,7 +2049,7 @@ final class AppModel {
                 try await browser.open(url, client: client, botID: bot.id)
             } catch {
                 if let clientError = error as? BotsClient.ClientError, case .unsupported = clientError {
-                    showNotice("O servidor ainda não abre páginas direto. Peça para \(bot.name) abrir na conversa.")
+                    showNotice(tr("O servidor ainda não abre páginas direto. Peça para %@ abrir na conversa.", bot.name))
                 } else {
                     showNotice(ErrorMessage.describe(error))
                 }
@@ -2348,7 +2348,7 @@ final class AppModel {
     func clearConversation(_ bot: Bot) {
         guard canClearConversation(bot), !clearingThreads.contains(bot.id) else { return }
         if threads[bot.id]?.canStop == true {
-            showNotice("O bot ainda está respondendo. Pare a resposta antes de limpar a conversa.")
+            showNotice(tr("O bot ainda está respondendo. Pare a resposta antes de limpar a conversa."))
             return
         }
         clearingThreads.insert(bot.id)
@@ -2365,8 +2365,8 @@ final class AppModel {
                     clearedStores[archiveID] = previous
                 }
                 showNotice(
-                    "Conversa limpa",
-                    action: NoticeAction(title: "Desfazer") { [weak self] in
+                    tr("Conversa limpa"),
+                    action: NoticeAction(title: tr("Desfazer")) { [weak self] in
                         self?.undoClear(botID: bot.id, archiveID: archiveID)
                     })
             } catch {
@@ -2565,7 +2565,7 @@ final class AppModel {
             return
         }
         if let clientError = error as? BotsClient.ClientError, case .unsupported = clientError {
-            showNotice(botID == nil ? "O servidor ainda não aceita criar bots." : "O servidor ainda não aceita editar bots.")
+            showNotice(botID == nil ? tr("O servidor ainda não aceita criar bots.") : tr("O servidor ainda não aceita editar bots."))
             return
         }
         showNotice(ErrorMessage.describe(error))

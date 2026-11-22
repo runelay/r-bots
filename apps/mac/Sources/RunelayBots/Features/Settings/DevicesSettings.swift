@@ -12,7 +12,7 @@ struct DevicesSettings: View {
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            SettingsGroup(caption: "Este Mac") {
+            SettingsGroup(caption: tr("Este Mac")) {
                 SettingsRow(title: DeviceIdentity.name, detail: thisMacDetail) {
                     HStack(spacing: Spacing.s) {
                         MacLinkStatus(state: connection.state)
@@ -55,12 +55,12 @@ struct DevicesSettings: View {
                     }
                 }
             case .failed(let message):
-                EmptyStateView(systemImage: "exclamationmark.triangle", title: "Não deu para carregar os dispositivos", description: message)
+                EmptyStateView(systemImage: "exclamationmark.triangle", title: tr("Não deu para carregar os dispositivos"), description: message)
             case .loaded:
                 if store.items.isEmpty {
-                    EmptyStateView(systemImage: "laptopcomputer", title: "Nenhum Mac na conta", description: "Entre no app em um Mac para ele aparecer aqui.")
+                    EmptyStateView(systemImage: "laptopcomputer", title: tr("Nenhum Mac na conta"), description: tr("Entre no app em um Mac para ele aparecer aqui."))
                 } else {
-                    SettingsGroup(caption: "Na sua conta") {
+                    SettingsGroup(caption: tr("Na sua conta")) {
                         ForEach(store.items) { device in
                             DeviceRow(device: device, isCurrent: device.id == store.currentId, isBusy: store.busy == device.id) {
                                 confirming = device
@@ -80,7 +80,7 @@ struct DevicesSettings: View {
             }
         }
         .alert(
-            confirming.map { "Desconectar \($0.name)?" } ?? "",
+            confirming.map { tr("Desconectar %@?", $0.name) } ?? "",
             isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } })
         ) {
             Button("Desconectar", role: .destructive) {
@@ -113,7 +113,7 @@ private struct DeviceRow: View {
     let revoke: () -> Void
 
     var body: some View {
-        SettingsRow(title: isCurrent ? "\(device.name) · este Mac" : device.name, detail: detail) {
+        SettingsRow(title: isCurrent ? tr("%@ · este Mac", device.name) : device.name, detail: detail) {
             HStack(spacing: Spacing.m) {
                 HStack(spacing: Spacing.xs) {
                     Circle()
@@ -142,9 +142,9 @@ private struct DeviceRow: View {
         var parts: [String] = []
         if let model = device.model { parts.append(model) }
         if let os = device.osVersion { parts.append("macOS \(os)") }
-        if let app = device.appVersion { parts.append("app \(app)") }
+        if let app = device.appVersion { parts.append(tr("app %@", app)) }
         if !device.connected, let seen = device.lastSeenAt.flatMap(Self.date) {
-            parts.append("visto \(seen.formatted(.relative(presentation: .named)))")
+            parts.append(tr("visto %@", seen.formatted(.relative(presentation: .named).locale(LanguageStore.shared.locale))))
         }
         return parts.joined(separator: " · ")
     }

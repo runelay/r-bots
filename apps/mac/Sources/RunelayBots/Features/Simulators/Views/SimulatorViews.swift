@@ -163,19 +163,19 @@ struct SimulatorPanel: View {
                     .foregroundStyle(Theme.textSecondary)
                     .contentTransition(.opacity)
             case .failed(let message):
-                stateText(icon: "exclamationmark.triangle", title: "Não deu para mostrar a tela", message: message)
+                stateText(icon: "exclamationmark.triangle", title: tr("Não deu para mostrar a tela"), message: message)
                 Button("Tentar de novo") { retry() }
                     .buttonStyle(.brandPrimary)
             default:
                 if let device {
                     if device.booted {
-                        stateText(icon: "iphone", title: device.name, message: "O simulador está ligado, mas a tela ainda não apareceu aqui.")
+                        stateText(icon: "iphone", title: device.name, message: tr("O simulador está ligado, mas a tela ainda não apareceu aqui."))
                         Button("Mostrar simulador") {
                             Task { await mirror.showWindow() }
                         }
                         .buttonStyle(.brandPrimary)
                     } else {
-                        stateText(icon: "iphone", title: device.name, message: "\(device.runtime) · desligado")
+                        stateText(icon: "iphone", title: device.name, message: tr("%@ · desligado", device.runtime))
                         Button("Ligar simulador") {
                             Task { await mirror.boot(device) }
                         }
@@ -209,14 +209,14 @@ struct SimulatorPanel: View {
     private var picker: some View {
         let ios = store.devices.filter { $0.platform == "ios" }
         if ios.isEmpty {
-            stateText(icon: "iphone.slash", title: "Nenhum simulador", message: store.loading ? "Procurando no Xcode…" : "Crie um simulador no Xcode e volte aqui.")
+            stateText(icon: "iphone.slash", title: tr("Nenhum simulador"), message: store.loading ? tr("Procurando no Xcode…") : tr("Crie um simulador no Xcode e volte aqui."))
         } else {
-            stateText(icon: "iphone", title: "Escolha um simulador", message: "Ele liga e a tela aparece aqui.")
+            stateText(icon: "iphone", title: tr("Escolha um simulador"), message: tr("Ele liga e a tela aparece aqui."))
             HStack(spacing: Spacing.s) {
                 GlassSelect(
                     options: ios.map { GlassSelectOption("\($0.name) · \($0.runtime)", value: $0.udid, systemImage: "iphone") },
                     selection: Binding(get: { chosen.isEmpty ? (ios.first?.udid ?? "") : chosen }, set: { chosen = $0 }),
-                    help: "Simulador",
+                    help: tr("Simulador"),
                     maxWidth: 200
                 )
                 Button("Ligar") {
@@ -301,19 +301,19 @@ struct SimulatorPanel: View {
             .layoutPriority(1)
             Spacer(minLength: Spacing.s)
             if let device, device.booted {
-                BlockHeaderButton(systemImage: "camera", help: "Print para a conversa") {
+                BlockHeaderButton(systemImage: "camera", help: tr("Print para a conversa")) {
                     store.screenshot(udid: device.udid, into: model.selectedConversation)
                 }
             }
             BlockHeaderButton(
                 systemImage: presentation.fullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                help: presentation.fullScreen ? "Voltar ao painel  ⇧⌘F" : "Tela cheia  ⇧⌘F",
+                help: presentation.fullScreen ? tr("Voltar ao painel  ⇧⌘F") : tr("Tela cheia  ⇧⌘F"),
                 isActive: presentation.fullScreen
             ) {
                 presentation.toggleFullScreen()
             }
             if let device {
-                GlassMenuButton(edge: .trailing, help: "Mais", items: { menuItems(device) }) { isOpen in
+                GlassMenuButton(edge: .trailing, help: tr("Mais"), items: { menuItems(device) }) { isOpen in
                     BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen || openingURL)
                 }
                 .fixedSize()
@@ -323,7 +323,7 @@ struct SimulatorPanel: View {
                     }
                 }
             }
-            BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
+            BlockHeaderButton(systemImage: "xmark", help: tr("Fechar")) {
                 presentation.close()
             }
             .layoutPriority(2)
@@ -334,25 +334,25 @@ struct SimulatorPanel: View {
 
     private var statusText: String {
         if let label = mirror.state.label { return label }
-        guard let device else { return "Nenhum simulador escolhido" }
-        return "\(device.booted ? "Ligado" : "Desligado") · \(device.runtime)"
+        guard let device else { return tr("Nenhum simulador escolhido") }
+        return tr("%@ · %@", device.booted ? tr("Ligado") : tr("Desligado"), device.runtime)
     }
 
     private func menuItems(_ device: SimDevice) -> [GlassMenuItem] {
         var items: [GlassMenuItem] = []
         if device.booted {
-            items.append(GlassMenuItem("Início", systemImage: "house", shortcut: "⇧⌘H") { mirror.home() })
-            items.append(GlassMenuItem("Girar", systemImage: "rotate.right") { mirror.rotate() })
-            items.append(GlassMenuItem("Abrir URL ou deep link", systemImage: "link") { openingURL = true })
+            items.append(GlassMenuItem(tr("Início"), systemImage: "house", shortcut: "⇧⌘H") { mirror.home() })
+            items.append(GlassMenuItem(tr("Girar"), systemImage: "rotate.right") { mirror.rotate() })
+            items.append(GlassMenuItem(tr("Abrir URL ou deep link"), systemImage: "link") { openingURL = true })
             if let server = expoServer {
                 items.append(
-                    GlassMenuItem("Abrir \(server.name)", systemImage: "play") {
+                    GlassMenuItem(tr("Abrir %@", server.name), systemImage: "play") {
                         SimulatorStore.shared.openExpo(server: server, client: model.client)
                     })
             }
         }
         items.append(
-            GlassMenuItem(device.booted ? "Desligar" : "Ligar", systemImage: "power", destructive: device.booted, startsSection: device.booted) {
+            GlassMenuItem(device.booted ? tr("Desligar simulador") : tr("Ligar simulador"), systemImage: "power", destructive: device.booted, startsSection: device.booted) {
                 if device.booted {
                     mirror.stop()
                     store.toggle(device)
@@ -379,7 +379,7 @@ private struct OpenURLPopover: View {
                 .frame(height: 30)
                 .background(Theme.surface, in: Capsule())
                 .onSubmit(submit)
-            ServerCardButton(title: "Abrir", systemImage: "arrow.up.right") { submit() }
+            ServerCardButton(title: tr("Abrir"), systemImage: "arrow.up.right") { submit() }
         }
         .padding(Spacing.m)
         .frame(width: 340)

@@ -16,8 +16,8 @@ enum BlocksError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .stale: "Mudou enquanto você editava."
-        case .needsAuth: "Essa conta precisa ser ligada de novo na runelay."
+        case .stale: tr("Mudou enquanto você editava.")
+        case .needsAuth: tr("Essa conta precisa ser ligada de novo na runelay.")
         case .message(let text): text
         }
     }
@@ -200,7 +200,7 @@ struct RemoteBlocksClient: BlocksClient {
     }
 
     func download(botID: String, job: ExportJob) async throws -> DownloadedFile {
-        guard let path = job.url else { throw BlocksError.message("O arquivo ainda não está pronto.") }
+        guard let path = job.url else { throw BlocksError.message(tr("O arquivo ainda não está pronto.")) }
         var request = try client.request(path: path)
         request.timeoutInterval = 120
         let (data, response): (Data, URLResponse)
@@ -209,13 +209,13 @@ struct RemoteBlocksClient: BlocksClient {
         } catch {
             if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
             BlocksLog.failure("download \(path)", error)
-            throw BlocksError.message("Não consegui baixar o arquivo.")
+            throw BlocksError.message(tr("Não consegui baixar o arquivo."))
         }
         AuthStore.reportUnauthorized(response)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else {
             BlocksLog.logger.error("download \(path, privacy: .public) returned HTTP \(status)")
-            throw BlocksError.message("Não consegui baixar o arquivo.")
+            throw BlocksError.message(tr("Não consegui baixar o arquivo."))
         }
         return DownloadedFile(data: data, fileName: job.fileName)
     }
@@ -244,7 +244,7 @@ struct RemoteBlocksClient: BlocksClient {
         } catch {
             if Task.isCancelled || (error as? URLError)?.code == .cancelled { throw CancellationError() }
             BlocksLog.failure(label, error)
-            throw BlocksError.message("Não consegui falar com o servidor.")
+            throw BlocksError.message(tr("Não consegui falar com o servidor."))
         }
         AuthStore.reportUnauthorized(response)
         guard let http = response as? HTTPURLResponse else { throw BotsClient.ClientError.invalidResponse }
@@ -265,7 +265,7 @@ struct RemoteBlocksClient: BlocksClient {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
             BlocksLog.failure("decode \(T.self) from \(label)", error)
-            throw BlocksError.message("Não consegui ler a resposta do servidor.")
+            throw BlocksError.message(tr("Não consegui ler a resposta do servidor."))
         }
     }
 

@@ -93,57 +93,55 @@ struct CronSchedule: Sendable {
     }
 
     static func describe(_ expression: String) -> String {
+        let custom = tr("em horário personalizado")
         let parts = expression.split(whereSeparator: \.isWhitespace).map(String.init)
-        guard parts.count == 5 else { return "em horário personalizado" }
+        guard parts.count == 5 else { return custom }
         let (minute, hour, day, month, weekday) = (parts[0], parts[1], parts[2], parts[3], parts[4])
         func every(_ field: String) -> Int? {
             guard field.hasPrefix("*/") else { return nil }
             return Int(field.dropFirst(2))
         }
-        func plural(_ count: Int, _ one: String, _ many: String) -> String {
-            count == 1 ? one : "\(count) \(many)"
-        }
-        guard month == "*" else { return "em horário personalizado" }
+        guard month == "*" else { return custom }
         if let step = every(minute), hour == "*", day == "*", weekday == "*" {
-            return "a cada " + plural(step, "minuto", "minutos")
+            return step == 1 ? tr("a cada minuto") : tr("a cada %lld minutos", step)
         }
         if let value = Int(minute), let step = every(hour), day == "*", weekday == "*" {
-            let base = "a cada " + plural(step, "hora", "horas")
-            return value == 0 ? base : base + ", aos \(value) min"
+            let base = step == 1 ? tr("a cada hora") : tr("a cada %lld horas", step)
+            return value == 0 ? base : base + tr(", aos %lld min", value)
         }
         if let value = Int(minute), hour == "*", day == "*", weekday == "*" {
-            return value == 0 ? "a cada hora" : "toda hora, aos \(value) min"
+            return value == 0 ? tr("a cada hora") : tr("toda hora, aos %lld min", value)
         }
-        guard let value = Int(minute) else { return "em horário personalizado" }
+        guard let value = Int(minute) else { return custom }
         let hours = hour.split(separator: ",").compactMap { Int($0) }
-        guard !hours.isEmpty, hours.count == hour.split(separator: ",").count else { return "em horário personalizado" }
+        guard !hours.isEmpty, hours.count == hour.split(separator: ",").count else { return custom }
         let times = Self.join(hours.map { String(format: "%02d:%02d", $0, value) })
         if day == "*", weekday == "*" {
-            return "todo dia às \(times)"
+            return tr("todo dia às %@", times)
         }
         if day == "*", weekday == "1-5" {
-            return "dias úteis às \(times)"
+            return tr("dias úteis às %@", times)
         }
         if day == "*", weekday == "0,6" || weekday == "6,0" {
-            return "fins de semana às \(times)"
+            return tr("fins de semana às %@", times)
         }
-        let names = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+        let names = [tr("domingo"), tr("segunda"), tr("terça"), tr("quarta"), tr("quinta"), tr("sexta"), tr("sábado"), tr("domingo")]
         if day == "*" {
             let days = weekday.split(separator: ",").compactMap { Int($0) }.filter { (0...7).contains($0) }
             if !days.isEmpty, days.count == weekday.split(separator: ",").count {
                 let label = Self.join(days.map { names[$0] })
-                let prefix = days.count == 1 && (days[0] == 0 || days[0] == 6 || days[0] == 7) ? "todo" : "toda"
-                return "\(prefix) \(label) às \(times)"
+                let masculine = days.count == 1 && (days[0] == 0 || days[0] == 6 || days[0] == 7)
+                return masculine ? tr("todo %@ às %@", label, times) : tr("toda %@ às %@", label, times)
             }
         }
         if weekday == "*", let date = Int(day) {
-            return "todo dia \(date) do mês às \(times)"
+            return tr("todo dia %lld do mês às %@", date, times)
         }
-        return "em horário personalizado"
+        return custom
     }
 
     private static func join(_ items: [String]) -> String {
         guard items.count > 1 else { return items.first ?? "" }
-        return items.dropLast().joined(separator: ", ") + " e " + (items.last ?? "")
+        return tr("%@ e %@", items.dropLast().joined(separator: ", "), items.last ?? "")
     }
 }

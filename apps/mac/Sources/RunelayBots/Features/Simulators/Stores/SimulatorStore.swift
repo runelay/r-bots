@@ -27,7 +27,7 @@ final class SimulatorStore {
         Task {
             if devices.isEmpty { await refresh() }
             guard let device = preferredDevice else {
-                flash("Nenhum simulador no Xcode deste Mac.")
+                flash(tr("Nenhum simulador no Xcode deste Mac."))
                 return
             }
             pendingApp[device.udid] = server.id
@@ -102,7 +102,7 @@ final class SimulatorStore {
             AuthStore.reportUnauthorized(response)
             guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                 let json = try? JSONDecoder().decode(JSONValue.self, from: data)
-                throw SimulatorError.message(json?["error"]?.stringValue ?? "Não consegui abrir no simulador.")
+                throw SimulatorError.message(json?["error"]?.stringValue ?? tr("Não consegui abrir no simulador."))
             }
         }
     }
@@ -110,9 +110,9 @@ final class SimulatorStore {
     func screenshot(udid: String, into conversation: ConversationStore?) {
         perform(udid) {
             let (data, _, _) = try await SimulatorRunner.screenshotData(udid: udid, maxHeight: 1600)
-            let file = FileManager.default.temporaryDirectory.appending(path: "Simulador \(Self.stamp()).jpg")
+            let file = FileManager.default.temporaryDirectory.appending(path: tr("Simulador %@.jpg", Self.stamp()))
             try data.write(to: file)
-            guard let conversation else { throw SimulatorError.message("Abra uma conversa para anexar o print.") }
+            guard let conversation else { throw SimulatorError.message(tr("Abra uma conversa para anexar o print.")) }
             conversation.attachFiles([file], ownsFiles: true)
         }
     }

@@ -137,7 +137,7 @@ struct IntegrationsSettings: View {
                     }
                 }
             case .failed(let message):
-                EmptyStateView(systemImage: "exclamationmark.triangle", title: "Não deu para carregar as integrações", description: message)
+                EmptyStateView(systemImage: "exclamationmark.triangle", title: tr("Não deu para carregar as integrações"), description: message)
             case .loaded:
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     ForEach(store.items) { item in
@@ -167,18 +167,18 @@ private struct IntegrationRow: View {
     private var isBusy: Bool { store.busy == item.id }
 
     private var status: (label: String, color: Color) {
-        if store.invalid.contains(item.id) || item.status == "invalid" { return ("Chave inválida", Theme.danger) }
-        if item.configured { return ("Conectado", Theme.success) }
-        return ("Não configurado", Theme.textTertiary)
+        if store.invalid.contains(item.id) || item.status == "invalid" { return (tr("Chave inválida"), Theme.danger) }
+        if item.configured { return (tr("Conectado"), Theme.success) }
+        return (tr("Não configurado"), Theme.textTertiary)
     }
 
     private var detail: String {
         if item.configured {
-            let ending = item.last4.isEmpty ? "" : " · termina em \(item.last4)"
-            let origin = item.source == "env" ? " · do arquivo do servidor" : ""
+            let ending = item.last4.isEmpty ? "" : tr(" · termina em %@", item.last4)
+            let origin = item.source == "env" ? tr(" · do arquivo do servidor") : ""
             return "\(item.unlocks)\(ending)\(origin)"
         }
-        return item.id == "jev" ? "por TypeSafe · \(item.description)" : item.description
+        return item.id == "jev" ? tr("por TypeSafe · %@", item.description) : item.description
     }
 
     var body: some View {

@@ -62,11 +62,11 @@ enum CanvasShapeKind: String, CaseIterable {
 
     var label: String {
         switch self {
-        case .box: "Caixa"
-        case .round: "Etapa"
-        case .diamond: "Decisão"
-        case .ellipse: "Início ou fim"
-        case .note: "Nota"
+        case .box: tr("Caixa")
+        case .round: tr("Etapa")
+        case .diamond: tr("Decisão")
+        case .ellipse: tr("Início ou fim")
+        case .note: tr("Nota")
         }
     }
 
@@ -112,7 +112,7 @@ enum CanvasPalette {
     }
 
     static func label(_ name: String) -> String {
-        name == "neutral" ? "Neutro" : Theme.accentName(name)
+        name == "neutral" ? tr("Neutro") : Theme.accentName(name)
     }
 
     static func stroke(_ name: String) -> Color {

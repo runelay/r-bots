@@ -32,7 +32,7 @@ struct BotEditorView: View {
                     .font(TypeScale.sectionTitle)
                     .foregroundStyle(Theme.textPrimary)
                 Spacer(minLength: 0)
-                RoundIconButton(systemImage: "xmark", help: "Fechar (Esc)", size: 28) {
+                RoundIconButton(systemImage: "xmark", help: tr("Fechar (Esc)"), size: 28) {
                     model.dismissSheet()
                 }
             }

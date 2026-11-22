@@ -105,24 +105,24 @@ struct ComputerView: View {
                     )
                 }
                 if isDesktop {
-                    Text(pageTitle.isEmpty ? "Desktop de \(bot.name)" : pageTitle)
+                    Text(pageTitle.isEmpty ? tr("Desktop de %@", bot.name) : pageTitle)
                         .font(TypeScale.rowTitle)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     HStack(spacing: Spacing.xxs) {
-                        RoundIconButton(systemImage: "arrow.backward", help: "Voltar página", size: 28) {
+                        RoundIconButton(systemImage: "arrow.backward", help: tr("Voltar página"), size: 28) {
                             live?.command("back")
                         }
                         .disabled(!(isLive && live?.canGoBack == true))
-                        RoundIconButton(systemImage: "arrow.forward", help: "Avançar página", size: 28) {
+                        RoundIconButton(systemImage: "arrow.forward", help: tr("Avançar página"), size: 28) {
                             live?.command("forward")
                         }
                         .disabled(!(isLive && live?.canGoForward == true))
                         RoundIconButton(
                             systemImage: live?.loading == true ? "xmark" : "arrow.clockwise",
-                            help: live?.loading == true ? "Parar" : "Recarregar",
+                            help: live?.loading == true ? tr("Parar") : tr("Recarregar"),
                             size: 28
                         ) {
                             live?.command(live?.loading == true ? "stop" : "reload")
@@ -139,7 +139,7 @@ struct ComputerView: View {
                     .help(statusText)
                     .accessibilityLabel(statusText)
 
-                RoundIconButton(systemImage: "xmark", help: "Fechar (Esc)") {
+                RoundIconButton(systemImage: "xmark", help: tr("Fechar (Esc)")) {
                     model.closeComputer()
                 }
             }
@@ -209,7 +209,7 @@ struct ComputerView: View {
             )
 
             if isLive, let live, live.isStale || !live.hasFrame {
-                OverlayCaption(text: isDesktop ? "Conectando ao desktop…" : "Conectando ao navegador…", showsSpinner: true)
+                OverlayCaption(text: isDesktop ? tr("Conectando ao desktop…") : tr("Conectando ao navegador…"), showsSpinner: true)
                     .transition(.opacity)
             } else if isDesktop && !isLive {
                 VStack(spacing: Spacing.s) {
@@ -232,7 +232,7 @@ struct ComputerView: View {
             if showsControlHint {
                 VStack {
                     Spacer()
-                    OverlayCaption(text: "Assuma o controle para interagir", showsSpinner: false)
+                    OverlayCaption(text: tr("Assuma o controle para interagir"), showsSpinner: false)
                         .padding(.bottom, 76)
                 }
                 .transition(.opacity)
@@ -352,12 +352,12 @@ struct ComputerView: View {
 
     private var statusText: String {
         if isUserControlled {
-            return "Você está no controle"
+            return tr("Você está no controle")
         }
         switch status {
-        case .working: return "Navegando"
-        case .awaitingApproval: return "Esperando aprovação"
-        default: return "Em repouso"
+        case .working: return tr("Navegando")
+        case .awaitingApproval: return tr("Esperando aprovação")
+        default: return tr("Em repouso")
         }
     }
 
@@ -466,7 +466,7 @@ enum ComputerSurfaceOption: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .browser: "Navegador"
+        case .browser: tr("Navegador")
         case .desktop: "Desktop"
         }
     }

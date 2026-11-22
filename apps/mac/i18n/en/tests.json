@@ -1,0 +1,18 @@
+{
+  "+ %lld passos": "+ %lld steps",
+  "Baixar o trace": "Download the trace",
+  "Detalhes": "Details",
+  "Ele pode ter sido apagado.": "It may have been deleted.",
+  "Falhou": "Failed",
+  "Maestro · %@": "Maestro · %@",
+  "Não rodou": "Didn't run",
+  "Passou": "Passed",
+  "Playwright · %@": "Playwright · %@",
+  "Rodando": "Running",
+  "Rodando…": "Running…",
+  "Rodar de novo": "Run again",
+  "Teste não encontrado": "Test not found",
+  "Ver o vídeo": "Watch the video",
+  "passo": "step",
+  "teste": "test"
+}

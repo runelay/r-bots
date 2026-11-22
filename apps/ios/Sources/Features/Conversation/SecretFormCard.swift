@@ -63,7 +63,7 @@ struct SecretFormCard: View {
             .padding(Spacing.l)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.large + 6, style: .continuous))
         } else {
-            SystemLine(symbol: "lock", text: approval.summary(for: "approve").0 == "Salvo no cofre" && approval.resolution != .open ? ApprovalCardView.outcome(approval).text : "Segredo")
+            SystemLine(symbol: "lock", text: approval.summary(for: "approve").0 == tr("Salvo no cofre") && approval.resolution != .open ? ApprovalCardView.outcome(approval).text : tr("Segredo"))
         }
     }
 

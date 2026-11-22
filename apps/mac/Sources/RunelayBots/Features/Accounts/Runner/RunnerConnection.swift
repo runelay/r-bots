@@ -74,12 +74,12 @@ final class RunnerConnection {
         var delay: Double = 1
         while !Task.isCancelled {
             guard let token = RunnerToken.read() else {
-                state = .offline(revoked ? "Este Mac foi desconectado da conta. Conecte de novo em Ajustes › Dispositivos." : "Entre na sua conta para conectar este Mac.")
+                state = .offline(revoked ? tr("Este Mac foi desconectado da conta. Conecte de novo em Ajustes › Dispositivos.") : tr("Entre na sua conta para conectar este Mac."))
                 try? await Task.sleep(for: .seconds(10))
                 continue
             }
             guard let endpoint else {
-                state = .offline("O endereço do servidor não parece válido.")
+                state = .offline(tr("O endereço do servidor não parece válido."))
                 try? await Task.sleep(for: .seconds(10))
                 continue
             }
@@ -87,6 +87,7 @@ final class RunnerConnection {
                 state = .connecting
             }
             var request = URLRequest(url: endpoint)
+            request.setAppLanguage()
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.timeoutInterval = 20
             let socket = session.webSocketTask(with: request)
@@ -102,7 +103,7 @@ final class RunnerConnection {
                     forgetDevice()
                     continue
                 }
-                state = .offline("Não deu para falar com o servidor.")
+                state = .offline(tr("Não deu para falar com o servidor."))
                 try? await Task.sleep(for: .seconds(delay))
                 delay = min(delay * 2, 15)
                 continue
@@ -144,7 +145,7 @@ final class RunnerConnection {
                 forgetDevice()
                 continue
             }
-            state = .offline("A conexão com o servidor caiu. Tentando de novo…")
+            state = .offline(tr("A conexão com o servidor caiu. Tentando de novo…"))
             try? await Task.sleep(for: .seconds(delay))
             delay = min(delay * 2, 15)
         }
@@ -182,7 +183,7 @@ final class RunnerConnection {
             respond(to: message, id: id, sender: sender)
         case "turn.start":
             guard let turnValue = message["turn"], let turn = LocalTurn(turnValue) else {
-                sender.send(["type": .string("turn.event"), "id": .string(id), "event": LocalProviders.done(false, "Turno inválido.")])
+                sender.send(["type": .string("turn.event"), "id": .string(id), "event": LocalProviders.done(false, tr("Turno inválido."))])
                 sender.send(["type": .string("turn.end"), "id": .string(id)])
                 return
             }
@@ -210,7 +211,7 @@ final class RunnerConnection {
         AuthStore.remove(.device)
         DeviceIdentity.setRevoked(true)
         revoked = true
-        state = .offline("Este Mac foi desconectado da conta. Conecte de novo em Ajustes › Dispositivos.")
+        state = .offline(tr("Este Mac foi desconectado da conta. Conecte de novo em Ajustes › Dispositivos."))
     }
 
     func deviceRegistered() {
@@ -220,7 +221,7 @@ final class RunnerConnection {
     }
 
     func forwardMcp(method: String, path: String, headers: [String: String], body: Data) async -> McpReply {
-        guard let sender else { return .failure(503, "Mac desconectado do servidor.") }
+        guard let sender else { return .failure(503, tr("Mac desconectado do servidor.")) }
         let id = UUID().uuidString
         var forwarded: [String: JSONValue] = [:]
         for name in ["authorization", "content-type", "accept", "mcp-session-id", "mcp-protocol-version"] {
@@ -246,7 +247,7 @@ final class RunnerConnection {
     private func resolveMcp(_ id: String, _ message: JSONValue?) {
         guard let continuation = mcpWaiting.removeValue(forKey: id) else { return }
         guard let message else {
-            continuation.resume(returning: .failure(504, "O servidor não respondeu a tempo."))
+            continuation.resume(returning: .failure(504, tr("O servidor não respondeu a tempo.")))
             return
         }
         var headers: [String: String] = [:]
@@ -264,7 +265,7 @@ final class RunnerConnection {
         let waiting = mcpWaiting
         mcpWaiting.removeAll()
         for continuation in waiting.values {
-            continuation.resume(returning: .failure(502, "A conexão com o servidor caiu."))
+            continuation.resume(returning: .failure(502, tr("A conexão com o servidor caiu.")))
         }
     }
 
@@ -343,7 +344,7 @@ final class RunnerConnection {
                 sender.send(reply)
             }
         default:
-            sender.send(["type": .string("response"), "id": .string(id), "ok": .bool(false), "error": .string("Pedido desconhecido: \(op).")])
+            sender.send(["type": .string("response"), "id": .string(id), "ok": .bool(false), "error": .string(tr("Pedido desconhecido: %@.", op))])
         }
     }
 }

@@ -56,16 +56,16 @@ final class VaultLock {
             suppressed -= 1
         }
         let context = LAContext()
-        context.localizedCancelTitle = "Cancelar"
+        context.localizedCancelTitle = tr("Cancelar")
         do {
-            if try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Desbloquear o cofre") {
+            if try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: tr("Desbloquear o cofre")) {
                 isUnlocked = true
                 scheduleExpiry()
             }
         } catch let error as LAError where error.code == .userCancel || error.code == .appCancel || error.code == .systemCancel {
             failure = nil
         } catch {
-            failure = "Não deu para confirmar que é você. Tente de novo."
+            failure = tr("Não deu para confirmar que é você. Tente de novo.")
         }
     }
 

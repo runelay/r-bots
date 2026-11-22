@@ -64,19 +64,19 @@ private struct WelcomeStep: View {
     var body: some View {
         VStack(spacing: Spacing.xxl) {
             OnboardingHeader(
-                title: "Boas-vindas ao r/bots",
-                description: "Um time de bots que trabalha por você, no seu servidor, com as contas de IA que você já usa."
+                title: tr("Boas-vindas ao r/bots"),
+                description: tr("Um time de bots que trabalha por você, no seu servidor, com as contas de IA que você já usa.")
             )
             VStack(alignment: .leading, spacing: Spacing.m) {
-                WelcomeLine(systemImage: "server.rack", text: "Conecte ao seu servidor")
-                WelcomeLine(systemImage: "person.crop.circle", text: "Crie a conta dona")
-                WelcomeLine(systemImage: "sparkles", text: "Ligue as IAs, as integrações e o Mac")
-                WelcomeLine(systemImage: "person.badge.plus", text: "Monte o primeiro bot")
+                WelcomeLine(systemImage: "server.rack", text: tr("Conecte ao seu servidor"))
+                WelcomeLine(systemImage: "person.crop.circle", text: tr("Crie a conta dona"))
+                WelcomeLine(systemImage: "sparkles", text: tr("Ligue as IAs, as integrações e o Mac"))
+                WelcomeLine(systemImage: "person.badge.plus", text: tr("Monte o primeiro bot"))
             }
             .padding(Spacing.l)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))
-            OnboardingPrimaryButton(title: "Começar", systemImage: "arrow.right") {
+            OnboardingPrimaryButton(title: tr("Começar"), systemImage: "arrow.right") {
                 store.begin()
             }
         }
@@ -115,15 +115,15 @@ private enum ServerProblem {
 
     var title: String {
         switch self {
-        case .outdated: "Este servidor está desatualizado"
-        case .unreachable: "Não deu para falar com o servidor"
+        case .outdated: tr("Este servidor está desatualizado")
+        case .unreachable: tr("Não deu para falar com o servidor")
         }
     }
 
     var description: String {
         switch self {
-        case .outdated: "Ele não pede login, e o app só entra com conta. Atualize o servidor ou use outro endereço."
-        case .unreachable: "Confira se o servidor está ligado e se o endereço está certo."
+        case .outdated: tr("Ele não pede login, e o app só entra com conta. Atualize o servidor ou use outro endereço.")
+        case .unreachable: tr("Confira se o servidor está ligado e se o endereço está certo.")
         }
     }
 }
@@ -153,12 +153,12 @@ private struct ServerStep: View {
     var body: some View {
         VStack(spacing: Spacing.xxl) {
             OnboardingHeader(
-                title: problem?.title ?? "Conecte ao seu servidor",
+                title: problem?.title ?? tr("Conecte ao seu servidor"),
                 description: problem?.description
-                    ?? "O r/bots roda num servidor seu. Instalou com o padrão neste Mac? Deixe como está."
+                    ?? tr("O r/bots roda num servidor seu. Instalou com o padrão neste Mac? Deixe como está.")
             )
             VStack(alignment: .leading, spacing: Spacing.m) {
-                OnboardingField(label: "Endereço do servidor") {
+                OnboardingField(label: tr("Endereço do servidor")) {
                     TextField("", text: $address, prompt: Text(ServerConfig.defaultURL))
                         .autocorrectionDisabled()
                         .focused($focused)
@@ -170,10 +170,10 @@ private struct ServerStep: View {
             }
             VStack(spacing: Spacing.s) {
                 OnboardingPrimaryButton(
-                    title: tested ? "Continuar" : "Testar conexão",
+                    title: tested ? tr("Continuar") : tr("Testar conexão"),
                     systemImage: tested ? "arrow.right" : "bolt.horizontal",
                     busy: check == .testing,
-                    busyTitle: "Testando…",
+                    busyTitle: tr("Testando…"),
                     action: primary
                 )
                 .disabled(candidate == nil || check == .testing)
@@ -232,12 +232,12 @@ private struct ServerStep: View {
                 let latency = started.duration(to: clock.now).components
                 let ms = Int(latency.seconds) * 1000 + Int(latency.attoseconds / 1_000_000_000_000_000)
                 guard try await client.setupStatus() != nil else {
-                    check = .failed("Este servidor está desatualizado: ele não pede login. Atualize o servidor ou use outro endereço.")
+                    check = .failed(tr("Este servidor está desatualizado: ele não pede login. Atualize o servidor ou use outro endereço."))
                     return
                 }
                 check = .ok(latency: max(ms, 1))
             } catch {
-                check = .failed("Não respondeu. Confira o endereço e se o servidor está ligado.")
+                check = .failed(tr("Não respondeu. Confira o endereço e se o servidor está ligado."))
             }
         }
     }

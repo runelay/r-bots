@@ -28,13 +28,15 @@ struct TestRunInfo: Identifiable, Equatable, Sendable {
         guard let value, let id = value["id"]?.stringValue else { return nil }
         self.id = id
         kind = value["kind"]?.stringValue ?? "maestro"
-        title = value["title"]?.stringValue ?? "teste"
+        title = value["title"]?.stringValue ?? tr("teste")
         target = value["target"]?.stringValue ?? ""
         status = value["status"]?.stringValue ?? "running"
         attempt = value["attempt"]?.intValue ?? 1
         durationMs = value["durationMs"]?.intValue
         steps = (value["steps"]?.arrayValue ?? []).enumerated().map { index, item in
-            Step(index: index, name: item["name"]?.stringValue ?? "passo", status: item["status"]?.stringValue ?? "passed", durationMs: item["durationMs"]?.intValue, error: item["error"]?.stringValue)
+            Step(
+                index: index, name: item["name"]?.stringValue ?? tr("passo"), status: item["status"]?.stringValue ?? "passed", durationMs: item["durationMs"]?.intValue,
+                error: item["error"]?.stringValue)
         }
         error = value["error"]?.stringValue
         screenshot = value["screenshot"]?.boolValue ?? false
@@ -47,10 +49,10 @@ struct TestRunInfo: Identifiable, Equatable, Sendable {
 
     var headline: String {
         switch status {
-        case "running": "Rodando"
-        case "passed": "Passou"
-        case "failed": "Falhou"
-        default: "Não rodou"
+        case "running": tr("Rodando")
+        case "passed": tr("Passou")
+        case "failed": tr("Falhou")
+        default: tr("Não rodou")
         }
     }
 
@@ -234,11 +236,11 @@ struct TestResultCard: View {
                     }
                 }
                 HStack(spacing: Spacing.s) {
-                    ServerCardButton(title: store.busy.contains(run.id) || run.running ? "Rodando…" : "Rodar de novo", systemImage: "arrow.clockwise") {
+                    ServerCardButton(title: store.busy.contains(run.id) || run.running ? tr("Rodando…") : tr("Rodar de novo"), systemImage: "arrow.clockwise") {
                         store.rerun(run, client: model.client)
                     }
                     .disabled(run.running || store.busy.contains(run.id))
-                    ServerCardButton(title: "Detalhes", systemImage: "text.alignleft") {
+                    ServerCardButton(title: tr("Detalhes"), systemImage: "text.alignleft") {
                         store.openPanel(run, botID: ref.botID, client: model.client)
                     }
                 }
@@ -285,15 +287,15 @@ struct TestPanel: View {
                 Spacer(minLength: Spacing.m)
                 if let run {
                     ForEach(run.artifacts.filter { $0 != "log.txt" && !$0.hasPrefix("screenshot") }, id: \.self) { name in
-                        BlockHeaderButton(systemImage: name.hasPrefix("video") ? "play.rectangle" : "archivebox", help: name.hasPrefix("video") ? "Ver o vídeo" : "Baixar o trace") {
+                        BlockHeaderButton(systemImage: name.hasPrefix("video") ? "play.rectangle" : "archivebox", help: name.hasPrefix("video") ? tr("Ver o vídeo") : tr("Baixar o trace")) {
                             store.openArtifact(run, name, client: model.client)
                         }
                     }
-                    BlockHeaderButton(systemImage: "arrow.clockwise", help: "Rodar de novo") {
+                    BlockHeaderButton(systemImage: "arrow.clockwise", help: tr("Rodar de novo")) {
                         store.rerun(run, client: model.client)
                     }
                 }
-                BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
+                BlockHeaderButton(systemImage: "xmark", help: tr("Fechar")) {
                     presentation.close()
                 }
             }
@@ -352,7 +354,7 @@ struct TestPanel: View {
                     await store.loadLog(run, client: model.client)
                 }
             } else {
-                PanelEmptyState(systemImage: "checklist", title: "Teste não encontrado", message: "Ele pode ter sido apagado.")
+                PanelEmptyState(systemImage: "checklist", title: tr("Teste não encontrado"), message: tr("Ele pode ter sido apagado."))
                     .frame(maxHeight: .infinity)
             }
         }

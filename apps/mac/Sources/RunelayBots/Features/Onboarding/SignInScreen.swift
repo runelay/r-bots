@@ -8,25 +8,25 @@ enum AccountVariant: Equatable {
 
     var title: String {
         switch self {
-        case .setup: "Configure seu r/bots"
-        case .signin: "Entrar na sua conta"
-        case .invite: "Criar conta com convite"
+        case .setup: tr("Configure seu r/bots")
+        case .signin: tr("Entrar na sua conta")
+        case .invite: tr("Criar conta com convite")
         }
     }
 
     var description: String {
         switch self {
-        case .setup: "Crie a conta dona deste servidor para começar."
-        case .signin: "Use seus dados para entrar."
-        case .invite: "Use o convite que a dona ou o dono deste servidor mandou."
+        case .setup: tr("Crie a conta dona deste servidor para começar.")
+        case .signin: tr("Use seus dados para entrar.")
+        case .invite: tr("Use o convite que a dona ou o dono deste servidor mandou.")
         }
     }
 
     var submit: String {
         switch self {
-        case .setup: "Criar conta dona"
-        case .signin: "Entrar"
-        case .invite: "Criar conta"
+        case .setup: tr("Criar conta dona")
+        case .signin: tr("Entrar")
+        case .invite: tr("Criar conta")
         }
     }
 }
@@ -169,7 +169,7 @@ private struct SignInFormPane: View {
     }
 
     private var subtitle: String {
-        if variant == .signin && session.expired { return "Sua sessão venceu. Entre de novo para continuar de onde parou." }
+        if variant == .signin && session.expired { return tr("Sua sessão venceu. Entre de novo para continuar de onde parou.") }
         return variant.description
     }
 
@@ -292,12 +292,12 @@ private struct SignInFormPane: View {
     private var fields: some View {
         VStack(spacing: Spacing.l) {
             if asksName {
-                SignInField(label: "Nome", systemImage: "person", text: $name, prompt: "Seu nome", content: .name)
+                SignInField(label: tr("Nome"), systemImage: "person", text: $name, prompt: tr("Seu nome"), content: .name)
                     .focused($focus, equals: .name)
                     .onSubmit { focus = .email }
                     .transition(.onboarding(reduceMotion: reduceMotion))
             }
-            SignInField(label: "E-mail", systemImage: "envelope", text: $email, prompt: "voce@exemplo.com", content: .username)
+            SignInField(label: tr("E-mail"), systemImage: "envelope", text: $email, prompt: tr("voce@exemplo.com"), content: .username)
                 .focused($focus, equals: .email)
                 .onSubmit {
                     switch variant {
@@ -308,7 +308,7 @@ private struct SignInFormPane: View {
                 }
             if variant == .invite {
                 SignInField(
-                    label: "Código do convite",
+                    label: tr("Código do convite"),
                     systemImage: "ticket",
                     text: $code,
                     prompt: "rbi_…",
@@ -322,10 +322,10 @@ private struct SignInFormPane: View {
             if variant == .setup && session.setupTokenRequired {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     SignInField(
-                        label: "Código de primeiro acesso",
+                        label: tr("Código de primeiro acesso"),
                         systemImage: "key",
                         text: $setupToken,
-                        prompt: "Conteúdo do arquivo setup.token",
+                        prompt: tr("Conteúdo do arquivo setup.token"),
                         content: .oneTimeCode,
                         secure: true,
                         mono: true
@@ -340,10 +340,10 @@ private struct SignInFormPane: View {
                 .transition(.onboarding(reduceMotion: reduceMotion))
             }
             SignInField(
-                label: "Senha",
+                label: tr("Senha"),
                 systemImage: "lock",
                 text: $password,
-                prompt: variant == .signin ? "Sua senha" : "Pelo menos 8 caracteres",
+                prompt: variant == .signin ? tr("Sua senha") : tr("Pelo menos 8 caracteres"),
                 content: variant == .signin ? .password : .newPassword,
                 secure: true
             )
@@ -364,7 +364,7 @@ private struct SignInFormPane: View {
                 Button {
                     store.backToServer()
                 } label: {
-                    Label(ServerConfig.currentURL().host() ?? "Servidor", systemImage: "server.rack")
+                    Label(ServerConfig.currentURL().host() ?? tr("Servidor"), systemImage: "server.rack")
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -374,13 +374,24 @@ private struct SignInFormPane: View {
                 .clickable()
                 .help("Trocar o servidor")
             }
-            Label("PT", systemImage: "globe")
-                .font(TypeScale.caption)
-                .foregroundStyle(Theme.textSecondary)
-                .lineLimit(1)
-                .fixedSize()
+            GlassMenuButton(edge: .trailing, help: tr("Idioma"), items: languageItems) { _ in
+                Label(LanguageStore.shared.language == .english ? "EN" : "PT", systemImage: "globe")
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .clickable()
         }
         .frame(height: 24)
+    }
+
+    private func languageItems() -> [GlassMenuItem] {
+        AppLanguage.allCases.map { language in
+            GlassMenuItem(language.title, id: language.rawValue, isOn: LanguageStore.shared.selection == language) {
+                LanguageStore.shared.select(language)
+            }
+        }
     }
 
     private func submit() {
@@ -415,7 +426,7 @@ private struct SignInFormPane: View {
 
     private func resetPassword() {
         guard email.contains("@") else {
-            error = "Escreva o seu e-mail primeiro."
+            error = tr("Escreva o seu e-mail primeiro.")
             focus = .email
             return
         }
@@ -423,7 +434,7 @@ private struct SignInFormPane: View {
         Task {
             do {
                 try await session.requestPasswordReset(email: email)
-                notice = "Se o e-mail tiver conta, chega um link para trocar a senha."
+                notice = tr("Se o e-mail tiver conta, chega um link para trocar a senha.")
             } catch {
                 self.error = error.localizedDescription
             }
@@ -689,23 +700,25 @@ private struct ShowcaseSlide {
 }
 
 private struct SignInShowcase: View {
-    private static let slides = [
-        ShowcaseSlide(
-            lead: "Um time de bots que trabalha por você.",
-            rest: " Cada um tem nome, rosto e função, e conversa como um colega.",
-            moods: [.speaking, .idle, .thinking]
-        ),
-        ShowcaseSlide(
-            lead: "Seus bots usam as IAs que você já assina.",
-            rest: " Claude, Codex, Cursor e Grok, rodando no seu servidor.",
-            moods: [.thinking, .speaking, .idle]
-        ),
-        ShowcaseSlide(
-            lead: "Nada importante acontece sem você.",
-            rest: " Ações sensíveis pedem aprovação e os segredos ficam no seu Mac.",
-            moods: [.waiting, .idle, .speaking]
-        ),
-    ]
+    private static var slides: [ShowcaseSlide] {
+        [
+            ShowcaseSlide(
+                lead: tr("Um time de bots que trabalha por você."),
+                rest: " " + tr("Cada um tem nome, rosto e função, e conversa como um colega."),
+                moods: [.speaking, .idle, .thinking]
+            ),
+            ShowcaseSlide(
+                lead: tr("Seus bots usam as IAs que você já assina."),
+                rest: " " + tr("Claude, Codex, Cursor e Grok, rodando no seu servidor."),
+                moods: [.thinking, .speaking, .idle]
+            ),
+            ShowcaseSlide(
+                lead: tr("Nada importante acontece sem você."),
+                rest: " " + tr("Ações sensíveis pedem aprovação e os segredos ficam no seu Mac."),
+                moods: [.waiting, .idle, .speaking]
+            ),
+        ]
+    }
     private static let cast: [(id: String, glyph: String, accent: String)] = [
         ("showcase-crown", "crown", "orange"),
         ("showcase-visor", "visor", "violet"),

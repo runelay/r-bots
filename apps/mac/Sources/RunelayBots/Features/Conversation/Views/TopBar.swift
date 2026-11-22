@@ -20,7 +20,7 @@ struct ConversationTopBar: View {
             if let bot, !bot.isPending, !bot.isGroup {
                 HeaderIconButton(
                     systemImage: "square.stack",
-                    help: "Arquivos do bot: notas, planilhas e agenda",
+                    help: tr("Arquivos do bot: notas, planilhas e agenda"),
                     isActive: ArtifactCenter.shared.current?.kind == BlockKind.filesKind && ArtifactCenter.shared.current?.botID == bot.id
                 ) {
                     if ArtifactCenter.shared.current?.kind == BlockKind.filesKind {
@@ -33,7 +33,7 @@ struct ConversationTopBar: View {
             if let bot, bot.hasComputer {
                 HeaderIconButton(
                     systemImage: bot.hasBrowser ? "globe" : "desktopcomputer",
-                    help: model.computerMode ? "Voltar para a conversa (Esc)" : "Abrir o computador de \(bot.name)",
+                    help: model.computerMode ? tr("Voltar para a conversa (Esc)") : tr("Abrir o computador de %@", bot.name),
                     isActive: model.computerMode
                 ) {
                     model.toggleComputer()
@@ -41,7 +41,7 @@ struct ConversationTopBar: View {
             }
             HeaderIconButton(
                 systemImage: "sidebar.right",
-                help: "Mostrar ou ocultar o painel (⌥⌘I)",
+                help: tr("Mostrar ou ocultar o painel (⌥⌘I)"),
                 isActive: model.inspectorPresented
             ) {
                 model.toggleInspector()
@@ -110,9 +110,9 @@ struct BotTagButton: View {
 
     private var statusLine: String? {
         switch mood {
-        case .thinking: "pensando…"
-        case .speaking: "escrevendo…"
-        case .waiting: "aguardando você"
+        case .thinking: tr("pensando…")
+        case .speaking: tr("escrevendo…")
+        case .waiting: tr("aguardando você")
         default: nil
         }
     }
@@ -212,9 +212,13 @@ struct DelegationSummary: View {
                                 .background(Theme.background, in: Circle())
                         }
                     }
-                    Text(leaders.count == 1 ? "1 subagente \(running ? "trabalhando" : "executado")" : "\(leaders.count) subagentes \(running ? "trabalhando" : "executados")")
-                        .font(TypeScale.rowTitle)
-                        .foregroundStyle(Theme.textPrimary)
+                    Text(
+                        running
+                            ? (leaders.count == 1 ? tr("1 subagente trabalhando") : tr("%lld subagentes trabalhando", leaders.count))
+                            : (leaders.count == 1 ? tr("1 subagente executado") : tr("%lld subagentes executados", leaders.count))
+                    )
+                    .font(TypeScale.rowTitle)
+                    .foregroundStyle(Theme.textPrimary)
                     if done > 0 {
                         Text(done == 1 ? "1 concluído" : "\(done) concluídos")
                             .font(TypeScale.captionStrong)

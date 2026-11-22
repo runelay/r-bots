@@ -2,7 +2,7 @@ import Foundation
 
 enum Deadline {
     struct Exceeded: LocalizedError, Equatable {
-        var errorDescription: String? { "O servidor não respondeu a tempo." }
+        var errorDescription: String? { tr("O servidor não respondeu a tempo.") }
     }
 
     static func run<Value: Sendable>(

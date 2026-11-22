@@ -64,12 +64,12 @@ enum BoardDates {
     static func relative(_ text: String?) -> String {
         guard let date = parse(text) else { return "" }
         let seconds = Date().timeIntervalSince(date)
-        if seconds < 60 { return "agora" }
-        if seconds < 3600 { return "há \(Int(seconds / 60)) min" }
-        if seconds < 86_400 { return "há \(Int(seconds / 3600)) h" }
+        if seconds < 60 { return tr("agora") }
+        if seconds < 3600 { return tr("há %lld min", Int(seconds / 60)) }
+        if seconds < 86_400 { return tr("há %lld h", Int(seconds / 3600)) }
         let days = Int(seconds / 86_400)
-        if days == 1 { return "ontem" }
-        if days < 30 { return "há \(days) dias" }
+        if days == 1 { return tr("ontem") }
+        if days < 30 { return tr("há %lld dias", days) }
         return date.formatted(.dateTime.day().month(.abbreviated))
     }
 }

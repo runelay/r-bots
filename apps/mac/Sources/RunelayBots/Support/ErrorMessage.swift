@@ -5,18 +5,18 @@ enum ErrorMessage {
         if let urlError = error as? URLError {
             switch urlError.code {
             case .notConnectedToInternet, .networkConnectionLost:
-                return "Sem conexão com a internet."
+                return tr("Sem conexão com a internet.")
             case .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed:
-                return "Não achei o servidor. Confira o endereço nos Ajustes."
+                return tr("Não achei o servidor. Confira o endereço nos Ajustes.")
             case .timedOut:
-                return "O servidor demorou demais para responder."
+                return tr("O servidor demorou demais para responder.")
             case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate,
                 .serverCertificateNotYetValid, .serverCertificateHasUnknownRoot:
-                return "A conexão segura com o servidor falhou."
+                return tr("A conexão segura com o servidor falhou.")
             case .badURL, .unsupportedURL:
-                return "O endereço do servidor não parece válido."
+                return tr("O endereço do servidor não parece válido.")
             case .cancelled:
-                return "Cancelado."
+                return tr("Cancelado.")
             default:
                 return urlError.localizedDescription
             }
@@ -25,7 +25,7 @@ enum ErrorMessage {
             return description
         }
         if error is DecodingError {
-            return "O servidor mandou dados num formato inesperado."
+            return tr("O servidor mandou dados num formato inesperado.")
         }
         return error.localizedDescription
     }

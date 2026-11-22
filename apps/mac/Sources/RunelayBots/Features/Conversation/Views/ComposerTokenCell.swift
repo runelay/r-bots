@@ -55,7 +55,7 @@ final class ComposerTokenCell: NSTextAttachmentCell {
 
     private var detail: String? {
         guard case .file = token, let file else { return nil }
-        return file.isFailed ? "não foi, clique para tentar de novo" : file.sizeLabel
+        return file.isFailed ? tr("não foi, clique para tentar de novo") : file.sizeLabel
     }
 
     private var tint: NSColor {

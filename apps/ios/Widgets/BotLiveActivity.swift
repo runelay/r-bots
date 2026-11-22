@@ -14,6 +14,7 @@ struct BotLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: BotActivityAttributes.self) { context in
             LockScreenActivity(attributes: context.attributes, state: context.state)
+                .environment(\.locale, context.attributes.locale)
                 .activityBackgroundTint(Color.black.opacity(0.82))
                 .activitySystemActionForegroundColor(.white)
                 .widgetURL(context.attributes.url)
@@ -29,6 +30,7 @@ struct BotLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.trailing) {
                     PhaseBadge(state: state, accent: accent)
                         .padding(.trailing, 4)
+                        .environment(\.locale, attributes.locale)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     VStack(alignment: .leading, spacing: 2) {
@@ -45,11 +47,13 @@ struct BotLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     ActivityActions(attributes: attributes, state: state, accent: accent)
                         .padding(.top, 4)
+                        .environment(\.locale, attributes.locale)
                 }
             } compactLeading: {
                 BotMark(accent: accent, phase: state.phase, size: 22)
             } compactTrailing: {
                 CompactStatus(state: state, accent: accent)
+                    .environment(\.locale, attributes.locale)
             } minimal: {
                 BotMark(accent: accent, phase: state.phase, size: 22)
             }
@@ -225,6 +229,12 @@ private struct ActivityActions: View {
         case "approve", "approve_always": accent
         default: index == 0 ? accent : .gray.opacity(0.5)
         }
+    }
+}
+
+extension BotActivityAttributes {
+    fileprivate var locale: Locale {
+        language.map(Locale.init(identifier:)) ?? .current
     }
 }
 

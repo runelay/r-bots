@@ -31,17 +31,17 @@ struct ServerSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
-            SettingsGroup(caption: "Perfis") {
+            SettingsGroup(caption: tr("Perfis")) {
                 ForEach(profiles.profiles) { profile in
                     ServerProfileRow(profile: profile)
                 }
-                SettingsLinkRow(title: "Adicionar servidor…", icon: SettingsIcon("plus", SettingsTint.green)) {
+                SettingsLinkRow(title: tr("Adicionar servidor…"), icon: SettingsIcon("plus", SettingsTint.green)) {
                     navigator.push(.addProfile)
                 }
             }
             .springAnimation(value: profiles.profiles)
 
-            SettingsGroup(caption: "Conexão de \(profiles.active.name)") {
+            SettingsGroup(caption: tr("Conexão de %@", profiles.active.name)) {
                 Button {
                     test()
                 } label: {
@@ -58,19 +58,19 @@ struct ServerSettings: View {
                 .buttonStyle(SettingsButtonStyle(kind: .plain))
                 .disabled(testing)
             } content: {
-                SettingsRow(title: "Servidor", icon: SettingsIcon("dot.radiowaves.left.and.right", SettingsTint.green)) {
+                SettingsRow(title: tr("Servidor"), icon: SettingsIcon("dot.radiowaves.left.and.right", SettingsTint.green)) {
                     ConnectionPill(status: model.connection)
                 }
-                SettingsRow(title: "Este Mac", icon: SettingsIcon("laptopcomputer", SettingsTint.graphite)) {
+                SettingsRow(title: tr("Este Mac"), icon: SettingsIcon("laptopcomputer", SettingsTint.graphite)) {
                     MacLinkStatus(state: RunnerConnection.shared.state)
                 }
-                SettingsRow(title: "Motor", icon: SettingsIcon("cpu", SettingsTint.purple)) {
+                SettingsRow(title: tr("Motor"), icon: SettingsIcon("cpu", SettingsTint.purple)) {
                     SettingsValue(text: model.meta.engineLabel ?? placeholder)
                 }
-                SettingsRow(title: "Modelo padrão", icon: SettingsIcon("sparkles", SettingsTint.orange)) {
+                SettingsRow(title: tr("Modelo padrão"), icon: SettingsIcon("sparkles", SettingsTint.orange)) {
                     SettingsValue(text: model.meta.model.map(ModelNames.pretty) ?? placeholder)
                 }
-                SettingsRow(title: "Latência", icon: SettingsIcon("speedometer", SettingsTint.teal), info: "Tempo da última leitura da lista de bots.") {
+                SettingsRow(title: tr("Latência"), icon: SettingsIcon("speedometer", SettingsTint.teal), info: tr("Tempo da última leitura da lista de bots.")) {
                     SettingsValue(text: model.lastLatencyMs.map { "\($0) ms" } ?? "–")
                 }
             }
@@ -86,9 +86,9 @@ struct ServerSettings: View {
 
     private var placeholder: String {
         switch model.connection {
-        case .offline: "Sem conexão"
-        case .checking, .unknown: "Carregando…"
-        case .online: model.metaLoaded ? "Não informado" : "Carregando…"
+        case .offline: tr("Sem conexão")
+        case .checking, .unknown: tr("Carregando…")
+        case .online: model.metaLoaded ? tr("Não informado") : tr("Carregando…")
         }
     }
 
@@ -112,10 +112,10 @@ private struct ConnectionPill: View {
 
     private var label: String {
         switch status {
-        case .unknown: "Não testado"
-        case .checking: "Conectando"
-        case .online(let count): count == 1 ? "Conectado · 1 bot" : "Conectado · \(count) bots"
-        case .offline: "Sem conexão"
+        case .unknown: tr("Não testado")
+        case .checking: tr("Conectando")
+        case .online(let count): count == 1 ? tr("Conectado · 1 bot") : tr("Conectado · %lld bots", count)
+        case .offline: tr("Sem conexão")
         }
     }
 
@@ -245,14 +245,14 @@ struct ServerProfileEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             SettingsGroup {
-                SettingsRow(title: "Nome", icon: SettingsIcon(symbol, Theme.accent(color))) {
-                    field("Local, VPS…", text: $name)
+                SettingsRow(title: tr("Nome"), icon: SettingsIcon(symbol, Theme.accent(color))) {
+                    field(tr("Local, VPS…"), text: $name)
                 }
-                SettingsRow(title: "Endereço", icon: SettingsIcon("link", SettingsTint.blue)) {
+                SettingsRow(title: tr("Endereço"), icon: SettingsIcon("link", SettingsTint.blue)) {
                     field(ServerConfig.defaultURL, text: $address, mono: true)
                         .onChange(of: address) { check = .idle }
                 }
-                SettingsRow(title: "Cor", icon: SettingsIcon("paintpalette.fill", SettingsTint.pink)) {
+                SettingsRow(title: tr("Cor"), icon: SettingsIcon("paintpalette.fill", SettingsTint.pink)) {
                     HStack(spacing: 6) {
                         ForEach(ServerProfile.colors, id: \.self) { option in
                             Button {
@@ -274,7 +274,7 @@ struct ServerProfileEditor: View {
                         }
                     }
                 }
-                SettingsRow(title: "Ícone", icon: SettingsIcon("square.grid.2x2.fill", SettingsTint.indigo)) {
+                SettingsRow(title: tr("Ícone"), icon: SettingsIcon("square.grid.2x2.fill", SettingsTint.indigo)) {
                     HStack(spacing: 4) {
                         ForEach(ServerProfile.symbols, id: \.self) { option in
                             Button {
@@ -295,7 +295,7 @@ struct ServerProfileEditor: View {
             }
 
             SettingsGroup {
-                SettingsRow(title: "Conexão", icon: SettingsIcon("dot.radiowaves.left.and.right", SettingsTint.green), detail: checkDetail) {
+                SettingsRow(title: tr("Conexão"), icon: SettingsIcon("dot.radiowaves.left.and.right", SettingsTint.green), detail: checkDetail) {
                     HStack(spacing: Spacing.s) {
                         if let pill = statusPill {
                             pill
@@ -316,9 +316,9 @@ struct ServerProfileEditor: View {
                     }
                 }
                 if let original {
-                    SettingsRow(title: "Abrir com este servidor", icon: SettingsIcon("star.fill", SettingsTint.amber), info: "O app abre neste servidor quando você inicia.") {
+                    SettingsRow(title: tr("Abrir com este servidor"), icon: SettingsIcon("star.fill", SettingsTint.amber), info: tr("O app abre neste servidor quando você inicia.")) {
                         SettingsToggle(
-                            title: "Abrir com este servidor",
+                            title: tr("Abrir com este servidor"),
                             isOn: Binding(
                                 get: { profiles.book.defaultID == original.id },
                                 set: { if $0 { profiles.setDefault(original.id) } }
@@ -383,8 +383,8 @@ struct ServerProfileEditor: View {
 
     private var statusPill: SettingsPill? {
         switch check {
-        case .ok(let ms): return SettingsPill(text: "Respondeu em \(ms) ms", color: Theme.success)
-        case .failed: return SettingsPill(text: "Não respondeu", color: Theme.danger)
+        case .ok(let ms): return SettingsPill(text: tr("Respondeu em %lld ms", ms), color: Theme.success)
+        case .failed: return SettingsPill(text: tr("Não respondeu"), color: Theme.danger)
         case .testing: return nil
         case .idle:
             guard let original, !dirty else { return nil }
@@ -396,7 +396,7 @@ struct ServerProfileEditor: View {
     private var checkDetail: String? {
         if case .failed(let message) = check { return message }
         if !trimmedAddress.isEmpty, !addressValid { return ServerTestFailure.invalid.message }
-        if isNew { return "Depois de adicionar, entre ou crie a conta dona." }
+        if isNew { return tr("Depois de adicionar, entre ou crie a conta dona.") }
         return nil
     }
 

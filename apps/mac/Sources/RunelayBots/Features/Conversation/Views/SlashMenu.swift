@@ -69,7 +69,7 @@ struct SlashMenu: View {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 0) {
                     if !commands.isEmpty {
-                        header("Comandos")
+                        header(tr("Comandos"))
                         ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
                             row(index: index, item: .command(command), title: command.title, subtitle: command.subtitle, systemImage: command.systemImage)
                         }

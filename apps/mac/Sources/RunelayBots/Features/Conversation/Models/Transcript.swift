@@ -132,12 +132,12 @@ enum ToolCallStatus: Equatable {
 
     var label: String {
         switch self {
-        case .requested: "na fila"
-        case .running: "rodando"
-        case .completed: "feito"
-        case .failed: "falhou"
-        case .rejected: "recusado"
-        case .interrupted: "interrompido"
+        case .requested: tr("na fila")
+        case .running: tr("rodando")
+        case .completed: tr("feito")
+        case .failed: tr("falhou")
+        case .rejected: tr("recusado")
+        case .interrupted: tr("interrompido")
         case .other(let value): value
         }
     }
@@ -232,14 +232,14 @@ struct ToolCall: Identifiable, Equatable {
 
     var groupNoun: String {
         let lowered = name.lowercased()
-        if lowered.contains("query") || lowered.contains("sql") { return "consultas" }
-        if lowered.hasPrefix("browser") { return "ações no navegador" }
-        if ["Read", "Edit", "MultiEdit", "Write", "Bash", "Glob", "Grep", "TodoWrite", "NotebookEdit"].contains(name) { return "passos no código" }
-        return "ferramentas"
+        if lowered.contains("query") || lowered.contains("sql") { return tr("consultas") }
+        if lowered.hasPrefix("browser") { return tr("ações no navegador") }
+        if ["Read", "Edit", "MultiEdit", "Write", "Bash", "Glob", "Grep", "TodoWrite", "NotebookEdit"].contains(name) { return tr("passos no código") }
+        return tr("ferramentas")
     }
 
     var isDelegation: Bool {
-        kind == "agent" || label?.hasPrefix("Delegar") == true
+        kind == "agent" || delegation != nil || label?.hasPrefix("Delegar") == true
     }
 
     var displayName: String {
@@ -251,7 +251,7 @@ struct ToolCall: Identifiable, Equatable {
 
     var symbol: String {
         let lowered = name.lowercased()
-        if kind == "agent" || label?.hasPrefix("Delegar") == true { return "person.2.fill" }
+        if kind == "agent" || delegation != nil || label?.hasPrefix("Delegar") == true { return "person.2.fill" }
         if kind == "skill" { return "book.closed" }
         if lowered.hasPrefix("browser") {
             if lowered.contains("screenshot") { return "camera" }
@@ -373,18 +373,18 @@ struct Approval: Identifiable, Equatable {
 
     func summary(for optionID: String) -> (String, ApprovalTone) {
         if secretForm != nil {
-            return optionID == "approve" ? ("Salvo no cofre", .approved) : ("Não informado", .neutral)
+            return optionID == "approve" ? (tr("Salvo no cofre"), .approved) : (tr("Não informado"), .neutral)
         }
         if let integrationForm {
-            return optionID == "approve" ? ("\(integrationForm.name) configurado", .approved) : ("Não configurado", .neutral)
+            return optionID == "approve" ? (tr("%@ configurado", integrationForm.name), .approved) : (tr("Não configurado"), .neutral)
         }
         switch optionID {
-        case "approve": return ("Aprovado", .approved)
-        case "approve_always": return ("Permitido sem perguntar de novo", .approved)
-        case "deny": return ("Negado", .denied)
+        case "approve": return (tr("Aprovado"), .approved)
+        case "approve_always": return (tr("Permitido sem perguntar de novo"), .approved)
+        case "deny": return (tr("Negado"), .denied)
         default:
             let label = options.first { $0.id == optionID }?.label ?? optionID
-            return ("Respondido: \(label)", .neutral)
+            return (tr("Respondido: %@", label), .neutral)
         }
     }
 }

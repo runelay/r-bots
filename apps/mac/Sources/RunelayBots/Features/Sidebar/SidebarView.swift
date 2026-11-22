@@ -84,12 +84,12 @@ struct SidebarHeader: View {
             .frame(height: 32)
             .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.small + 1, style: .continuous))
 
-            GlassMenuIconButton(systemImage: "line.3.horizontal.decrease", help: "Filtrar", size: 32) {
+            GlassMenuIconButton(systemImage: "line.3.horizontal.decrease", help: tr("Filtrar"), size: 32) {
                 [
-                    GlassMenuItem("Agrupar por seção", systemImage: "rectangle.3.group", isOn: model.groupBySection, keepsOpen: true) {
+                    GlassMenuItem(tr("Agrupar por seção"), systemImage: "rectangle.3.group", isOn: model.groupBySection, keepsOpen: true) {
                         model.groupBySection.toggle()
                     },
-                    GlassMenuItem("Mostrar ocultos", systemImage: "eye", isOn: model.showHiddenBots, keepsOpen: true) {
+                    GlassMenuItem(tr("Mostrar ocultos"), systemImage: "eye", isOn: model.showHiddenBots, keepsOpen: true) {
                         model.showHiddenBots.toggle()
                     },
                 ]
@@ -147,12 +147,12 @@ struct BotChatList: View {
         }
 
         if model.groupBySection {
-            add("Fixados", model.pinnedBots, count: nil, highlight: false)
+            add(tr("Fixados"), model.pinnedBots, count: nil, highlight: false)
             for section in model.activeSections {
                 add(section.name, model.visibleBots.filter { $0.sectionId == section.id }, count: nil, highlight: false, section: section)
             }
         }
-        add("Todos", model.visibleBots, count: nil, highlight: false)
+        add(tr("Todos"), model.visibleBots, count: nil, highlight: false)
         return result
     }
 
@@ -260,7 +260,7 @@ struct BotChatList: View {
                 .foregroundStyle(Theme.textTertiary)
                 .padding(Spacing.m)
         case .loaded(let found):
-            ListSectionHeader(title: "Resultados", count: found.count, highlight: false)
+            ListSectionHeader(title: tr("Resultados"), count: found.count, highlight: false)
             if found.isEmpty {
                 Text("Nenhum bot com esse nome.")
                     .font(TypeScale.caption)
@@ -325,7 +325,7 @@ struct BotChatList: View {
         let count = model.conversations(for: bot.id).count
         return BotConversationHeader(
             bot: bot,
-            subtitle: count == 1 ? "1 conversa" : "\(count) conversas",
+            subtitle: count == 1 ? tr("1 conversa") : tr("%lld conversas", count),
             mood: model.mood(for: bot.id),
             status: model.status(for: bot.id),
             unread: model.unread(for: bot),
@@ -758,10 +758,10 @@ struct BotChatRow: View {
             if showsActions {
                 HStack(spacing: 0) {
                     if let collapse {
-                        RowActionButton(systemImage: collapse.0 ? "chevron.right" : "chevron.down", help: collapse.0 ? "Mostrar conversas" : "Recolher conversas", action: collapse.1)
+                        RowActionButton(systemImage: collapse.0 ? "chevron.right" : "chevron.down", help: collapse.0 ? tr("Mostrar conversas") : tr("Recolher conversas"), action: collapse.1)
                     }
                     if let onNewConversation {
-                        RowActionButton(systemImage: "plus", help: "Nova conversa (⌘N)", action: onNewConversation)
+                        RowActionButton(systemImage: "plus", help: tr("Nova conversa (⌘N)"), action: onNewConversation)
                     }
                 }
                 .padding(.top, Spacing.s + 1)
@@ -782,19 +782,19 @@ struct BotChatRow: View {
 
     private var previewText: String {
         if bot.isPending {
-            return "Criando…"
+            return tr("Criando…")
         }
         switch mood {
-        case .thinking: return "pensando…"
-        case .speaking: return "escrevendo…"
-        case .waiting: return "Aguardando sua resposta"
+        case .thinking: return tr("pensando…")
+        case .speaking: return tr("escrevendo…")
+        case .waiting: return tr("Aguardando sua resposta")
         default: break
         }
-        guard let activity else { return "Sem mensagens ainda" }
+        guard let activity else { return tr("Sem mensagens ainda") }
         let line = activity.text
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return activity.isUser ? "Você: \(line)" : line
+        return activity.isUser ? tr("Você: %@", line) : line
     }
 
     private var showsRole: Bool {
@@ -951,8 +951,8 @@ struct BotConversationHeader: View {
         .overlay(alignment: .trailing) {
             if showsActions {
                 HStack(spacing: 0) {
-                    RowActionButton(systemImage: "plus", help: "Nova conversa (⌘N)", action: onNewConversation)
-                    RowActionButton(systemImage: isCollapsed ? "chevron.right" : "chevron.down", help: isCollapsed ? "Mostrar conversas" : "Recolher conversas", action: toggleCollapse)
+                    RowActionButton(systemImage: "plus", help: tr("Nova conversa (⌘N)"), action: onNewConversation)
+                    RowActionButton(systemImage: isCollapsed ? "chevron.right" : "chevron.down", help: isCollapsed ? tr("Mostrar conversas") : tr("Recolher conversas"), action: toggleCollapse)
                 }
                 .padding(.trailing, Spacing.xs + 2)
                 .transition(.opacity)
@@ -1016,13 +1016,13 @@ struct ConversationRow: View {
             if let toggleChildren {
                 RowActionButton(
                     systemImage: childrenCollapsed ? "chevron.right" : "chevron.down",
-                    help: childrenCollapsed ? "Mostrar secundárias" : "Recolher secundárias",
+                    help: childrenCollapsed ? tr("Mostrar secundárias") : tr("Recolher secundárias"),
                     action: toggleChildren
                 )
             }
-            RowActionButton(systemImage: "pencil", help: "Renomear", action: startRename)
+            RowActionButton(systemImage: "pencil", help: tr("Renomear"), action: startRename)
             if let archive {
-                RowActionButton(systemImage: "archivebox", help: "Arquivar", action: archive)
+                RowActionButton(systemImage: "archivebox", help: tr("Arquivar"), action: archive)
             }
         }
     }
@@ -1113,7 +1113,7 @@ struct ConversationRow: View {
         .springAnimation(value: isHovering)
         .springAnimation(value: unread)
         .springAnimation(value: status)
-        .help(conversation.delegatedByName.map { "Pedido de \($0)" } ?? conversation.title)
+        .help(conversation.delegatedByName.map { tr("Pedido de %@", $0) } ?? conversation.title)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

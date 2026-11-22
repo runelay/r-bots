@@ -15,19 +15,19 @@ enum NotificationPreference: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .replies: "Respostas dos bots"
-        case .approvals: "Aprovações pendentes"
-        case .routines: "Resultados de rotinas"
-        case .failures: "Turnos com erro"
+        case .replies: tr("Respostas dos bots")
+        case .approvals: tr("Aprovações pendentes")
+        case .routines: tr("Resultados de rotinas")
+        case .failures: tr("Turnos com erro")
         }
     }
 
     var detail: String {
         switch self {
-        case .replies: "Quando um bot ou grupo responde e a conversa não está na tela."
-        case .approvals: "Com os botões Aprovar e Negar direto na notificação."
-        case .routines: "Só as rotinas que pedem sua atenção."
-        case .failures: "Quando um turno termina com erro."
+        case .replies: tr("Quando um bot ou grupo responde e a conversa não está na tela.")
+        case .approvals: tr("Com os botões Aprovar e Negar direto na notificação.")
+        case .routines: tr("Só as rotinas que pedem sua atenção.")
+        case .failures: tr("Quando um turno termina com erro.")
         }
     }
 
@@ -54,8 +54,8 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         configured = true
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        let approve = UNNotificationAction(identifier: "approve", title: "Aprovar", options: [])
-        let deny = UNNotificationAction(identifier: "deny", title: "Negar", options: [.destructive])
+        let approve = UNNotificationAction(identifier: "approve", title: tr("Aprovar"), options: [])
+        let deny = UNNotificationAction(identifier: "deny", title: tr("Negar"), options: [.destructive])
         let approval = UNNotificationCategory(identifier: "approval", actions: [approve, deny], intentIdentifiers: [], options: [])
         center.setNotificationCategories([approval])
         Task {
@@ -71,28 +71,28 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         case .reply(let text, _, let schedule):
             let preference: NotificationPreference = schedule ? .routines : .replies
             guard preference.isEnabled else { return }
-            content.title = schedule ? "\(bot.name) · Rotina" : bot.name
+            content.title = schedule ? tr("%@ · Rotina", bot.name) : bot.name
             content.body = speakerName.map { "\($0): \(text)" } ?? text
         case .approval(let id, let prompt):
             guard NotificationPreference.approvals.isEnabled else { return }
-            content.title = "\(bot.name) precisa de você"
-            content.body = prompt.isEmpty ? "Uma ação está esperando sua aprovação." : prompt
+            content.title = tr("%@ precisa de você", bot.name)
+            content.body = prompt.isEmpty ? tr("Uma ação está esperando sua aprovação.") : prompt
             content.categoryIdentifier = "approval"
             info["interactionID"] = id
         case .question(_, let title, let sessionID):
             guard NotificationPreference.approvals.isEnabled else { return }
-            content.title = "\(bot.name) quer saber"
-            content.body = title.isEmpty ? "Uma pergunta está esperando sua resposta." : title
+            content.title = tr("%@ quer saber", bot.name)
+            content.body = title.isEmpty ? tr("Uma pergunta está esperando sua resposta.") : title
             if let sessionID {
                 info["sessionID"] = sessionID
             }
         case .failed(let message):
             guard NotificationPreference.failures.isEnabled else { return }
-            content.title = "\(bot.name) parou com erro"
+            content.title = tr("%@ parou com erro", bot.name)
             content.body = message
         case .ciFailed(let number, let check):
             guard NotificationPreference.failures.isEnabled else { return }
-            content.title = "CI falhou · PR #\(number)"
+            content.title = tr("CI falhou · PR #%lld", number)
             content.body = "\(bot.name) · \(check)"
         }
         content.userInfo = info

@@ -26,7 +26,7 @@ struct SignInScreen: View {
             VStack(spacing: Spacing.xxl) {
                 header
                 VStack(spacing: Spacing.l) {
-                    field("Servidor", hint: "Endereço do seu r/bots, com a porta.") {
+                    field(tr("Servidor"), hint: tr("Endereço do seu r/bots, com a porta.")) {
                         TextField("http://100.64.0.1:2000", text: $server)
                             .keyboardType(.URL)
                             .textContentType(.URL)
@@ -36,7 +36,7 @@ struct SignInScreen: View {
                             .submitLabel(.next)
                             .onSubmit { focus = .email }
                     }
-                    field("E-mail") {
+                    field(tr("E-mail")) {
                         TextField("voce@exemplo.com", text: $email)
                             .keyboardType(.emailAddress)
                             .textContentType(.username)
@@ -46,7 +46,7 @@ struct SignInScreen: View {
                             .submitLabel(.next)
                             .onSubmit { focus = .password }
                     }
-                    field("Senha") {
+                    field(tr("Senha")) {
                         SecureField("Sua senha", text: $password)
                             .textContentType(.password)
                             .focused($focus, equals: .password)
@@ -95,9 +95,9 @@ struct SignInScreen: View {
         .sensoryFeedback(.success, trigger: signedIn)
         .onAppear {
             if session.expired {
-                error = "Sua sessão expirou. Entre de novo."
+                error = tr("Sua sessão expirou. Entre de novo.")
             } else if session.state == .unreachable {
-                error = "Não consegui falar com o servidor. Confira o endereço."
+                error = tr("Não consegui falar com o servidor. Confira o endereço.")
             }
             focus = server.isEmpty ? .server : .email
         }
@@ -153,9 +153,9 @@ struct SignInScreen: View {
             } catch let failure as AuthFailure {
                 switch failure {
                 case .server(401, _):
-                    error = "E-mail ou senha não conferem."
+                    error = tr("E-mail ou senha não conferem.")
                 default:
-                    error = failure.errorDescription ?? "Não deu para entrar."
+                    error = failure.errorDescription ?? tr("Não deu para entrar.")
                 }
             } catch {
                 self.error = ErrorMessage.describe(error)

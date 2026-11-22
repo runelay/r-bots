@@ -7,8 +7,8 @@ enum CallAudioError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noInput: "Nenhum microfone disponível."
-        case .format: "Não deu para preparar o áudio da chamada."
+        case .noInput: tr("Nenhum microfone disponível.")
+        case .format: tr("Não deu para preparar o áudio da chamada.")
         }
     }
 }

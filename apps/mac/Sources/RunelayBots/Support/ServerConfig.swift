@@ -111,7 +111,7 @@ enum ServerConfig {
         let address = UserDefaults.standard.string(forKey: storageKey).flatMap { parse($0) != nil ? $0 : nil } ?? defaultURL
         let principal = ServerProfile(
             id: principalID,
-            name: "Principal",
+            name: tr("Principal"),
             address: address,
             color: "orange",
             symbol: "server.rack",

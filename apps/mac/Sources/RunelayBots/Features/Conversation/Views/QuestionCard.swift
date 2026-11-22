@@ -83,7 +83,7 @@ struct QuestionWizardView: View {
             Image(systemName: "questionmark.bubble.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.brandAccent)
-            Text(question.header ?? (questions.count > 1 ? "Pergunta \(wizard.index + 1) de \(questions.count)" : "Pergunta"))
+            Text(question.header ?? (questions.count > 1 ? tr("Pergunta %1$lld de %2$lld", wizard.index + 1, questions.count) : tr("Pergunta")))
                 .font(TypeScale.captionStrong)
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
@@ -154,8 +154,8 @@ struct QuestionWizardView: View {
             QuestionChoiceRow(
                 style: style,
                 letter: QuestionWizard.letter(offset),
-                label: "Outra coisa",
-                detail: selected ? nil : "Escreva com suas palavras",
+                label: tr("Outra coisa"),
+                detail: selected ? nil : tr("Escreva com suas palavras"),
                 recommended: false,
                 multiSelect: question.multiSelect,
                 isSelected: selected,
@@ -192,8 +192,8 @@ struct QuestionWizardView: View {
         let keys = min(question.choices.count + 1, 9)
         return HStack(spacing: Spacing.s) {
             ViewThatFits(in: .horizontal) {
-                hint(question.multiSelect ? "Escolha uma ou mais" : "↑↓ ou 1–\(keys) para escolher, ⏎ para seguir")
-                hint(question.multiSelect ? "Uma ou mais" : "1–\(keys) escolhe · ⏎ segue")
+                hint(question.multiSelect ? tr("Escolha uma ou mais") : tr("↑↓ ou 1–%lld para escolher, ⏎ para seguir", keys))
+                hint(question.multiSelect ? tr("Uma ou mais") : tr("1–%lld escolhe · ⏎ segue", keys))
                 Color.clear.frame(width: 0, height: 0)
             }
             Spacer(minLength: Spacing.s)
@@ -299,7 +299,7 @@ private struct QuestionChoiceRow: View {
         .springAnimation(value: isHovering)
         .springAnimation(value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityLabel("\(letter), \(label)\(recommended ? ", recomendado" : "")")
+        .accessibilityLabel(recommended ? tr("%1$@, %2$@, recomendado", letter, label) : "\(letter), \(label)")
     }
 
     private var background: Color {
@@ -365,7 +365,7 @@ struct QuestionLine: View {
         switch approval.resolution {
         case .open:
             let first = approval.questions.first?.title ?? approval.prompt
-            return approval.questions.count > 1 ? "\(first) (+\(approval.questions.count - 1)) · responda abaixo" : "\(first) · responda abaixo"
+            return approval.questions.count > 1 ? tr("%1$@ (+%2$lld) · responda abaixo", first, approval.questions.count - 1) : tr("%@ · responda abaixo", first)
         case .answering(let summary):
             return summary
         case .settled(let summary, _):

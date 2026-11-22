@@ -88,7 +88,7 @@ private struct GitRepoColumn: View {
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 1) {
-                    GitRepoRow(title: "Todos", subtitle: nil, avatar: nil, count: store.allCount, isSelected: store.repo == nil) {
+                    GitRepoRow(title: tr("Todos"), subtitle: nil, avatar: nil, count: store.allCount, isSelected: store.repo == nil) {
                         store.setRepo(nil)
                     }
                     if store.phase == .loading && store.repos.isEmpty {
@@ -113,7 +113,7 @@ private struct GitRepoColumn: View {
                         }
                     }
                     if let repo = store.repo, !store.repos.contains(where: { $0.name == repo }) {
-                        GitRepoRow(title: repo.split(separator: "/").last.map(String.init) ?? repo, subtitle: "sem PRs neste filtro", avatar: nil, count: 0, isSelected: true) {}
+                        GitRepoRow(title: repo.split(separator: "/").last.map(String.init) ?? repo, subtitle: tr("sem PRs neste filtro"), avatar: nil, count: 0, isSelected: true) {}
                     }
                 }
                 .padding(.horizontal, Spacing.s)
@@ -199,11 +199,11 @@ private struct GitPullList: View {
                     )
                     Spacer(minLength: Spacing.s)
                     ReviewButton { store.show($0) }
-                    BoardIconButton(systemImage: "arrow.clockwise", help: "Atualizar (⌘R)", spinning: store.refreshing) {
+                    BoardIconButton(systemImage: "arrow.clockwise", help: tr("Atualizar (⌘R)"), spinning: store.refreshing) {
                         Task { await store.load(refresh: true) }
                     }
                 }
-                BoardSearchField(text: $searchText, prompt: "Buscar PRs por título, branch ou autor")
+                BoardSearchField(text: $searchText, prompt: tr("Buscar PRs por título, branch ou autor"))
             }
             .padding(.horizontal, Spacing.l)
             .padding(.top, Spacing.l)
@@ -220,9 +220,9 @@ private struct GitPullList: View {
         case .failed(let message) where store.items.isEmpty:
             BoardInlineNotice(
                 systemImage: "exclamationmark.icloud",
-                title: "Não deu para falar com o GitHub",
+                title: tr("Não deu para falar com o GitHub"),
                 message: message,
-                actionTitle: "Tentar de novo"
+                actionTitle: tr("Tentar de novo")
             ) {
                 Task { await store.load(refresh: true) }
             }
@@ -239,8 +239,8 @@ private struct GitPullList: View {
             if store.items.isEmpty {
                 BoardInlineNotice(
                     systemImage: store.query.isEmpty ? "tray" : "magnifyingglass",
-                    title: store.query.isEmpty ? store.filter.emptyTitle : "Nada encontrado",
-                    message: store.query.isEmpty ? store.filter.emptyMessage : "Tente outras palavras ou outro filtro."
+                    title: store.query.isEmpty ? store.filter.emptyTitle : tr("Nada encontrado"),
+                    message: store.query.isEmpty ? store.filter.emptyMessage : tr("Tente outras palavras ou outro filtro.")
                 )
             } else {
                 list
@@ -364,7 +364,7 @@ struct GitPullRow: View {
                         BoardChip(text: review, systemImage: GHStyle.reviewSymbol(pull.review), tint: GHStyle.reviewColor(pull.review), filled: pull.review != "review_required")
                     }
                     if pull.mergeable == "conflicting", pull.isOpen {
-                        BoardChip(text: "Conflitos", systemImage: "exclamationmark.triangle", tint: Theme.danger, filled: true)
+                        BoardChip(text: tr("Conflitos"), systemImage: "exclamationmark.triangle", tint: Theme.danger, filled: true)
                     }
                     if let key = pull.linear {
                         LinearKeyChip(identifier: key)
@@ -396,8 +396,8 @@ struct GitPullRow: View {
         .springAnimation(value: isSelected)
         .contextMenu {
             Button("Abrir no GitHub") { BoardLinks.open(pull.url) }
-            Button("Copiar a branch") { GitHubStore.shared.copy(pull.head, notice: "Branch copiada") }
-            Button("Copiar o link") { GitHubStore.shared.copy(pull.url, notice: "Link copiado") }
+            Button("Copiar a branch") { GitHubStore.shared.copy(pull.head, notice: tr("Branch copiada")) }
+            Button("Copiar o link") { GitHubStore.shared.copy(pull.url, notice: tr("Link copiado")) }
         }
     }
 }

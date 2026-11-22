@@ -255,11 +255,11 @@ final class LinkTextView: NSTextView {
         else { return menu }
         var items: [NSMenuItem] = []
         if WebPageStore.isWebURL(url) {
-            items.append(LinkMenuItem("Abrir aqui no app") { WebPageStore.shared.openHere(url) })
+            items.append(LinkMenuItem(tr("Abrir aqui no app")) { WebPageStore.shared.openHere(url) })
         }
-        items.append(LinkMenuItem("Abrir no navegador") { NSWorkspace.shared.open(url) })
+        items.append(LinkMenuItem(tr("Abrir no navegador")) { NSWorkspace.shared.open(url) })
         items.append(
-            LinkMenuItem("Copiar link") {
+            LinkMenuItem(tr("Copiar link")) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(url.absoluteString, forType: .string)
             })

@@ -7,8 +7,8 @@ struct RoutinesScreen: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.xl) {
                 PageHeaderView(
-                    title: "Rotinas",
-                    description: "O que o time roda sozinho, na ordem em que vai rodar."
+                    title: tr("Rotinas"),
+                    description: tr("O que o time roda sozinho, na ordem em que vai rodar.")
                 ) {
                     EmptyView()
                 }
@@ -32,13 +32,13 @@ struct RoutinesScreen: View {
         if days.isEmpty {
             EmptyStateView(
                 systemImage: "clock.arrow.circlepath",
-                title: "Nenhuma rotina ainda",
-                description: "Peça a um bot para rodar algo todo dia, ou crie a rotina no perfil dele."
+                title: tr("Nenhuma rotina ainda"),
+                description: tr("Peça a um bot para rodar algo todo dia, ou crie a rotina no perfil dele.")
             )
         } else {
             VStack(alignment: .leading, spacing: Spacing.xl) {
                 ForEach(days) { day in
-                    ScreenSection(title: day.title, caption: day.items.count == 1 ? "1 rotina" : "\(day.items.count) rotinas") {
+                    ScreenSection(title: day.title, caption: day.items.count == 1 ? tr("1 rotina") : tr("%lld rotinas", day.items.count)) {
                         ForEach(day.items) { item in
                             RoutineTimelineRow(item: item, now: now)
                         }
@@ -70,7 +70,7 @@ struct RoutineDay: Identifiable {
         var days: [RoutineDay] = []
         for item in items {
             let key = item.next.map { Calendar.current.startOfDay(for: $0).timeIntervalSince1970.description } ?? "unknown"
-            let title = item.next.map(ScheduleFormatter.dayLabel) ?? "Sem horário"
+            let title = item.next.map(ScheduleFormatter.dayLabel) ?? tr("Sem horário")
             if let index = days.firstIndex(where: { $0.id == key }) {
                 days[index] = RoutineDay(id: key, title: days[index].title, items: days[index].items + [item])
             } else {
@@ -149,7 +149,7 @@ private struct RoutineTimelineRow: View {
                 Text(ScheduleFormatter.clock(next))
                     .font(BrandFonts.sans(15, weight: .semibold).monospacedDigit())
                     .foregroundStyle(Theme.textPrimary)
-                Text(running ? "rodando" : relative(next))
+                Text(running ? tr("rodando") : relative(next))
                     .font(TypeScale.caption.monospacedDigit())
                     .foregroundStyle(running || isSoon(next) ? Theme.brandText : Theme.textTertiary)
                     .contentTransition(.opacity)
@@ -168,10 +168,10 @@ private struct RoutineTimelineRow: View {
 
     private func relative(_ date: Date) -> String {
         let minutes = max(1, Int((date.timeIntervalSince(now) / 60).rounded(.up)))
-        if minutes < 60 { return "em \(minutes) min" }
+        if minutes < 60 { return tr("em %lld min", minutes) }
         let hours = minutes / 60
-        if hours < 24 { return "em \(hours) h" }
-        return "em \(hours / 24) d"
+        if hours < 24 { return tr("em %lld h", hours) }
+        return tr("em %lld d", hours / 24)
     }
 
     private func runButton(running: Bool) -> some View {

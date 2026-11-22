@@ -215,9 +215,9 @@ struct ActionApprovalCard: View {
             }
             denyButton
             if let always = approval.options.first(where: { $0.id == "approve_always" }) {
-                Button(approval.grant == nil ? always.label : "Sempre neste repo") { answer("approve_always") }
+                Button(approval.grant == nil ? always.label : tr("Sempre neste repo")) { answer("approve_always") }
                     .buttonStyle(SmallPillButtonStyle(kind: .neutral))
-                    .help(approval.grant.map { "Não perguntar mais: \($0)" } ?? "Não perguntar de novo até o fim desta tarefa")
+                    .help(approval.grant.map { tr("Não perguntar mais: %@", $0) } ?? tr("Não perguntar de novo até o fim desta tarefa"))
             }
             allowButton
         }
@@ -272,13 +272,13 @@ struct ApprovalOutcomeLine: View {
     static func outcome(_ approval: Approval) -> (String, Color) {
         switch approval.resolution {
         case .open:
-            return ("Aguardando", Theme.textTertiary)
+            return (tr("Aguardando"), Theme.textTertiary)
         case .answering(let optionID):
-            return optionID == "approve" ? ("Permitido", Theme.textSecondary) : ("Não permitido", Theme.textSecondary)
+            return optionID == "approve" ? (tr("Permitido"), Theme.textSecondary) : (tr("Não permitido"), Theme.textSecondary)
         case .settled(let text, let tone):
             switch tone {
-            case .approved: return ("Permitido", Theme.textSecondary)
-            case .denied: return ("Não permitido", Theme.textSecondary)
+            case .approved: return (tr("Permitido"), Theme.textSecondary)
+            case .denied: return (tr("Não permitido"), Theme.textSecondary)
             case .neutral: return (text, Theme.textTertiary)
             }
         }

@@ -9,9 +9,9 @@ enum AppearancePreference: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .system: "Sistema"
-        case .light: "Claro"
-        case .dark: "Escuro"
+        case .system: tr("Sistema")
+        case .light: tr("Claro")
+        case .dark: tr("Escuro")
         }
     }
 
@@ -32,8 +32,8 @@ enum MotionPreference: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .system: "Sistema"
-        case .reduced: "Ligado"
+        case .system: tr("Sistema")
+        case .reduced: tr("Ligado")
         }
     }
 }
@@ -47,9 +47,9 @@ enum ConversationTextSize: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .small: "Pequeno"
-        case .regular: "Médio"
-        case .large: "Grande"
+        case .small: tr("Pequeno")
+        case .regular: tr("Médio")
+        case .large: tr("Grande")
         }
     }
 

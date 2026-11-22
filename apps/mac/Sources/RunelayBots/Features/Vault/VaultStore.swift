@@ -61,7 +61,7 @@ enum VaultKeychain {
             }
         }
         guard status == errSecSuccess else {
-            throw VaultFailure(code: "keychain", message: "O Keychain não aceitou o segredo (\(status)).")
+            throw VaultFailure(code: "keychain", message: tr("O Keychain não aceitou o segredo (%lld).", Int(status)))
         }
     }
 
@@ -79,13 +79,13 @@ enum VaultKeychain {
                 return data
             }
             if status == errSecUserCanceled || status == errSecAuthFailed {
-                throw VaultFailure(code: "cancelled", message: "A pessoa cancelou o Touch ID.")
+                throw VaultFailure(code: "cancelled", message: tr("A pessoa cancelou o Touch ID."))
             }
             if status != errSecItemNotFound && status != errSecMissingEntitlement && status != errSecNotAvailable {
-                throw VaultFailure(code: "keychain", message: "O Keychain não abriu o segredo (\(status)).")
+                throw VaultFailure(code: "keychain", message: tr("O Keychain não abriu o segredo (%lld).", Int(status)))
             }
         }
-        throw VaultFailure(code: "not_found", message: "Esse segredo não está no Keychain deste Mac.")
+        throw VaultFailure(code: "not_found", message: tr("Esse segredo não está no Keychain deste Mac."))
     }
 
     static func list() -> [Item] {
@@ -139,14 +139,15 @@ struct VaultClient {
     }
 
     private func request(_ method: String, _ path: String, query: [URLQueryItem] = [], body: JSONValue? = nil) async throws -> JSONValue {
-        guard let token else { throw VaultFailure(code: "no_token", message: "Falta a chave do servidor neste Mac.") }
+        guard let token else { throw VaultFailure(code: "no_token", message: tr("Falta a chave do servidor neste Mac.")) }
         guard var components = URLComponents(url: ServerConfig.currentURL(), resolvingAgainstBaseURL: false) else {
-            throw VaultFailure(code: "bad_url", message: "O endereço do servidor não parece válido.")
+            throw VaultFailure(code: "bad_url", message: tr("O endereço do servidor não parece válido."))
         }
         components.path = path
         components.queryItems = query.isEmpty ? nil : query
-        guard let url = components.url else { throw VaultFailure(code: "bad_url", message: "O endereço do servidor não parece válido.") }
+        guard let url = components.url else { throw VaultFailure(code: "bad_url", message: tr("O endereço do servidor não parece válido.")) }
         var request = URLRequest(url: url)
+        request.setAppLanguage()
         request.httpMethod = method
         request.timeoutInterval = 20
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -161,7 +162,7 @@ struct VaultClient {
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         let parsed = (try? JSONDecoder().decode(JSONValue.self, from: data)) ?? .null
         guard (200..<300).contains(status) else {
-            throw VaultFailure(code: parsed["code"]?.stringValue ?? "http_\(status)", message: parsed["error"]?.stringValue ?? "O servidor respondeu \(status).")
+            throw VaultFailure(code: parsed["code"]?.stringValue ?? "http_\(status)", message: parsed["error"]?.stringValue ?? tr("O servidor respondeu %lld.", status))
         }
         return parsed
     }
@@ -182,7 +183,7 @@ struct VaultClient {
 
     func putServerCopy(_ name: String, value: String) async throws {
         guard Self.secureTransport(ServerConfig.currentURL()) else {
-            throw VaultFailure(code: "insecure", message: "O servidor não usa HTTPS, então o valor não sai deste Mac.")
+            throw VaultFailure(code: "insecure", message: tr("O servidor não usa HTTPS, então o valor não sai deste Mac."))
         }
         _ = try await request("PUT", "/vault/secrets/\(name)/server-copy", body: .object(["value": .string(value)]))
     }
@@ -226,7 +227,7 @@ final class VaultStore {
             }
             lastError = nil
         } catch {
-            lastError = "Não deu para falar com o servidor. A lista mostra só o que está neste Mac."
+            lastError = tr("Não deu para falar com o servidor. A lista mostra só o que está neste Mac.")
         }
         var merged: [VaultSecret] = local.map { item in
             let server = remote[item.name]
@@ -266,9 +267,9 @@ final class VaultStore {
 
     func create(name: String, value: String, policy: VaultPolicy) async throws {
         guard VaultText.validName(name) else {
-            throw VaultFailure(code: "bad_name", message: "Use só letras minúsculas, números, - e _ (até 64).")
+            throw VaultFailure(code: "bad_name", message: tr("Use só letras minúsculas, números, - e _ (até 64)."))
         }
-        guard !value.isEmpty else { throw VaultFailure(code: "empty", message: "O valor está vazio.") }
+        guard !value.isEmpty else { throw VaultFailure(code: "empty", message: tr("O valor está vazio.")) }
         var stored = policy
         stored.keepOnServer = false
         try VaultKeychain.save(name: name, value: Data(value.utf8), policy: stored)
@@ -286,7 +287,7 @@ final class VaultStore {
         let touchChanged = (secret.policy.touchId == .always) != (policy.touchId == .always)
         let serverChanged = secret.policy.keepOnServer != policy.keepOnServer
         if touchChanged || (serverChanged && policy.keepOnServer) {
-            let value = try await readValue(secret.name, reason: "Confirme para mudar as regras de “\(secret.name)”.", force: true)
+            let value = try await readValue(secret.name, reason: tr("Confirme para mudar as regras de “%@”.", secret.name), force: true)
             if touchChanged {
                 try VaultKeychain.save(name: secret.name, value: Data(value.utf8), policy: policy)
             }
@@ -305,8 +306,8 @@ final class VaultStore {
     }
 
     func rotate(_ secret: VaultSecret, value: String) async throws {
-        guard !value.isEmpty else { throw VaultFailure(code: "empty", message: "O valor novo está vazio.") }
-        _ = try await readValue(secret.name, reason: "Confirme para trocar o valor de “\(secret.name)”.", force: true)
+        guard !value.isEmpty else { throw VaultFailure(code: "empty", message: tr("O valor novo está vazio.")) }
+        _ = try await readValue(secret.name, reason: tr("Confirme para trocar o valor de “%@”.", secret.name), force: true)
         try VaultKeychain.save(name: secret.name, value: Data(value.utf8), policy: secret.policy)
         try await client.putMeta(secret.name, policy: secret.policy, rotated: true)
         if secret.policy.keepOnServer {
@@ -323,7 +324,7 @@ final class VaultStore {
     }
 
     func reveal(_ secret: VaultSecret) async throws -> String {
-        let value = try await readValue(secret.name, reason: "Mostrar o valor de “\(secret.name)”.", force: true)
+        let value = try await readValue(secret.name, reason: tr("Mostrar o valor de “%@”.", secret.name), force: true)
         await client.postAudit(["name": .string(secret.name), "outcome": .string("revealed")])
         return value
     }
@@ -334,7 +335,7 @@ final class VaultStore {
 
     func saveForm(_ form: SecretFormRequest, values: [String: String], keep: Bool) async throws {
         for field in form.fields where (values[field.id] ?? "").isEmpty {
-            throw VaultFailure(code: "empty", message: "Preencha “\(field.label)”.")
+            throw VaultFailure(code: "empty", message: tr("Preencha “%@”.", field.label))
         }
         for field in form.fields {
             let name = form.secretName(for: field)
@@ -357,14 +358,14 @@ final class VaultStore {
             if policy == .hourly, let last = lastAuth[name], Date().timeIntervalSince(last) < 3600 { return nil }
         }
         let context = LAContext()
-        context.localizedCancelTitle = "Cancelar"
+        context.localizedCancelTitle = tr("Cancelar")
         do {
             let ok = try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason)
-            guard ok else { throw VaultFailure(code: "cancelled", message: "A pessoa cancelou o Touch ID.") }
+            guard ok else { throw VaultFailure(code: "cancelled", message: tr("A pessoa cancelou o Touch ID.")) }
         } catch let failure as VaultFailure {
             throw failure
         } catch {
-            throw VaultFailure(code: "cancelled", message: "A pessoa cancelou o Touch ID ou ele não confirmou.")
+            throw VaultFailure(code: "cancelled", message: tr("A pessoa cancelou o Touch ID ou ele não confirmou."))
         }
         lastAuth[name] = Date()
         return context
@@ -379,22 +380,24 @@ final class VaultStore {
 
     private func check(_ name: String, botId: String, botName: String, tool: String, domain: String?) async throws -> String {
         guard let policy = VaultKeychain.policy(name) else {
-            throw VaultFailure(code: "not_found", message: "O segredo:\(name) não está no Keychain deste Mac.")
+            throw VaultFailure(code: "not_found", message: tr("O segredo:%@ não está no Keychain deste Mac.", name))
         }
         if let expiresAt = policy.expiresAt, expiresAt <= Date() {
-            throw VaultFailure(code: "expired", message: "O segredo:\(name) venceu. Peça um novo à pessoa.")
+            throw VaultFailure(code: "expired", message: tr("O segredo:%@ venceu. Peça um novo à pessoa.", name))
         }
         if !policy.bots.isEmpty, !policy.bots.contains(botId) {
-            throw VaultFailure(code: "denied_bot", message: "O segredo:\(name) não está liberado para \(botName).")
+            throw VaultFailure(code: "denied_bot", message: tr("O segredo:%1$@ não está liberado para %2$@.", name, botName))
         }
         if !VaultText.hostAllowed(policy.domains, host: domain) {
             let allowed = policy.domains.joined(separator: ", ")
             throw VaultFailure(
                 code: "denied_domain",
-                message: domain.map { "O segredo:\(name) só pode ser usado em \(allowed), não em \($0)." } ?? "O segredo:\(name) só pode ser usado em \(allowed), e não deu para saber o site aberto.")
+                message: domain.map { tr("O segredo:%1$@ só pode ser usado em %2$@, não em %3$@.", name, allowed, $0) }
+                    ?? tr("O segredo:%1$@ só pode ser usado em %2$@, e não deu para saber o site aberto.", name, allowed)
+            )
         }
-        let place = domain.map { " em \($0)" } ?? ""
-        let context = try await authorize(name, policy: policy.touchId, reason: "\(botName) quer usar “\(name)”\(place).", force: false)
+        let reason = domain.map { tr("%1$@ quer usar “%2$@” em %3$@.", botName, name, $0) } ?? tr("%1$@ quer usar “%2$@”.", botName, name)
+        let context = try await authorize(name, policy: policy.touchId, reason: reason, force: false)
         return String(decoding: try VaultKeychain.read(name, context: context), as: UTF8.self)
     }
 
@@ -405,7 +408,7 @@ final class VaultStore {
         let tool = body["tool"]?.stringValue ?? ""
         let domain = body["domain"]?.stringValue
         guard VaultClient.secureTransport(ServerConfig.currentURL()) else {
-            return ["ok": .bool(false), "code": .string("insecure"), "error": .string("A conexão com o servidor não usa TLS, então o Mac não manda segredos.")]
+            return ["ok": .bool(false), "code": .string("insecure"), "error": .string(tr("A conexão com o servidor não usa TLS, então o Mac não manda segredos."))]
         }
         do {
             let value = try await check(name, botId: botId, botName: botName, tool: tool, domain: domain)
@@ -413,7 +416,7 @@ final class VaultStore {
         } catch let failure as VaultFailure {
             return ["ok": .bool(false), "code": .string(failure.code), "error": .string(failure.message)]
         } catch {
-            return ["ok": .bool(false), "code": .string("error"), "error": .string("O Mac não conseguiu abrir o segredo.")]
+            return ["ok": .bool(false), "code": .string("error"), "error": .string(tr("O Mac não conseguiu abrir o segredo."))]
         }
     }
 

@@ -45,19 +45,19 @@ struct SetupGuide: View {
 
     private func value(for step: SetupStepID) -> String? {
         guard answered(step) else { return nil }
-        if store.skipped.contains(step) { return "Depois" }
+        if store.skipped.contains(step) { return tr("Depois") }
         switch step {
         case .profile:
             return session.user?.name
         case .bot:
-            return bots.isEmpty ? "Depois" : SetupText.names(bots.map(\.name))
+            return bots.isEmpty ? tr("Depois") : SetupText.names(bots.map(\.name))
         case .accounts:
             let titles = Array(Set(model.readyAccounts.map(\.providerTitle))).sorted()
-            return titles.isEmpty ? "Depois" : SetupText.names(titles)
+            return titles.isEmpty ? tr("Depois") : SetupText.names(titles)
         case .integrations, .connectors:
-            return "Feito"
+            return tr("Feito")
         case .computer:
-            return macReady ? "Liberado" : "Em parte"
+            return macReady ? tr("Liberado") : tr("Em parte")
         }
     }
 
@@ -106,25 +106,25 @@ struct SetupGuide: View {
         switch current {
         case .profile:
             return first.isEmpty
-                ? "Oi! Eu monto tudo com você em poucos minutos."
-                : "Oi, \(first)! Eu monto tudo com você em poucos minutos."
+                ? tr("Oi! Eu monto tudo com você em poucos minutos.")
+                : tr("Oi, %@! Eu monto tudo com você em poucos minutos.", first)
         case .bot:
             return bots.isEmpty
-                ? "Agora o primeiro bot. Um nome e um rosto já bastam."
-                : "Ele chegou. Quando quiser, a gente segue."
+                ? tr("Agora o primeiro bot. Um nome e um rosto já bastam.")
+                : tr("Ele chegou. Quando quiser, a gente segue.")
         case .accounts:
-            if !model.readyAccounts.isEmpty { return "Acordou! Agora ele já pensa." }
+            if !model.readyAccounts.isEmpty { return tr("Acordou! Agora ele já pensa.") }
             return bots.isEmpty
-                ? "Sem uma IA logada, os bots não respondem."
-                : "Seu bot está dormindo. Uma conta de IA acorda ele."
+                ? tr("Sem uma IA logada, os bots não respondem.")
+                : tr("Seu bot está dormindo. Uma conta de IA acorda ele.")
         case .integrations:
-            return "Daqui em diante é tudo opcional. Pule o que não usar."
+            return tr("Daqui em diante é tudo opcional. Pule o que não usar.")
         case .connectors:
-            return "Com conectores, os bots mexem nas suas contas por você."
+            return tr("Com conectores, os bots mexem nas suas contas por você.")
         case .computer:
-            return "Última etapa. Depois é só abrir uma conversa."
+            return tr("Última etapa. Depois é só abrir uma conversa.")
         case nil:
-            return "Tudo certo. O time está esperando você."
+            return tr("Tudo certo. O time está esperando você.")
         }
     }
 
@@ -197,8 +197,8 @@ enum SetupText {
         switch list.count {
         case 0: return ""
         case 1: return list[0]
-        case 2: return "\(list[0]) e \(list[1])"
-        default: return "\(list[0]), \(list[1]) e mais \(list.count - 2)"
+        case 2: return tr("%1$@ e %2$@", list[0], list[1])
+        default: return tr("%1$@, %2$@ e mais %3$lld", list[0], list[1], list.count - 2)
         }
     }
 }
@@ -222,13 +222,13 @@ private struct SetupRail: View {
                     .foregroundStyle(Theme.textPrimary)
                 Spacer(minLength: Spacing.s)
                 GlassMenuButton(
-                    edge: .trailing, help: "Sua conta",
+                    edge: .trailing, help: tr("Sua conta"),
                     items: {
                         [
-                            GlassMenuItem("Terminar depois", systemImage: "clock") {
+                            GlassMenuItem(tr("Terminar depois"), systemImage: "clock") {
                                 store.finish()
                             },
-                            GlassMenuItem("Sair da conta", systemImage: "rectangle.portrait.and.arrow.right", startsSection: true) {
+                            GlassMenuItem(tr("Sair da conta"), systemImage: "rectangle.portrait.and.arrow.right", startsSection: true) {
                                 Task { await session.signOut() }
                             },
                         ]
@@ -313,7 +313,7 @@ private struct SetupRailRow: View {
 
     private var sub: String? {
         if done, let value { return value }
-        if step.optional && !done { return "opcional" }
+        if step.optional && !done { return tr("opcional") }
         return nil
     }
 
@@ -370,7 +370,7 @@ private struct SetupRailRow: View {
         .onHover { hovering = $0 }
         .animation(Motion.animation(reduceMotion: reduceMotion), value: done)
         .animation(.easeOut(duration: 0.15), value: hovering)
-        .accessibilityLabel(done ? "\(step.railName), concluído" : step.railName)
+        .accessibilityLabel(done ? tr("%@, concluído", step.railName) : step.railName)
     }
 }
 
@@ -466,33 +466,34 @@ private struct SetupStepBody: View {
 
     private var title: String {
         switch step {
-        case .profile: "Como você quer aparecer?"
-        case .bot: bots.isEmpty ? "Monte o seu primeiro bot" : "O seu bot chegou"
-        case .accounts: accountsReady ? "Pronto, os bots já pensam" : "Qual IA os bots vão usar?"
-        case .integrations: "Quer ligar mais alguma coisa?"
-        case .connectors: "Quais contas os bots podem usar?"
-        case .computer: "Libere o Mac para os bots"
+        case .profile: tr("Como você quer aparecer?")
+        case .bot: bots.isEmpty ? tr("Monte o seu primeiro bot") : tr("O seu bot chegou")
+        case .accounts: accountsReady ? tr("Pronto, os bots já pensam") : tr("Qual IA os bots vão usar?")
+        case .integrations: tr("Quer ligar mais alguma coisa?")
+        case .connectors: tr("Quais contas os bots podem usar?")
+        case .computer: tr("Libere o Mac para os bots")
         }
     }
 
     private var lead: String {
         switch step {
         case .profile:
-            "Seu nome e sua foto aparecem nas conversas e para quem você convidar."
+            tr("Seu nome e sua foto aparecem nas conversas e para quem você convidar.")
         case .bot:
             bots.isEmpty
-                ? "Dê um nome, um rosto e diga o que ele faz. Você muda tudo depois."
-                : "Ele já está no time. Dá para criar outros quando quiser."
+                ? tr("Dê um nome, um rosto e diga o que ele faz. Você muda tudo depois.")
+                : tr("Ele já está no time. Dá para criar outros quando quiser.")
         case .accounts:
             accountsReady
-                ? "Cada bot usa uma destas contas. Dá para trocar depois, um por um."
-                : "Os bots rodam nas assinaturas logadas no servidor. Entre no Claude Code ou no Codex lá e a conta aparece aqui sozinha. Duas contas do Claude? Cada uma numa pasta, e uma cobre a outra no limite."
+                ? tr("Cada bot usa uma destas contas. Dá para trocar depois, um por um.")
+                : tr("Os bots rodam nas assinaturas logadas no servidor. Entre no Claude Code ou no Codex lá e a conta aparece aqui sozinha.")
+                    + " " + tr("Duas contas do Claude? Cada uma numa pasta, e uma cobre a outra no limite.")
         case .integrations:
-            "Tudo opcional: cada chave liga uma parte a mais, como a voz ou os conectores do runelay. A chave fica cifrada no servidor."
+            tr("Tudo opcional: cada chave liga uma parte a mais, como a voz ou os conectores do runelay. A chave fica cifrada no servidor.")
         case .connectors:
-            "Conecte uma vez e todos os bots da organização usam: Linear, GitHub, Supabase e o resto."
+            tr("Conecte uma vez e todos os bots da organização usam: Linear, GitHub, Supabase e o resto.")
         case .computer:
-            "Com estas permissões um bot vê a tela, clica e digita quando você pedir. Toda ação passa por você ou pelo Jev."
+            tr("Com estas permissões um bot vê a tela, clica e digita quando você pedir. Toda ação passa por você ou pelo Jev.")
         }
     }
 
@@ -507,7 +508,7 @@ private struct SetupStepBody: View {
                         .foregroundStyle(Theme.textPrimary)
                     AccountPhotoGroup(hasPhoto: session.user?.image != nil, caption: nil)
                 }
-                OnboardingField(label: "Seu nome") {
+                OnboardingField(label: tr("Seu nome")) {
                     TextField("", text: $name, prompt: Text("Como te chamam"))
                         .focused($nameFocused)
                         .onSubmit(saveProfile)
@@ -546,27 +547,27 @@ private struct SetupStepBody: View {
         SetupActionBar(back: back, skip: skip) {
             switch step {
             case .profile:
-                SetupPrimaryButton(title: "Continuar", busy: saving, action: saveProfile)
+                SetupPrimaryButton(title: tr("Continuar"), busy: saving, action: saveProfile)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || saving)
             case .bot:
                 if bots.isEmpty {
-                    SetupPrimaryButton(title: "Criar bot", systemImage: "plus") { model.openEditor(for: nil) }
+                    SetupPrimaryButton(title: tr("Criar bot"), systemImage: "plus") { model.openEditor(for: nil) }
                 } else {
                     Button("Criar outro") { model.openEditor(for: nil) }
                         .buttonStyle(OnboardingGhostButtonStyle())
-                    SetupPrimaryButton(title: "Continuar") { store.mark(.bot) }
+                    SetupPrimaryButton(title: tr("Continuar")) { store.mark(.bot) }
                 }
             case .accounts:
                 if accountsReady {
-                    SetupPrimaryButton(title: "Continuar") { store.mark(.accounts) }
+                    SetupPrimaryButton(title: tr("Continuar")) { store.mark(.accounts) }
                 } else {
-                    SetupPrimaryButton(title: "Procurar de novo", systemImage: "arrow.clockwise", busy: model.isRefreshingAccounts, busyTitle: "Procurando…") {
+                    SetupPrimaryButton(title: tr("Procurar de novo"), systemImage: "arrow.clockwise", busy: model.isRefreshingAccounts, busyTitle: tr("Procurando…")) {
                         model.refreshAccounts()
                     }
                     .disabled(model.isRefreshingAccounts)
                 }
             case .integrations, .connectors, .computer:
-                SetupPrimaryButton(title: "Continuar") { store.mark(step) }
+                SetupPrimaryButton(title: tr("Continuar")) { store.mark(step) }
                     .disabled(step == .computer && !macReady)
             }
         }
@@ -575,11 +576,11 @@ private struct SetupStepBody: View {
     private var skip: SetupSkip? {
         switch step {
         case .profile: nil
-        case .bot: bots.isEmpty ? SetupSkip(note: "Você cria os bots depois, um por um.") { store.skip(.bot) } : nil
-        case .accounts: accountsReady ? nil : SetupSkip(note: "Sem uma conta, os bots não respondem.") { store.skip(.accounts) }
-        case .integrations: SetupSkip(note: "Fica em Ajustes › Integrações.") { store.skip(.integrations) }
-        case .connectors: SetupSkip(note: "O catálogo fica em Conectores, na barra lateral.") { store.skip(.connectors) }
-        case .computer: SetupSkip(note: "Os bots trabalham sem o Mac; só não veem a tela.") { store.skip(.computer) }
+        case .bot: bots.isEmpty ? SetupSkip(note: tr("Você cria os bots depois, um por um.")) { store.skip(.bot) } : nil
+        case .accounts: accountsReady ? nil : SetupSkip(note: tr("Sem uma conta, os bots não respondem.")) { store.skip(.accounts) }
+        case .integrations: SetupSkip(note: tr("Fica em Ajustes › Integrações.")) { store.skip(.integrations) }
+        case .connectors: SetupSkip(note: tr("O catálogo fica em Conectores, na barra lateral.")) { store.skip(.connectors) }
+        case .computer: SetupSkip(note: tr("Os bots trabalham sem o Mac; só não veem a tela.")) { store.skip(.computer) }
         }
     }
 
@@ -706,7 +707,7 @@ private struct SetupDoneBody: View {
                     .foregroundStyle(Theme.textTertiary)
                     .lineLimit(1)
                 Spacer(minLength: Spacing.m)
-                SetupPrimaryButton(title: "Entrar no app") {
+                SetupPrimaryButton(title: tr("Entrar no app")) {
                     store.finish()
                 }
             }
@@ -720,7 +721,7 @@ private struct SetupAccountsList: View {
 
     private func setupDetail(_ account: AIAccount) -> String? {
         let provider = ModelNames.providerName(account.id)
-        let parts = [provider == account.name ? nil : provider, account.planLabel.map { "Plano \($0)" }]
+        let parts = [provider == account.name ? nil : provider, account.planLabel.map { tr("Plano %@", $0) }]
             .compactMap { $0 }
         return parts.isEmpty ? account.friendlyDetail : parts.joined(separator: " · ")
     }
@@ -827,7 +828,7 @@ private struct SetupPermissions: View {
     private let activity = ComputerExecutor.shared.activity
 
     var body: some View {
-        SettingsGroup(caption: "Permissões do macOS") {
+        SettingsGroup(caption: tr("Permissões do macOS")) {
             ForEach(ComputerPermission.allCases) { permission in
                 ComputerPermissionRow(permission: permission, isGranted: activity.permissions.isGranted(permission))
             }

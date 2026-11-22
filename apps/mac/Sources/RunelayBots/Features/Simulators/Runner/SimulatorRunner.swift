@@ -197,12 +197,12 @@ enum SimulatorRunner {
     static func target(_ body: JSONValue) async throws -> String {
         if let udid = body["udid"]?.stringValue, !udid.isEmpty { return udid }
         if let udid = await bootedUDID() { return udid }
-        throw SimulatorError.message("Nenhum simulador ligado. Ligue um antes.")
+        throw SimulatorError.message(tr("Nenhum simulador ligado. Ligue um antes."))
     }
 
     static func boot(_ udid: String) async throws -> JSONValue {
         if udid.hasPrefix("avd:") {
-            guard let emulator else { throw SimulatorError.message("O Android SDK não tem o emulador.") }
+            guard let emulator else { throw SimulatorError.message(tr("O Android SDK não tem o emulador.")) }
             let process = Process()
             process.executableURL = URL(fileURLWithPath: emulator)
             process.arguments = ["-avd", String(udid.dropFirst(4))]
@@ -214,7 +214,7 @@ enum SimulatorRunner {
         }
         let boot = await Shell.run(xcrun, ["simctl", "boot", udid], timeout: .seconds(120))
         if boot.code != 0, !boot.stderr.contains("current state: Booted") {
-            throw SimulatorError.message(LocalCLI.clean(boot.stderr).isEmpty ? "Não consegui ligar o simulador." : LocalCLI.clean(boot.stderr))
+            throw SimulatorError.message(LocalCLI.clean(boot.stderr).isEmpty ? tr("Não consegui ligar o simulador.") : LocalCLI.clean(boot.stderr))
         }
         _ = await Shell.run("/usr/bin/open", ["-g", "-a", "Simulator", "--args", "-CurrentDeviceUDID", udid], timeout: .seconds(20))
         _ = await Shell.run(xcrun, ["simctl", "bootstatus", udid, "-b"], timeout: .seconds(180))
@@ -223,7 +223,7 @@ enum SimulatorRunner {
 
     static func shutdown(_ udid: String) async throws -> JSONValue {
         if udid.hasPrefix("avd:") {
-            guard let adb else { throw SimulatorError.message("Sem adb (platform-tools) para desligar o emulador.") }
+            guard let adb else { throw SimulatorError.message(tr("Sem adb (platform-tools) para desligar o emulador.")) }
             _ = await Shell.run(adb, ["emu", "kill"], timeout: .seconds(30))
             return .object(["udid": .string(udid), "state": .string("Shutdown")])
         }
@@ -245,7 +245,7 @@ enum SimulatorRunner {
         defer { try? FileManager.default.removeItem(at: file) }
         let result = await Shell.run(xcrun, ["simctl", "io", udid, "screenshot", "--type=png", file.path(percentEncoded: false)], timeout: .seconds(30))
         guard result.code == 0, let image = NSImage(contentsOf: file), let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            throw SimulatorError.message(LocalCLI.clean(result.stderr).isEmpty ? "Não consegui tirar o print." : LocalCLI.clean(result.stderr))
+            throw SimulatorError.message(LocalCLI.clean(result.stderr).isEmpty ? tr("Não consegui tirar o print.") : LocalCLI.clean(result.stderr))
         }
         return try jpeg(cg, maxHeight: maxHeight)
     }
@@ -258,12 +258,12 @@ enum SimulatorRunner {
             let context = CGContext(
                 data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
         else {
-            throw SimulatorError.message("Não consegui reduzir o print.")
+            throw SimulatorError.message(tr("Não consegui reduzir o print."))
         }
         context.interpolationQuality = .high
         context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
         guard let scaled = context.makeImage(), let data = NSBitmapImageRep(cgImage: scaled).representation(using: .jpeg, properties: [.compressionFactor: 0.72]) else {
-            throw SimulatorError.message("Não consegui reduzir o print.")
+            throw SimulatorError.message(tr("Não consegui reduzir o print."))
         }
         return (data, width, height)
     }
@@ -280,7 +280,7 @@ enum SimulatorRunner {
         if let text = body["text"]?.stringValue, !text.isEmpty { return "- tapOn: \(yamlString(text))" }
         if let id = body["id"]?.stringValue, !id.isEmpty { return "- tapOn:\n    id: \(yamlString(id))" }
         if let x = body["x"]?.doubleValue, let y = body["y"]?.doubleValue { return "- tapOn:\n    point: \"\(Int(x))%,\(Int(y))%\"" }
-        throw SimulatorError.message("Diga text, id ou x e y.")
+        throw SimulatorError.message(tr("Diga text, id ou x e y."))
     }
 
     static func perform(op: String, body: JSONValue) async -> [String: JSONValue] {
@@ -303,11 +303,11 @@ enum SimulatorRunner {
                 result = .object(["localPort": .number(Double(port))])
             case "sim.tap":
                 let run = try await MaestroRunner.run(flow: quickFlow(try tapStep(body)), name: "tap.yaml", udid: try await target(body))
-                guard run.passed else { throw SimulatorError.message(run.error ?? "Não achei onde tocar.") }
+                guard run.passed else { throw SimulatorError.message(run.error ?? tr("Não achei onde tocar.")) }
                 result = .object(["ok": .bool(true)])
             case "sim.type":
                 let run = try await MaestroRunner.run(flow: quickFlow("- inputText: \(yamlString(body["text"]?.stringValue ?? ""))"), name: "type.yaml", udid: try await target(body))
-                guard run.passed else { throw SimulatorError.message(run.error ?? "Não consegui digitar.") }
+                guard run.passed else { throw SimulatorError.message(run.error ?? tr("Não consegui digitar.")) }
                 result = .object(["ok": .bool(true)])
             case "maestro.run":
                 let udid = try await target(body)
@@ -316,7 +316,7 @@ enum SimulatorRunner {
             case "maestro.install":
                 result = try await MaestroRunner.install()
             default:
-                return ["ok": .bool(false), "error": .string("Pedido desconhecido: \(op).")]
+                return ["ok": .bool(false), "error": .string(tr("Pedido desconhecido: %@.", op))]
             }
             return ["ok": .bool(true), "result": result]
         } catch {

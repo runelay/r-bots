@@ -36,7 +36,7 @@ struct ApprovalCardView: View {
             HStack(alignment: .top, spacing: Spacing.m) {
                 BotAvatar(bot: bot, mood: .waiting, size: 28)
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    Text(isSimple ? "Posso continuar?" : (approval.title.isEmpty ? "Escolha uma opção" : approval.title))
+                    Text(isSimple ? tr("Posso continuar?") : (approval.title.isEmpty ? tr("Escolha uma opção") : approval.title))
                         .font(TypeScale.captionStrong)
                         .foregroundStyle(Theme.attention)
                     Text(isSimple ? phrase.text : AttributedString(approval.prompt.isEmpty ? approval.title : approval.prompt))
@@ -75,7 +75,7 @@ struct ApprovalCardView: View {
                     .buttonStyle(SoftButtonStyle(prominent: true))
             }
             if let always = approval.options.first(where: { $0.id == "approve_always" }) {
-                Button(approval.grant == nil ? always.label : "Sempre neste repo") { send("approve_always") }
+                Button(approval.grant == nil ? always.label : tr("Sempre neste repo")) { send("approve_always") }
                     .font(TypeScale.captionStrong)
                     .foregroundStyle(Theme.textSecondary)
                     .frame(minHeight: 32)
@@ -137,14 +137,14 @@ struct ApprovalCardView: View {
     static func outcome(_ approval: Approval) -> (text: String, color: Color, symbol: String) {
         switch approval.resolution {
         case .open:
-            return ("Aguardando", Theme.textTertiary, "clock")
+            return (tr("Aguardando"), Theme.textTertiary, "clock")
         case .answering(let optionID):
             let summary = approval.summary(for: optionID)
             return (summary.0, Theme.textSecondary, "ellipsis.circle")
         case .settled(let text, let tone):
             switch tone {
-            case .approved: return (text.isEmpty ? "Permitido" : text, Theme.success, "checkmark.circle.fill")
-            case .denied: return (text.isEmpty ? "Não permitido" : text, Theme.danger, "xmark.circle.fill")
+            case .approved: return (text.isEmpty ? tr("Permitido") : text, Theme.success, "checkmark.circle.fill")
+            case .denied: return (text.isEmpty ? tr("Não permitido") : text, Theme.danger, "xmark.circle.fill")
             case .neutral: return (text, Theme.textSecondary, "minus.circle.fill")
             }
         }
@@ -250,7 +250,7 @@ struct QuestionCardView: View {
             BotAvatar(bot: store.bot, mood: .waiting, size: 28)
             VStack(alignment: .leading, spacing: Spacing.xs) {
                 HStack(spacing: Spacing.s) {
-                    Text(question.header ?? "\(store.bot.name) pergunta")
+                    Text(question.header ?? tr("%@ pergunta", store.bot.name))
                         .font(TypeScale.captionStrong)
                         .foregroundStyle(Theme.attention)
                     if wizard.questions.count > 1 {
@@ -277,7 +277,7 @@ struct QuestionCardView: View {
     @ViewBuilder
     private func other(wizard: QuestionWizard, question: QuestionPrompt, index: Int) -> some View {
         let selected = wizard.isSelected(QuestionWizard.otherID, in: question)
-        ChoiceRow(letter: QuestionWizard.letter(index), title: "Outra resposta", selected: selected) {
+        ChoiceRow(letter: QuestionWizard.letter(index), title: tr("Outra resposta"), selected: selected) {
             wizard.toggle(QuestionWizard.otherID, in: question)
             otherFocused = wizard.isSelected(QuestionWizard.otherID, in: question)
         }
@@ -327,7 +327,7 @@ struct QuestionOutcomeLine: View {
     var body: some View {
         let text: String =
             switch approval.resolution {
-            case .open: "Pergunta aberta"
+            case .open: tr("Pergunta aberta")
             case .answering(let summary): summary
             case .settled(let summary, _): summary
             }

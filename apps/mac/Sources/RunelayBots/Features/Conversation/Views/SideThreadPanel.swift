@@ -40,8 +40,8 @@ struct SideThreadPanel: View {
                 } else {
                     PanelEmptyState(
                         systemImage: "rectangle.split.2x1",
-                        title: "Conversa secundária fechada",
-                        message: "Abra de novo pela barra lateral."
+                        title: tr("Conversa secundária fechada"),
+                        message: tr("Abra de novo pela barra lateral.")
                     )
                     .frame(maxHeight: .infinity)
                 }
@@ -63,17 +63,17 @@ struct SideThreadPanel: View {
                     .font(TypeScale.rowSubtitle.weight(.medium))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
-                Text(parentTitle.map { "Secundária de \($0)" } ?? "Conversa secundária")
+                Text(parentTitle.map { tr("Secundária de %@", $0) } ?? tr("Conversa secundária"))
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .lineLimit(1)
             }
             .layoutPriority(1)
             Spacer(minLength: Spacing.s)
-            BlockHeaderButton(systemImage: "arrow.up.left.and.arrow.down.right", help: "Abrir como conversa principal") {
+            BlockHeaderButton(systemImage: "arrow.up.left.and.arrow.down.right", help: tr("Abrir como conversa principal")) {
                 model.promoteSide()
             }
-            BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
+            BlockHeaderButton(systemImage: "xmark", help: tr("Fechar")) {
                 presentation.close()
             }
         }

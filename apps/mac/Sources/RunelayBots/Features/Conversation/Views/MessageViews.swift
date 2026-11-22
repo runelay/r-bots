@@ -260,10 +260,10 @@ struct ReplyCard: View {
                 .overlay(alignment: .bottomTrailing) {
                     HStack(spacing: 0) {
                         ReactionPickerButton(edge: .leading, isOpen: $pickerOpen, pick: react)
-                        HoverAction(systemImage: copied ? "checkmark" : "doc.on.doc", help: "Copiar") {
+                        HoverAction(systemImage: copied ? "checkmark" : "doc.on.doc", help: tr("Copiar")) {
                             copy()
                         }
-                        HoverAction(systemImage: "arrow.clockwise", help: "Pedir de novo") {
+                        HoverAction(systemImage: "arrow.clockwise", help: tr("Pedir de novo")) {
                             regenerate()
                         }
                     }
@@ -471,12 +471,12 @@ struct ThinkingCharacter: View {
 
     private var label: String {
         if let queuePosition, mood != .waiting {
-            return queuePosition <= 1 ? "na fila, é o próximo" : "na fila · \(queuePosition)º"
+            return queuePosition <= 1 ? tr("na fila, é o próximo") : tr("na fila · %lldº", queuePosition)
         }
         return switch mood {
-        case .speaking: "escrevendo…"
-        case .waiting: "Aguardando sua resposta"
-        default: "pensando…"
+        case .speaking: tr("escrevendo…")
+        case .waiting: tr("Aguardando sua resposta")
+        default: tr("pensando…")
         }
     }
 }

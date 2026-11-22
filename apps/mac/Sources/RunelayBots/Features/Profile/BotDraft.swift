@@ -30,10 +30,10 @@ struct BotDraft: Equatable {
 
     func localErrors() -> [String: String] {
         if trimmedName.isEmpty {
-            return ["name": "Dê um nome para o bot."]
+            return ["name": tr("Dê um nome para o bot.")]
         }
         if trimmedName.count > 40 {
-            return ["name": "Use até 40 caracteres."]
+            return ["name": tr("Use até 40 caracteres.")]
         }
         return [:]
     }

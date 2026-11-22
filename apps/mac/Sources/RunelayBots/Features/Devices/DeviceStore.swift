@@ -141,7 +141,7 @@ final class DeviceStore {
         do {
             let registered = try await client.registerDevice(sessionToken: sessionToken)
             guard AuthStore.save(registered.token, as: .device) else {
-                error = "Não deu para guardar a chave deste Mac."
+                error = tr("Não deu para guardar a chave deste Mac.")
                 return
             }
             DeviceIdentity.setCurrentId(registered.device.id)
@@ -154,7 +154,7 @@ final class DeviceStore {
 
     func connectThisMac() async {
         guard let token = AuthStore.read(.session) else {
-            error = "Entre na sua conta para conectar este Mac."
+            error = tr("Entre na sua conta para conectar este Mac.")
             return
         }
         await register(sessionToken: token, automatic: false)

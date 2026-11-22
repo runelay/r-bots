@@ -42,7 +42,7 @@ struct ServerProfileSwitcher: View {
         .help("Trocar de servidor (⌃⌘1…9)")
         .accessibilityLabel("Servidor")
         .accessibilityValue(profiles.active.name)
-        .glassMenu(isPresented: $open, title: "Servidores", minWidth: 280) {
+        .glassMenu(isPresented: $open, title: tr("Servidores"), minWidth: 280) {
             items
         }
         .task(id: PollKey(server: profiles.active.id, active: scenePhase == .active)) {
@@ -72,10 +72,10 @@ struct ServerProfileSwitcher: View {
             GlassMenuItem(
                 environment.label,
                 id: "environment-\(environment.id)",
-                shortcut: environment.canRun ? nil : "fora do ar",
+                shortcut: environment.canRun ? nil : tr("fora do ar"),
                 isOn: snapshot.selected == environment.id,
                 isEnabled: environment.canRun,
-                sectionTitle: index == 0 ? "Onde roda" : nil,
+                sectionTitle: index == 0 ? tr("Onde roda") : nil,
                 badge: environment.online ? Theme.success : Theme.danger
             ) {
                 environments.select(environment.id)
@@ -107,7 +107,7 @@ struct ServerProfileSwitcher: View {
         }
         list.append(contentsOf: environmentItems)
         list.append(
-            GlassMenuItem("Gerenciar servidores…", id: "manage", systemImage: "slider.horizontal.3", startsSection: true) {
+            GlassMenuItem(tr("Gerenciar servidores…"), id: "manage", systemImage: "slider.horizontal.3", startsSection: true) {
                 model.openSettings(.server)
             })
         return list

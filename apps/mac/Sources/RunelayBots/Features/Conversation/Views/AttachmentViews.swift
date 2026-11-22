@@ -85,7 +85,7 @@ struct MessageAttachments: View {
         let client = model.client
         Task {
             guard let local = await localFile(ref, client: client) else {
-                model.showNotice("Não consegui baixar \(ref.name).")
+                model.showNotice(tr("Não consegui baixar %@.", ref.name))
                 return
             }
             let pasteboard = NSPasteboard.general
@@ -96,7 +96,7 @@ struct MessageAttachments: View {
             }
             objects.append(local as NSURL)
             pasteboard.writeObjects(objects)
-            model.showNotice("Imagem copiada.")
+            model.showNotice(tr("Imagem copiada."))
         }
     }
 
@@ -104,7 +104,7 @@ struct MessageAttachments: View {
         let client = model.client
         Task {
             guard let local = await localFile(ref, client: client) else {
-                model.showNotice("Não consegui abrir \(ref.name).")
+                model.showNotice(tr("Não consegui abrir %@.", ref.name))
                 return
             }
             NSWorkspace.shared.open(local)
@@ -126,7 +126,7 @@ struct MessageAttachments: View {
             }
             opening = nil
             guard let selected else {
-                model.showNotice("Não consegui abrir \(ref.name).")
+                model.showNotice(tr("Não consegui abrir %@.", ref.name))
                 return
             }
             QuickLookPanel.shared.show(urls, selected: selected)
@@ -140,7 +140,7 @@ struct MessageAttachments: View {
         Task {
             defer { saving = nil }
             guard let local = await localFile(ref, client: client) else {
-                model.showNotice("Não consegui baixar \(ref.name).")
+                model.showNotice(tr("Não consegui baixar %@.", ref.name))
                 return
             }
             do {
@@ -148,7 +148,7 @@ struct MessageAttachments: View {
                 DownloadsFolder.reveal(saved)
             } catch {
                 BlocksLog.failure("save attachment to Downloads", error)
-                model.showNotice("Não consegui salvar \(ref.name) em Downloads.")
+                model.showNotice(tr("Não consegui salvar %@ em Downloads.", ref.name))
             }
         }
     }
@@ -574,7 +574,7 @@ enum AttachmentDrop {
                 provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
                     guard let data else { return }
                     let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) ?? data
-                    guard let url = AttachmentPasteboard.writeTemporary(png, name: "Imagem.png") else { return }
+                    guard let url = AttachmentPasteboard.writeTemporary(png, name: tr("Imagem.png")) else { return }
                     Task { @MainActor in
                         store.attachFiles([url], ownsFiles: true)
                     }
@@ -592,8 +592,8 @@ enum AttachmentPicker {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.prompt = "Anexar"
-        panel.message = "Escolha imagens, vídeos, áudios ou arquivos"
+        panel.prompt = tr("Anexar")
+        panel.message = tr("Escolha imagens, vídeos, áudios ou arquivos")
         panel.begin { response in
             guard response == .OK else { return }
             let urls = panel.urls

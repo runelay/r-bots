@@ -55,12 +55,12 @@ struct IntegrationFormCard: View {
             }
 
             if form.needsURL {
-                field("Endereço do seu \(form.name)") {
+                field(tr("Endereço do seu %@", form.name)) {
                     TextField("", text: $address, prompt: Text("https://…").foregroundStyle(Theme.textTertiary))
                         .font(TypeScale.rowSubtitle)
                 }
             }
-            field("Chave de API") {
+            field(tr("Chave de API")) {
                 SecureField("", text: $key, prompt: Text("Cole a chave aqui").foregroundStyle(Theme.textTertiary))
                     .font(TypeScale.mono)
                     .focused($focused)
@@ -137,7 +137,7 @@ struct IntegrationFormCard: View {
     private var outcomeLine: some View {
         let saved =
             approval.resolution == .answering("approve")
-            || approval.resolution == .settled("\(form.name) configurado", .approved)
+            || approval.resolution == .settled(tr("%@ configurado", form.name), .approved)
         return HStack(spacing: Spacing.s) {
             Image(systemName: saved ? "key.horizontal.fill" : "key.horizontal")
                 .font(.system(size: 11, weight: .semibold))

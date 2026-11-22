@@ -120,7 +120,7 @@ final class AuthSession {
             book.activeID = existing.id
         } else if book.profiles.count == 1, AuthStore.read(.session, server: book.profiles[0].url ?? url) == nil {
             if book.profiles[0].name == book.profiles[0].url?.host() {
-                book.profiles[0].name = "Principal"
+                book.profiles[0].name = tr("Principal")
             }
             book.profiles[0].address = url.absoluteString
         } else {
@@ -139,11 +139,11 @@ final class AuthSession {
     }
 
     static func defaultName(for url: URL) -> String {
-        guard let host = url.host()?.lowercased(), !host.isEmpty else { return "Servidor" }
+        guard let host = url.host()?.lowercased(), !host.isEmpty else { return tr("Servidor") }
         if host == "localhost" || host == "127.0.0.1" || host == "::1" { return "Local" }
         let isIP = host.contains(":") || host.split(separator: ".").allSatisfy { !$0.isEmpty && $0.allSatisfy(\.isNumber) }
-        if isIP { return "Servidor" }
-        guard let first = host.split(separator: ".").first, !first.isEmpty else { return "Servidor" }
+        if isIP { return tr("Servidor") }
+        guard let first = host.split(separator: ".").first, !first.isEmpty else { return tr("Servidor") }
         if first == "vps" { return "VPS" }
         return first.prefix(1).uppercased() + first.dropFirst()
     }

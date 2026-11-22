@@ -18,7 +18,7 @@ enum AgendaFormat {
     }
 
     static func weekday(_ day: Date) -> String {
-        day.formatted(.dateTime.weekday(.abbreviated)).replacingOccurrences(of: ".", with: "").capitalizedFirst
+        day.formatted(.dateTime.weekday(.abbreviated).locale(LanguageStore.shared.locale)).replacingOccurrences(of: ".", with: "").capitalizedFirst
     }
 
     static func isWeekend(_ day: Date) -> Bool {
@@ -76,13 +76,13 @@ struct AgendaHeaderControls: View {
     var body: some View {
         HStack(spacing: Spacing.s) {
             HStack(spacing: 0) {
-                AgendaNavButton(systemImage: "chevron.left", help: store.mode == .day ? "Dia anterior" : "Semana anterior") {
+                AgendaNavButton(systemImage: "chevron.left", help: store.mode == .day ? tr("Dia anterior") : tr("Semana anterior")) {
                     store.shift(-1)
                 }
-                AgendaNavButton(title: "Hoje", help: "Voltar para hoje", isActive: store.showsToday) {
+                AgendaNavButton(title: tr("Hoje"), help: tr("Voltar para hoje"), isActive: store.showsToday) {
                     store.goToToday()
                 }
-                AgendaNavButton(systemImage: "chevron.right", help: store.mode == .day ? "Próximo dia" : "Próxima semana") {
+                AgendaNavButton(systemImage: "chevron.right", help: store.mode == .day ? tr("Próximo dia") : tr("Próxima semana")) {
                     store.shift(1)
                 }
             }
@@ -776,7 +776,7 @@ struct AgendaEventPopover: View {
                     row("person.crop.circle", account.email.isEmpty ? account.label : "\(account.label) · \(account.email)")
                 }
                 if event.recurring {
-                    row("repeat", "Evento que se repete")
+                    row("repeat", tr("Evento que se repete"))
                 }
                 if let location = event.location, !location.isEmpty, location != event.meetUrl {
                     row("mappin.and.ellipse", location)
@@ -812,7 +812,7 @@ struct AgendaEventPopover: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(attendee.response == "accepted" ? Theme.success : attendee.response == "declined" ? Theme.danger : Theme.textTertiary)
                         .frame(width: 14)
-                    Text(attendee.isSelf ? "Você" : attendee.displayName)
+                    Text(attendee.isSelf ? tr("Você") : attendee.displayName)
                         .font(TypeScale.caption)
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
@@ -890,7 +890,7 @@ struct AgendaEventPopover: View {
                 .buttonStyle(PressableButtonStyle())
                 .transition(.opacity)
             } else {
-                RoundIconButton(systemImage: "trash", help: "Apagar o evento", size: 30) {
+                RoundIconButton(systemImage: "trash", help: tr("Apagar o evento"), size: 30) {
                     confirmingDelete = true
                 }
             }
@@ -915,13 +915,13 @@ struct AgendaEventPopover: View {
 
     private var whenText: String {
         let calendar = Calendar.agenda
-        let day = event.startDate.formatted(.dateTime.weekday(.wide).day().month(.wide)).capitalizedFirst
+        let day = event.startDate.formatted(.dateTime.weekday(.wide).day().month(.wide).locale(LanguageStore.shared.locale)).capitalizedFirst
         if event.allDay {
             let last = calendar.date(byAdding: .day, value: -1, to: event.endDate) ?? event.startDate
             if last > event.startDate, !calendar.isDate(last, inSameDayAs: event.startDate) {
-                return "\(day) até \(last.formatted(.dateTime.day().month(.wide))) · dia todo"
+                return tr("%1$@ até %2$@ · dia todo", day, last.formatted(.dateTime.day().month(.wide).locale(LanguageStore.shared.locale)))
             }
-            return "\(day) · dia todo"
+            return tr("%@ · dia todo", day)
         }
         let minutes = Int(event.endDate.timeIntervalSince(event.startDate) / 60)
         let length = minutes < 60 ? "\(minutes) min" : minutes % 60 == 0 ? "\(minutes / 60) h" : "\(minutes / 60) h \(minutes % 60)"

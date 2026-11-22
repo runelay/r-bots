@@ -319,7 +319,7 @@ private struct CodeRepoPillLabel: View {
     }
 
     static func helpText(_ workspace: CodeWorkspace) -> String {
-        let files = counts(workspace).map { " · \($0.files) arquivo\($0.files == 1 ? "" : "s") alterado\($0.files == 1 ? "" : "s")" } ?? ""
+        let files = counts(workspace).map { " · " + ($0.files == 1 ? tr("1 arquivo alterado") : tr("%lld arquivos alterados", $0.files)) } ?? ""
         let pr = workspace.pr.map { " · " + PullRequestPillBadge(pr: $0).helpText } ?? ""
         return "\(workspace.repoName) · \(workspace.branch)\(files)\(pr)"
     }
@@ -423,7 +423,7 @@ struct CodeWorkspacePopover: View {
             PopoverRow(symbol: copied == "branch" ? "checkmark" : "arrow.triangle.branch", title: workspace.branch, mono: true, trailingSymbol: "doc.on.doc") {
                 copy(workspace.branch, tag: "branch")
             }
-            .help("Copiar o nome da branch\(workspace.base.isEmpty ? "" : " · saiu de \(workspace.base)")")
+            .help(workspace.base.isEmpty ? tr("Copiar o nome da branch") : tr("Copiar o nome da branch · saiu de %@", workspace.base))
             divider
             if let pr = workspace.pr {
                 PullRequestRow(store: store, workspaceID: workspace.id, pr: pr) {
@@ -433,7 +433,7 @@ struct CodeWorkspacePopover: View {
             }
             changesRow
             if let server = workspace.servers.first, let path = server.previewPath, let url = model.client.previewURL(path: path) {
-                PopoverRow(symbol: "safari", title: "Abrir o app", detail: "porta \(server.port)") {
+                PopoverRow(symbol: "safari", title: tr("Abrir o app"), detail: tr("porta %lld", server.port)) {
                     NSWorkspace.shared.open(url)
                 }
             }
@@ -489,11 +489,11 @@ struct CodeWorkspacePopover: View {
         let merged = pr.status == .merged
         guard
             CodeActions.confirm(
-                "Fechar o repositório?",
+                tr("Fechar o repositório?"),
                 message: merged
-                    ? "O PR #\(pr.number) já foi mergeado. A worktree sai do disco; a branch continua no GitHub."
-                    : "O PR #\(pr.number) foi fechado sem merge. A worktree sai do disco; a branch continua no GitHub.",
-                action: "Fechar"
+                    ? tr("O PR #%lld já foi mergeado. A worktree sai do disco; a branch continua no GitHub.", pr.number)
+                    : tr("O PR #%lld foi fechado sem merge. A worktree sai do disco; a branch continua no GitHub.", pr.number),
+                action: tr("Fechar")
             )
         else { return }
         problem = nil
@@ -502,9 +502,9 @@ struct CodeWorkspacePopover: View {
                 try await store.finishRepository(workspaceID: workspace.id)
                 close()
             } catch BotsClient.ClientError.http(_, let message) {
-                problem = message ?? "Não consegui fechar o repositório agora."
+                problem = message ?? tr("Não consegui fechar o repositório agora.")
             } catch {
-                problem = "Não consegui fechar o repositório agora."
+                problem = tr("Não consegui fechar o repositório agora.")
             }
         }
     }
@@ -524,10 +524,10 @@ struct CodeWorkspacePopover: View {
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1)
             Spacer(minLength: Spacing.s)
-            RoundIconButton(systemImage: copied == "path" ? "checkmark" : "doc.on.doc", help: "Copiar o caminho", size: 26) {
+            RoundIconButton(systemImage: copied == "path" ? "checkmark" : "doc.on.doc", help: tr("Copiar o caminho"), size: 26) {
                 copy(workspace.path, tag: "path")
             }
-            GlassMenuIconButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Abrir no editor", iconSize: 11, size: 26, weight: .semibold, edge: .trailing) {
+            GlassMenuIconButton(systemImage: "chevron.left.forwardslash.chevron.right", help: tr("Abrir no editor"), iconSize: 11, size: 26, weight: .semibold, edge: .trailing) {
                 CodeEditorApp.installed.map { editor in
                     GlassMenuItem(
                         editor.name,
@@ -536,7 +536,7 @@ struct CodeWorkspacePopover: View {
                         editor.open(absolutePath: workspace.path)
                     }
                 } + [
-                    GlassMenuItem("Copiar caminho", systemImage: "doc.on.doc", startsSection: !CodeEditorApp.installed.isEmpty) {
+                    GlassMenuItem(tr("Copiar caminho"), systemImage: "doc.on.doc", startsSection: !CodeEditorApp.installed.isEmpty) {
                         copy(workspace.path, tag: "path")
                     }
                 ]
@@ -551,14 +551,14 @@ struct CodeWorkspacePopover: View {
         let files = workspace.files
         return PopoverRow(
             symbol: "plusminus",
-            title: "Mudanças",
+            title: tr("Mudanças"),
             added: files == 0 ? nil : workspace.added,
             removed: files == 0 ? nil : workspace.removed,
             trailingSymbol: "chevron.right",
             action: openChanges
         )
         .disabled(files == 0)
-        .help(files == 0 ? "Nada mudou ainda" : "\(files) arquivo\(files == 1 ? "" : "s") · abrir o diff")
+        .help(files == 0 ? "Nada mudou ainda" : files == 1 ? "1 arquivo · abrir o diff" : "\(files) arquivos · abrir o diff")
     }
 
     private func history(_ checkpoints: [CodeCheckpoint]) -> some View {
@@ -602,7 +602,9 @@ struct CodeWorkspacePopover: View {
     }
 
     private func rewind(_ turnID: String) {
-        guard CodeActions.confirm("Voltar para antes deste pedido?", message: "Os arquivos e a conversa voltam para antes dele. O que veio depois também sai.", action: "Voltar") else { return }
+        guard CodeActions.confirm(tr("Voltar para antes deste pedido?"), message: tr("Os arquivos e a conversa voltam para antes dele. O que veio depois também sai."), action: tr("Voltar")) else {
+            return
+        }
         Task { try? await store.rewind(turnID: turnID) }
     }
 
@@ -669,12 +671,12 @@ struct CodeHistoryRow: View {
     let rewind: () -> Void
     @State private var hovering = false
 
-    private static let relative: RelativeDateTimeFormatter = {
+    private static var relative: RelativeDateTimeFormatter {
         let formatter = RelativeDateTimeFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = LanguageStore.shared.locale
         formatter.unitsStyle = .short
         return formatter
-    }()
+    }
 
     var body: some View {
         Button(action: rewind) {
@@ -711,7 +713,7 @@ struct CodeHistoryRow: View {
         .clickable()
         .disabled(!enabled)
         .onHover { hovering = $0 }
-        .help(enabled ? "\(text)\n\nClique para voltar para antes deste pedido" : text)
+        .help(enabled ? text + "\n\n" + tr("Clique para voltar para antes deste pedido") : text)
         .springAnimation(value: hovering)
     }
 }
@@ -771,7 +773,8 @@ struct CodeChangesView: View {
                 }
             } else {
                 Spacer(minLength: 0)
-                PanelEmptyState(systemImage: "arrow.triangle.branch", title: "Nenhum repositório aberto", message: "Peça ao bot para mexer num repositório ou use “Trabalhar num repositório…” no +.")
+                PanelEmptyState(
+                    systemImage: "arrow.triangle.branch", title: tr("Nenhum repositório aberto"), message: tr("Peça ao bot para mexer num repositório ou use “Trabalhar num repositório…” no +."))
                 Spacer(minLength: 0)
             }
         }
@@ -820,7 +823,7 @@ struct CodeChangesView: View {
                 .foregroundStyle(Theme.textPrimary)
             if let workspace, workspace.files > 0 {
                 ChangeCount(added: workspace.added, removed: workspace.removed)
-                    .help("\(workspace.files) arquivo\(workspace.files == 1 ? "" : "s") em \(workspace.repoName) · \(workspace.branch)")
+                    .help(workspace.files == 1 ? "1 arquivo em \(workspace.repoName) · \(workspace.branch)" : "\(workspace.files) arquivos em \(workspace.repoName) · \(workspace.branch)")
             }
             Spacer(minLength: 0)
             if let all = store?.codeState?.workspaces, all.count > 1 {
@@ -832,7 +835,7 @@ struct CodeChangesView: View {
                     }
                 }
             }
-            RoundIconButton(systemImage: "xmark", help: "Fechar (Esc)", size: 26) {
+            RoundIconButton(systemImage: "xmark", help: tr("Fechar (Esc)"), size: 26) {
                 model.dismissSheet()
             }
         }
@@ -942,10 +945,10 @@ struct CodeChangesView: View {
                     FilePathLabel(path: diff.path)
                     ChangeCount(added: diff.added, removed: diff.removed)
                     Spacer(minLength: 0)
-                    RoundIconButton(systemImage: "chevron.left.forwardslash.chevron.right", help: "Abrir no editor", size: 26) {
+                    RoundIconButton(systemImage: "chevron.left.forwardslash.chevron.right", help: tr("Abrir no editor"), size: 26) {
                         openInEditor(diff.path)
                     }
-                    RoundIconButton(systemImage: "arrow.uturn.backward", help: "Desfazer arquivo", size: 26) {
+                    RoundIconButton(systemImage: "arrow.uturn.backward", help: tr("Desfazer arquivo"), size: 26) {
                         revert(diff.path)
                     }
                 }
@@ -982,7 +985,7 @@ struct CodeChangesView: View {
         } else if isHuge(changes) {
             summary(changes)
         } else {
-            PanelEmptyState(systemImage: "doc.text.magnifyingglass", title: "Escolha um arquivo", message: "O diff completo aparece aqui.")
+            PanelEmptyState(systemImage: "doc.text.magnifyingglass", title: tr("Escolha um arquivo"), message: tr("O diff completo aparece aqui."))
         }
     }
 
@@ -1028,7 +1031,9 @@ struct CodeChangesView: View {
     }
 
     private func revert(_ path: String) {
-        guard let store, CodeActions.confirm("Desfazer \((path as NSString).lastPathComponent)?", message: "O arquivo volta a ser como era antes da tarefa.", action: "Desfazer") else { return }
+        guard let store, CodeActions.confirm(tr("Desfazer %@?", (path as NSString).lastPathComponent), message: tr("O arquivo volta a ser como era antes da tarefa."), action: tr("Desfazer")) else {
+            return
+        }
         Task {
             try? await store.revertFile(path, workspaceID: workspace?.id)
             diff = nil

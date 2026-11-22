@@ -45,7 +45,7 @@ struct SecretFormCard: View {
                     .frame(width: 32, height: 32)
                     .background(Theme.surfaceRaised, in: RoundedRectangle(cornerRadius: Radius.small, style: .continuous))
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    Text("\(form.botName ?? bot.name) pediu \(form.fields.count > 1 ? "estes dados" : "um segredo")")
+                    Text(form.fields.count > 1 ? tr("%@ pediu estes dados", form.botName ?? bot.name) : tr("%@ pediu um segredo", form.botName ?? bot.name))
                         .font(TypeScale.sectionTitle)
                         .foregroundStyle(Theme.textPrimary)
                     if !form.reason.isEmpty {
@@ -146,7 +146,7 @@ struct SecretFormCard: View {
     }
 
     private var outcomeLine: some View {
-        let saved = approval.resolution == .settled("Salvo no cofre", .approved) || approval.resolution == .answering("approve")
+        let saved = approval.resolution == .settled(tr("Salvo no cofre"), .approved) || approval.resolution == .answering("approve")
         return HStack(spacing: Spacing.s) {
             Image(systemName: saved ? "lock.fill" : "lock.open")
                 .font(.system(size: 11, weight: .semibold))
@@ -176,7 +176,7 @@ struct SecretFormCard: View {
                 answer("approve")
             } catch {
                 saving = false
-                self.error = (error as? VaultFailure)?.message ?? "Não deu para salvar. Tente de novo."
+                self.error = (error as? VaultFailure)?.message ?? tr("Não deu para salvar. Tente de novo.")
             }
         }
     }

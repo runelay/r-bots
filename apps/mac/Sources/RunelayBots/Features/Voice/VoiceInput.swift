@@ -26,8 +26,8 @@ enum VoicePermission: Equatable {
 
     var message: String {
         switch self {
-        case .microphone: "O microfone está bloqueado para o r/bots."
-        case .speech: "O reconhecimento de fala está bloqueado para o r/bots."
+        case .microphone: tr("O microfone está bloqueado para o r/bots.")
+        case .speech: tr("O reconhecimento de fala está bloqueado para o r/bots.")
         }
     }
 
@@ -70,7 +70,7 @@ final class VoiceInput {
     @ObservationIgnored private var lastActivity = Date()
     @ObservationIgnored private var keyMonitor: Any?
     @ObservationIgnored private var isHoldingShortcut = false
-    @ObservationIgnored private let locale = Locale(identifier: "pt-BR")
+    private var locale: Locale { Locale(identifier: LanguageStore.shared.code == "en" ? "en-US" : "pt-BR") }
 
     private init() {
         #if os(macOS)
@@ -200,7 +200,7 @@ final class VoiceInput {
                 try audio.setActive(true)
             } catch {
                 teardown()
-                failure = "Não deu para ouvir o microfone agora."
+                failure = tr("Não deu para ouvir o microfone agora.")
                 return
             }
         #endif
@@ -222,7 +222,7 @@ final class VoiceInput {
             guard self.session === session else { return }
             session.cancel()
             teardown()
-            failure = "Não deu para ouvir o microfone agora."
+            failure = tr("Não deu para ouvir o microfone agora.")
             return
         }
         guard phase == .preparing, self.session === session else {
@@ -302,7 +302,7 @@ final class VoiceInput {
                     checkedQuiet = true
                     if let session = self.session, session.peak < Microphones.quietPeak {
                         self.quietMicrophone = Microphones.activeName()
-                        self.failure = "Não estou te ouvindo pelo \(self.quietMicrophone ?? "microfone")."
+                        self.failure = tr("Não estou te ouvindo pelo %@.", self.quietMicrophone ?? tr("microfone"))
                     }
                 }
                 guard UserDefaults.standard.bool(forKey: VoicePreferenceKeys.autoSend) else { continue }

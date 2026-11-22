@@ -80,7 +80,7 @@ struct SessionStream: Sendable {
             }
 
             if unavailable {
-                continuation.yield(.unavailable("Esta conversa não está mais disponível no servidor."))
+                continuation.yield(.unavailable(tr("Esta conversa não está mais disponível no servidor.")))
                 return
             }
             if finished {

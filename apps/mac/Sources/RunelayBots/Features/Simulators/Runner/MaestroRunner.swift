@@ -44,22 +44,22 @@ enum MaestroRunner {
         }
         let result = await Shell.run("/bin/bash", ["-c", "curl -fsSL \"https://get.maestro.mobile.dev\" | bash"], env: SimulatorRunner.javaHome, timeout: .seconds(600))
         guard result.code == 0, let path = SimulatorRunner.maestro else {
-            throw SimulatorError.message("A instalação do Maestro falhou: \(LocalCLI.clean(result.stderr).suffix(400))")
+            throw SimulatorError.message(tr("A instalação do Maestro falhou: %@", String(LocalCLI.clean(result.stderr).suffix(400))))
         }
         return .object(["installed": .bool(true), "path": .string(path)])
     }
 
     static func label(_ command: JSONValue?) -> String {
-        guard case .object(let wrapper) = command ?? .null, let (kind, value) = wrapper.first(where: { _, value in value != .null }) else { return "passo" }
+        guard case .object(let wrapper) = command ?? .null, let (kind, value) = wrapper.first(where: { _, value in value != .null }) else { return tr("passo") }
         let names: [String: String] = [
-            "tapOnElement": "Tocar", "tapOnPoint": "Tocar no ponto", "tapOnPointV2": "Tocar no ponto",
-            "inputTextCommand": "Digitar", "assertConditionCommand": "Ver", "assertCommand": "Ver",
-            "launchAppCommand": "Abrir o app", "openLinkCommand": "Abrir link", "scrollCommand": "Rolar",
-            "scrollUntilVisible": "Rolar até ver", "takeScreenshotCommand": "Print", "backPressCommand": "Voltar",
-            "swipeCommand": "Deslizar", "waitForAnimationToEndCommand": "Esperar a animação", "stopAppCommand": "Fechar o app",
-            "clearStateCommand": "Limpar o app", "hideKeyboardCommand": "Fechar o teclado", "eraseTextCommand": "Apagar texto",
-            "applyConfigurationCommand": "Configurar", "defineVariablesCommand": "Variáveis", "runFlowCommand": "Rodar flow",
-            "extendedWaitUntilCommand": "Esperar", "pressKeyCommand": "Tecla",
+            "tapOnElement": tr("Tocar"), "tapOnPoint": tr("Tocar no ponto"), "tapOnPointV2": tr("Tocar no ponto"),
+            "inputTextCommand": tr("Digitar"), "assertConditionCommand": tr("Ver"), "assertCommand": tr("Ver"),
+            "launchAppCommand": tr("Abrir o app"), "openLinkCommand": tr("Abrir link"), "scrollCommand": tr("Rolar"),
+            "scrollUntilVisible": tr("Rolar até ver"), "takeScreenshotCommand": tr("Print"), "backPressCommand": tr("Voltar"),
+            "swipeCommand": tr("Deslizar"), "waitForAnimationToEndCommand": tr("Esperar a animação"), "stopAppCommand": tr("Fechar o app"),
+            "clearStateCommand": tr("Limpar o app"), "hideKeyboardCommand": tr("Fechar o teclado"), "eraseTextCommand": tr("Apagar texto"),
+            "applyConfigurationCommand": tr("Configurar"), "defineVariablesCommand": tr("Variáveis"), "runFlowCommand": tr("Rodar flow"),
+            "extendedWaitUntilCommand": tr("Esperar"), "pressKeyCommand": tr("Tecla"),
         ]
         let base = names[kind] ?? kind.replacingOccurrences(of: "Command", with: "")
         let detail = describe(value)
@@ -105,9 +105,9 @@ enum MaestroRunner {
 
     static func run(flow: String, name: String, udid: String) async throws -> MaestroRun {
         guard let maestro = SimulatorRunner.maestro else {
-            throw SimulatorError.message("O Maestro não está instalado no Mac. Use maestro_install.")
+            throw SimulatorError.message(tr("O Maestro não está instalado no Mac. Use maestro_install."))
         }
-        guard !flow.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SimulatorError.message("O flow está vazio.") }
+        guard !flow.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw SimulatorError.message(tr("O flow está vazio.")) }
         let root = FileManager.default.temporaryDirectory.appending(path: "rb-maestro-\(UUID().uuidString)")
         let debug = root.appending(path: "debug")
         try FileManager.default.createDirectory(at: debug, withIntermediateDirectories: true)

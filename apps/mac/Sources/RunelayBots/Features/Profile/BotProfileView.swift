@@ -36,7 +36,7 @@ struct BotProfileView: View {
                 Text("\(bot.name) some da lista. Dá para restaurar em Arquivados.")
             }
         } else {
-            PanelEmptyState(systemImage: "person.crop.circle.badge.questionmark", title: "Bot não encontrado", message: "Ele pode ter sido arquivado.")
+            PanelEmptyState(systemImage: "person.crop.circle.badge.questionmark", title: tr("Bot não encontrado"), message: tr("Ele pode ter sido arquivado."))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -57,7 +57,7 @@ struct BotProfileView: View {
                 }
                 .buttonStyle(.brandSecondary)
                 .disabled(bot.isPending)
-                RoundIconButton(systemImage: "archivebox", help: "Arquivar \(bot.name)", size: 36) {
+                RoundIconButton(systemImage: "archivebox", help: tr("Arquivar %@", bot.name), size: 36) {
                     confirmsArchive = true
                 }
                 .disabled(bot.isPending)
@@ -77,7 +77,7 @@ struct BotProfileView: View {
     private func general(for bot: Bot) -> some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             VStack(alignment: .leading, spacing: Spacing.s) {
-                SectionCaption(title: "Computador")
+                SectionCaption(title: tr("Computador"))
                 if bot.hasBrowser {
                     ComputerCard(
                         bot: bot,
@@ -95,14 +95,14 @@ struct BotProfileView: View {
             }
 
             VStack(alignment: .leading, spacing: Spacing.s) {
-                SectionCaption(title: "Decisões")
+                SectionCaption(title: tr("Decisões"))
                 SoftCard {
                     AutoApproveToggle(bot: bot, compact: false)
                 }
             }
 
             VStack(alignment: .leading, spacing: Spacing.s) {
-                SectionCaption(title: "Instruções")
+                SectionCaption(title: tr("Instruções"))
                 InstructionsSection(bot: bot)
             }
         }
@@ -140,7 +140,7 @@ struct AutoApproveToggle: View {
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if !model.meta.integrationOn("jev") {
-                        IntegrationShortcut(message: "Sem o Jev, toda ação de risco pede sua aprovação.", action: "Conectar Jev")
+                        IntegrationShortcut(message: tr("Sem o Jev, toda ação de risco pede sua aprovação."), action: tr("Conectar Jev"))
                             .padding(.top, Spacing.xs)
                     }
                 }
@@ -184,7 +184,7 @@ struct InstructionsSection: View {
                     .buttonStyle(.brandPrimary)
                 }
             } else {
-                Text(bot.instructions.isEmpty ? "\(bot.name) ainda não tem instruções. Conte na conversa o que ele deve fazer." : bot.instructions)
+                Text(bot.instructions.isEmpty ? tr("%@ ainda não tem instruções. Conte na conversa o que ele deve fazer.", bot.name) : bot.instructions)
                     .font(TypeScale.rowSubtitle)
                     .foregroundStyle(bot.instructions.isEmpty ? Theme.textTertiary : Theme.textSecondary)
                     .lineLimit(8)

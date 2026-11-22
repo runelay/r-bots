@@ -174,7 +174,7 @@ struct BlockPanelHeader: View {
             if isNote {
                 BlockHeaderButton(
                     systemImage: "sidebar.left",
-                    help: presentation.treeVisible ? "Esconder pastas" : "Mostrar pastas",
+                    help: presentation.treeVisible ? tr("Esconder pastas") : tr("Mostrar pastas"),
                     isActive: presentation.treeVisible,
                     tipEdge: .leading
                 ) {
@@ -207,13 +207,13 @@ struct BlockPanelHeader: View {
             }
             BlockHeaderButton(
                 systemImage: presentation.fullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                help: presentation.fullScreen ? "Voltar ao painel  ⇧⌘F" : "Tela cheia  ⇧⌘F",
+                help: presentation.fullScreen ? tr("Voltar ao painel  ⇧⌘F") : tr("Tela cheia  ⇧⌘F"),
                 isActive: presentation.fullScreen
             ) {
                 presentation.toggleFullScreen()
             }
             moreMenu
-            BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
+            BlockHeaderButton(systemImage: "xmark", help: tr("Fechar")) {
                 presentation.close()
             }
         }
@@ -234,7 +234,7 @@ struct BlockPanelHeader: View {
 
     private var title: String {
         guard let route = center.route else { return "" }
-        if case .files = route { return "Arquivos" }
+        if case .files = route { return tr("Arquivos") }
         return center.title(for: route)
     }
 
@@ -250,16 +250,17 @@ struct BlockPanelHeader: View {
         switch center.route {
         case .note:
             guard let editor = center.noteEditor else { return nil }
-            if editor.failed != nil { return "Não consegui salvar" }
-            if editor.saving || editor.dirty { return "Salvando…" }
-            if let edited = editor.remoteEditedAt, Date().timeIntervalSince(edited) < 60 { return "O bot acabou de editar" }
+            if editor.failed != nil { return tr("Não consegui salvar") }
+            if editor.saving || editor.dirty { return tr("Salvando…") }
+            if let edited = editor.remoteEditedAt, Date().timeIntervalSince(edited) < 60 { return tr("O bot acabou de editar") }
             return nil
         case .sheet:
             guard let text = center.sheetEditor?.statusText else { return nil }
-            return text == "Salvo" || text == "Planilha" || text.hasPrefix("Aba ") ? nil : text
+            return text == tr("Salvo") || text == tr("Planilha") || text.hasPrefix(tr("Aba %@", "")) ? nil : text
         case .agenda:
-            guard let text = center.agendaStore?.statusText else { return nil }
-            return text.hasSuffix("ligada") || text.hasSuffix("ligadas") || text == "Atualizando…" ? nil : text
+            guard let agenda = center.agendaStore else { return nil }
+            let edited = agenda.remoteEditedAt.map { Date().timeIntervalSince($0) < 60 } ?? false
+            return agenda.failed != nil || (!agenda.loading && edited) ? agenda.statusText : nil
         default:
             return nil
         }
@@ -282,8 +283,8 @@ struct BlockPanelHeader: View {
     }
 
     private var deleteTitle: String {
-        if case .sheet = center.route { return "Apagar esta planilha?" }
-        return "Apagar esta nota?"
+        if case .sheet = center.route { return tr("Apagar esta planilha?") }
+        return tr("Apagar esta nota?")
     }
 
     private func delete() {
@@ -300,19 +301,19 @@ struct BlockPanelHeader: View {
                     throw BotsClient.ClientError.invalidResponse
                 }
             } catch {
-                BlockCenter.shared.flash("Não consegui apagar")
+                BlockCenter.shared.flash(tr("Não consegui apagar"))
             }
         }
     }
 
     private var moreMenu: some View {
-        GlassMenuButton(edge: .trailing, help: "Mais", items: { moreItems }) { isOpen in
+        GlassMenuButton(edge: .trailing, help: tr("Mais"), items: { moreItems }) { isOpen in
             BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen || confirmingDelete)
         }
         .fixedSize()
-        .blockTooltip("Mais")
+        .blockTooltip(tr("Mais"))
         .glassPopup(isPresented: $confirmingDelete, edge: .trailing) {
-            GlassConfirm(title: deleteTitle, message: "Vai para a lixeira do bot.", confirmTitle: "Apagar", destructive: true) {
+            GlassConfirm(title: deleteTitle, message: tr("Vai para a lixeira do bot."), confirmTitle: tr("Apagar"), destructive: true) {
                 delete()
             }
         }
@@ -324,14 +325,14 @@ struct BlockPanelHeader: View {
             if case .files = center.route {
             } else {
                 items.append(
-                    GlassMenuItem("Todos os arquivos", systemImage: "square.stack") {
+                    GlassMenuItem(tr("Todos os arquivos"), systemImage: "square.stack") {
                         center.navigate(to: .files(botID: botID))
                     })
             }
         }
         if deletable != nil {
             items.append(
-                GlassMenuItem("Apagar", systemImage: "trash", destructive: true) {
+                GlassMenuItem(tr("Apagar"), systemImage: "trash", destructive: true) {
                     confirmingDelete = true
                 })
         }
@@ -340,7 +341,7 @@ struct BlockPanelHeader: View {
 
     private func exportMenu(_ kind: BlockKind) -> some View {
         GlassMenuButton(
-            edge: .trailing, help: "Baixar como arquivo",
+            edge: .trailing, help: tr("Baixar como arquivo"),
             items: {
                 ExportFormat.formats(for: kind).map { format in
                     GlassMenuItem(format.label, systemImage: "arrow.down.doc") {
@@ -369,7 +370,7 @@ struct BlockPanelHeader: View {
         }
         .fixedSize()
         .disabled(center.exporting)
-        .blockTooltip("Baixar como arquivo")
+        .blockTooltip(tr("Baixar como arquivo"))
     }
 }
 
@@ -511,7 +512,7 @@ struct BlockFilesView: View {
                 }
             }
             if store.tab != .agenda {
-                BlockSearchField(text: $store.query, prompt: store.tab == .notes ? "Buscar nas notas" : "Buscar planilhas")
+                BlockSearchField(text: $store.query, prompt: store.tab == .notes ? tr("Buscar nas notas") : tr("Buscar planilhas"))
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: Spacing.xxs) {
@@ -525,8 +526,8 @@ struct BlockFilesView: View {
                         }
                         if store.notes.isEmpty, !store.loading {
                             PanelEmptyState(
-                                systemImage: "doc.text", title: store.query.isEmpty ? "Nenhuma nota ainda" : "Nada encontrado",
-                                message: store.query.isEmpty ? "Peça ao bot para anotar algo ou crie uma nota." : "Tente outras palavras.")
+                                systemImage: "doc.text", title: store.query.isEmpty ? tr("Nenhuma nota ainda") : tr("Nada encontrado"),
+                                message: store.query.isEmpty ? tr("Peça ao bot para anotar algo ou crie uma nota.") : tr("Tente outras palavras."))
                         }
                     case .sheets:
                         ForEach(store.sheets) { sheet in
@@ -537,11 +538,11 @@ struct BlockFilesView: View {
                         }
                         if store.sheets.isEmpty, !store.loading {
                             PanelEmptyState(
-                                systemImage: "tablecells", title: store.query.isEmpty ? "Nenhuma planilha ainda" : "Nada encontrado",
-                                message: store.query.isEmpty ? "Peça ao bot para montar uma planilha ou crie uma." : "Tente outras palavras.")
+                                systemImage: "tablecells", title: store.query.isEmpty ? tr("Nenhuma planilha ainda") : tr("Nada encontrado"),
+                                message: store.query.isEmpty ? tr("Peça ao bot para montar uma planilha ou crie uma.") : tr("Tente outras palavras."))
                         }
                     case .agenda:
-                        BlockFileRow(symbol: BlockKind.agenda.symbol, title: "Agenda", subtitle: "Semana com as suas contas do Google") {
+                        BlockFileRow(symbol: BlockKind.agenda.symbol, title: tr("Agenda"), subtitle: tr("Semana com as suas contas do Google")) {
                             BlockCenter.shared.navigate(to: .agenda(botID: store.botID))
                         }
                     }
@@ -575,7 +576,7 @@ struct BlockFilesView: View {
     }
 
     private func sheetSubtitle(_ sheet: SheetSummary) -> String {
-        let tabs = sheet.tabs.count == 1 ? "1 aba" : "\(sheet.tabs.count) abas"
+        let tabs = sheet.tabs.count == 1 ? tr("1 aba") : tr("%lld abas", sheet.tabs.count)
         return "\(tabs) · \(BlockDates.relative(sheet.updatedAt))"
     }
 }

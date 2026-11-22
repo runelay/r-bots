@@ -113,7 +113,7 @@ extension JSONValue {
         case .null:
             return nil
         case .bool(let value):
-            return value ? "sim" : "não"
+            return value ? tr("sim") : tr("não")
         case .number(let value):
             return JSONValue.format(value)
         case .string(let value):
@@ -123,7 +123,7 @@ extension JSONValue {
                 .trimmingCharacters(in: .whitespaces)
             return collapsed.count > 140 ? String(collapsed.prefix(140)) + "…" : collapsed
         case .array(let value):
-            return value.count == 1 ? "1 item" : "\(value.count) itens"
+            return value.count == 1 ? tr("1 item") : tr("%lld itens", value.count)
         case .object(let value):
             return value.isEmpty ? nil : "{…}"
         }

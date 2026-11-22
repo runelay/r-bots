@@ -18,7 +18,7 @@ struct BotsSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
-            SettingsGroup(caption: "No time") {
+            SettingsGroup(caption: tr("No time")) {
                 Text("Auto")
                     .font(BrandFonts.sans(11, weight: .medium))
                     .foregroundStyle(Theme.textTertiary)
@@ -28,12 +28,12 @@ struct BotsSettings: View {
                 ForEach(model.loadedBots) { bot in
                     SettingsBotRow(bot: bot) {
                         AutoApproveToggle(bot: bot, compact: true)
-                        GlassMenuIconButton(systemImage: "ellipsis", help: "Mais ações", iconSize: 12, size: 24, weight: .semibold, edge: .trailing) {
+                        GlassMenuIconButton(systemImage: "ellipsis", help: tr("Mais ações"), iconSize: 12, size: 24, weight: .semibold, edge: .trailing) {
                             [
-                                GlassMenuItem("Editar", systemImage: "pencil") {
+                                GlassMenuItem(tr("Editar"), systemImage: "pencil") {
                                     model.openEditor(for: bot)
                                 },
-                                GlassMenuItem("Arquivar", systemImage: "archivebox", destructive: true) {
+                                GlassMenuItem(tr("Arquivar"), systemImage: "archivebox", destructive: true) {
                                     archiving = bot
                                 },
                             ]
@@ -43,7 +43,7 @@ struct BotsSettings: View {
                     .transition(.opacity)
                 }
                 if model.loadedBots.isEmpty {
-                    SettingsRow(title: "Nenhum bot no time", icon: SettingsIcon("person.2.slash", SettingsTint.graphite)) {
+                    SettingsRow(title: tr("Nenhum bot no time"), icon: SettingsIcon("person.2.slash", SettingsTint.graphite)) {
                         EmptyView()
                     }
                 }
@@ -51,7 +51,7 @@ struct BotsSettings: View {
             .springAnimation(value: model.loadedBots.map(\.id))
 
             if !extra.isEmpty {
-                SettingsDisclosure(title: "Ocultos e excluídos", count: extra.count, icon: SettingsIcon("eye.slash.fill", SettingsTint.graphite), isOpen: $showExtra) {
+                SettingsDisclosure(title: tr("Ocultos e excluídos"), count: extra.count, icon: SettingsIcon("eye.slash.fill", SettingsTint.graphite), isOpen: $showExtra) {
                     ForEach(extra) { bot in
                         SettingsBotRow(bot: bot, mood: .sleeping) {
                             Button(bot.isDeleted ? "Restaurar" : "Mostrar") {
@@ -68,18 +68,18 @@ struct BotsSettings: View {
                 }
             }
 
-            SettingsDisclosure(title: "Arquivados", count: archivedCount, icon: SettingsIcon("archivebox.fill", SettingsTint.graphite), isOpen: $showArchived) {
+            SettingsDisclosure(title: tr("Arquivados"), count: archivedCount, icon: SettingsIcon("archivebox.fill", SettingsTint.graphite), isOpen: $showArchived) {
                 switch model.archivedBots {
                 case .idle, .loading:
                     SkeletonRow(width: 180)
                         .padding(.horizontal, Spacing.s)
                 case .failed(let message):
-                    SettingsRow(title: "Não deu para carregar", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: message) {
+                    SettingsRow(title: tr("Não deu para carregar"), icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: message) {
                         EmptyView()
                     }
                 case .loaded(let list):
                     if list.isEmpty {
-                        SettingsRow(title: "Nenhum bot arquivado", icon: SettingsIcon("archivebox", SettingsTint.graphite)) {
+                        SettingsRow(title: tr("Nenhum bot arquivado"), icon: SettingsIcon("archivebox", SettingsTint.graphite)) {
                             EmptyView()
                         }
                     } else {
@@ -189,7 +189,7 @@ struct SettingsBotRow<Actions: View>: View {
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1)
                 .layoutPriority(1)
-            Text(bot.role.isEmpty ? "Sem função" : bot.role)
+            Text(bot.role.isEmpty ? tr("Sem função") : bot.role)
                 .font(BrandFonts.sans(12))
                 .foregroundStyle(Theme.textTertiary)
                 .lineLimit(1)

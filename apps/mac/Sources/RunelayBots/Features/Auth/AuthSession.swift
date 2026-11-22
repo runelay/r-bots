@@ -236,8 +236,11 @@ final class AuthSession: NSObject {
     }
 
     private static func browserURL(_ url: URL, provider: String?) -> URL {
-        guard let provider, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
-        components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "provider", value: provider)]
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var items = (components.queryItems ?? []).filter { $0.name != "lang" }
+        items.append(URLQueryItem(name: "lang", value: LanguageStore.shared.code))
+        if let provider { items.append(URLQueryItem(name: "provider", value: provider)) }
+        components.queryItems = items
         return components.url ?? url
     }
 

@@ -85,9 +85,9 @@ struct PreviewAddressBar: View {
 
     var body: some View {
         HStack(spacing: Spacing.xxs) {
-            navButton("chevron.left", help: "Voltar", enabled: navigator.canGoBack) { navigator.goBack() }
-            navButton("chevron.right", help: "Avançar", enabled: navigator.canGoForward) { navigator.goForward() }
-            BlockHeaderButton(systemImage: "arrow.clockwise", help: "Recarregar", tipEdge: .leading) {
+            navButton("chevron.left", help: tr("Voltar"), enabled: navigator.canGoBack) { navigator.goBack() }
+            navButton("chevron.right", help: tr("Avançar"), enabled: navigator.canGoForward) { navigator.goForward() }
+            BlockHeaderButton(systemImage: "arrow.clockwise", help: tr("Recarregar"), tipEdge: .leading) {
                 if navigator.isAttached {
                     navigator.reload()
                 } else {
@@ -142,7 +142,7 @@ struct PreviewAddressBar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle())
-            .blockTooltip("Copiar endereço", edge: .trailing)
+            .blockTooltip(tr("Copiar endereço"), edge: .trailing)
             .accessibilityLabel("Copiar endereço")
         }
         .padding(.leading, Spacing.m)

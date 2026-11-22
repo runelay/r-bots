@@ -90,7 +90,7 @@ struct BlockCard: View {
         .disabled(center.isDeleted(ref))
         .onHover { hovering = $0 }
         .springAnimation(value: hovering)
-        .help(center.isDeleted(ref) ? "" : "Abrir a versão atual")
+        .help(center.isDeleted(ref) ? "" : tr("Abrir a versão atual"))
     }
 
     @ViewBuilder
@@ -123,21 +123,23 @@ struct BlockCard: View {
         if kind == .agenda, case .agenda(let preview) = center.preview(for: ref) {
             return Self.agendaRange(preview)
         }
-        return ref.version > 1 ? "\(kind.label) · editada" : kind.label
+        return ref.version > 1 ? tr("%@ · editada", kind.label) : kind.label
     }
 
     static func agendaRange(_ preview: AgendaPreview) -> String {
         guard let start = BlockDates.parse(preview.start), let rawEnd = BlockDates.parse(preview.end) else {
-            return preview.view == "week" ? "Semana" : "Dia"
+            return preview.view == "week" ? tr("Semana") : tr("Dia")
         }
         let end = rawEnd.addingTimeInterval(-1)
         if preview.view == "day" || Calendar.agenda.isDate(start, inSameDayAs: end) {
-            return start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)).replacingOccurrences(of: ".", with: "").capitalizedFirst
+            return start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).locale(LanguageStore.shared.locale)).replacingOccurrences(of: ".", with: "").capitalizedFirst
         }
         if Calendar.agenda.isDate(start, equalTo: end, toGranularity: .month) {
-            return "\(start.formatted(.dateTime.day()))–\(end.formatted(.dateTime.day().month(.abbreviated)))".replacingOccurrences(of: ".", with: "")
+            return "\(start.formatted(.dateTime.day().locale(LanguageStore.shared.locale)))–\(end.formatted(.dateTime.day().month(.abbreviated).locale(LanguageStore.shared.locale)))"
+                .replacingOccurrences(of: ".", with: "")
         }
-        return "\(start.formatted(.dateTime.day().month(.abbreviated))) – \(end.formatted(.dateTime.day().month(.abbreviated)))".replacingOccurrences(of: ".", with: "")
+        return "\(start.formatted(.dateTime.day().month(.abbreviated).locale(LanguageStore.shared.locale))) – \(end.formatted(.dateTime.day().month(.abbreviated).locale(LanguageStore.shared.locale)))"
+            .replacingOccurrences(of: ".", with: "")
     }
 
     private func open() {
@@ -293,9 +295,9 @@ struct SheetPreviewGrid: View {
 
     private var footer: String {
         var parts = [preview.tab]
-        parts.append("\(preview.rowCount) \(preview.rowCount == 1 ? "linha" : "linhas")")
+        parts.append(preview.rowCount == 1 ? tr("1 linha") : tr("%lld linhas", preview.rowCount))
         if preview.tabs > 1 {
-            parts.append("\(preview.tabs) abas")
+            parts.append(tr("%lld abas", preview.tabs))
         }
         return parts.joined(separator: " · ")
     }
@@ -373,7 +375,7 @@ struct AgendaPreviewList: View {
                     weekRow(item.day, item.events)
                 }
                 if days.count > Self.dayLimit {
-                    Text("e mais \(days.count - Self.dayLimit) \(days.count - Self.dayLimit == 1 ? "dia" : "dias")")
+                    Text(days.count - Self.dayLimit == 1 ? "e mais 1 dia" : "e mais \(days.count - Self.dayLimit) dias")
                         .font(TypeScale.caption)
                         .foregroundStyle(Theme.textTertiary)
                 }

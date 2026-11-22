@@ -27,6 +27,11 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/RunelayBots" "$APP/Contents/MacOS/RunelayBots"
 cp -R "$BIN/RunelayBots_RunelayBots.bundle" "$APP/Contents/Resources/"
+cp -R "$ROOT"/Localization/*.lproj "$APP/Contents/Resources/"
+for LPROJ in "$ROOT"/Packaging/*.lproj; do
+    mkdir -p "$APP/Contents/Resources/$(basename "$LPROJ")"
+    cp "$LPROJ"/InfoPlist.strings "$APP/Contents/Resources/$(basename "$LPROJ")/"
+done
 cp "$ICNS" "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -38,6 +43,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>r/bots</string>
     <key>CFBundleDisplayName</key>
     <string>r/bots</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>pt-BR</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>pt-BR</string>
+        <string>en</string>
+    </array>
     <key>CFBundleIdentifier</key>
     <string>com.runelay.bots</string>
     <key>CFBundleExecutable</key>

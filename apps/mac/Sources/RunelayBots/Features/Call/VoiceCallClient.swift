@@ -19,7 +19,7 @@ struct BotVoiceSettings: Sendable, Equatable {
         language = json?["language"]?.stringValue ?? "pt"
     }
 
-    static let languages: [(id: String, label: String)] = [("pt", "Português"), ("en", "Inglês"), ("es", "Espanhol")]
+    static var languages: [(id: String, label: String)] { [("pt", tr("Português")), ("en", tr("Inglês")), ("es", tr("Espanhol"))] }
 }
 
 struct VoiceSocketInfo: Sendable {
@@ -68,15 +68,15 @@ struct VoiceOption: Identifiable, Sendable, Equatable {
     var subtitle: String {
         var parts: [String] = []
         switch gender {
-        case "female": parts.append("Feminina")
-        case "male": parts.append("Masculina")
-        case "neutral": parts.append("Neutra")
+        case "female": parts.append(tr("Feminina"))
+        case "male": parts.append(tr("Masculina"))
+        case "neutral": parts.append(tr("Neutra"))
         default: break
         }
         switch language {
-        case "pt": parts.append("português")
-        case "en": parts.append("inglês")
-        case "es": parts.append("espanhol")
+        case "pt": parts.append(tr("português"))
+        case "en": parts.append(tr("inglês"))
+        case "es": parts.append(tr("espanhol"))
         case let value?: parts.append(value)
         default: break
         }

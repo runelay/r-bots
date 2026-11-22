@@ -78,7 +78,7 @@ struct BannerPanel<Header: View, Content: View, Footer: View>: View {
                 }
                 .scrollEdgesHidden()
 
-                RoundIconButton(systemImage: "xmark", help: "Fechar (Esc)") {
+                RoundIconButton(systemImage: "xmark", help: tr("Fechar (Esc)")) {
                     close()
                 }
                 .padding(Spacing.m + 2)

@@ -11,17 +11,17 @@ enum ComputerPermission: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .accessibility: "Acessibilidade"
-        case .screenRecording: "Gravação de Tela"
-        case .automation: "Automação"
+        case .accessibility: tr("Acessibilidade")
+        case .screenRecording: tr("Gravação de Tela")
+        case .automation: tr("Automação")
         }
     }
 
     var detail: String {
         switch self {
-        case .accessibility: "Ler a tela dos apps, clicar e digitar."
-        case .screenRecording: "Tirar print e gravar a tela."
-        case .automation: "Rodar AppleScript no Finder, Safari e outros apps."
+        case .accessibility: tr("Ler a tela dos apps, clicar e digitar.")
+        case .screenRecording: tr("Tirar print e gravar a tela.")
+        case .automation: tr("Rodar AppleScript no Finder, Safari e outros apps.")
         }
     }
 
