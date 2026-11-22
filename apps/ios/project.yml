@@ -131,7 +131,7 @@ targets:
         CFBundleDisplayName: r/bots
         CFBundleDevelopmentRegion: pt-BR
         CFBundleLocalizations: [pt-BR]
-        CFBundleShortVersionString: "0.1.12"
+        CFBundleShortVersionString: "0.1.13"
         CFBundleVersion: "1"
         UILaunchScreen:
           UIColorName: LaunchBackground
