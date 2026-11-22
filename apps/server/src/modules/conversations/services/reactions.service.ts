@@ -225,6 +225,6 @@ export const reactionGuide = [
   "- A pessoa agradeceu ou elogiou: ❤️.",
   "- A pessoa comemorou algo, ou você terminou algo grande que ela pediu: 🎉.",
   "- Um pedido que vai levar várias ferramentas: 👀 logo no começo e, quando terminar, `react` com ✅ (troca a anterior).",
-  "- Uma confirmação curta (\"ok\", \"pode seguir\"): 👍.",
+  '- Uma confirmação curta ("ok", "pode seguir"): 👍.',
   "A reação nunca substitui a resposta em texto quando há pergunta ou pedido. No máximo uma reação sua por mensagem: `react` de novo troca, `unreact` tira. Sem `target`, vale a mensagem que você está respondendo.",
 ].join("\n");
