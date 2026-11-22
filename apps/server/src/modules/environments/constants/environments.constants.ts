@@ -1,6 +1,7 @@
 export const localEnvironmentId = "local";
 export const localCapabilities = ["turns"];
 export const boxesCapability = "boxes";
+export const runnerDroppedMessage = "O runner desta máquina desconectou no meio do turno.";
 export const hostFallbackNotice = "O runner desta máquina está desconectado; este turno roda no container do servidor.";
 export const capacityRefusal = "box.capacity";
 export const boxHome = "/home/app";

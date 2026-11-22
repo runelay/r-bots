@@ -74,6 +74,19 @@ describe("box runners in the hub", () => {
     expect(events).toEqual([{ type: "done", ok: true }]);
   });
 
+  test("fails a running host turn with the runner message when the runner drops", async () => {
+    const host = fakeRunner(runnerDevice("host-1"));
+    host.say(hostHello());
+    const events: ProviderEvent[] = [];
+    const finished = runRemoteTurn("host-1", remote("h2"), new AbortController().signal, (e) => events.push(e));
+    expect(await host.next("request")).toMatchObject({ op: "turn.start", turnId: "h2" });
+    host.drop();
+    await finished;
+    expect(events).toEqual([
+      { type: "done", ok: false, message: "O runner desta máquina desconectou no meio do turno." },
+    ]);
+  });
+
   test("track capacity and boxes, keeping the last good value", () => {
     const runner = boxRunner();
     expect(runnerEnvironments()[0]?.capacity).toEqual(capacity(8192));

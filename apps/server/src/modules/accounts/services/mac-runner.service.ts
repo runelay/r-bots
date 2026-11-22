@@ -24,6 +24,7 @@ import {
   failedHookMessage,
   invalidHookMessage,
   missingHooksMessage,
+  runnerDroppedMessage,
 } from "../../environments/constants/environments.constants";
 import {
   boxesOf,
@@ -299,6 +300,7 @@ function dropConnection(socket: Socket) {
   clearInterval(connection.beat.timer);
   connections.delete(connection.key);
   lastSeen.set(connection.key, new Date().toISOString());
+  const dropMessage = isServiceRunner(connection) ? runnerDroppedMessage : "O app r/bots fechou no meio do turno.";
   for (const [id, entry] of pending) {
     if (entry.key !== connection.key) continue;
     clearTimeout(entry.timer);
@@ -307,7 +309,7 @@ function dropConnection(socket: Socket) {
   }
   for (const [id, stream] of turns) {
     if (stream.key !== connection.key) continue;
-    stream.emit({ type: "done", ok: false, message: "O app r/bots fechou no meio do turno." });
+    stream.emit({ type: "done", ok: false, message: dropMessage });
     stream.finish();
     turns.delete(id);
   }
