@@ -22,6 +22,7 @@ import {
   emitEdit,
   endCall,
   homeHooks,
+  macSecretsMessage,
   nativeHooks,
   sandboxedBash,
   worktreePathsIn,
@@ -857,6 +858,30 @@ describe("tool sandbox", () => {
       try {
         const rewritten = commandOf(await hooks.before("Bash", { command: "vitest x" }, "h3"));
         expect(rewritten).toContain(hostPathOf(heavyLimits.lockFile));
+      } finally {
+        secret.mockRestore();
+      }
+      expect(fake.calls).toHaveLength(0);
+    } finally {
+      fake.restore();
+    }
+  });
+
+  test("a Mac turn runs Bash untouched and refuses vault secrets", async () => {
+    const fake = sandboxOn({ stdout: "ok 1502 bwrap=0\n" });
+    try {
+      const { context } = makeContext();
+      const hooks = onHost(
+        nativeHooks(context, workspace(), { scan: async () => undefined } as unknown as CodeLive),
+        "mac",
+      );
+      expect(await hooks.before("Bash", { command: "bun test src/a.test.ts" }, "m1")).toEqual({ allow: true });
+      const secret = spyOn(vaultTools, "secretBashCommand").mockResolvedValue("HELPER");
+      try {
+        expect(await hooks.before("Bash", { command: "curl x" }, "m2")).toEqual({
+          allow: false,
+          message: macSecretsMessage,
+        });
       } finally {
         secret.mockRestore();
       }

@@ -42,7 +42,15 @@ export function boxHello({
   };
 }
 
-export function hostHello({ memFreeMb = 8192, name = "vps" }: { memFreeMb?: number; name?: string } = {}) {
+export function hostHello({
+  memFreeMb = 8192,
+  name = "vps",
+  environment,
+}: {
+  memFreeMb?: number;
+  name?: string;
+  environment?: "vps" | "mac";
+} = {}) {
   return {
     type: "hello",
     capabilities: ["turns", "host", "mcp-proxy", "hooks"],
@@ -54,6 +62,7 @@ export function hostHello({ memFreeMb = 8192, name = "vps" }: { memFreeMb?: numb
       providers: ["claude"],
       workspaceRoots: [],
       capacity: capacity(memFreeMb),
+      ...(environment ? { environment } : {}),
     },
   };
 }

@@ -44,7 +44,36 @@ describe("readEnv", () => {
       registry: { user: null, token: null },
       removeAfterMs: 604_800_000,
       healthFile: "/tmp/rbots-runner.health",
+      environment: "vps",
+      workspacesDir: join(homedir(), "runelay-bots", "workspaces"),
+      claudeBin: null,
     });
+    expect(() => readEnv({ RBOTS_URL: "http://x", RBOTS_DEVICE_TOKEN: "t", RBOTS_ENVIRONMENT: "lua" })).toThrow(
+      "RBOTS_ENVIRONMENT inválido: lua (use vps, mac).",
+    );
+    expect(
+      readEnv({
+        RBOTS_URL: "http://x",
+        RBOTS_DEVICE_TOKEN: "t",
+        RBOTS_ENVIRONMENT: "mac",
+        HOME: "/Users/dono",
+        RBOTS_CLAUDE_BIN: "/opt/claude",
+      }),
+    ).toMatchObject({
+      environment: "mac",
+      workspacesDir: "/Users/dono/runelay-bots/workspaces",
+      dataDir: "/Users/dono/runelay-bots/data",
+      claudeBin: "/opt/claude",
+    });
+    expect(
+      readEnv({
+        RBOTS_URL: "http://x",
+        RBOTS_DEVICE_TOKEN: "t",
+        RBOTS_ENVIRONMENT: "mac",
+        RBOTS_WORKSPACES_DIR: "/w/workspaces",
+        BOTS_DATA_DIR: "/d",
+      }),
+    ).toMatchObject({ workspacesDir: "/w/workspaces", dataDir: "/d" });
     expect(
       readEnv({
         RBOTS_URL: "http://x",
@@ -155,6 +184,9 @@ describe("startRunner", () => {
       registry: { user: null, token: null },
       removeAfterMs: 604_800_000,
       healthFile: `${temp.dir}/health`,
+      environment: "vps",
+      workspacesDir: `${temp.dir}/workspaces`,
+      claudeBin: null,
       ...overrides,
     };
   }

@@ -4,11 +4,13 @@ import type {
   BoxStatus,
   EnvironmentCapacity,
   EnvironmentHello,
+  EnvironmentId,
   ExecHandle,
   NativeToolGate,
   NativeToolHooks,
   ProviderEvent,
   SandboxProvider,
+  SyncResult,
   TurnRequest,
 } from "@runelay-bots/protocol";
 import type { DockerApi } from "./docker-api";
@@ -203,4 +205,26 @@ export interface RunnerEnv {
   registry: RegistryCredentials;
   removeAfterMs: number;
   healthFile: string;
+  environment: EnvironmentId;
+  workspacesDir: string;
+  claudeBin: string | null;
 }
+
+export interface PathMap {
+  local: string;
+  remote: string;
+}
+
+export interface PreparedTurn {
+  request: TurnRequest;
+  paths: PathMap | null;
+  sync: (() => Promise<SyncResult>) | null;
+}
+
+export interface GitResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+}
+
+export type GitRun = (args: string[], cwd: string, env?: Record<string, string>) => Promise<GitResult>;

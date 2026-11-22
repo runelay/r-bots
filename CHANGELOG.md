@@ -8,7 +8,15 @@
 - Each turn runs in a `systemd-run --user` scope with the box memory and CPU limits, and in `bwrap` with the r/bots data, backups and config hidden from the model. Without systemd or `bwrap` the runner says so once at boot and runs without them.
 - The server is the environment: each server runs its turns directly on its own machine, and the server menu picks where bots run. If the server's host runner is not connected, the turn runs in the server container and the chat says so in one line.
 - Bash on the host never goes through `sudo runelaytool`; the test lock and heavy-command limits still apply.
+- With the host runner on, bots can read files anywhere outside the protected areas (r/bots data, `/proc`, `/sys`, `/dev`, account settings), not only inside the task worktree. Writes stay inside the worktree.
 - The system prompt tells the model to stop and say which tool failed and why, instead of trying another route.
+
+### This Mac
+
+- Pick "Este Mac" in the server menu to run bots on the Mac where the app is open (Xcode, simulator, iPhone), with "Rodar agentes neste Mac" on. Bots, conversations and memory stay on the server; the Mac only needs `claude` logged in. The choice is stored on the server (`environment` in `/preferences`) and `GET /environments` lists VPS and Este Mac with their state.
+- If the Mac is chosen and offline, the turn does not run and the chat says so; it never falls back to the VPS silently.
+- Code tasks move between the VPS and the Mac through a hidden GitHub ref (`refs/rbots/sync/<branch>`), with no commit on the branch; deliveries still run on the server and remove the ref after a push or PR. Repositories without a GitHub remote stay on the VPS.
+- If the Mac has no `claude` or it is logged out, the turn stops and tells the owner to run `claude` once in Terminal.
 
 ### Apps
 

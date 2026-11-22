@@ -13,6 +13,7 @@ import {
 import { probe, runTurn } from "@runelay-bots/providers";
 import { dataDir, env } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
+import { applyPendingSync } from "../../code/services/mac-sync.service";
 import {
   boxSpecFor,
   hostBoxSpec,
@@ -21,6 +22,7 @@ import {
   workDirOf,
 } from "../../environments/services/box-spec.service";
 import { onHost } from "../../environments/services/host-turns.service";
+import { runOnMac } from "../../environments/services/mac-turns.service";
 import { place } from "../../environments/services/scheduler.service";
 import {
   type AccountDir,
@@ -265,6 +267,13 @@ export async function runOnAccount(
   const botId = botIdOf(request);
   const codeCwd = request.code ? hostPathOf(request.code.cwd) : null;
   const placement = place({ botId, provider, codeCwd, memMb: env.BOX_MEM_MB });
+  if (placement.kind === "offline") return emit({ type: "done", ok: false, message: placement.message });
+  if (placement.kind === "remote" && placement.environment === "mac")
+    return runOnMac(placement.environmentId, botId, request, signal, emit, hooks);
+  if (request.code)
+    await applyPendingSync(request.code.cwd).catch((error) =>
+      console.warn(`${new Date().toISOString()} mac sync: ${error instanceof Error ? error.message : error}`),
+    );
   if (placement.kind === "remote") {
     const mounted = accountPath(id);
     const remoteTurn = { ...turn, configDir: turn.configDir ?? mounted };

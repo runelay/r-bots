@@ -998,7 +998,7 @@ export interface Checkpoint {
   at: string;
 }
 
-async function withIndex<T>(work: (env: Record<string, string>) => Promise<T>) {
+export async function withIndex<T>(work: (env: Record<string, string>) => Promise<T>) {
   const dir = join(codeDataDir, "tmp");
   await mkdir(dir, { recursive: true });
   const file = join(dir, `index-${randomBytes(6).toString("hex")}`);
@@ -1059,32 +1059,34 @@ export async function createCheckpoint(session: StoredSession, workspace: Worksp
   return checkpoint;
 }
 
-export async function restoreCheckpoint(workspace: WorkspaceState, checkpoint: Checkpoint) {
+export async function restoreTree(path: string, commit: string) {
   const now = await withIndex(async (env) => {
-    await git(workspace.path, ["read-tree", "HEAD"], 60_000, env);
-    await git(workspace.path, ["add", "-A", "--", "."], 120_000, env);
-    return (await git(workspace.path, ["ls-files", "-z"], 60_000, env)).stdout.split("\0").filter(Boolean);
+    await git(path, ["read-tree", "HEAD"], 60_000, env);
+    await git(path, ["add", "-A", "--", "."], 120_000, env);
+    return (await git(path, ["ls-files", "-z"], 60_000, env)).stdout.split("\0").filter(Boolean);
   });
   const then = new Set(
-    (await git(workspace.path, ["ls-tree", "-r", "-z", "--name-only", checkpoint.commit])).stdout
-      .split("\0")
-      .filter(Boolean),
+    (await git(path, ["ls-tree", "-r", "-z", "--name-only", commit])).stdout.split("\0").filter(Boolean),
   );
   const restored = await withIndex(async (env) => {
-    const read = await git(workspace.path, ["read-tree", checkpoint.commit], 60_000, env);
+    const read = await git(path, ["read-tree", commit], 60_000, env);
     if (read.code !== 0)
       throw new CodeError(`Esse ponto de volta não existe mais: ${read.stderr.trim().slice(0, 200)}`, 404);
-    const out = await git(workspace.path, ["checkout-index", "-a", "-f"], 120_000, env);
+    const out = await git(path, ["checkout-index", "-a", "-f"], 120_000, env);
     if (out.code !== 0) throw new CodeError(`Não consegui voltar os arquivos: ${out.stderr.trim().slice(0, 300)}`, 500);
     return then.size;
   });
   let removed = 0;
-  for (const path of now) {
-    if (then.has(path)) continue;
-    await rm(join(workspace.path, path), { force: true });
+  for (const file of now) {
+    if (then.has(file)) continue;
+    await rm(join(path, file), { force: true });
     removed++;
   }
-  await git(workspace.path, ["reset", "--quiet"]);
-  invalidateStatus(workspace);
+  await git(path, ["reset", "--quiet"]);
+  statusCache.delete(path);
   return { restored, removed };
+}
+
+export async function restoreCheckpoint(workspace: WorkspaceState, checkpoint: Checkpoint) {
+  return restoreTree(workspace.path, checkpoint.commit);
 }
