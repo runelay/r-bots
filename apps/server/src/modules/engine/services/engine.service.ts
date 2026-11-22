@@ -2055,29 +2055,33 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         account.provider === "claude" ? attachmentImages : [],
       );
     }
-    for (let switches = 0; switches < 2; switches++) {
-      if (turn.cancelled || failure || turn.guardStop || turn.abort.signal.aborted) break;
-      const next = activeWorkspace(session);
-      if (!next || next.id === codeWorkspace?.id || !codeModeSupported(account.provider, account.runner)) break;
-      flush("narration");
-      switching = false;
-      if (codeLive) await codeLive.scan(null, "sweep");
-      await trackWorkspace(next);
-      codeWorkspace = next;
-      sessionKey = keyFor(next);
-      providerSession = null;
-      needsRun = true;
-      const carry = await handoffBlock(session, {
-        key: sessionKey,
-        currentTurnId: turnId,
-        skills: skillNames,
-        full: true,
-      });
-      await runProvider(
-        `${withContext(contextFor(next), carry)}${carry ? "\n\n---\n\n" : ""}O repositório ${next.repoName} está aberto na worktree ${next.path} (branch ${next.branch}), que é o seu diretório de trabalho. Continue agora o pedido da pessoa com as ferramentas de código:\n${delivery.text}`,
-        null,
-      );
-    }
+    let switches = 0;
+    const followSwitches = async () => {
+      for (; switches < 2; switches++) {
+        if (turn.cancelled || failure || turn.guardStop || turn.abort.signal.aborted) return;
+        const next = activeWorkspace(session);
+        if (!next || next.id === codeWorkspace?.id || !codeModeSupported(account.provider, account.runner)) return;
+        flush("narration");
+        switching = false;
+        if (codeLive) await codeLive.scan(null, "sweep");
+        await trackWorkspace(next);
+        codeWorkspace = next;
+        sessionKey = keyFor(next);
+        providerSession = null;
+        needsRun = true;
+        const carry = await handoffBlock(session, {
+          key: sessionKey,
+          currentTurnId: turnId,
+          skills: skillNames,
+          full: true,
+        });
+        await runProvider(
+          `${withContext(contextFor(next), carry)}${carry ? "\n\n---\n\n" : ""}O repositório ${next.repoName} está aberto na worktree ${next.path} (branch ${next.branch}), que é o seu diretório de trabalho. Continue agora o pedido da pessoa com as ferramentas de código:\n${delivery.text}`,
+          null,
+        );
+      }
+    };
+    await followSwitches();
     for (let steers = 0; steers < 5 && turn.steer?.length; steers++) {
       if (turn.cancelled || failure || turn.guardStop || turn.abort.signal.aborted) break;
       const items = turn.steer.splice(0);
@@ -2105,6 +2109,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           account.provider === "claude" ? images : [],
         );
       }
+      await followSwitches();
     }
     turn.accepting = false;
     if (codeLive) await codeLive.scan(null, "sweep");

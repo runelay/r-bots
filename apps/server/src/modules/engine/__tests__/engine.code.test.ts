@@ -3,16 +3,18 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { NativeToolHooks } from "@runelay-bots/protocol";
-import { factsOfType, makeBot, newSession } from "../../../../test/engine-helpers";
+import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import {
   aborted,
   bodyOf,
   contextOf,
   lastRequest,
+  idle,
   quietEngine,
   repliesOf,
   restoreTracked,
   run,
+  send,
   sequence,
   settledOf,
   track,
@@ -332,6 +334,41 @@ describe("switching workspaces mid-turn", () => {
     fakeProviders.next(switcher);
     await run(session);
     expect(fakeProviders.turns).toHaveLength(3);
+  });
+
+  test("switches workspaces opened after a paused turn was steered", async () => {
+    const bot = await makeBot();
+    bot.capabilities = { ...bot.capabilities, browser: false };
+    const session = await newSession(bot.id);
+    const first = workspace();
+    const second = workspace();
+    session.meta.workspace = first;
+    track(spyOn(CodeLive.prototype, "scan").mockResolvedValue(undefined));
+    track(spyOn(handoff, "handoffBlock").mockResolvedValue(""));
+    fakeProviders.next(
+      sequence(
+        async (turn) => {
+          turn.emit({ type: "session", id: "prov-first" });
+          await contextOf(turn).requestApproval("Posso rodar?", "call_1", null);
+        },
+        async (turn) => {
+          turn.emit({ type: "text", part: "n", text: "Vou abrir a api." });
+          session.meta.workspace = second;
+          contextOf(turn).endRun?.();
+          await aborted(turn.signal);
+          turn.emit({ type: "done", ok: false, message: "aborted" });
+        },
+        replyWith("Feito na api."),
+      ),
+    );
+    send(session, { text: "monta a demo" });
+    await waitFor(async () => (await factsOfType(session, "interaction.opened"))[0]);
+    send(session, { deliveryId: "dlv_steer", text: "pode criar tudo" });
+    await idle(session);
+    expect(fakeProviders.turns).toHaveLength(3);
+    expect(fakeProviders.turns[2].request.code).toEqual({ cwd: second.path });
+    expect(await repliesOf(session, "narration")).toEqual(["Vou abrir a api."]);
+    expect(await repliesOf(session)).toEqual(["Feito na api."]);
   });
 
   test("does not switch when the turn failed", async () => {
