@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.18
+
 ### Install
 
 - The installer finds `apparmor_parser` in `/usr/sbin` and `/sbin` when they are not on the user's `PATH`, so the `rbots-bwrap` AppArmor profile is installed on Ubuntu 24.04 and `bwrap` can hide the r/bots data from the bots' commands.
