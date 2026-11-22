@@ -388,17 +388,17 @@ runner_bundle() {
 
 host_runner_ready() {
   if ! user_systemd; then
-    say "Runner da VPS: sem systemd de usuário aqui; os turnos seguem no container do servidor"
+    say "Runner de host: sem systemd de usuário aqui; os turnos seguem no container do servidor"
     return 1
   fi
   runner_bun="$(host_bun || true)"
   if [ -z "$runner_bun" ]; then
-    say "Runner da VPS: bun não encontrado no host; instale com curl -fsSL https://bun.sh/install | bash e rode de novo"
+    say "Runner de host: bun não encontrado no host; instale com curl -fsSL https://bun.sh/install | bash e rode de novo"
     return 1
   fi
   runner_main="$(runner_bundle || true)"
   if [ -z "$runner_main" ]; then
-    say "Runner da VPS: não deu para montar o runner em $repo_dir; os turnos seguem no container do servidor"
+    say "Runner de host: não deu para montar o runner em $repo_dir; os turnos seguem no container do servidor"
     return 1
   fi
 }
@@ -455,7 +455,6 @@ EnvironmentFile=-$runner_env_dir/runner.env
 Environment=RBOTS_PROVIDER=host
 Environment=RBOTS_URL=http://127.0.0.1:$port
 Environment=RBOTS_DEVICE_TOKEN_FILE=$data_dir/runner/box-runner.token
-Environment=RBOTS_RUNNER_NAME=vps
 Environment=BOTS_DATA_DIR=$data_dir
 Environment=RBOTS_HEALTH_FILE=%t/rbots-runner.health
 ExecStart=$runner_bun $runner_main
@@ -468,7 +467,7 @@ WantedBy=default.target
 UNIT
   if systemctl --user daemon-reload && systemctl --user enable rbots-runner.service >/dev/null 2>&1 \
     && systemctl --user restart rbots-runner.service; then
-    say "Runner da VPS: rbots-runner.service ligado (turnos direto na máquina, como $app_user)"
+    say "Runner de host: rbots-runner.service ligado (turnos direto na máquina, como $app_user)"
   else
     say "Aviso: não deu para ligar o rbots-runner.service; veja journalctl --user -u rbots-runner"
     return 1

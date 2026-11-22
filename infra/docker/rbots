@@ -167,7 +167,7 @@ profile_args() {
 all_profiles=(--profile sandbox --profile observability)
 
 host_runner_step() {
-  bash "$1/infra/docker/install.sh" --host-runner || say "Aviso: o runner da VPS não foi atualizado; veja journalctl --user -u rbots-runner"
+  bash "$1/infra/docker/install.sh" --host-runner || say "Aviso: o runner de host não foi atualizado; veja journalctl --user -u rbots-runner"
 }
 
 server_get() {
@@ -457,9 +457,9 @@ cmd_status() {
     say "Turnos rodando: não deu para ler o /status (token em $token_file)"
   fi
   if command -v systemctl >/dev/null && systemctl --user is-active --quiet rbots-runner 2>/dev/null; then
-    say "Runner da VPS: de pé (rbots-runner.service)"
+    say "Runner de host: de pé (rbots-runner.service)"
   elif command -v systemctl >/dev/null && systemctl --user cat rbots-runner >/dev/null 2>&1; then
-    say "Runner da VPS: parado; veja journalctl --user -u rbots-runner"
+    say "Runner de host: parado; veja journalctl --user -u rbots-runner"
   fi
   runtime="$(compose "${profiles[@]}" logs --no-log-prefix runner 2>/dev/null | grep -o 'caixas com o runtime .*' | tail -1 || true)"
   [ -n "$runtime" ] && say "Caixas: runtime ${runtime#caixas com o runtime }"
@@ -499,7 +499,7 @@ update_checkout() {
   say "Reconstruindo a imagem"
   step "Reconstruindo a imagem"
   compose "${profiles[@]}" build || fail "o build da imagem falhou"
-  step "Atualizando o runner da VPS"
+  step "Atualizando o runner de host"
   host_runner_step "$repo_dir"
   mapfile -t profiles < <(profile_args)
   say "Subindo ${profiles[*]:-sem perfis extras}"
@@ -577,7 +577,7 @@ update_release() {
   if [ -n "$channel_flag" ]; then
     set_env RBOTS_CHANNEL "$chan"
   fi
-  step "Atualizando o runner da VPS"
+  step "Atualizando o runner de host"
   host_runner_step "$app_dir/current"
   mapfile -t profiles < <(profile_args)
   say "Subindo a $target ${profiles[*]:-sem perfis extras}"
