@@ -103,7 +103,7 @@ describe("preferences", () => {
     expect(patched.body.language).toBe("en");
     expect(backgroundLanguage()).toBe("en");
     expect((await readPreferences()).language).toBe("en");
-    const english = await request<{ error: string; field: string }>("/preferences", {
+    const english = await request<{ ok: boolean; error: string; field: string }>("/preferences", {
       method: "PATCH",
       headers: { "accept-language": "en" },
       body: { language: "es" },

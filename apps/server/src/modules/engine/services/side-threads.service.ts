@@ -157,7 +157,11 @@ export async function createThread(
   checkSpawn(origin);
   const target = input.bot?.trim() ? resolveBotRef(input.bot) : originBot;
   if (!isActive(target))
-    throw new ConversationError(conversationsText("botUnavailableNamed", { bot: input.bot }), 400, "bot_unavailable");
+    throw new ConversationError(
+      conversationsText("botUnavailableNamed", { bot: input.bot || originBot.name }),
+      400,
+      "bot_unavailable",
+    );
   const other = target.id !== originBot.id;
   const text = other
     ? `${originBot.name} (${originBot.role || "bot do time"}), outro bot do time, abriu esta conversa com você:\n${input.message}`
