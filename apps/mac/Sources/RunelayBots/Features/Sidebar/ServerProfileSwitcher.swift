@@ -68,7 +68,7 @@ struct ServerProfileSwitcher: View {
 
     private var environmentItems: [GlassMenuItem] {
         guard let snapshot = environments.snapshot else { return [] }
-        return snapshot.environments.enumerated().map { index, environment in
+        return snapshot.environments.filter(\.isMac).enumerated().map { index, environment in
             let color = environment.online ? Theme.success : Theme.danger
             return GlassMenuItem(
                 environment.label,
@@ -115,7 +115,7 @@ struct ServerProfileSwitcher: View {
                 id: profile.id,
                 subtitle: "\(status.label) · \(profile.host)",
                 shortcut: index < 9 ? "⌃⌘\(index + 1)" : nil,
-                isOn: profiles.active.id == profile.id,
+                isOn: profiles.active.id == profile.id && environments.snapshot?.selected != "mac",
                 leading: AnyView(
                     SettingsTile(symbol: profile.symbol, color: Theme.accent(profile.color), size: 20)
                         .overlay(alignment: .bottomTrailing) {
@@ -127,6 +127,7 @@ struct ServerProfileSwitcher: View {
                 )
             ) {
                 profiles.activate(profile.id)
+                environments.select("vps")
             }
         }
         list.append(contentsOf: environmentItems)
