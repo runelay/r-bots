@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Tests
+
+- `test_playwright` and `test_maestro` find a spec given relative to the task's worktree. Before, a path like `.prints/home.spec.ts` resolved against the server's own folder and failed with "Esse caminho não está num repositório liberado".
+
 ## v0.1.15
 
 ### Boxes

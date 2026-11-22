@@ -1,8 +1,11 @@
+import { isAbsolute, join } from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { macDeviceCall } from "../../accounts/services/mac-runner.service";
 import { beginCall, endCall } from "../../code/services/hooks.service";
 import type { Gate } from "../../code/services/policy.service";
+import { activeWorkspace } from "../../code/services/workspace.service";
+import { getStoredSession } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import { installPlaywright, isLocalUrl, startRun, type TestInput, type TestRun } from "./test-runs.service";
 
@@ -70,6 +73,12 @@ const writesRealData = z
 
 export function registerTestTools(server: McpServer, context: ToolContext) {
   const owner = () => ({ botId: context.botId, sessionId: context.sessionId });
+  const pathOf = (args: Record<string, unknown>) => {
+    const path = String(args.path);
+    if (typeof args.project === "string" || isAbsolute(path)) return path;
+    const workspace = activeWorkspace(getStoredSession(context.sessionId));
+    return workspace ? join(workspace.path, path) : path;
+  };
   const run = async (name: string, label: string, args: Record<string, unknown>, gate: Gate, input: TestInput) => {
     const start = await beginCall(context, {
       name,
@@ -115,7 +124,7 @@ export function registerTestTools(server: McpServer, context: ToolContext) {
         realDataGate(args.writesRealData === true, "simulador"),
         {
           kind: "maestro",
-          path: String(args.path),
+          path: pathOf(args),
           ...(typeof args.project === "string" ? { project: args.project } : {}),
           ...(typeof args.branch === "string" ? { branch: args.branch } : {}),
           ...(typeof args.udid === "string" ? { udid: args.udid } : {}),
@@ -151,7 +160,7 @@ export function registerTestTools(server: McpServer, context: ToolContext) {
         : realDataGate(args.writesRealData === true, "prévia local");
       return run("test_playwright", `Testar ${String(args.path)} no navegador`, args, gate, {
         kind: "playwright",
-        path: String(args.path),
+        path: pathOf(args),
         ...(typeof args.project === "string" ? { project: args.project } : {}),
         ...(typeof args.branch === "string" ? { branch: args.branch } : {}),
         ...(typeof args.server === "string" ? { server: args.server } : {}),
