@@ -7,7 +7,7 @@ import { type ActionClass, applyCodePermission, permissionLabels } from "../../a
 import type { EventLog } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import { hostPathOf } from "../../environments/services/box-spec.service";
-import { runningOnHost } from "../../environments/services/host-turns.service";
+import { runningOnHost, runningOnMac } from "../../environments/services/host-turns.service";
 import { secretBashCommand } from "../../vault/services/vault-tools.service";
 import { addGrant, hasGrant } from "../repositories/code.repository";
 import { heavyLimits, heavyTimeoutSec, wrapHeavyCommand } from "./heavy-commands.service";
@@ -26,6 +26,9 @@ import {
 } from "./workspace.service";
 
 const editTools = new Set(["Edit", "MultiEdit", "Write", "NotebookEdit"]);
+
+export const macSecretsMessage =
+  "Segredos do cofre ainda não chegam a comandos que rodam no Mac. Troque para VPS para usar este segredo.";
 
 export const approvalTimeoutMs = Number(process.env.CODE_APPROVAL_TIMEOUT_SEC ?? 600) * 1000;
 
@@ -409,6 +412,7 @@ export async function sandboxedBash(
   } catch (error) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
+  if (runningOnMac()) return rewritten ? { error: macSecretsMessage } : { command: null };
   const host = runningOnHost();
   const lock = host ? hostPathOf(heavyLimits.lockFile) : heavyLimits.lockFile;
   if (rewritten) return { command: wrapHeavyCommand(command, rewritten, undefined, lock) ?? rewritten };

@@ -12,6 +12,7 @@ import * as actions from "../services/actions.service";
 import { codeModeSupported, pickWorkspace, registerCodeTools } from "../services/code-tools.service";
 import type { PublicDevServer } from "../services/dev-server.service";
 import * as devServers from "../services/dev-server.service";
+import * as macSync from "../services/mac-sync.service";
 import * as pullRequests from "../services/pull-request.service";
 import * as repos from "../services/repos.service";
 import { allowedRepoFor, seedAllowedRepos } from "../services/repos.service";
@@ -502,6 +503,19 @@ describe("with an open workspace", () => {
       expect(deliver).toHaveBeenCalledWith(current, { action: "commit", message: "fix: typo" });
       expect(owner.events[0]).toMatchObject({ type: "code.delivered", data: { workspaceId: current.id } });
       expect(kick).not.toHaveBeenCalled();
+    });
+
+    test("brings the Mac work first and never fails the delivery over the hidden ref", async () => {
+      const pull = stub(macSync, "syncBeforeDeliver").mockRejectedValueOnce(new Error("Mac fora"));
+      const clean = stub(macSync, "cleanSyncAfterDeliver").mockRejectedValue(new Error("sem rede"));
+      const { call, deliver, current } = setup(delivered({ action: "push", prUrl: "https://gh/pr/2" }));
+      const refused = await call("workspace_deliver", { action: "push" });
+      expect(refused.isError).toBe(true);
+      expect(textOf(refused)).toBe("Não consegui trazer o código do Mac: Mac fora");
+      expect(deliver).not.toHaveBeenCalled();
+      expect(textOf(await call("workspace_deliver", { action: "push" }))).toContain("push da branch feat/task feito");
+      expect(pull).toHaveBeenCalledWith(current.path);
+      expect(clean).toHaveBeenCalledWith(current.path);
     });
 
     test("commit with nothing pending", async () => {
