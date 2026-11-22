@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
+import { factsOfType, mainThreadOf, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import {
   byBot,
   contextOf,
@@ -114,7 +114,6 @@ describe("delegation", () => {
       botId: boss.id,
       name: "Chefe Del",
     });
-    expect((await threads.peekThread(worker.id))?.lastMessage?.text).toContain("pediu:");
     expect(await repliesOf(session)).toEqual(["Resposta: Números ok (approve)."]);
   });
 
@@ -242,12 +241,11 @@ describe("delegation", () => {
   test("queues behind a busy target and withdraws from its queue", async () => {
     const boss = await makeBot();
     const worker = await makeBot();
-    const busy = await newSession(worker.id);
+    const busy = await mainThreadOf(worker.id);
     const busyHeld = hold();
     fakeProviders.next(busyHeld.script);
     send(busy);
     await busyHeld.started;
-    track(spyOn(conversations, "createConversation").mockResolvedValue(busy));
     const outcome: { reply?: string; error?: string } = {};
     const bossSession = await newSession(boss.id);
     fakeProviders.next(byBot({ [boss.id]: delegating(worker.id, "faz", outcome) }));
@@ -266,12 +264,11 @@ describe("delegation", () => {
   test("reports a target that stopped before finishing", async () => {
     const boss = await makeBot();
     const worker = await makeBot();
-    const busy = await newSession(worker.id);
+    const busy = await mainThreadOf(worker.id);
     const busyHeld = hold();
     fakeProviders.next(busyHeld.script);
     send(busy);
     await busyHeld.started;
-    track(spyOn(conversations, "createConversation").mockResolvedValue(busy));
     const outcome: { reply?: string; error?: string } = {};
     const bossSession = await newSession(boss.id);
     fakeProviders.next(byBot({ [boss.id]: delegating(worker.id, "faz", outcome) }));

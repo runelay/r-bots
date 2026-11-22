@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setDefaultTimeout, spyOn, test } from "bun:test";
-import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
+import { factsOfType, mainThreadOf, makeBot, newSession, waitFor } from "../../../../test/engine-helpers";
 import {
   byBot,
   contextOf,
@@ -12,7 +12,6 @@ import {
 } from "../../../../test/engine-turn-helpers";
 import { fakeProviders } from "../../../../test/helpers";
 import { startTestJobs, type TestJobs } from "../../../../test/jobs-helpers";
-import * as conversations from "../../conversations/services/conversations.service";
 import * as jobsService from "../../jobs/services/jobs.service";
 import {
   cancelJob,
@@ -247,12 +246,11 @@ describe("turn queue", () => {
   test("withdraws a delegation queued behind a busy target when the caller cancels", async () => {
     const boss = await makeBot();
     const worker = await makeBot();
-    const busy = await newSession(worker.id);
+    const busy = await mainThreadOf(worker.id);
     const busyHeld = hold();
     fakeProviders.next(busyHeld.script);
     send(busy);
     await busyHeld.started;
-    track(spyOn(conversations, "createConversation").mockResolvedValue(busy));
     const bossSession = await newSession(boss.id);
     let failure = "";
     fakeProviders.next(

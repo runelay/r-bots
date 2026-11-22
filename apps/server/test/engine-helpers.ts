@@ -6,8 +6,10 @@ import { type BotDefinition, createBot, decisionsOf, getBot } from "../src/modul
 import {
   createStoredSession,
   type Fact,
+  getStoredSession,
   type StoredSession,
 } from "../src/modules/conversations/services/sessions.service";
+import { ensureThread } from "../src/modules/conversations/services/threads.service";
 import type { ApprovalDetails } from "../src/modules/engine/services/bot-tools.service";
 import {
   type ApprovalResult,
@@ -66,6 +68,10 @@ export async function makeBot(overrides: Record<string, unknown> = {}): Promise<
 
 export function newSession(botId: string, kind: "thread" | "session" | "group" | "conversation" = "conversation") {
   return createStoredSession({ botId, kind, source: "chat", title: "" });
+}
+
+export async function mainThreadOf(botId: string) {
+  return getStoredSession((await ensureThread(botId)).sessionId) as StoredSession;
 }
 
 type FactSource = StoredSession | { lines: string[] | (() => Promise<string[]>) };
