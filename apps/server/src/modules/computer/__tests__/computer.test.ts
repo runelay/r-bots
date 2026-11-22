@@ -220,7 +220,7 @@ describe("computerHumanReason", () => {
       ["security find-generic-password -s x", "security"],
       ["ssh host ls", "ssh"],
       ["cat 'a", "Não deu para ler"],
-      ["cat${IFS}file", "montado na hora"],
+      [`cat$\{IFS}file`, "montado na hora"],
     ])
       expect(computerHumanReason("shell_run", { cmd })).toContain(reason);
     expect(computerHumanReason("shell_run", {})).toContain("vazio");
