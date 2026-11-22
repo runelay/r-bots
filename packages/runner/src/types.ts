@@ -159,6 +159,7 @@ export interface BoxMount {
   host: string;
   box: string;
   readOnly: boolean;
+  optional?: boolean;
 }
 
 export interface RuntimeChoice {

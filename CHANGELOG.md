@@ -2,9 +2,20 @@
 
 ## Unreleased
 
+### Boxes
+
+- `git` works in the bot's terminal again. The box now mounts the main `.git` of the worktree, so `git status`, `git diff` and `git commit` stop failing with "not a git repository".
+- `gh`, `supabase` and `wrangler` are logged in inside the box, as they are on the server. The box mounts the host logins for the sandbox user, and `git` there pushes through `gh`. The runner skips these mounts when its roots do not allow them, instead of failing the turn.
+- Test suites run in the box. The test lock folder is mounted, so tests stop failing with `flock: cannot open lock file`.
+- Files the model writes and files its commands write in `/tmp` can be changed by both. `/tmp` in the box belongs to the shared group and the agent runs with `umask 002`.
+
 ### Tests
 
 - `test_playwright` and `test_maestro` find a spec given relative to the task's worktree. Before, a path like `.prints/home.spec.ts` resolved against the server's own folder and failed with "Esse caminho não está num repositório liberado".
+
+### Upgrading
+
+- Recreate the runner with the new `compose.yaml`: `RBOTS_WORKSPACE_ROOTS` now also lists the repos folder and the `gh`, `wrangler`, `supabase` and `git` logins.
 
 ## v0.1.15
 

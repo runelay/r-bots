@@ -2,4 +2,17 @@
 set -eu
 printf "%s\n" "${RBOX_SANDBOX_ROOTS:-}" | tr ":" "\n" | sed "/^$/d" > /etc/rb-sandbox/roots
 : > /etc/rb-sandbox/hide
+chgrp rbwork /tmp && chmod 3777 /tmp
+tool_home=/home/runelaytool
+for dir in "$tool_home/.config" "$tool_home/.supabase"; do
+  [ -d "$dir" ] && chown runelaytool:runelaytool "$dir"
+done
+tool_git=$tool_home/.gitconfig
+: > "$tool_git"
+[ -f "$tool_home/.gitconfig.host" ] && git config -f "$tool_git" include.path "$tool_home/.gitconfig.host"
+git config -f "$tool_git" --add safe.directory '*'
+git config -f "$tool_git" --add credential.helper ''
+git config -f "$tool_git" --add credential.https://github.com.helper '!gh auth git-credential'
+chown runelaytool:runelaytool "$tool_git"
+chmod 0644 "$tool_git"
 exec sleep infinity

@@ -3,6 +3,13 @@ export const localCapabilities = ["turns"];
 export const boxesCapability = "boxes";
 export const capacityRefusal = "box.capacity";
 export const boxHome = "/home/app";
+export const boxToolHome = "/home/runelaytool";
+export const boxToolCredentials = [
+  { path: ".config/gh", box: ".config/gh", readOnly: true },
+  { path: ".config/.wrangler", box: ".config/.wrangler", readOnly: false },
+  { path: ".supabase/access-token", box: ".supabase/access-token", readOnly: true },
+  { path: ".gitconfig", box: ".gitconfig.host", readOnly: true },
+];
 export const meminfoFile = "/proc/meminfo";
 export const bytesPerMb = 1024 * 1024;
 export const kbPerMb = 1024;

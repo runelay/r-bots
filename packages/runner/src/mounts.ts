@@ -11,6 +11,10 @@ export function insideRoot(path: string, roots: string[]) {
   });
 }
 
+export function usableMounts(mounts: BoxMount[], roots: string[], forbidden: string[]) {
+  return mounts.filter((mount) => !mount.optional || rejectedMount([mount], roots, forbidden) === null);
+}
+
 export function rejectedMount(mounts: BoxMount[], roots: string[], forbidden: string[]) {
   const blocked = forbidden.map((path) => resolve(path));
   const found = mounts.find(({ host }) => blocked.includes(resolve(host)) || !insideRoot(host, roots));

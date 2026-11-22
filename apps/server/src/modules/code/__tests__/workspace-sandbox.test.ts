@@ -57,6 +57,7 @@ describe("server git ignores repo-controlled config", () => {
     expect(pairs).toContainEqual(["core.hooksPath", "/dev/null"]);
     expect(pairs).toContainEqual(["core.fsmonitor", "false"]);
     expect(pairs).toContainEqual(["diff.external", ""]);
+    expect(pairs).toContainEqual(["credential.https://github.com.helper", "!gh auth git-credential"]);
     expect(env.GIT_DIR).toBeUndefined();
   });
 

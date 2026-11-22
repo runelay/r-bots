@@ -1,8 +1,8 @@
-import { type Dirent, existsSync, readdirSync, realpathSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { type Dirent, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { BoxSpec, TurnRequest } from "@runelay-bots/protocol";
 import { botDir, clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
-import { boxHome } from "../constants/environments.constants";
+import { boxHome, boxToolCredentials, boxToolHome } from "../constants/environments.constants";
 import { containsPath } from "./placement.service";
 
 type Mount = BoxSpec["mounts"][number];
@@ -31,6 +31,32 @@ function mountOf(path: string, readOnly: boolean): Mount {
   return { host: hostPathOf(path), box: path, readOnly };
 }
 
+function gitCommonDirOf(worktree: string) {
+  try {
+    const pointer = readFileSync(join(worktree, ".git"), "utf8")
+      .match(/^gitdir:\s*(.+)$/m)?.[1]
+      ?.trim();
+    if (!pointer) return null;
+    const gitDir = isAbsolute(pointer) ? pointer : resolve(worktree, pointer);
+    if (basename(dirname(gitDir)) !== "worktrees") return null;
+    const common = dirname(dirname(gitDir));
+    return statSync(common).isDirectory() ? common : null;
+  } catch {
+    return null;
+  }
+}
+
+export function toolCredentialMounts(home = boxHome): Mount[] {
+  return boxToolCredentials
+    .filter(({ path }) => existsSync(join(home, path)))
+    .map(({ path, box, readOnly }) => ({
+      host: hostPathOf(join(home, path)),
+      box: join(boxToolHome, box),
+      readOnly,
+      optional: true,
+    }));
+}
+
 function linkedDirsOf(accountPath: string): Mount[] {
   let entries: Dirent[];
   try {
@@ -54,13 +80,19 @@ function linkedDirsOf(accountPath: string): Mount[] {
 export function boxSpecFor({ request, accountPath }: { request: TurnRequest; accountPath: string | null }): BoxSpec {
   const { code } = request;
   const uploads = join(botDir(botIdOf(request)), "uploads");
-  const mounts = [
+  const locks = join(dataDir, "locks");
+  const gitCommon = code ? gitCommonDirOf(code.cwd) : null;
+  if (code) mkdirSync(locks, { recursive: true, mode: 0o700 });
+  const mounts: Mount[] = [
     mountOf(botWorkDirOf(request), false),
     ...(existsSync(uploads) ? [mountOf(uploads, true)] : []),
     ...(accountPath ? [mountOf(accountPath, false), ...linkedDirsOf(accountPath)] : []),
     ...(code ? [mountOf(code.cwd, code.readOnly === true)] : []),
+    ...(gitCommon ? [{ ...mountOf(gitCommon, code?.readOnly === true), optional: true }] : []),
+    ...(code ? [mountOf(locks, false)] : []),
     ...(existsSync(clisDir) ? [mountOf(clisDir, true)] : []),
     ...(existsSync(toolsDir) ? [mountOf(toolsDir, true)] : []),
+    ...toolCredentialMounts(),
   ];
   const unique = mounts.filter((mount, index) => mounts.findIndex(({ box }) => box === mount.box) === index);
   return { memMb: env.BOX_MEM_MB, cpus: env.BOX_CPUS, mounts: unique };

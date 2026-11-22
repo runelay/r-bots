@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { PlacementInput, TurnRequest } from "@runelay-bots/protocol";
 import { boxHello, capacity, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
 import { clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
-import { boxSpecFor, hostPathOf, workDirOf } from "../services/box-spec.service";
+import { boxSpecFor, hostPathOf, toolCredentialMounts, workDirOf } from "../services/box-spec.service";
 import { containsPath, decidePlacement } from "../services/placement.service";
 import { place } from "../services/scheduler.service";
 import type { RunnerEnvironment } from "../types/environments.types";
@@ -132,9 +132,50 @@ describe("box spec", () => {
       { host: join(hostDataDir, "work", "b1"), box: join(dataDir, "work", "b1"), readOnly: false },
       { host: `${hostHome}/.claude`, box: "/home/app/.claude", readOnly: false },
       { host: "/srv/repo", box: "/srv/repo", readOnly: true },
+      { host: join(hostDataDir, "locks"), box: join(dataDir, "locks"), readOnly: false },
     ]);
     const home = { ...request, code: { cwd: "/home/app/.claude" } };
-    expect(boxSpecFor({ request: home, accountPath: "/home/app/.claude" }).mounts).toHaveLength(2);
+    expect(boxSpecFor({ request: home, accountPath: "/home/app/.claude" }).mounts).toHaveLength(3);
+  });
+
+  test("mounts the main .git of a worktree, so git works inside the box", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "rb-git-")));
+    try {
+      const common = join(root, "repo", ".git");
+      const worktree = join(root, "wt");
+      const plain = join(root, "plain");
+      const loose = join(root, "loose");
+      mkdirSync(join(common, "worktrees", "wt"), { recursive: true });
+      mkdirSync(worktree);
+      mkdirSync(join(plain, ".git"), { recursive: true });
+      mkdirSync(loose);
+      writeFileSync(join(worktree, ".git"), "gitdir: ../repo/.git/worktrees/wt\n");
+      writeFileSync(join(loose, ".git"), "gitdir: /elsewhere/.git\n");
+      const mountsOf = (cwd: string) =>
+        boxSpecFor({ request: { ...request, code: { cwd } }, accountPath: null }).mounts.map(({ box }) => box);
+      const coding = boxSpecFor({ request: { ...request, code: { cwd: worktree } }, accountPath: null });
+      expect(coding.mounts).toContainEqual({ host: common, box: common, readOnly: false, optional: true });
+      expect(mountsOf(plain)).not.toContain(join(plain, ".git"));
+      expect(mountsOf(loose)).not.toContain("/elsewhere/.git");
+      expect(mountsOf(join(root, "missing"))).toHaveLength(3);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("mounts the CLI logins for the sandbox user only when they exist", () => {
+    const home = realpathSync(mkdtempSync(join(tmpdir(), "rb-home-")));
+    try {
+      expect(toolCredentialMounts(home)).toEqual([]);
+      mkdirSync(join(home, ".config", "gh"), { recursive: true });
+      writeFileSync(join(home, ".gitconfig"), "[user]\n");
+      expect(toolCredentialMounts(home)).toEqual([
+        { host: join(home, ".config", "gh"), box: "/home/runelaytool/.config/gh", readOnly: true, optional: true },
+        { host: join(home, ".gitconfig"), box: "/home/runelaytool/.gitconfig.host", readOnly: true, optional: true },
+      ]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test("gives every conversation of a bot the same mounts, so they share one box", () => {

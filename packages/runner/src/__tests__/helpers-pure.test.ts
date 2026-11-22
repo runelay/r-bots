@@ -5,7 +5,7 @@ import { DockerDemuxer, muxFrame } from "../demux";
 import { isBoxSpec, isProviderEvent, isToolGate, isTurnRequest } from "../guards";
 import { isRecord, line, parseRecord, readLines, stringMap, stringOf } from "../json";
 import { parseMeminfo, readMeminfo } from "../meminfo";
-import { bindsOf, insideRoot, rejectedMount, specKey } from "../mounts";
+import { bindsOf, insideRoot, rejectedMount, specKey, usableMounts } from "../mounts";
 import { boxSpec, tempDir, turnRequest } from "./helpers";
 
 function streamOf(parts: string[]) {
@@ -105,6 +105,15 @@ describe("mounts", () => {
     expect(bindsOf(mounts)).toEqual(["/srv/rb/a:/a:ro", "/srv/rb/b:/b"]);
   });
 
+  test("drops optional mounts outside the roots and keeps the required ones for the check", () => {
+    const roots = ["/srv/rb"];
+    const required = { host: "/etc", box: "/etc", readOnly: true };
+    const inside = { host: "/srv/rb/a", box: "/a", readOnly: true, optional: true };
+    const outside = { host: "/home/x/.config/gh", box: "/gh", readOnly: true, optional: true };
+    expect(usableMounts([required, inside, outside], roots, [])).toEqual([required, inside]);
+    expect(usableMounts([inside], roots, ["/srv/rb/a"])).toEqual([]);
+  });
+
   test("keys a spec independently of mount order", () => {
     const a = boxSpec({
       mounts: [
@@ -128,6 +137,9 @@ describe("guards", () => {
     expect(isBoxSpec({ ...boxSpec(), memMb: 0 })).toBe(false);
     expect(isBoxSpec({ ...boxSpec(), mounts: [{ host: "/a" }] })).toBe(false);
     expect(isBoxSpec({ ...boxSpec(), mounts: ["/a"] })).toBe(false);
+    const mount = { host: "/a", box: "/a", readOnly: true };
+    expect(isBoxSpec({ ...boxSpec(), mounts: [{ ...mount, optional: true }] })).toBe(true);
+    expect(isBoxSpec({ ...boxSpec(), mounts: [{ ...mount, optional: "yes" }] })).toBe(false);
     expect(isBoxSpec(null)).toBe(false);
     expect(isProviderEvent({ type: "done", ok: true })).toBe(true);
     expect(isProviderEvent({ type: "nope" })).toBe(false);
