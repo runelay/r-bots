@@ -66,7 +66,7 @@ export interface HookResponseFrame {
 export interface BoxSpec {
   memMb: number;
   cpus: number;
-  mounts: Array<{ host: string; box: string; readOnly: boolean }>;
+  mounts: Array<{ host: string; box: string; readOnly: boolean; optional?: boolean }>;
 }
 
 export interface RemoteTurnStart {

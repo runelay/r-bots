@@ -104,7 +104,7 @@ describe("DockerSandboxProvider", () => {
         NanoCpus: 1_500_000_000,
         PidsLimit: 1024,
         CapDrop: ["ALL"],
-        CapAdd: ["SETUID", "SETGID", "CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL"],
+        CapAdd: ["SETUID", "SETGID", "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL"],
         Binds: ["/srv/rb/.claude:/home/app/.claude:ro", "/srv/rb/work:/data/work/x", "rbbox-cache:/cache"],
         NetworkMode: "bridge",
         Init: true,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BoxSpec } from "@runelay-bots/protocol";
+import { boxAgentArgv } from "../constants";
 import { BoxError } from "../lifecycle";
 import { TurnManager } from "../turns";
 import type { ExecOptions, JsonRecord } from "../types";
@@ -53,7 +54,7 @@ describe("TurnManager", () => {
     expect(manager.handle(startFrame())).toBe(true);
     await until(() => execs.length === 1, "exec");
     const [exec] = execs;
-    expect(exec?.argv).toEqual(["bun", "/opt/rbots/box-agent.js"]);
+    expect(exec?.argv).toEqual(boxAgentArgv);
     expect(exec?.options.cwd).toBe("/data");
     expect(exec?.messages()[0]).toEqual({ type: "start", request: turnRequest(), hooks: true });
     expect(manager.active).toBe(1);

@@ -10,7 +10,7 @@ import {
 } from "./constants";
 import { isBoxSpec, isProviderEvent, isTurnRequest } from "./guards";
 import { isRecord, line, parseRecord, readLines, stringMap, stringOf } from "./json";
-import { rejectedMount } from "./mounts";
+import { rejectedMount, usableMounts } from "./mounts";
 import type { BoxExecHandle, BoxProvider, Clock, JsonRecord, Send, TimerHandle } from "./types";
 
 export interface TurnDeps {
@@ -94,14 +94,16 @@ export class TurnManager {
       this.fail(id, "turn.duplicate", "Esse turno já está rodando.");
       return;
     }
-    const rejected = rejectedMount(box.mounts, [...workspaceRoots, ...accountRoots], forbiddenMounts);
+    const roots = [...workspaceRoots, ...accountRoots];
+    const spec = { ...box, mounts: usableMounts(box.mounts, roots, forbiddenMounts) };
+    const rejected = rejectedMount(spec.mounts, roots, forbiddenMounts);
     if (rejected) {
       this.fail(id, mountErrorCode, `O caminho ${rejected} fica fora das pastas liberadas neste runner.`);
       return;
     }
     this.waiting.add(turnId);
     try {
-      await lifecycle.acquire(botId, box);
+      await lifecycle.acquire(botId, spec);
     } catch (error) {
       this.fail(id, codeOf(error), messageOf(error));
       return;

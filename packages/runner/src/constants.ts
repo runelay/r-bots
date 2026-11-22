@@ -18,7 +18,7 @@ export const boxSpecLabel = "rbots.spec";
 export const imageProvidersLabel = "rbots.providers";
 export const boxCacheVolume = "rbbox-cache:/cache";
 export const boxPidsLimit = 1024;
-export const boxCapAdd = ["SETUID", "SETGID", "CHOWN", "DAC_OVERRIDE", "FOWNER", "KILL"];
+export const boxCapAdd = ["SETUID", "SETGID", "CHOWN", "DAC_OVERRIDE", "FOWNER", "FSETID", "KILL"];
 export const boxExecUser = "app";
 export const boxKillUser = "root";
 export const boxPidDir = "/tmp";
@@ -36,7 +36,7 @@ export const boxStopAfterMs = 1_800_000;
 export const boxMemReserveMb = 1024;
 export const boxDefaultMemMb = 2048;
 
-export const boxAgentArgv = ["bun", "/opt/rbots/box-agent.js"];
+export const boxAgentArgv = ["sh", "-c", "umask 002 && exec bun /opt/rbots/box-agent.js"];
 export const boxAgentCwd = "/data";
 export const boxDataDir = "/data";
 export const cancelKillAfterMs = 5000;

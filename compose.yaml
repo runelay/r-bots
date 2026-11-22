@@ -290,7 +290,7 @@ services:
       RBOTS_URL: http://127.0.0.1:${GATEWAY_PORT:-2000}
       RBOTS_DEVICE_TOKEN_FILE: /run/rbots-runner/box-runner.token
       RBOTS_RUNNER_NAME: ${BOTS_RUNNER_NAME:-local-runner}
-      RBOTS_WORKSPACE_ROOTS: ${HOME}/.local/share/runelay-bots:${HOME}/.local/share/runelay-bots-worktrees:${HOME}/.local/share/runelay-bots-tools
+      RBOTS_WORKSPACE_ROOTS: ${HOME}/.local/share/runelay-bots:${HOME}/.local/share/runelay-bots-worktrees:${HOME}/.local/share/runelay-bots-tools:${BOTS_REPOS_DIR:-${HOME}/projects}:${HOME}/.config/gh:${HOME}/.config/.wrangler:${HOME}/.supabase/access-token:${HOME}/.gitconfig
       RBOTS_ACCOUNT_ROOTS: ${HOME}/.claude:${HOME}/.claude-2:${HOME}/.codex
       RBOTS_RUNTIME: ${RBOTS_RUNTIME:-}
       RBOX_IMAGE: ${RBOX_IMAGE:-${RBOTS_IMAGE:-${BOTS_IMAGE:-ghcr.io/runelay/r-bots:${RBOTS_VERSION:-dev}}}}

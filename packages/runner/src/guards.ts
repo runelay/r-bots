@@ -20,8 +20,13 @@ export function isTurnRequest(value: unknown): value is TurnRequest {
 
 function isMount(value: unknown): value is BoxMount {
   if (!isRecord(value)) return false;
-  const { host, box, readOnly } = value;
-  return typeof host === "string" && typeof box === "string" && typeof readOnly === "boolean";
+  const { host, box, readOnly, optional } = value;
+  return (
+    typeof host === "string" &&
+    typeof box === "string" &&
+    typeof readOnly === "boolean" &&
+    (optional === undefined || typeof optional === "boolean")
+  );
 }
 
 export function isBoxSpec(value: unknown): value is BoxSpec {
