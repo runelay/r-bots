@@ -8,6 +8,7 @@ import {
   publicThread,
 } from "../../conversations/services/threads.service";
 import { isRunning } from "../../engine/services/engine.service";
+import { groupsText } from "../constants/groups-messages.constants";
 import {
   createGroup,
   type Group,
@@ -43,24 +44,24 @@ export async function handleGroups(req: Req, res: Res, url: URL, method: string,
     if (parts.length === 1 && method === "POST")
       return sendJson(res, 201, await publicGroup(await createGroup(await readBody(req))));
     const group = getGroup(parts[1] ?? "");
-    if (!group) return sendJson(res, 404, { ok: false, error: "Grupo não encontrado." });
+    if (!group) return sendJson(res, 404, { ok: false, error: groupsText("notFound") });
     const tail = parts.slice(2).join("/");
     if (parts[2] === "eve") {
       if (parts[4] === "session" && !parts[5])
-        return sendJson(res, 405, { ok: false, error: "Grupos usam só a conversa do grupo (GET /groups/:id/thread)." });
+        return sendJson(res, 405, { ok: false, error: groupsText("threadOnly") });
       const owner = { id: group.id, archivedAt: group.archivedAt, deletedAt: null } as unknown as BotDefinition;
       return handleEve(req, res, url, owner, parts.slice(3));
     }
     if (tail === "" && method === "GET") return sendJson(res, 200, await publicGroup(group));
     if (tail === "" && method === "PATCH") {
       const updated = await updateGroup(group.id, await readBody(req));
-      if (!updated) return sendJson(res, 404, { ok: false, error: "Grupo não encontrado." });
+      if (!updated) return sendJson(res, 404, { ok: false, error: groupsText("notFound") });
       return sendJson(res, 200, await publicGroup(updated));
     }
     if ((tail === "archive" || tail === "unarchive") && method === "POST") {
       await readBody(req).catch(() => undefined);
       const updated = await setGroupArchived(group.id, tail === "archive");
-      if (!updated) return sendJson(res, 404, { ok: false, error: "Grupo não encontrado." });
+      if (!updated) return sendJson(res, 404, { ok: false, error: groupsText("notFound") });
       return sendJson(res, 200, await publicGroup(updated));
     }
     if (tail === "thread" && method === "GET") return sendJson(res, 200, (await publicGroup(group)).thread);

@@ -10,6 +10,7 @@ import {
   writeFixture,
 } from "../../../../test/usage-helpers";
 import * as settings from "../../../db/settings";
+import { withLanguage } from "../../../shared/i18n";
 import * as accounts from "../../accounts/services/accounts.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import * as botsService from "../../bots/services/bots.service";
@@ -175,6 +176,11 @@ describe("limit windows", () => {
       ),
     ).toEqual([["monthly", "Mensal", 43_200]]);
     expect(codexWindows({ planType: "go", primary: null })).toEqual([]);
+    expect(
+      withLanguage("en", () =>
+        codexWindows({ planType: "plus", primary: { usedPercent: 1, windowDurationMins: 300 } }),
+      )[0]?.label,
+    ).toBe("Session");
   });
 });
 

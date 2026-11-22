@@ -26,6 +26,7 @@ import { cutoutImage } from "../../images/services/cutout.service";
 import { integrationSecret } from "../../integrations/services/integration-store.service";
 import { defineJob, enqueue, jobsActive } from "../../jobs/services/jobs.service";
 import { blobKeys, blobToFile, putBlob } from "../../storage/services/storage.service";
+import { uploadsText } from "../constants/uploads-messages.constants";
 import {
   listUploadRows,
   readUploadRow,
@@ -223,8 +224,6 @@ export function uploadQuotaBytes() {
   return (Number.isFinite(megabytes) && megabytes > 0 ? megabytes : 5000) * 1024 * 1024;
 }
 
-const quotaMessage = "O espaço de anexos deste bot acabou. Apague anexos antigos ou peça para aumentar a cota.";
-
 async function quotaLeft(botId: string) {
   return uploadQuotaBytes() - (await uploadBytesOf(botId));
 }
@@ -410,7 +409,7 @@ async function register(botId: string, meta: UploadMeta) {
   } catch (error) {
     console.error("upload storage failed", error);
     await rm(uploadPath(botId, meta), { force: true });
-    throw new UploadError("Não consegui guardar o arquivo agora. Tente de novo.", 503);
+    throw new UploadError(uploadsText("storeFailed"), 503);
   }
   rememberLabel(meta);
   queuePrepare(botId, meta);
@@ -428,7 +427,7 @@ export async function receiveUpload(botId: string, req: Req) {
     name = safeName(rawName);
   }
   const left = await quotaLeft(botId);
-  if (left <= 0 || (Number.isFinite(declared) && declared > left)) throw new UploadError(quotaMessage, 413);
+  if (left <= 0 || (Number.isFinite(declared) && declared > left)) throw new UploadError(uploadsText("quota"), 413);
   const limit = Math.min(maxUploadBytes, left);
   const uploadId = ulid();
   const file = `${uploadId}-${name}`;
@@ -440,7 +439,7 @@ export async function receiveUpload(botId: string, req: Req) {
     transform(chunk: Buffer, _encoding, callback) {
       size += chunk.length;
       if (size > maxUploadBytes) callback(new UploadError("O arquivo passa de 100 MB.", 413));
-      else if (size > limit) callback(new UploadError(quotaMessage, 413));
+      else if (size > limit) callback(new UploadError(uploadsText("quota"), 413));
       else callback(null, chunk);
     },
   });
@@ -453,7 +452,7 @@ export async function receiveUpload(botId: string, req: Req) {
   }
   if (size === 0) {
     await rm(target, { force: true });
-    throw new UploadError("O arquivo está vazio.", 400);
+    throw new UploadError(uploadsText("empty"), 400);
   }
   const mime = await sniffFile(target, name);
   const meta: UploadMeta = {
@@ -475,7 +474,7 @@ async function importMacFile(botId: string, rawPath: string, name?: string) {
   if (!macPathAllowed(rawPath))
     throw new Error("No Mac só posso enviar arquivos de Downloads, Mesa, Documentos ou /tmp.");
   const fetched = await macReadFile(rawPath, maxMacFileBytes);
-  if (fetched.bytes.length > (await quotaLeft(botId))) throw new Error(quotaMessage);
+  if (fetched.bytes.length > (await quotaLeft(botId))) throw new Error(uploadsText("quota"));
   const finalName = safeName(name?.trim() || fetched.name || basename(fetched.path));
   const mime = sniffMime(fetched.bytes.subarray(0, sniffBytes), finalName, fetched.bytes.length <= sniffBytes);
   const uploadId = ulid();
@@ -512,7 +511,7 @@ export async function importBotFile(botId: string, rawPath: string, name?: strin
   try {
     if (size === 0) throw new Error("O arquivo está vazio.");
     if (size > maxUploadBytes) throw new Error("O arquivo passa de 100 MB.");
-    if (size > (await quotaLeft(botId))) throw new Error(quotaMessage);
+    if (size > (await quotaLeft(botId))) throw new Error(uploadsText("quota"));
     finalName = safeName(name?.trim() || basename(path));
     file = `${uploadId}-${finalName}`;
     await mkdir(uploadsDir(botId), { recursive: true });
@@ -665,8 +664,13 @@ async function transcribeUpload(botId: string, meta: UploadMeta) {
 }
 
 function rememberLabel(meta: UploadMeta) {
-  const word = meta.kind === "audio" ? "o áudio" : meta.kind === "video" ? "o vídeo" : null;
-  labels.set(meta.uploadId, word && meta.duration ? `Ler ${word} de ${clock(meta.duration)}` : `Ler ${meta.name}`);
+  const key = meta.kind === "audio" ? "readAudio" : meta.kind === "video" ? "readVideo" : null;
+  labels.set(
+    meta.uploadId,
+    key && meta.duration
+      ? uploadsText(key, { duration: clock(meta.duration) })
+      : uploadsText("read", { name: meta.name }),
+  );
 }
 
 async function extractAudio(botId: string, meta: UploadMeta) {
@@ -1062,7 +1066,7 @@ export async function prepareAttachments(botId: string, metas: UploadMeta[], vis
 export async function serveUpload(req: Req, res: Res, botId: string, uploadId: string, variant: string | undefined) {
   const meta = await readUpload(botId, uploadId);
   const notFound = () => {
-    const payload = JSON.stringify({ ok: false, error: "Anexo não encontrado." });
+    const payload = JSON.stringify({ ok: false, error: uploadsText("notFound") });
     res.writeHead(404, {
       "content-type": "application/json; charset=utf-8",
       "content-length": String(Buffer.byteLength(payload)),
@@ -1223,12 +1227,13 @@ export function uploadTools(botId: string): BotTool[] {
       approval: (input) =>
         lexicallyInOutbox(botId, String(input.path ?? ""))
           ? null
-          : `Posso enviar ${basename(String(input.path ?? "arquivo"))} (${String(input.path ?? "")}) na conversa?`,
-      humanReason: (input) =>
-        lexicallyInOutbox(botId, String(input.path ?? ""))
-          ? null
-          : "Enviar arquivo de fora da pasta de saída do bot sempre passa por uma pessoa, em qualquer modo.",
-      label: (input) => `Enviar ${basename(String(input.name ?? input.path ?? "arquivo"))}`,
+          : uploadsText("sendPrompt", {
+              name: basename(String(input.path ?? uploadsText("file"))),
+              path: String(input.path ?? ""),
+            }),
+      humanReason: (input) => (lexicallyInOutbox(botId, String(input.path ?? "")) ? null : uploadsText("sendReason")),
+      label: (input) =>
+        uploadsText("send", { name: basename(String(input.name ?? input.path ?? uploadsText("file"))) }),
       run: async (input) => {
         const meta = await importBotFile(
           botId,
@@ -1255,7 +1260,7 @@ export function uploadTools(botId: string): BotTool[] {
         limit: z.number().int().min(1000).max(200_000).optional(),
       },
       approval: null,
-      label: (input) => labels.get(String(input.uploadId)) ?? "Ler o anexo",
+      label: (input) => labels.get(String(input.uploadId)) ?? uploadsText("readAttachment"),
       run: async (input) => {
         const meta = await readUpload(botId, String(input.uploadId));
         if (!meta) throw new Error("Anexo não encontrado.");
@@ -1297,7 +1302,9 @@ export function uploadTools(botId: string): BotTool[] {
       },
       approval: null,
       label: (input) =>
-        `Recortar o fundo de ${basename(String(input.path ?? labels.get(String(input.uploadId)) ?? "imagem"))}`,
+        uploadsText("cutout", {
+          name: basename(String(input.path ?? labels.get(String(input.uploadId)) ?? uploadsText("image"))),
+        }),
       run: async (input, signal) => {
         const source = await cutoutSource(botId, input);
         await mkdir(source.dir, { recursive: true });

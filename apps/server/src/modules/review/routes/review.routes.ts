@@ -1,10 +1,12 @@
 import { ValidationError } from "../../../shared/errors";
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
+import { reviewText } from "../constants/review-messages.constants";
 import { defaultBot, readPresets, runPreset, savePresets } from "../services/review.service";
 
 function optional(value: unknown, field: string) {
   if (value === undefined || value === null || value === "") return null;
-  if (typeof value !== "string" || value.length > 120) throw new ValidationError("Valor inválido.", field);
+  if (typeof value !== "string" || value.length > 120) throw new ValidationError(reviewText("valueInvalid"), field);
   return value;
 }
 
@@ -21,9 +23,9 @@ export async function handleReview(req: Req, res: Res, method: string, parts: st
     if (first === "run" && parts.length === 2 && method === "POST") {
       const body = (await readBody(req)) as Record<string, unknown> | undefined;
       if (!body || typeof body !== "object" || Array.isArray(body))
-        throw new ValidationError("Corpo inválido.", "body");
+        throw new ValidationError(commonText("bodyInvalid"), "body");
       const presetId = optional(body.presetId, "presetId");
-      if (!presetId) throw new ValidationError("Escolha o preset.", "presetId");
+      if (!presetId) throw new ValidationError(reviewText("presetRequired"), "presetId");
       return sendJson(
         res,
         201,
@@ -40,7 +42,7 @@ export async function handleReview(req: Req, res: Res, method: string, parts: st
     if (error instanceof ValidationError || error instanceof SyntaxError) return validationResponse(res, error);
     return sendJson(res, 502, {
       ok: false,
-      error: (error instanceof Error ? error.message : "Erro interno.").slice(0, 300),
+      error: (error instanceof Error ? error.message : reviewText("internal")).slice(0, 300),
     });
   }
 }

@@ -1,3 +1,4 @@
+import { policyText } from "../constants/policy-messages.constants";
 import { parseShell, type Segment } from "./policy.service";
 
 export interface Critical {
@@ -28,9 +29,6 @@ const infraCommands = new Set([
 const remoteDatabases = new Set(["psql", "mysql", "mongosh", "mongo", "redis-cli", "pg_restore"]);
 const pipeReaders = new Set(["head", "tail", "jq", "wc", "sort", "uniq", "grep", "column", "cut", "cat"]);
 const writeMethods = /^(POST|PUT|PATCH|DELETE)$/i;
-const deployDeny = "Isso coloca algo no ar, então preciso do seu ok.";
-const prodDeny = "Isso mexe em produção, então preciso do seu ok.";
-const outboundDeny = "Isso fala com gente de fora ou mexe com dinheiro, então preciso do seu ok.";
 
 function short(text: string, max = 140) {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -80,7 +78,7 @@ function inspect(words: string[]): Critical | null {
   if (command === "supabase") {
     if (plain[0] === "db" && plain[1] === "query")
       return remoteFlag(args) && !args.includes("--read-only")
-        ? { prompt: `Rodar SQL no banco remoto sem --read-only: ${line}?`, reason: prodDeny }
+        ? { prompt: policyText("remoteSql", { line }), reason: policyText("prodDeny") }
         : null;
     if (
       (plain[0] === "db" && ["push", "reset"].includes(plain[1] ?? "")) ||
@@ -89,42 +87,42 @@ function inspect(words: string[]): Critical | null {
       (plain[0] === "secrets" && ["set", "unset"].includes(plain[1] ?? "")) ||
       (plain[0] === "storage" && ["rm", "cp", "mv"].includes(plain[1] ?? "") && remoteFlag(args))
     )
-      return { prompt: `Isso mexe no Supabase de produção: ${line}. Pode rodar?`, reason: prodDeny };
+      return { prompt: policyText("supabaseProd", { line }), reason: policyText("prodDeny") };
     return null;
   }
   if (command === "wrangler") {
     if (plain.some((arg) => ["deploy", "publish", "rollback"].includes(arg)) || plain[0] === "triggers")
-      return { prompt: `Deploy na Cloudflare: ${line}. Pode rodar?`, reason: deployDeny };
+      return { prompt: policyText("cloudflareDeploy", { line }), reason: policyText("deployDeny") };
     if (plain[0] === "secret" || plain.includes("delete") || plain.includes("put") || plain.includes("create"))
-      return { prompt: `Isso muda a Cloudflare de produção: ${line}. Pode rodar?`, reason: prodDeny };
+      return { prompt: policyText("cloudflareProd", { line }), reason: policyText("prodDeny") };
     if (plain[0] === "d1" && ["execute", "migrations"].includes(plain[1] ?? "") && args.includes("--remote"))
-      return { prompt: `Isso roda no D1 de produção: ${line}. Pode rodar?`, reason: prodDeny };
+      return { prompt: policyText("d1Prod", { line }), reason: policyText("prodDeny") };
     return null;
   }
   if (command === "gh") {
     if (plain[0] === "pr" && plain[1] === "merge")
-      return { prompt: `Fazer merge do PR (merge na main deploya): ${line}?`, reason: deployDeny };
+      return { prompt: policyText("prMergeDeploy", { line }), reason: policyText("deployDeny") };
     if (plain[0] === "workflow" && plain[1] === "run")
-      return { prompt: `Disparar workflow no GitHub: ${line}?`, reason: deployDeny };
+      return { prompt: policyText("workflow", { line }), reason: policyText("deployDeny") };
     if (plain[0] === "release" && ["create", "delete", "edit", "upload"].includes(plain[1] ?? ""))
-      return { prompt: `Publicar release: ${line}?`, reason: deployDeny };
+      return { prompt: policyText("release", { line }), reason: policyText("deployDeny") };
     if (plain[0] === "api" && /\/(merges?|deployments|dispatches)\b/.test(words.join(" ")))
       return args.some((arg, index) => /^(-X|--method)$/.test(args[index - 1] ?? "") && writeMethods.test(arg))
-        ? { prompt: `Merge ou deploy pela API do GitHub: ${line}?`, reason: deployDeny }
+        ? { prompt: policyText("githubApi", { line }), reason: policyText("deployDeny") }
         : null;
     return null;
   }
   if (infraCommands.has(command))
-    return { prompt: `Isso publica ou mexe em infraestrutura: ${line}?`, reason: deployDeny };
+    return { prompt: policyText("infraShort", { line }), reason: policyText("deployDeny") };
   if (["npm", "pnpm", "yarn", "bun"].includes(command)) {
     const sub = plain[0] ?? "";
     const script = sub === "run" || sub === "run-script" ? (plain[1] ?? "") : sub;
     if (sub === "publish" || /deploy|release|publish|prod/i.test(script))
-      return { prompt: `Rodar ${script || sub}? Parece publicar ou mexer em produção.`, reason: deployDeny };
+      return { prompt: policyText("script", { script: script || sub }), reason: policyText("deployDeny") };
     return null;
   }
   if (remoteDatabases.has(command) && !/(localhost|127\.0\.0\.1|::1)/.test(words.join(" ")))
-    return { prompt: `Conectar num banco fora da VPS: ${line}?`, reason: prodDeny };
+    return { prompt: policyText("remoteDb", { line }), reason: policyText("prodDeny") };
   if (["curl", "wget", "http", "https", "xh"].includes(command)) {
     const target = hostsOf(args).find((host) => paymentOrMessagingHosts.test(host));
     const writes = args.some(
@@ -136,11 +134,12 @@ function inspect(words: string[]): Critical | null {
         /^-X(POST|PUT|PATCH|DELETE)$/i.test(arg) ||
         writeMethods.test(arg),
     );
-    if (target && writes) return { prompt: `Mandar para ${target}: ${line}?`, reason: outboundDeny };
+    if (target && writes)
+      return { prompt: policyText("messaging", { target, line }), reason: policyText("outboundDeny") };
     return null;
   }
   if (words.some((word) => /^deploy(:|$)/i.test(word)))
-    return { prompt: `Isso parece um deploy: ${line}. Pode rodar?`, reason: deployDeny };
+    return { prompt: policyText("deployAsk", { line }), reason: policyText("deployDeny") };
   return null;
 }
 

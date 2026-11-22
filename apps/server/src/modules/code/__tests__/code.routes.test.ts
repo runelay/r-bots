@@ -322,6 +322,12 @@ describe("workspace lifecycle", () => {
     });
     expect(missingRepo.status).toBe(400);
     expect(missingRepo.body.error).toBe("Diga qual repositório.");
+    const english = await request<{ error: string }>(`/bots/${bot.id}/code/workspace`, {
+      method: "POST",
+      headers: { "accept-language": "en" },
+      body: { repo: " " },
+    });
+    expect(english.body.error).toBe("Say which repository.");
     const closed = await request<{ ok: boolean; path: string; branch: string }>(`/bots/${bot.id}/code/workspace`, {
       method: "DELETE",
     });

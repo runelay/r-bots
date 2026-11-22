@@ -10,6 +10,7 @@ import { macRunnerSupports } from "../../accounts/services/mac-runner.service";
 import { decideApproval } from "../../approvals/services/decisions.service";
 import { readBrowserState } from "../../browser/services/browser.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
+import { vaultText } from "../constants/vault-messages.constants";
 import { buildCommandSpec, parseSecretCommand, planSecretCommand } from "./secret-command.service";
 import {
   envNameOf,
@@ -135,10 +136,19 @@ export async function approveSecretHosts(
     );
   if (context.isSchedule) throw refuse("Ninguém está aqui para liberar agora.");
   const { choice } = await context.requestApproval(
-    `${context.bot.name} quer usar ${refs} em ${host} (${tool}). Liberar esse site para ${open.length > 1 ? "esses segredos" : "esse segredo"} daqui para frente?`,
+    vaultText("allowSitePrompt", {
+      bot: context.bot.name,
+      refs,
+      host,
+      tool,
+      which: vaultText(open.length > 1 ? "theseSecrets" : "thisSecret"),
+    }),
     callId,
     context.origin,
-    { target: { label: host, role: "page", url: `https://${host}` }, reason: `Liberar ${refs} em ${host}` },
+    {
+      target: { label: host, role: "page", url: `https://${host}` },
+      reason: vaultText("allowSiteReason", { refs, host }),
+    },
   );
   if (choice !== "approve") throw refuse("A pessoa não liberou o site agora.");
   for (const name of open) await saveSecretMeta(name, { domains: [host] });
@@ -227,7 +237,7 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
       const callId = newCallId();
       context.onCallStart();
       try {
-        requested(context, callId, "list_secrets", "Ver os segredos do cofre", {});
+        requested(context, callId, "list_secrets", vaultText("list"), {});
         context.log.emit({ type: "call.started", data: { callId }, scope: scopeOf(context) });
         const usable = usableBy(context.bot.id);
         const items = listSecretMeta().map((meta) => ({
@@ -291,7 +301,7 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
           ...(fields.length ? { fields: fields.map((field) => field.label) } : {}),
           ...(domains.length ? { domains } : {}),
         };
-        requested(context, callId, "request_secret", `Pedir “${name}” num formulário seguro`, input);
+        requested(context, callId, "request_secret", vaultText("request", { name }), input);
         if (context.isSchedule) {
           settledFail(context, callId, "Ninguém está aqui para preencher agora.", "TOOL_EXECUTION_DENIED", "rejected");
           return textResult(
@@ -307,7 +317,11 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
         }
         const before = new Map(names.map((item) => [item, getSecretMeta(item)?.updatedAt ?? null]));
         const { choice, interactionId } = await context.requestApproval(
-          `${context.bot.name} pediu ${fields.length > 1 ? "estes dados" : "um segredo"}: ${String(args.reason)}`,
+          vaultText("requestPrompt", {
+            bot: context.bot.name,
+            what: vaultText(fields.length > 1 ? "theseData" : "aSecret"),
+            reason: String(args.reason),
+          }),
           callId,
           context.origin,
           {
@@ -318,7 +332,7 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
               reason: String(args.reason),
               description: String(args.description ?? ""),
               kind: String(args.kind ?? "password"),
-              fields: fields.length ? fields : [{ id: "valor", label: "Valor", secure: true }],
+              fields: fields.length ? fields : [{ id: "valor", label: vaultText("value"), secure: true }],
               domains,
               botId: context.bot.id,
               botName: context.bot.name,
@@ -386,7 +400,7 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
         try {
           parsed = new URL(rawUrl);
         } catch {
-          requested(context, callId, "http_request", `${method} (URL inválida)`, { method, url: rawUrl });
+          requested(context, callId, "http_request", vaultText("invalidUrl", { method }), { method, url: rawUrl });
           settledFail(context, callId, "URL inválida.");
           return textResult("URL inválida. Use https://…", true);
         }
@@ -445,7 +459,7 @@ export function registerVaultTools(server: McpServer, context: ToolContext) {
               return textResult("Ninguém está aqui para aprovar essa chamada agora.", true);
             }
             const { choice, interactionId } = await context.requestApproval(
-              `Posso fazer ${method} em ${host}?`,
+              vaultText("httpPrompt", { method, host }),
               callId,
               context.origin,
               {

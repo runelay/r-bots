@@ -6,8 +6,8 @@ import {
   watchMacComputerEvents,
 } from "../../accounts/services/mac-runner.service";
 import { parseShell, type Segment } from "../../code/services/policy.service";
+import { computerText } from "../constants/computer-messages.constants";
 
-const macOffline = "Mac desconectado: abra o app r/bots nele.";
 export class ComputerError extends Error {
   constructor(
     readonly code: string,
@@ -27,14 +27,14 @@ export interface ComputerContext {
 }
 
 export async function computerHealth() {
-  if (!macRunnerConnected()) return { ok: false, code: "COMPUTER_UNAVAILABLE", error: macOffline };
+  if (!macRunnerConnected()) return { ok: false, code: "COMPUTER_UNAVAILABLE", error: computerText("macOffline") };
   try {
     return await macComputerHealth();
   } catch (error) {
     return {
       ok: false,
       code: "COMPUTER_UNAVAILABLE",
-      error: `O app r/bots não respondeu: ${error instanceof Error ? error.message : String(error)}`,
+      error: computerText("appNoAnswer", { reason: error instanceof Error ? error.message : String(error) }),
     };
   }
 }
@@ -45,7 +45,7 @@ export async function callComputer(
   context: ComputerContext,
   signal?: AbortSignal,
 ) {
-  if (!macRunnerConnected()) throw new ComputerError("COMPUTER_UNAVAILABLE", macOffline);
+  if (!macRunnerConnected()) throw new ComputerError("COMPUTER_UNAVAILABLE", computerText("macOffline"));
   let reply: Awaited<ReturnType<typeof macComputerCall>>;
   try {
     reply = await macComputerCall(tool, { args, context }, signal);
@@ -160,12 +160,11 @@ function programOf(words: string[]) {
 function shellSegmentReason({ words }: Segment, piped: boolean): string | null {
   const { program, args } = programOf(words);
   const name = program.split("/").pop() ?? program;
-  if (alwaysHumanPrograms.has(name)) return `${name} sempre passa por uma pessoa.`;
-  if (shellInterpreters.has(name) && (piped || args.includes("-c")))
-    return "Comando que roda outro shell por dentro sempre passa por uma pessoa.";
+  if (alwaysHumanPrograms.has(name)) return computerText("alwaysHuman", { name });
+  if (shellInterpreters.has(name) && (piped || args.includes("-c"))) return computerText("nestedShell");
   if (name === "rm" && args.some((arg) => /^-[a-zA-Z]*[rRf]/.test(arg) || arg === "--recursive" || arg === "--force"))
-    return "Apagar pasta ou forçar apagamento sempre passa por uma pessoa.";
-  if (name === "git" && args.includes("push")) return "git push sempre passa por uma pessoa.";
+    return computerText("forceDelete");
+  if (name === "git" && args.includes("push")) return computerText("gitPush");
   if (
     (name === "curl" || name === "wget") &&
     args.some(
@@ -173,10 +172,10 @@ function shellSegmentReason({ words }: Segment, piped: boolean): string | null {
         /^(-d|--data.*|-F|--form.*|-T|--upload-file|--post-data|--post-file|--method)/.test(arg) || /^-X/.test(arg),
     )
   )
-    return "Enviar dados para a internet sempre passa por uma pessoa.";
+    return computerText("upload");
   if (name === "osascript" && /\b(do\s+shell\s+script|send|deliver|delete|purchase|buy|pay)\b/i.test(args.join(" ")))
-    return "AppleScript que roda comando, envia, apaga ou compra sempre passa por uma pessoa.";
-  if (name === "defaults" && args[0] !== "read") return "Mudar preferência do macOS sempre passa por uma pessoa.";
+    return computerText("appleScript");
+  if (name === "defaults" && args[0] !== "read") return computerText("defaults");
   return null;
 }
 
@@ -185,7 +184,7 @@ function shellHumanReason(command: string): string | null {
   if (sensitiveShellPath.test(command))
     return "Comando que mexe em chave, senha ou credencial sempre passa por uma pessoa.";
   const segments = shellSegments(command);
-  if (!segments) return "Não deu para ler o comando: sempre passa por uma pessoa.";
+  if (!segments) return computerText("unparsed");
   if (/\$\(|`|[<>]\(/.test(command))
     return "Comando montado na hora ($(…), crase ou disfarce) sempre passa por uma pessoa.";
   for (const [index, segment] of segments.entries()) {
@@ -222,23 +221,21 @@ const doShellScript = /\bdo\s+shell\s+script\b/i;
 
 export function computerHumanReason(tool: string, args: Record<string, unknown>): string | null {
   const text = JSON.stringify(args);
-  if (tool === "computer_applescript" && doShellScript.test(String(args.script ?? "")))
-    return "AppleScript com do shell script roda comando no Mac: sempre passa por uma pessoa.";
+  if (tool === "computer_applescript" && doShellScript.test(String(args.script ?? ""))) return computerText("doShell");
   if (
     tool === "computer_applescript" &&
     /\b(send|deliver|delete|empty trash|purchase|buy|pay)\b|\bMail\b|\bMessages\b/i.test(String(args.script ?? ""))
   ) {
-    return "AppleScript que envia, apaga ou compra sempre passa por uma pessoa.";
+    return computerText("appleScriptSend");
   }
-  if (tool === "files_trash" && Array.isArray(args.paths) && args.paths.length > 10)
-    return "Mandar mais de 10 itens para a lixeira sempre passa por uma pessoa.";
+  if (tool === "files_trash" && Array.isArray(args.paths) && args.paths.length > 10) return computerText("bigTrash");
   if (tool === "shell_run") return shellHumanReason(String(args.cmd ?? ""));
   if (
     (tool === "computer_type" || tool === "computer_key") &&
     /(?:\d[ -]?){13,19}|\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/.test(text)
   )
-    return "Digitar cartão ou documento sempre passa por uma pessoa.";
+    return computerText("sensitiveTyping");
   if (tool === "computer_open" && /(checkout|pagamento|payment|pay\b|comprar|buy)/i.test(String(args.url ?? "")))
-    return "Página de pagamento sempre passa por uma pessoa.";
+    return computerText("payment");
   return null;
 }

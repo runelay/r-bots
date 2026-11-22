@@ -1,12 +1,15 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { httpText } from "../../../shared/http";
 import { setKnownConnectors } from "../../bots/services/bots.service";
+import { conversationsText } from "../../conversations/constants/conversations-messages.constants";
 import {
   integrationSecret,
   integrationSource,
   integrationUrl,
   onIntegrationChange,
 } from "../../integrations/services/integration-store.service";
+import { connectorsText } from "../constants/connectors-messages.constants";
 
 const url = () => integrationUrl("runelay") ?? "";
 const token = () => integrationSecret("runelay") ?? "";
@@ -272,7 +275,7 @@ export class RunelayApiError extends Error {
 }
 
 export async function runelayApi<T>(method: string, path: string, body?: unknown): Promise<T> {
-  if (!runelayEnabled()) throw new RunelayApiError(503, "runelay não está configurado no servidor.");
+  if (!runelayEnabled()) throw new RunelayApiError(503, conversationsText("runelayMissing"));
   let response: Response;
   try {
     response = await fetch(`${apiBase()}/v1${path}`, {
@@ -288,7 +291,7 @@ export async function runelayApi<T>(method: string, path: string, body?: unknown
   } catch (error) {
     throw new RunelayApiError(
       502,
-      `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+      httpText("runelayFailed", { reason: error instanceof Error ? error.message : String(error) }).slice(0, 300),
     );
   }
   const payload = (await response.json().catch(() => null)) as { data?: T; error?: { message?: string } | null } | null;
@@ -376,9 +379,9 @@ async function startLogin(sourceName: string) {
 export async function installCatalogItem(id: string, connectorToken?: string) {
   const catalog = await runelayApi<RawCatalog>("GET", "/catalog");
   const raw = catalog?.sections.flatMap((section) => section.items).find((item) => item.id === id);
-  if (!raw) throw new RunelayApiError(404, `Não existe conector "${id}" no catálogo.`);
+  if (!raw) throw new RunelayApiError(404, connectorsText("notInCatalog", { id }));
   const item = catalogItemOf(raw);
-  if (item.installed) throw new RunelayApiError(409, `${item.name} já está instalado.`);
+  if (item.installed) throw new RunelayApiError(409, connectorsText("installed", { name: item.name }));
   if (item.auth === "api_key" && !connectorToken) throw new RunelayApiError(400, `${item.name} pede um token.`);
   const source = await runelayApi<{ name: string; status: string; error: string | null }>("POST", "/catalog/install", {
     id,

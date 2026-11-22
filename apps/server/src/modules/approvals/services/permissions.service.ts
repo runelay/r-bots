@@ -1,14 +1,8 @@
+import { codeToolsText } from "../../code/constants/code-tools-messages.constants";
 import type { Gate } from "../../code/services/policy.service";
 
 export const permissionModes = ["readonly", "edit", "default", "full"] as const;
 export type PermissionMode = (typeof permissionModes)[number];
-
-export const permissionLabels: Record<PermissionMode, string> = {
-  readonly: "Somente leitura",
-  edit: "Editar",
-  default: "Padrão",
-  full: "Acesso total",
-};
 
 export function isPermissionMode(value: unknown): value is PermissionMode {
   return typeof value === "string" && (permissionModes as readonly string[]).includes(value);
@@ -42,11 +36,11 @@ export function applyCodePermission(
     return { kind: "deny", message: readonlyDeny };
   }
   if (action === "read" || action === "edit") return gate.kind === "jev" ? { kind: "allow" } : gate;
-  if (gate.kind === "human") return { ...gate, reason: gate.reason || "Modo Editar: comandos pedem sua confirmação." };
+  if (gate.kind === "human") return { ...gate, reason: gate.reason || codeToolsText("editModeCommands") };
   return {
     kind: "human",
     prompt: `${summary}?`,
-    reason: "Modo Editar: comandos e entregas pedem sua confirmação.",
+    reason: codeToolsText("editModeDeliveries"),
     hard: false,
   };
 }

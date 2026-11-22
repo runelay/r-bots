@@ -1,8 +1,9 @@
-import { notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
+import { httpText, notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { CanvasError, layoutPreview, readCanvasDoc, saveUserCanvas } from "../../canvas/services/canvas.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
+import { artifactsText } from "../constants/artifacts-messages.constants";
 import {
   artifactCsp,
   listArtifacts,
@@ -14,7 +15,7 @@ import {
 async function handleArtifacts(res: Res, bot: BotDefinition, path: string[]) {
   if (path.length === 0) return sendJson(res, 200, (await listArtifacts(bot.id)).map(publicArtifact));
   const meta = await readArtifact(bot.id, path[0]);
-  if (!meta) return sendJson(res, 404, { ok: false, error: "Artefato não encontrado." });
+  if (!meta) return sendJson(res, 404, { ok: false, error: artifactsText("notFound") });
   if (path.length === 1) return sendJson(res, 200, publicArtifact(meta));
   if (meta.kind === "canvas") {
     const latest = meta.versions[meta.versions.length - 1].n;
@@ -26,13 +27,13 @@ async function handleArtifacts(res: Res, bot: BotDefinition, path: string[]) {
           : null;
     if (!jsonMatch) return notFound(res);
     const doc = await readCanvasDoc(bot.id, meta.id, Number(jsonMatch[1]));
-    if (!doc) return sendJson(res, 404, { ok: false, error: "Versão não encontrada." });
+    if (!doc) return sendJson(res, 404, { ok: false, error: artifactsText("versionNotFound") });
     return sendJson(res, 200, { ...doc, version: Number(jsonMatch[1]) }, { "cache-control": "no-cache" });
   }
   const match = path.length === 3 && path[1] === "v" ? /^(\d{1,4})\.html$/.exec(path[2]) : null;
   if (!match) return notFound(res);
   const html = await readArtifactHtml(bot.id, meta.id, Number(match[1]));
-  if (html === null) return sendJson(res, 404, { ok: false, error: "Versão não encontrada." });
+  if (html === null) return sendJson(res, 404, { ok: false, error: artifactsText("versionNotFound") });
   res.writeHead(200, {
     "content-type": "text/html; charset=utf-8",
     "content-length": String(Buffer.byteLength(html)),
@@ -49,7 +50,7 @@ async function handleCanvasPut(req: Req, res: Res, bot: BotDefinition, artifactI
   try {
     body = await readBody(req);
   } catch {
-    return sendJson(res, 400, { ok: false, error: "JSON inválido.", field: "body" });
+    return sendJson(res, 400, { ok: false, error: httpText("invalidJson"), field: "body" });
   }
   try {
     const { meta, event } = await saveUserCanvas(bot.id, artifactId, body);

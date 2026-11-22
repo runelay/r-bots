@@ -12,6 +12,7 @@ import { connectFakeRunner, fastTimers, fixtureFile, mediaTools, pcmSamples } fr
 import { botsDir } from "../../../config/env";
 import { getDb, tables } from "../../../db";
 import { Req, Res } from "../../../shared/http";
+import { withLanguage } from "../../../shared/i18n";
 import * as jobsService from "../../jobs/services/jobs.service";
 import { getJobView } from "../../jobs/services/jobs.service";
 import { blobKeys, getBlobStore, putBlob } from "../../storage/services/storage.service";
@@ -272,6 +273,7 @@ describe("audio", () => {
     const tool = attachmentRead();
     expect(tool.label({ uploadId: meta.uploadId })).toBe("Ler o áudio de 1:05");
     expect(tool.label({ uploadId: "unknown" })).toBe("Ler o anexo");
+    expect(withLanguage("en", () => tool.label({ uploadId: "unknown" }))).toBe("Read the attachment");
     expect(await tool.run({ uploadId: meta.uploadId }, {} as never)).toEqual({
       name: "voice.m4a",
       kind: "audio",
@@ -686,6 +688,7 @@ describe("importBotFile", () => {
     expect(tool.label({ path })).toBe("Enviar result.csv");
     expect(tool.label({ path, name: "final.csv" })).toBe("Enviar final.csv");
     expect(tool.label({})).toBe("Enviar arquivo");
+    expect(withLanguage("en", () => tool.label({}))).toBe("Send file");
     expect(await tool.approval?.({ path })).toBeNull();
     const output = (await tool.run({ path, name: " Relatório: final?.csv " }, {} as never)) as Record<string, unknown>;
     expect(output).toMatchObject({ name: "Relatório- final-.csv", kind: "file", size: 3 });

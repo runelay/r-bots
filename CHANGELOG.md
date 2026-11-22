@@ -6,6 +6,11 @@
 
 - The server menu at the top of the sidebar (Mac) and of the bot list (iPhone) has a "Onde roda" section that lists where the active server can run bots, each with its status dot. Picking one switches it for every bot on that server, and the dot on the closed menu now shows whether that place is online. Servers that do not list environments keep the menu as before.
 
+### Server
+
+- The server speaks English too. Preferences have a `language` setting (`system`, `pt-BR` or `en`), and the server answers each request in the language of its `Accept-Language` header: common errors, sign-in errors and the `/device` sign-in page (which also takes `?lang=`). Approval card buttons follow the saved language, and bots reply in English or Portuguese when it is set.
+- Every error the apps show, tool call labels, approval prompts and reasons, settings change lines and turn failure messages now come in English too. The Mac and iPhone apps no longer read Portuguese words out of tool labels to spot delegations and plain shell commands.
+
 ## v0.1.16
 
 ### Boxes

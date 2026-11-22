@@ -32,6 +32,7 @@ import {
   runnerOf,
 } from "../../environments/services/runner-frames.service";
 import type { RunnerEnvironment, RunnerInfo } from "../../environments/types/environments.types";
+import { accountsText } from "../constants/accounts-messages.constants";
 
 export const runnerConnectPath = "/runner/connect";
 export const revokedCloseCode = 4001;
@@ -254,7 +255,7 @@ function notifyChange(connected: boolean, key: string) {
 
 function send(message: object, key?: string) {
   const connection = connectionFor(key);
-  if (!connection) throw new MacRunnerUnavailable("O app r/bots não está conectado.");
+  if (!connection) throw new MacRunnerUnavailable(accountsText("appDisconnected"));
   connection.socket.send(JSON.stringify(message));
   return connection.key;
 }
@@ -523,7 +524,7 @@ function request(op: string, payload: Record<string, unknown>, timeoutMs: number
     const id = randomUUID();
     const timer = setTimeout(() => {
       pending.delete(id);
-      reject(new MacRunnerUnavailable("O Mac não respondeu a tempo."));
+      reject(new MacRunnerUnavailable(accountsText("macTimeout")));
     }, timeoutMs);
     signal?.addEventListener(
       "abort",
@@ -538,7 +539,7 @@ function request(op: string, payload: Record<string, unknown>, timeoutMs: number
     );
     try {
       const target = connectionFor(key);
-      if (!target) throw new MacRunnerUnavailable("O app r/bots não está conectado.");
+      if (!target) throw new MacRunnerUnavailable(accountsText("appDisconnected"));
       pending.set(id, { key: target.key, resolve, reject, timer });
       send({ type: "request", id, op, ...payload }, target.key);
     } catch (error) {
@@ -555,7 +556,7 @@ export async function macDeviceCall(
   timeoutMs = 60_000,
   signal?: AbortSignal,
 ) {
-  if (!macRunnerSupports("simulators")) throw new MacRunnerUnavailable("O app do Mac ainda não controla simuladores.");
+  if (!macRunnerSupports("simulators")) throw new MacRunnerUnavailable(accountsText("noSimulators"));
   const response = await request(op, { body }, timeoutMs, signal);
   if (response.ok === false) throw new Error(String(response.error ?? "O Mac não conseguiu."));
   return (response.result ?? {}) as Record<string, unknown>;
@@ -706,7 +707,7 @@ export async function runMacTurn(
     turnId: turn.turnId,
     signal,
     emit,
-    missing: key ? "Mac desconectado." : "O app r/bots não está conectado.",
+    missing: key ? accountsText("macDisconnected") : accountsText("appDisconnected"),
     start: (target) => ({ type: "turn.start", id: turn.turnId, turn: throughProxy(turn, target.key) }),
   });
 }

@@ -1,3 +1,4 @@
+import { approvalsText } from "../constants/approvals-messages.constants";
 import { askJev, graded, jevEnabled, jevModel, noul } from "./jev.service";
 
 export interface DecisionSettings {
@@ -33,14 +34,12 @@ const cnpjLike = /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/;
 export function hardHumanReason(tool: string, input: Record<string, unknown>, element: string) {
   if (tool === "browser_fill") {
     const value = String(input.text ?? "");
-    if (sensitiveField.test(element)) return "Campo sensível (senha, cartão, documento ou token).";
-    if (cardLike.test(value) || cpfLike.test(value) || cnpjLike.test(value))
-      return "O valor parece cartão, CPF ou CNPJ.";
-    if (/\n|\r/.test(value)) return "O preenchimento envia o formulário.";
-    if (dangerousAction.test(element)) return "O campo dispara envio, pagamento ou exclusão.";
+    if (sensitiveField.test(element)) return approvalsText("sensitiveField");
+    if (cardLike.test(value) || cpfLike.test(value) || cnpjLike.test(value)) return approvalsText("sensitiveValue");
+    if (/\n|\r/.test(value)) return approvalsText("submits");
+    if (dangerousAction.test(element)) return approvalsText("dangerousField");
   }
-  if (tool === "browser_click" && dangerousAction.test(element))
-    return "O clique envia, paga, confirma ou exclui algo.";
+  if (tool === "browser_click" && dangerousAction.test(element)) return approvalsText("dangerousClick");
   return null;
 }
 

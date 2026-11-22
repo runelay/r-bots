@@ -19,7 +19,7 @@ export function handleHealth(res: Res) {
 export function handleMeta(res: Res) {
   return sendJson(res, 200, {
     accents,
-    capabilities: capabilityCatalog,
+    capabilities: capabilityCatalog(),
     engine: "multi-provider",
     model,
     efforts,

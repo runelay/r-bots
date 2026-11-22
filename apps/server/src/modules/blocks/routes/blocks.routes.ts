@@ -1,4 +1,5 @@
-import { notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
+import { httpText, notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
 import { createEvent, deleteEvent, listAccounts, listEvents, updateEvent } from "../../agenda/services/agenda.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { createExport, exportFile, readExport } from "../../exports/services/exports.service";
@@ -31,6 +32,7 @@ import {
   structure,
   writeCells,
 } from "../../sheets/services/sheets.service";
+import { blocksText } from "../constants/blocks-messages.constants";
 import { BlockError, type BlockEvent, emitUserBlockEvent } from "../services/blocks.shared";
 
 export const blockRoots = new Set(["notes", "sheets", "agenda", "exports"]);
@@ -42,7 +44,7 @@ function queryOf(url: URL) {
 async function bodyOf(req: Req) {
   const body = await readBody(req);
   if (body !== undefined && (typeof body !== "object" || body === null || Array.isArray(body)))
-    throw new BlockError("Corpo inválido.");
+    throw new BlockError(commonText("bodyInvalid"));
   return (body ?? {}) as Record<string, unknown>;
 }
 
@@ -206,11 +208,11 @@ export async function handleBotBlocks(
         ...(error.code ? { code: error.code } : {}),
         ...error.extra,
       });
-    if (error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: "JSON inválido." });
+    if (error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: httpText("invalidJson") });
     if (/runelay|call_tool|fetch failed|timed out/i.test((error as Error)?.message ?? ""))
       return sendJson(res, 502, {
         ok: false,
-        error: `A agenda não respondeu: ${(error as Error).message}`.slice(0, 300),
+        error: blocksText("agendaDown", { reason: (error as Error).message }).slice(0, 300),
       });
     throw error;
   }

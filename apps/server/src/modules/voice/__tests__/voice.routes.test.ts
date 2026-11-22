@@ -202,6 +202,9 @@ describe("/bots/:id/voice/session", () => {
       status: 400,
       body: { field: "rating" },
     });
+    expect(
+      await request(path, { method: "POST", headers: { "accept-language": "en" }, body: { rating: "meh" } }),
+    ).toMatchObject({ body: { error: "Use rating up, down or null." } });
     expect(await request(path, { method: "POST", body: { rating: null } })).toMatchObject({
       status: 200,
       body: { ok: true, callId, rating: null },

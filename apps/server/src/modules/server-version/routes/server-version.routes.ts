@@ -1,13 +1,9 @@
 import { ValidationError } from "../../../shared/errors";
 import { type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
+import { serverVersionText } from "../constants/server-version-messages.constants";
 import { requestServerUpdate } from "../services/server-update.service";
 import { serverVersion } from "../services/server-version.service";
-
-const refusals = {
-  agent_missing: "O vigia de atualização não está instalado neste servidor. Rode rbots update no servidor.",
-  update_in_progress: "Já tem uma atualização em andamento.",
-  turns_running: "Há turnos rodando agora.",
-} as const;
 
 export async function handleServerVersion(res: Res) {
   return sendJson(res, 200, await serverVersion(), { "cache-control": "no-store" });
@@ -15,10 +11,10 @@ export async function handleServerVersion(res: Res) {
 
 function forceOf(body: unknown) {
   if (body === undefined || body === null) return false;
-  if (typeof body !== "object" || Array.isArray(body)) throw new ValidationError("Corpo inválido.", "body");
+  if (typeof body !== "object" || Array.isArray(body)) throw new ValidationError(commonText("bodyInvalid"), "body");
   const force = (body as Record<string, unknown>).force;
   if (force === undefined) return false;
-  if (typeof force !== "boolean") throw new ValidationError("force precisa ser true ou false.", "force");
+  if (typeof force !== "boolean") throw new ValidationError(serverVersionText("forceInvalid"), "force");
   return force;
 }
 
@@ -34,7 +30,7 @@ export async function handleServerUpdate(req: Req, res: Res) {
   return sendJson(res, result.status, {
     ok: false,
     code: result.code,
-    error: refusals[result.code],
+    error: serverVersionText(result.code),
     ...(result.running === undefined ? {} : { running: result.running }),
   });
 }

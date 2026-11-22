@@ -245,6 +245,12 @@ describe("provider routes", () => {
     const busy = await update("claude", { version: "2.1.331" });
     expect(busy.status).toBe(409);
     expect(busy.body).toEqual({ ok: false, error: "Já tem uma atualização rodando para esse CLI." });
+    const busyEnglish = await request("/providers/claude/update", {
+      method: "POST",
+      headers: { "accept-language": "en" },
+      body: { version: "2.1.331" },
+    });
+    expect(busyEnglish.body).toEqual({ ok: false, error: "An update is already running for this CLI." });
     const rollbackBusy = await request("/providers/claude/rollback", { method: "POST" });
     expect(rollbackBusy.status).toBe(409);
     expect(byProvider(await versions(), "claude")).toMatchObject({ updating: true, source: "image" });

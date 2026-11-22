@@ -28,6 +28,7 @@ import {
   type TestServer,
 } from "../../../../test/helpers";
 import { ValidationError } from "../../../shared/errors";
+import { withLanguage } from "../../../shared/i18n";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import { answer, answerQuestion, conversationStatus } from "../../engine/services/engine.service";
@@ -159,6 +160,9 @@ describe("question request", () => {
     ).toBe(true);
     const other = resolveAnswers(built, { questions: [{ questionId: "q1", optionIds: ["other"], text: "o áudio" }] });
     expect(other[0]).toMatchObject({ optionIds: ["other"], labels: [], text: "o áudio" });
+    expect(() => withLanguage("en", () => resolveAnswers(built, { optionId: "approve" }))).toThrow(
+      "Send 'questions' or optionId 'skip'.",
+    );
     const bad: Array<[unknown, string]> = [
       [null, "Cada resposta precisa ser um objeto."],
       [{ optionId: "approve" }, "Mande 'questions' ou optionId 'skip'."],

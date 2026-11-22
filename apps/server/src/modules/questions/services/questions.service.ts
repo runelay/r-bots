@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ValidationError } from "../../../shared/errors";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
+import { questionsText } from "../constants/questions-messages.constants";
 
 export interface QuestionOption {
   id: string;
@@ -101,35 +102,33 @@ export function isQuestionAnswer(item: unknown) {
 
 export function resolveAnswers(request: QuestionRequest, raw: unknown): AnsweredQuestion[] {
   const body = record(raw);
-  if (!body) throw new ValidationError("Cada resposta precisa ser um objeto.", "answers");
+  if (!body) throw new ValidationError(questionsText("answerObject"), "answers");
   if (body.optionId === "skip") return request.questions.map(skippedAnswer);
-  if (!Array.isArray(body.questions)) throw new ValidationError("Mande 'questions' ou optionId 'skip'.", "answers");
+  if (!Array.isArray(body.questions)) throw new ValidationError(questionsText("questionsOrSkip"), "answers");
   const given = new Map<string, Record<string, unknown>>();
   for (const item of body.questions) {
     const entry = record(item);
     const questionId = typeof entry?.questionId === "string" ? entry.questionId : "";
     if (!entry || !request.questions.some((question) => question.id === questionId))
-      throw new ValidationError(`Pergunta desconhecida: '${questionId}'.`, "answers");
+      throw new ValidationError(questionsText("unknownQuestion", { id: questionId }), "answers");
     given.set(questionId, entry);
   }
   return request.questions.map((question) => {
     const entry = given.get(question.id);
     if (!entry || entry.skipped === true) return skippedAnswer(question);
     const ids = Array.isArray(entry.optionIds) ? entry.optionIds : [];
-    if (ids.some((id) => typeof id !== "string"))
-      throw new ValidationError("optionIds precisa ser uma lista de ids.", "answers");
+    if (ids.some((id) => typeof id !== "string")) throw new ValidationError(questionsText("optionIdsList"), "answers");
     const unique = [...new Set(ids as string[])];
     const text = typeof entry.text === "string" ? entry.text.trim().slice(0, 2000) : "";
     const known = unique.filter((id) => id !== otherOptionId);
     for (const id of known)
       if (!question.options.some((option) => option.id === id))
-        throw new ValidationError(`Opção desconhecida '${id}' na pergunta '${question.id}'.`, "answers");
-    if (unique.includes(otherOptionId) && !text)
-      throw new ValidationError("“Outra coisa” precisa de texto.", "answers");
+        throw new ValidationError(questionsText("unknownOption", { id, question: question.id }), "answers");
+    if (unique.includes(otherOptionId) && !text) throw new ValidationError(questionsText("otherNeedsText"), "answers");
     const chosen = text && !unique.includes(otherOptionId) ? [...unique, otherOptionId] : unique;
     if (chosen.length === 0) return skippedAnswer(question);
     if (!question.multiSelect && chosen.length > 1)
-      throw new ValidationError(`A pergunta '${question.id}' aceita uma opção só.`, "answers");
+      throw new ValidationError(questionsText("singleOption", { id: question.id }), "answers");
     return {
       questionId: question.id,
       title: question.title,

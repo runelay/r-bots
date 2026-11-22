@@ -3,11 +3,13 @@ import { defaultModels } from "@runelay-bots/providers";
 import { Cron } from "croner";
 import { model as defaultClaudeModel } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
+import { commonText } from "../../../shared/messages";
 import { isAccountId, preferredAccountId } from "../../accounts/services/accounts.service";
 import { type DecisionSettings, defaultDecisions } from "../../approvals/services/decisions.service";
 import { isPermissionMode, type PermissionMode } from "../../approvals/services/permissions.service";
 import { defaultMemory } from "../../memory/constants/memory.constants";
 import type { MemorySettings } from "../../memory/types/memory.types";
+import { type BotFieldLabel, botsText } from "../constants/bots-messages.constants";
 import { loadBotRows, saveBotRow } from "../repositories/bots.repository";
 
 export const accents = [
@@ -25,24 +27,14 @@ export const accents = [
 ] as const;
 export const legacyAccents = ["electric", "royal", "sky", "indigo"] as const;
 
-export const capabilityCatalog = [
-  {
-    id: "browser",
-    label: "Navegador",
-    description: "Abre páginas, lê, clica e preenche. Clique e preenchimento pedem aprovação.",
-  },
-  { id: "delegate", label: "Delegar", description: "Passa partes do trabalho para outros bots do time." },
-  {
-    id: "computer",
-    label: "Seu Mac",
-    description: "Usa o seu Mac de verdade pelo app: sites, apps, arquivos e gravação. Ações pedem aprovação.",
-  },
-  {
-    id: "desktop",
-    label: "Computador",
-    description: "Um computador virtual com navegador e terminal. Digitar e usar o terminal pedem aprovação.",
-  },
-];
+export function capabilityCatalog() {
+  return [
+    { id: "browser", label: botsText("capabilityBrowser"), description: botsText("capabilityBrowserInfo") },
+    { id: "delegate", label: botsText("capabilityDelegate"), description: botsText("capabilityDelegateInfo") },
+    { id: "computer", label: botsText("capabilityComputer"), description: botsText("capabilityComputerInfo") },
+    { id: "desktop", label: botsText("capabilityDesktop"), description: botsText("capabilityDesktopInfo") },
+  ];
+}
 
 export interface BotSchedule {
   name: string;
@@ -176,7 +168,7 @@ export function permissionOfBot(bot: BotDefinition): PermissionMode {
 }
 
 function validatePermission(value: unknown): PermissionMode {
-  if (!isPermissionMode(value)) throw new ValidationError("Use readonly, edit, default ou full.", "permission");
+  if (!isPermissionMode(value)) throw new ValidationError(botsText("permissionInvalid"), "permission");
   return value;
 }
 
@@ -237,68 +229,73 @@ function isTimezone(value: string) {
   }
 }
 
-function asString(value: unknown, field: string, min: number, max: number, label: string) {
-  if (typeof value !== "string") throw new ValidationError(`${label} precisa ser texto.`, field);
+function asString(value: unknown, field: string, min: number, max: number, labelKey: BotFieldLabel) {
+  const label = botsText(labelKey);
+  if (typeof value !== "string") throw new ValidationError(botsText("mustBeText", { label }), field);
   const trimmed = value.trim();
-  if (trimmed.length < min) throw new ValidationError(`${label} não pode ficar vazio.`, field);
-  if (trimmed.length > max) throw new ValidationError(`${label} pode ter no máximo ${max} caracteres.`, field);
+  if (trimmed.length < min) throw new ValidationError(botsText("mustNotBeEmpty", { label }), field);
+  if (trimmed.length > max) throw new ValidationError(botsText("tooLong", { label, max }), field);
   return trimmed;
 }
 
 function validateCapabilities(value: unknown, selfId: string | null): BotCapabilities {
   if (value === undefined || value === null) return { browser: false, delegate: [] };
   if (typeof value !== "object" || Array.isArray(value)) {
-    throw new ValidationError("Capacidades inválidas.", "capabilities");
+    throw new ValidationError(botsText("capabilitiesInvalid"), "capabilities");
   }
   const raw = value as Record<string, unknown>;
   for (const key of ["browser", "desktop", "computer"]) {
     if (raw[key] !== undefined && typeof raw[key] !== "boolean") {
-      throw new ValidationError(`capabilities.${key} precisa ser verdadeiro ou falso.`, `capabilities.${key}`);
+      throw new ValidationError(commonText("mustBeBoolean", { key: `capabilities.${key}` }), `capabilities.${key}`);
     }
   }
   const delegateRaw = raw.delegate ?? [];
   if (!Array.isArray(delegateRaw) || delegateRaw.some((item) => typeof item !== "string")) {
-    throw new ValidationError("capabilities.delegate precisa ser uma lista de ids.", "capabilities.delegate");
+    throw new ValidationError(botsText("delegateList"), "capabilities.delegate");
   }
   const delegate = [...new Set(delegateRaw as string[])];
   for (const id of delegate) {
-    if (id === selfId) throw new ValidationError("Um bot não pode delegar para ele mesmo.", "capabilities.delegate");
+    if (id === selfId) throw new ValidationError(botsText("delegateSelf"), "capabilities.delegate");
   }
   return { browser: true, desktop: raw.desktop === true, computer: true, delegate };
 }
 
 function validateSchedules(value: unknown): BotSchedule[] {
   if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new ValidationError("Rotinas precisam ser uma lista.", "schedules");
+  if (!Array.isArray(value)) throw new ValidationError(botsText("schedulesList"), "schedules");
   const names = new Set<string>();
   return value.map((item, index) => {
     const field = `schedules[${index}]`;
-    if (!item || typeof item !== "object") throw new ValidationError("Rotina inválida.", field);
+    if (!item || typeof item !== "object") throw new ValidationError(botsText("scheduleInvalid"), field);
     const raw = item as Record<string, unknown>;
-    const name = asString(raw.name ?? `rotina-${index + 1}`, `${field}.name`, 1, 40, "O nome da rotina");
-    if (names.has(name)) throw new ValidationError("Já existe uma rotina com esse nome.", `${field}.name`);
+    const name = asString(raw.name ?? `rotina-${index + 1}`, `${field}.name`, 1, 40, "labelScheduleName");
+    if (names.has(name)) throw new ValidationError(botsText("scheduleDuplicate"), `${field}.name`);
     names.add(name);
-    const cron = asString(raw.cron, `${field}.cron`, 1, 100, "O cron");
+    const cron = asString(raw.cron, `${field}.cron`, 1, 100, "labelCron");
     const timezone =
-      raw.timezone === undefined ? defaultTimezone : asString(raw.timezone, `${field}.timezone`, 1, 64, "O fuso");
-    if (!isTimezone(timezone)) throw new ValidationError("Fuso horário desconhecido.", `${field}.timezone`);
+      raw.timezone === undefined
+        ? defaultTimezone
+        : asString(raw.timezone, `${field}.timezone`, 1, 64, "labelTimezone");
+    if (!isTimezone(timezone)) throw new ValidationError(botsText("timezoneUnknown"), `${field}.timezone`);
     try {
       new Cron(cron, { timezone, paused: true }).stop();
     } catch {
-      throw new ValidationError("Cron inválido.", `${field}.cron`);
+      throw new ValidationError(botsText("cronInvalid"), `${field}.cron`);
     }
-    const prompt = asString(raw.prompt, `${field}.prompt`, 1, 20_000, "O pedido da rotina");
+    const prompt = asString(raw.prompt, `${field}.prompt`, 1, 20_000, "labelSchedulePrompt");
     const description =
-      raw.description === undefined ? "" : asString(raw.description, `${field}.description`, 0, 200, "A descrição");
+      raw.description === undefined
+        ? ""
+        : asString(raw.description, `${field}.description`, 0, 200, "labelDescription");
     if (raw.paused !== undefined && typeof raw.paused !== "boolean")
-      throw new ValidationError("paused precisa ser verdadeiro ou falso.", `${field}.paused`);
+      throw new ValidationError(commonText("mustBeBoolean", { key: "paused" }), `${field}.paused`);
     return { name, cron, timezone, prompt, description, ...(raw.paused === true ? { paused: true } : {}) };
   });
 }
 
 function validateAccent(value: unknown) {
   if (typeof value !== "string" || ![...accents, ...legacyAccents].includes(value as never)) {
-    throw new ValidationError(`Cor inválida. Use uma de: ${accents.join(", ")}.`, "accent");
+    throw new ValidationError(botsText("accentInvalid", { options: accents.join(", ") }), "accent");
   }
   return value;
 }
@@ -306,7 +303,7 @@ function validateAccent(value: unknown) {
 function validateGlyph(value: unknown) {
   if (value === undefined || value === null) return "auto";
   if (typeof value !== "string" || !/^[a-z0-9-]{1,40}$/.test(value)) {
-    throw new ValidationError("Ícone inválido: use até 40 caracteres de a-z, 0-9 e hífen.", "glyph");
+    throw new ValidationError(botsText("glyphInvalid"), "glyph");
   }
   return value;
 }
@@ -347,24 +344,25 @@ export function voiceOf(bot: BotDefinition): BotVoice {
 }
 
 function validateVoice(value: unknown, current: BotVoice): BotVoice {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("Voz inválida.", "voice");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new ValidationError(botsText("voiceInvalid"), "voice");
   const raw = value as Record<string, unknown>;
   const next = { ...current };
   for (const [key, item] of Object.entries(raw)) {
     if (key === "voiceId") {
       if (typeof item !== "string" || !/^[A-Za-z0-9]{8,64}$/.test(item))
-        throw new ValidationError("voice.voiceId inválido.", "voice.voiceId");
+        throw new ValidationError(botsText("voiceIdInvalid"), "voice.voiceId");
       next.voiceId = item;
     } else if (key === "speed") {
       if (typeof item !== "number" || !Number.isFinite(item) || item < 0.7 || item > 1.2)
-        throw new ValidationError("voice.speed vai de 0.7 a 1.2.", "voice.speed");
+        throw new ValidationError(botsText("voiceSpeed"), "voice.speed");
       next.speed = Math.round(item * 100) / 100;
     } else if (key === "language") {
       if (typeof item !== "string" || !(voiceLanguages as readonly string[]).includes(item))
-        throw new ValidationError("voice.language precisa ser pt, en ou es.", "voice.language");
+        throw new ValidationError(botsText("voiceLanguage"), "voice.language");
       next.language = item as BotVoice["language"];
     } else {
-      throw new ValidationError(`Campo desconhecido: voice.${key}.`, `voice.${key}`);
+      throw new ValidationError(commonText("unknownField", { key: `voice.${key}` }), `voice.${key}`);
     }
   }
   return next;
@@ -372,7 +370,7 @@ function validateVoice(value: unknown, current: BotVoice): BotVoice {
 
 function validateComputer(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new ValidationError("computer inválido.", "computer");
+    throw new ValidationError(botsText("computerInvalid"), "computer");
   const roots = (value as { allowedRoots?: unknown }).allowedRoots;
   if (
     !Array.isArray(roots) ||
@@ -380,24 +378,21 @@ function validateComputer(value: unknown) {
     roots.length > 10 ||
     roots.some((item) => typeof item !== "string" || !/^~?\/[^\0]{0,200}$/.test(item) || item.includes(".."))
   ) {
-    throw new ValidationError(
-      'computer.allowedRoots precisa ser uma lista de pastas (até 10, sem "..").',
-      "computer.allowedRoots",
-    );
+    throw new ValidationError(botsText("computerRoots"), "computer.allowedRoots");
   }
   return { allowedRoots: roots as string[] };
 }
 
 function validateMemory(value: unknown, current: MemorySettings): MemorySettings {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new ValidationError("Memória inválida.", "memory");
+    throw new ValidationError(botsText("memoryInvalid"), "memory");
   const raw = value as Record<string, unknown>;
   const next = { ...current };
   for (const [key, item] of Object.entries(raw)) {
     if (key !== "recall" && key !== "capture")
-      throw new ValidationError(`Campo desconhecido: memory.${key}.`, `memory.${key}`);
+      throw new ValidationError(commonText("unknownField", { key: `memory.${key}` }), `memory.${key}`);
     if (typeof item !== "boolean")
-      throw new ValidationError(`memory.${key} precisa ser verdadeiro ou falso.`, `memory.${key}`);
+      throw new ValidationError(commonText("mustBeBoolean", { key: `memory.${key}` }), `memory.${key}`);
     next[key] = item;
   }
   return next;
@@ -405,65 +400,62 @@ function validateMemory(value: unknown, current: MemorySettings): MemorySettings
 
 function validateConnectors(value: unknown, current: BotConnectors): BotConnectors {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new ValidationError("Conectores inválidos.", "connectors");
+    throw new ValidationError(botsText("connectorsInvalid"), "connectors");
   const raw = value as Record<string, unknown>;
   for (const key of Object.keys(raw)) {
     if (!["allowed", "memory"].includes(key))
-      throw new ValidationError(`Campo desconhecido: connectors.${key}.`, `connectors.${key}`);
+      throw new ValidationError(commonText("unknownField", { key: `connectors.${key}` }), `connectors.${key}`);
   }
   const allowed = raw.allowed === undefined ? current.allowed : raw.allowed;
   if (!Array.isArray(allowed) || allowed.some((item) => typeof item !== "string" || !/^[a-z0-9_-]{1,60}$/.test(item))) {
-    throw new ValidationError(
-      "connectors.allowed precisa ser uma lista de nomes de conexão do runelay.",
-      "connectors.allowed",
-    );
+    throw new ValidationError(botsText("connectorsAllowed"), "connectors.allowed");
   }
   const memory = raw.memory === undefined ? current.memory : raw.memory;
   if (typeof memory !== "boolean")
-    throw new ValidationError("connectors.memory precisa ser verdadeiro ou falso.", "connectors.memory");
+    throw new ValidationError(commonText("mustBeBoolean", { key: "connectors.memory" }), "connectors.memory");
   return { allowed: [...new Set(allowed as string[])], memory };
 }
 
 function validateDecisions(value: unknown, current: DecisionSettings): DecisionSettings {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new ValidationError("Decisões inválidas.", "decisions");
+    throw new ValidationError(botsText("decisionsInvalid"), "decisions");
   const raw = value as Record<string, unknown>;
   for (const key of Object.keys(raw)) {
     if (!["autoApprove", "threshold"].includes(key))
-      throw new ValidationError(`Campo desconhecido: decisions.${key}.`, `decisions.${key}`);
+      throw new ValidationError(commonText("unknownField", { key: `decisions.${key}` }), `decisions.${key}`);
   }
   const autoApprove = raw.autoApprove === undefined ? current.autoApprove : raw.autoApprove;
   if (typeof autoApprove !== "boolean")
-    throw new ValidationError("decisions.autoApprove precisa ser verdadeiro ou falso.", "decisions.autoApprove");
+    throw new ValidationError(commonText("mustBeBoolean", { key: "decisions.autoApprove" }), "decisions.autoApprove");
   const threshold = raw.threshold === undefined ? current.threshold : raw.threshold;
   if (typeof threshold !== "number" || !Number.isFinite(threshold) || threshold < 0.5 || threshold > 1) {
-    throw new ValidationError("decisions.threshold precisa ficar entre 0.5 e 1.", "decisions.threshold");
+    throw new ValidationError(botsText("thresholdRange"), "decisions.threshold");
   }
   return { autoApprove, threshold };
 }
 
 function validateEngine(value: unknown, current: BotEngine): BotEngine {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new ValidationError("Motor inválido.", "engine");
+    throw new ValidationError(botsText("engineInvalid"), "engine");
   const raw = value as Record<string, unknown>;
   for (const key of Object.keys(raw)) {
     if (!["account", "model", "effort", "fallback", "autoSwitch"].includes(key))
-      throw new ValidationError(`Campo desconhecido: engine.${key}.`, `engine.${key}`);
+      throw new ValidationError(commonText("unknownField", { key: `engine.${key}` }), `engine.${key}`);
   }
   const account = raw.account === undefined ? current.account : raw.account;
   if (typeof account !== "string" || !isAccountId(account))
-    throw new ValidationError("Conta inválida. Escolha uma das contas em Ajustes › Contas de IA.", "engine.account");
+    throw new ValidationError(botsText("accountInvalid"), "engine.account");
   const provider = account.split(":")[1] as Provider;
   const accountChanged = account !== current.account;
   const modelRaw = raw.model ?? (accountChanged ? defaultModels[provider] : current.model);
-  const model = asString(modelRaw, "engine.model", 1, 100, "O modelo");
+  const model = asString(modelRaw, "engine.model", 1, 100, "labelModel");
   const effortRaw = raw.effort === undefined ? current.effort : raw.effort;
   if (effortRaw !== null && !(efforts as readonly unknown[]).includes(effortRaw)) {
-    throw new ValidationError("Esforço inválido. Use low, medium ou high.", "engine.effort");
+    throw new ValidationError(botsText("effortInvalid"), "engine.effort");
   }
   const autoSwitch = raw.autoSwitch === undefined ? current.autoSwitch : raw.autoSwitch;
   if (autoSwitch !== undefined && typeof autoSwitch !== "boolean")
-    throw new ValidationError("engine.autoSwitch precisa ser verdadeiro ou falso.", "engine.autoSwitch");
+    throw new ValidationError(commonText("mustBeBoolean", { key: "engine.autoSwitch" }), "engine.autoSwitch");
   return {
     account: account as string,
     model,
@@ -480,27 +472,24 @@ function validateFallback(
   if (value === undefined) return current;
   if (value === null) return null;
   if (typeof value !== "object" || Array.isArray(value))
-    throw new ValidationError("Conta reserva inválida.", "engine.fallback");
+    throw new ValidationError(botsText("fallbackInvalid"), "engine.fallback");
   const raw = value as Record<string, unknown>;
   const account = raw.account;
   if (typeof account !== "string" || !isAccountId(account))
-    throw new ValidationError(
-      "Conta reserva inválida. Escolha uma das contas em Ajustes › Contas de IA.",
-      "engine.fallback.account",
-    );
+    throw new ValidationError(botsText("fallbackAccountInvalid"), "engine.fallback.account");
   const model = asString(
     raw.model ?? defaultModels[account.split(":")[1] as Provider],
     "engine.fallback.model",
     1,
     100,
-    "O modelo da reserva",
+    "labelFallbackModel",
   );
   return { account: account as string, model };
 }
 
 function rejectUnknown(body: Record<string, unknown>) {
   for (const key of Object.keys(body)) {
-    if (!knownFields.has(key)) throw new ValidationError(`Campo desconhecido: ${key}.`, key);
+    if (!knownFields.has(key)) throw new ValidationError(commonText("unknownField", { key }), key);
   }
 }
 
@@ -516,10 +505,11 @@ export function deriveRole(instructions: string) {
 }
 
 export async function createBot(body: unknown) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new ValidationError("Corpo inválido.", "body");
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   const raw = body as Record<string, unknown>;
   rejectUnknown(raw);
-  const name = asString(raw.name, "name", 1, 40, "O nome");
+  const name = asString(raw.name, "name", 1, 40, "labelName");
   const id = uniqueId(name);
   const now = new Date().toISOString();
   const bot: BotDefinition = {
@@ -528,11 +518,11 @@ export async function createBot(body: unknown) {
     role:
       raw.role === undefined || raw.role === null || (typeof raw.role === "string" && !raw.role.trim())
         ? ""
-        : asString(raw.role, "role", 0, 60, "O papel"),
+        : asString(raw.role, "role", 0, 60, "labelRole"),
     accent: raw.accent === undefined ? "blue" : validateAccent(raw.accent),
     glyph: validateGlyph(raw.glyph),
     instructions:
-      raw.instructions === undefined ? "" : asString(raw.instructions, "instructions", 0, 20_000, "As instruções"),
+      raw.instructions === undefined ? "" : asString(raw.instructions, "instructions", 0, 20_000, "labelInstructions"),
     capabilities:
       raw.capabilities === undefined || raw.capabilities === null
         ? {
@@ -567,19 +557,20 @@ export async function createBot(body: unknown) {
 export async function updateBot(id: string, body: unknown) {
   const bot = bots.get(id);
   if (!bot) return null;
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new ValidationError("Corpo inválido.", "body");
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   const raw = body as Record<string, unknown>;
   rejectUnknown(raw);
   const next: BotDefinition = { ...bot };
-  if (raw.name !== undefined) next.name = asString(raw.name, "name", 1, 40, "O nome");
-  if (raw.role !== undefined) next.role = asString(raw.role, "role", 0, 60, "O papel");
+  if (raw.name !== undefined) next.name = asString(raw.name, "name", 1, 40, "labelName");
+  if (raw.role !== undefined) next.role = asString(raw.role, "role", 0, 60, "labelRole");
   if (raw.accent !== undefined) next.accent = validateAccent(raw.accent);
   if (raw.glyph !== undefined) next.glyph = validateGlyph(raw.glyph);
   if (raw.instructions !== undefined)
-    next.instructions = asString(raw.instructions, "instructions", 0, 20_000, "As instruções");
+    next.instructions = asString(raw.instructions, "instructions", 0, 20_000, "labelInstructions");
   if (raw.capabilities !== undefined) {
     if (!raw.capabilities || typeof raw.capabilities !== "object" || Array.isArray(raw.capabilities)) {
-      throw new ValidationError("Capacidades inválidas.", "capabilities");
+      throw new ValidationError(botsText("capabilitiesInvalid"), "capabilities");
     }
     const merged = { ...bot.capabilities, ...(raw.capabilities as object) };
     next.capabilities = validateCapabilities(merged, id);
@@ -602,21 +593,22 @@ export async function updateBot(id: string, body: unknown) {
 export async function updateSidebar(id: string, body: unknown, sectionExists: (sectionId: string) => boolean) {
   const bot = bots.get(id);
   if (!bot) return null;
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new ValidationError("Corpo inválido.", "body");
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   const raw = body as Record<string, unknown>;
   const next = sidebarOf(bot);
   for (const key of Object.keys(raw)) {
     if (!["pinned", "sectionId", "hidden"].includes(key))
-      throw new ValidationError(`Campo desconhecido: sidebar.${key}.`, key);
+      throw new ValidationError(commonText("unknownField", { key: `sidebar.${key}` }), key);
   }
   for (const key of ["pinned", "hidden"] as const) {
     if (raw[key] === undefined) continue;
-    if (typeof raw[key] !== "boolean") throw new ValidationError(`${key} precisa ser verdadeiro ou falso.`, key);
+    if (typeof raw[key] !== "boolean") throw new ValidationError(commonText("mustBeBoolean", { key }), key);
     next[key] = raw[key] as boolean;
   }
   if (raw.sectionId !== undefined) {
     if (raw.sectionId !== null && (typeof raw.sectionId !== "string" || !sectionExists(raw.sectionId))) {
-      throw new ValidationError("Seção não encontrada.", "sectionId");
+      throw new ValidationError(botsText("sectionNotFound"), "sectionId");
     }
     next.sectionId = raw.sectionId as string | null;
   }

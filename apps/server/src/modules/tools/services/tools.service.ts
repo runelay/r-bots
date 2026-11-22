@@ -34,6 +34,7 @@ import {
   systemChromium,
   toolNames,
 } from "../constants/tools.constants";
+import { toolsText } from "../constants/tools-messages.constants";
 import type { ToolDeps, ToolName, ToolSource, ToolState } from "../types/tools.types";
 
 export class ToolError extends Error {
@@ -58,7 +59,7 @@ interface Located {
 
 export async function downloadFile(url: string, file: string, timeoutMs: number) {
   const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
-  if (!response.ok) throw new Error(`O download de ${url} falhou com status ${response.status}.`);
+  if (!response.ok) throw new Error(toolsText("downloadFailed", { url, status: response.status }));
   await Bun.write(file, response);
 }
 
@@ -94,7 +95,7 @@ export function isToolName(value: string): value is ToolName {
 }
 
 function toolName(value: string) {
-  if (!isToolName(value)) throw new ValidationError("Ferramenta desconhecida. Use chrome ou cutout.", "tool");
+  if (!isToolName(value)) throw new ValidationError(toolsText("unknownTool"), "tool");
   return value;
 }
 
@@ -146,8 +147,7 @@ function locate(tool: ToolName): Located | null {
 }
 
 function unsupported(tool: ToolName) {
-  if (tool === "chrome" && deps.arch() !== "x64")
-    return "O Chrome for Testing não existe para arm64. Use o chromium do sistema (apt install chromium).";
+  if (tool === "chrome" && deps.arch() !== "x64") return toolsText("noArm");
   return null;
 }
 
@@ -165,14 +165,16 @@ async function fetchVerified(url: string, file: string, sha256: string) {
   await deps.download(url, file, downloadTimeoutMs);
   if ((await deps.hash(file)) !== sha256) {
     rmSync(file, { force: true });
-    throw new Error(`O arquivo baixado de ${url} não confere com o checksum esperado.`);
+    throw new Error(toolsText("checksum", { url }));
   }
 }
 
 async function exec(bin: string, args: string[], failure: string) {
   const result = await deps.spawn(bin, args, installTimeoutMs);
   if (result.code !== 0)
-    throw new Error(`${failure}: ${tail(result.stderr || result.stdout) || `código ${result.code}`}`);
+    throw new Error(
+      `${failure}: ${tail(result.stderr || result.stdout) || toolsText("exitCode", { code: result.code })}`,
+    );
   return result.stdout;
 }
 
@@ -180,9 +182,9 @@ async function buildChrome(staging: string) {
   const zip = join(staging, "chrome.zip");
   const unpacked = join(staging, "unpacked");
   await fetchVerified(chromeUrl, zip, chromeSha256);
-  await exec(deps.which(["unzip"]) ?? "unzip", ["-q", zip, "-d", unpacked], "Não consegui extrair o Chrome");
+  await exec(deps.which(["unzip"]) ?? "unzip", ["-q", zip, "-d", unpacked], toolsText("unzipFailed"));
   const ready = join(unpacked, "chrome-linux64");
-  if (!existsSync(join(ready, "chrome"))) throw new Error("O pacote do Chrome veio sem o executável.");
+  if (!existsSync(join(ready, "chrome"))) throw new Error(toolsText("noBinary"));
   return ready;
 }
 
@@ -195,8 +197,8 @@ export function requirementsText() {
 
 async function buildCutout(staging: string) {
   const python = deps.which(["python3"]);
-  if (!python) throw new Error("O recorte de imagem precisa do python3 do sistema.");
-  await exec(python, ["-m", "venv", "--without-pip", staging], "Não consegui criar o ambiente Python");
+  if (!python) throw new Error(toolsText("noPython"));
+  await exec(python, ["-m", "venv", "--without-pip", staging], toolsText("venvFailed"));
   const work = join(staging, ".download");
   mkdirSync(work, { recursive: true });
   const wheel = join(work, pipWheel.name);
@@ -217,7 +219,7 @@ async function buildCutout(staging: string) {
       "-r",
       requirements,
     ],
-    "O pip não instalou o recorte",
+    toolsText("pipFailed"),
   );
   mkdirSync(join(staging, "models"), { recursive: true });
   await fetchVerified(cutoutModel.url, join(staging, "models", cutoutModel.name), cutoutModel.sha256);
@@ -226,18 +228,25 @@ async function buildCutout(staging: string) {
 }
 
 async function verify(tool: ToolName, base: string) {
-  if (!complete(tool, base)) throw new Error(`A instalação de ${labels[tool]} ficou incompleta.`);
+  if (!complete(tool, base))
+    throw new Error(toolsText("incomplete", { name: toolsText(tool === "chrome" ? "labelChrome" : "labelCutout") }));
   if (tool === "chrome") {
     const result = await deps.spawn(join(base, "chrome"), ["--version"], checkTimeoutMs);
     if (result.code !== 0 || !result.stdout.includes(chromeVersion))
-      throw new Error(`O Chrome baixado não abriu: ${tail(result.stderr || result.stdout) || `código ${result.code}`}`);
+      throw new Error(
+        toolsText("chromeBroken", {
+          reason: tail(result.stderr || result.stdout) || toolsText("exitCode", { code: result.code }),
+        }),
+      );
     return;
   }
   const result = await deps.spawn(join(base, "bin", "python"), ["-I", "-c", cutoutImports], checkTimeoutMs);
   const found = result.stdout.trim().split("\n").at(-1);
   if (result.code !== 0 || found !== cutoutRequirements[0].version)
     throw new Error(
-      `O Python do recorte não carregou: ${tail(result.stderr || result.stdout) || `código ${result.code}`}`,
+      toolsText("pythonBroken", {
+        reason: tail(result.stderr || result.stdout) || toolsText("exitCode", { code: result.code }),
+      }),
     );
 }
 

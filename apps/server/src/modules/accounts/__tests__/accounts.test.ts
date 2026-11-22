@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { fakeProviders, request, startTestServer, type TestServer, testDataDir } from "../../../../test/helpers";
 import { writeSetting } from "../../../db/settings";
+import { withLanguage } from "../../../shared/i18n";
 import { onSettingsChange } from "../../settings/services/settings-events.service";
 import {
   type Account,
@@ -150,6 +151,8 @@ describe("limits", () => {
     expect(formatReset(new Date("2026-11-20T18:00:00Z"), now)).toBe("amanhã às 15:00");
     expect(formatReset(new Date("2026-11-25T18:00:00Z"), now)).toBe("dia 25/11 às 15:00");
     expect(formatReset(new Date())).toStartWith("às ");
+    expect(withLanguage("en", () => formatReset(new Date("2026-11-20T18:00:00Z"), now))).toBe("tomorrow at 03:00 PM");
+    expect(withLanguage("en", () => formatReset(new Date("2026-11-25T18:00:00Z"), now))).toBe("on 11/25 at 03:00 PM");
   });
 
   test("tells an outage from a limit and keeps it for a few minutes", () => {
@@ -372,6 +375,11 @@ describe("accounts", () => {
     const codex = await loginGuide("codex");
     expect(codex.command).toBe("mkdir -p ~/.codex-2 && CODEX_HOME=~/.codex-2 codex login");
     expect(codex.steps).toHaveLength(3);
+    const english = await withLanguage("en", () => loginGuide("codex"));
+    expect(english.steps[1]).toBe("Run the command below and sign in with the other Codex account in the browser.");
+    await expect(withLanguage("en", () => loginGuide("grok"))).rejects.toThrow(
+      "Use provider=claude or provider=codex.",
+    );
     await expect(loginGuide("grok")).rejects.toMatchObject({ field: "provider" });
     process.env.HOST_HOME = join(home, "nao-existe");
     expect((await loginGuide("claude")).dir).toBe("~/.claude-2");

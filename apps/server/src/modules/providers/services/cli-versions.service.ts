@@ -18,6 +18,7 @@ import {
   versionPattern,
   versionTimeoutMs,
 } from "../constants/providers.constants";
+import { providersText } from "../constants/providers-messages.constants";
 import type { CliDeps, CliVersion } from "../types/providers.types";
 
 export class CliUpdateError extends Error {
@@ -89,8 +90,7 @@ function stateOf(provider: string) {
 }
 
 function managedProvider(provider: string): ManagedProvider {
-  if (!isManaged(provider))
-    throw new ValidationError("Só o Claude Code e o Codex são atualizados por aqui.", "provider");
+  if (!isManaged(provider)) throw new ValidationError(providersText("providerInvalid"), "provider");
   return provider;
 }
 
@@ -191,7 +191,7 @@ async function verify(bin: string, version: string) {
   const result = await deps.spawn(bin, ["--version"], versionTimeoutMs);
   const found = result.code === 0 ? parseVersion(result.stdout) : null;
   if (found !== version)
-    throw new Error(`A versão instalada não confere: esperava ${version} e o CLI respondeu ${found ?? "com erro"}.`);
+    throw new Error(providersText("versionMismatch", { version, found: found ?? providersText("withError") }));
 }
 
 async function install(provider: ManagedProvider, version: string) {
@@ -208,7 +208,7 @@ async function install(provider: ManagedProvider, version: string) {
       const args = ["install", "-g", "--prefix", staging, "--no-audit", "--no-fund", `${pkg}@${version}`];
       const result = await deps.spawn(npm, args, installTimeoutMs);
       if (result.code !== 0)
-        throw new Error(`O npm não instalou ${pkg}@${version}: ${tail(result.stderr || result.stdout)}`);
+        throw new Error(providersText("npmFailed", { pkg, version, reason: tail(result.stderr || result.stdout) }));
       await verify(join(staging, "bin", bin), version);
       renameSync(staging, target);
     }
@@ -227,14 +227,14 @@ async function install(provider: ManagedProvider, version: string) {
 export async function startUpdate(provider: string, requested: unknown) {
   const managed = managedProvider(provider);
   if (requested !== undefined && (typeof requested !== "string" || !versionPattern.test(requested)))
-    throw new ValidationError("Versão inválida. Use algo como 2.1.330.", "version");
+    throw new ValidationError(providersText("versionInvalid"), "version");
   const state = stateOf(managed);
-  if (state.updating) throw new CliUpdateError("Já tem uma atualização rodando para esse CLI.", 409);
+  if (state.updating) throw new CliUpdateError(providersText("updating"), 409);
   state.updating = true;
   const version = requested ?? (await latestVersion(managedClis[managed].pkg));
   if (!version) {
     state.updating = false;
-    throw new ValidationError("Não consegui descobrir a última versão. Mande a versão que você quer.", "version");
+    throw new ValidationError(providersText("latestUnknown"), "version");
   }
   state.lastError = null;
   state.task = install(managed, version).then(
@@ -256,11 +256,10 @@ export function updateTask(provider: string) {
 export function rollback(provider: string) {
   const managed = managedProvider(provider);
   const state = stateOf(managed);
-  if (state.updating) throw new CliUpdateError("Espere a atualização terminar antes de voltar.", 409);
+  if (state.updating) throw new CliUpdateError(providersText("waitUpdate"), 409);
   const root = providerDir(managed);
   const previous = linkOf(managed, previousLink);
-  if (!previous || !existsSync(join(root, previous)))
-    throw new CliUpdateError("Não há versão anterior para voltar.", 409);
+  if (!previous || !existsSync(join(root, previous))) throw new CliUpdateError(providersText("noPrevious"), 409);
   const current = linkOf(managed, currentLink);
   pointLink(root, currentLink, previous);
   if (current) pointLink(root, previousLink, current);

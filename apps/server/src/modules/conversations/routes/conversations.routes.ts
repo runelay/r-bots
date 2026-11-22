@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
 import { isPermissionMode } from "../../approvals/services/permissions.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { deliver } from "../../engine/services/engine.service";
 import { openSideThread } from "../../engine/services/side-threads.service";
+import { conversationsText } from "../constants/conversations-messages.constants";
 import { searchMessages } from "../repositories/sessions.repository";
 import {
   archiveConversation,
@@ -21,9 +23,8 @@ import { checkFields, deliveryText, rejectInactiveBot, resolveAttachments, resol
 
 async function handleSearch(res: Res, url: URL, bot: BotDefinition) {
   const q = (url.searchParams.get("q") ?? "").trim();
-  if (!q) return sendJson(res, 400, { ok: false, error: "Mande o texto da busca em q.", field: "q" });
-  if (q.length > 200)
-    return sendJson(res, 400, { ok: false, error: "A busca pode ter até 200 caracteres.", field: "q" });
+  if (!q) return sendJson(res, 400, { ok: false, error: conversationsText("searchMissing"), field: "q" });
+  if (q.length > 200) return sendJson(res, 400, { ok: false, error: conversationsText("searchTooLong"), field: "q" });
   const limit = Number(url.searchParams.get("limit") ?? 20);
   const cursor = Number(url.searchParams.get("cursor") ?? 0);
   const page = await searchMessages({
@@ -53,14 +54,14 @@ export async function handleConversations(
       if (rejectInactiveBot(res, bot)) return;
       const body = ((await readBody(req)) ?? {}) as Record<string, unknown>;
       if (!body || typeof body !== "object" || Array.isArray(body))
-        return sendJson(res, 400, { ok: false, error: "Corpo inválido.", field: "body" });
+        return sendJson(res, 400, { ok: false, error: commonText("bodyInvalid"), field: "body" });
       for (const key of Object.keys(body))
         if (!["title", "permission", "message", "skills", "attachments"].includes(key))
-          return sendJson(res, 400, { ok: false, error: `Campo desconhecido: ${key}.`, field: key });
+          return sendJson(res, 400, { ok: false, error: commonText("unknownField", { key }), field: key });
       if (body.title !== undefined && (typeof body.title !== "string" || body.title.trim().length > 80))
-        return sendJson(res, 400, { ok: false, error: "O título precisa ter até 80 caracteres.", field: "title" });
+        return sendJson(res, 400, { ok: false, error: conversationsText("titleTooLong"), field: "title" });
       if (body.permission !== undefined && !isPermissionMode(body.permission))
-        return sendJson(res, 400, { ok: false, error: "Use readonly, edit, default ou full.", field: "permission" });
+        return sendJson(res, 400, { ok: false, error: conversationsText("permissionInvalid"), field: "permission" });
       const problem = checkFields({
         ...(body.message !== undefined ? { message: body.message } : {}),
         ...(body.skills !== undefined ? { skills: body.skills } : {}),
@@ -96,7 +97,7 @@ export async function handleConversations(
     }
     if (rest[0] === "search" && rest.length === 1 && method === "GET") return handleSearch(res, url, bot);
     const session = conversationOf(bot.id, rest[0] ?? "");
-    if (!session) return sendJson(res, 404, { ok: false, error: "Conversa não encontrada." });
+    if (!session) return sendJson(res, 404, { ok: false, error: commonText("conversationNotFound") });
     const action = rest.slice(1).join("/");
     if (action === "" && method === "GET") return sendJson(res, 200, await publicConversation(session));
     if (action === "" && method === "PATCH")
@@ -117,9 +118,9 @@ export async function handleConversations(
       if (rejectInactiveBot(res, bot)) return;
       for (const key of Object.keys(body))
         if (!["title", "message"].includes(key))
-          return sendJson(res, 400, { ok: false, error: `Campo desconhecido: ${key}.`, field: key });
+          return sendJson(res, 400, { ok: false, error: commonText("unknownField", { key }), field: key });
       if (body.title !== undefined && (typeof body.title !== "string" || body.title.trim().length > 80))
-        return sendJson(res, 400, { ok: false, error: "O título precisa ter até 80 caracteres.", field: "title" });
+        return sendJson(res, 400, { ok: false, error: conversationsText("titleTooLong"), field: "title" });
       const problem = checkFields(body.message !== undefined ? { message: body.message } : {});
       if (problem) return sendJson(res, 400, { ok: false, error: problem });
       const { session: side, deliveryId } = await openSideThread(session, {

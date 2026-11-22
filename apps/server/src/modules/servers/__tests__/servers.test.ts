@@ -15,6 +15,7 @@ import {
 } from "../../../../test/helpers";
 import { writeSetting } from "../../../db/settings";
 import { ValidationError } from "../../../shared/errors";
+import { withLanguage } from "../../../shared/i18n";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import {
   forgetServer,
@@ -192,6 +193,7 @@ describe("projects", () => {
     await expect(resolveProject({ path: "/etc" })).rejects.toThrow("não está num repositório liberado");
     await expect(resolveProject({ path: join(repo.path, "missing") })).rejects.toThrow("não existe");
     await expect(resolveProject({ path: repo.path, cwd: "../.." })).rejects.toThrow("dentro do projeto");
+    await expect(withLanguage("en", () => resolveProject({}))).rejects.toThrow("Say the project (path or project).");
   });
 
   test("falls back when git does not answer", async () => {
@@ -279,6 +281,9 @@ describe("profiles", () => {
     await expect(saveProfile({ name: "a", path: repo.path })).rejects.toThrow("script ou o comando");
     await expect(saveProfile({ name: "a", path: repo.path, script: "dev", port: 80 })).rejects.toThrow("Porta");
     await expect(saveProfile({ name: 3, path: repo.path })).rejects.toThrow("Valor inválido");
+    await expect(withLanguage("en", () => saveProfile({ path: repo.path }))).rejects.toThrow(
+      "Give the profile a name.",
+    );
   });
 });
 
@@ -472,6 +477,11 @@ describe("routes", () => {
     const stopped = await request<{ error: string }>(`/servers/${id}/preview-link`, { method: "POST" });
     expect(stopped.status).toBe(409);
     expect(stopped.body.error).toBe("O servidor não está no ar.");
+    const english = await request<{ error: string }>(`/servers/${id}/preview-link`, {
+      method: "POST",
+      headers: { "accept-language": "en" },
+    });
+    expect(english.body.error).toBe("The server is not running.");
     expect((await request("/servers/nope/preview-link", { method: "POST" })).status).toBe(400);
   });
 

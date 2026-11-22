@@ -2,11 +2,13 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type { NativeToolHooks } from "@runelay-bots/protocol";
+import { permissionLabel } from "../../approvals/constants/approvals-messages.constants";
 import { decideApproval, decideHardList } from "../../approvals/services/decisions.service";
-import { type ActionClass, applyCodePermission, permissionLabels } from "../../approvals/services/permissions.service";
+import { type ActionClass, applyCodePermission } from "../../approvals/services/permissions.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import { secretBashCommand } from "../../vault/services/vault-tools.service";
+import { codeToolsText } from "../constants/code-tools-messages.constants";
 import { addGrant, hasGrant } from "../repositories/code.repository";
 import { heavyTimeoutSec, wrapHeavyCommand } from "./heavy-commands.service";
 import type { LiveScanner } from "./live-diff.service";
@@ -41,16 +43,16 @@ function oneLine(text: string, max = 80) {
 export function codeLabel(tool: string, input: Record<string, unknown>) {
   const file = String(input.file_path ?? input.notebook_path ?? "");
   const name = file ? basename(file) : "";
-  if (tool === "Read") return `Ler ${name}`;
-  if (tool === "Edit" || tool === "MultiEdit" || tool === "NotebookEdit") return `Editar ${name}`;
-  if (tool === "Write") return existsSync(file) ? `Reescrever ${name}` : `Criar ${name}`;
-  if (tool === "Glob") return `Procurar arquivos ${oneLine(String(input.pattern ?? ""), 60)}`;
-  if (tool === "Grep") return `Procurar “${oneLine(String(input.pattern ?? ""), 60)}”`;
-  if (tool === "TodoWrite") return "Atualizar a lista de passos";
+  if (tool === "Read") return codeToolsText("read", { name });
+  if (tool === "Edit" || tool === "MultiEdit" || tool === "NotebookEdit") return codeToolsText("edit", { name });
+  if (tool === "Write") return codeToolsText(existsSync(file) ? "rewrite" : "create", { name });
+  if (tool === "Glob") return codeToolsText("glob", { pattern: oneLine(String(input.pattern ?? ""), 60) });
+  if (tool === "Grep") return codeToolsText("grep", { pattern: oneLine(String(input.pattern ?? ""), 60) });
+  if (tool === "TodoWrite") return codeToolsText("todo");
   if (tool === "Bash")
     return String(input.description ?? "").trim()
       ? oneLine(String(input.description), 80)
-      : `Rodar ${oneLine(String(input.command ?? ""), 70)}`;
+      : codeToolsText("run", { command: oneLine(String(input.command ?? ""), 70) });
   return tool;
 }
 
@@ -247,7 +249,7 @@ export async function beginCall(
       gate = { kind: "human", prompt: critical.prompt, reason: critical.reason, hard: true };
     }
     if (gate.kind === "allow" && before !== "allow") {
-      humanRecord(context, spec.name, callId, `Modo ${permissionLabels[mode]}: liberado sem card.`, "granted");
+      humanRecord(context, spec.name, callId, codeToolsText("modeGranted", { mode: permissionLabel(mode) }), "granted");
       log.emit({ type: "call.started", data: { callId, clearedBy: { permission: mode } }, scope: scope(context) });
       return { allowed: true, callId };
     }

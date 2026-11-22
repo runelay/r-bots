@@ -24,6 +24,7 @@ import { getDesktop } from "../../browser/services/desktop.service";
 import { canvasTools } from "../../canvas/services/canvas.service";
 import { uploadTools } from "../../uploads/services/uploads.service";
 import { speechTools } from "../../voice/services/speech-tools.service";
+import { botToolsText } from "../constants/bot-tools-messages.constants";
 
 export interface BotTool {
   name: string;
@@ -97,7 +98,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
           "Abre uma URL http ou https no seu navegador (o Navegador do bot, que roda no servidor e não atrapalha a pessoa). É o padrão para qualquer site ou app web: use antes de pensar em computer_*. O login fica salvo entre as conversas. Devolve url e título; veja a página com browser_snapshot (texto e referências) ou browser_screenshot (imagem). Endereços internos (localhost, rede privada, tailnet, metadados) são bloqueados, exceto os servidores de dev que você abriu; para um app que roda no Mac da pessoa, peça uma URL pública (túnel).",
         shape: { url: webUrl },
         approval: null,
-        label: (input) => `Abrir ${text(input.url)}`,
+        label: (input) => botToolsText("open", { url: text(input.url) }),
         run: (input, signal) => browserOpen(bot.id, text(input.url), signal),
       },
       {
@@ -106,7 +107,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
           "Lê a página atual: as referências dos elementos interativos (@e1, @e2...) e, em page, o começo do texto da página. Quando a página é longa, page.more diz o offset para continuar com browser_text. Ao responder com o que leu, cite a página (título e URL). Se a página não abriu ou veio uma página de erro, diga isso à pessoa em vez de responder de memória.",
         shape: {},
         approval: null,
-        label: () => "Ler a página",
+        label: () => botToolsText("readPage"),
         run: (_input, signal) => browserSnapshot(bot.id, signal),
       },
       {
@@ -118,7 +119,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
           length: z.number().int().min(500).max(12_000).optional(),
         },
         approval: null,
-        label: () => "Ler o texto da página",
+        label: () => botToolsText("readPageText"),
         run: (input, signal) =>
           browserText(
             bot.id,
@@ -132,8 +133,8 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         description:
           "Clica num elemento da página pela referência do snapshot (ex.: @e3). Pede aprovação de uma pessoa.",
         shape: { ref: z.string().min(1), reason: reasonField },
-        approval: (input) => `Posso clicar em ${named(input.ref, "um elemento da página")}?`,
-        label: (input) => `Clicar em ${named(input.ref, "um elemento")}`,
+        approval: (input) => botToolsText("clickPrompt", { target: named(input.ref, botToolsText("pageElement")) }),
+        label: (input) => botToolsText("click", { target: named(input.ref, botToolsText("element")) }),
         details: pageDetails,
         run: (input, signal) => browserClick(bot.id, text(input.ref), signal),
       },
@@ -142,8 +143,9 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         description:
           "Preenche um campo da página pela referência do snapshot (ex.: @e2). Para senha ou token, use text = segredo:nome (do cofre): o valor entra só na hora e não pede aprovação. Texto comum pede aprovação de uma pessoa.",
         shape: { ref: z.string().min(1), text: z.string(), reason: reasonField },
-        approval: (input) => `Posso preencher ${named(input.ref, "um campo")} com "${text(input.text)}"?`,
-        label: (input) => `Preencher ${named(input.ref, "um campo")}`,
+        approval: (input) =>
+          botToolsText("fillPrompt", { target: named(input.ref, botToolsText("field")), text: text(input.text) }),
+        label: (input) => botToolsText("fill", { target: named(input.ref, botToolsText("field")) }),
         details: pageDetails,
         run: (input, signal) =>
           browserFill(bot.id, text(input.ref), text(input.text), signal, input.secretFill === true),
@@ -153,7 +155,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         description: "Tira um print da página atual do seu navegador e devolve a imagem para você ver.",
         shape: {},
         approval: null,
-        label: () => "Tirar print",
+        label: () => botToolsText("screenshot"),
         run: async (_input, signal) => {
           const page = await browserScreenshot(bot.id, signal);
           const png = await readFile(page.screenshot);
@@ -172,7 +174,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
           "Tira um print do seu computador virtual (1280x800). Use antes de clicar para saber as coordenadas.",
         shape: {},
         approval: null,
-        label: () => "Print do computador",
+        label: () => botToolsText("desktopScreenshot"),
         run: async () => {
           await ready();
           const png = await desktop().screenshot();
@@ -192,8 +194,8 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
           double: z.boolean().optional(),
           reason: reasonField,
         },
-        approval: () => "Posso clicar neste ponto do computador?",
-        label: () => "Clicar no computador",
+        approval: () => botToolsText("desktopClickPrompt"),
+        label: () => botToolsText("desktopClick"),
         details: async (input) => {
           const png = await desktop()
             .screenshot()
@@ -202,7 +204,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
             ? await cropPreview(png, { x: Number(input.x) - 60, y: Number(input.y) - 30, width: 120, height: 60 })
             : null;
           return {
-            target: { label: "computador do bot", role: "desktop" },
+            target: { label: botToolsText("desktopTarget"), role: "desktop" },
             ...(previewImage ? { previewImage } : {}),
             ...reasonOf(input),
           };
@@ -221,9 +223,12 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         name: "desktop_type",
         description: "Digita um texto no computador virtual, onde estiver o foco. Pede aprovação.",
         shape: { text: z.string().min(1).max(2000), reason: reasonField },
-        details: async (input) => ({ target: { label: "computador do bot", role: "desktop" }, ...reasonOf(input) }),
-        approval: (input) => `Posso digitar no computador: "${text(input.text).slice(0, 120)}"?`,
-        label: (input) => `Digitar "${text(input.text).slice(0, 40)}"`,
+        details: async (input) => ({
+          target: { label: botToolsText("desktopTarget"), role: "desktop" },
+          ...reasonOf(input),
+        }),
+        approval: (input) => botToolsText("typePrompt", { text: text(input.text).slice(0, 120) }),
+        label: (input) => botToolsText("type", { text: text(input.text).slice(0, 40) }),
         run: async (input) => {
           await ready();
           return desktop().type(text(input.text));
@@ -234,9 +239,12 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         description:
           "Aperta uma tecla ou atalho no computador virtual, no formato do xdotool (Return, ctrl+l, alt+Left). Pede aprovação.",
         shape: { combo: z.string().min(1).max(60), reason: reasonField },
-        details: async (input) => ({ target: { label: "computador do bot", role: "desktop" }, ...reasonOf(input) }),
-        approval: (input) => `Posso apertar ${text(input.combo)} no computador?`,
-        label: (input) => `Tecla ${text(input.combo)}`,
+        details: async (input) => ({
+          target: { label: botToolsText("desktopTarget"), role: "desktop" },
+          ...reasonOf(input),
+        }),
+        approval: (input) => botToolsText("keyPrompt", { combo: text(input.combo) }),
+        label: (input) => botToolsText("key", { combo: text(input.combo) }),
         run: async (input) => {
           await ready();
           return desktop().key(text(input.combo));
@@ -252,7 +260,7 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
           amount: z.number().int().min(1).max(20).optional(),
         },
         approval: null,
-        label: (input) => `Rolar ${input.direction === "down" ? "para baixo" : "para cima"}`,
+        label: (input) => botToolsText(input.direction === "down" ? "scrollDown" : "scrollUp"),
         run: async (input) => {
           await ready();
           return desktop().scroll(
@@ -271,17 +279,21 @@ export function toolsFor(bot: BotDefinition): BotTool[] {
         details: async (input) => ({
           target: input.url
             ? { label: hostOf(text(input.url)), role: "page", url: text(input.url) }
-            : { label: input.app === "terminal" ? "Terminal" : "Navegador", role: "app" },
+            : { label: botToolsText(input.app === "terminal" ? "terminal" : "browser"), role: "app" },
           ...reasonOf(input),
         }),
         approval: (input) =>
           input.app === "terminal"
-            ? "Posso abrir um terminal no computador?"
-            : `Posso abrir o navegador do computador${input.url ? ` em ${text(input.url)}` : ""}?`,
+            ? botToolsText("terminalPrompt")
+            : input.url
+              ? botToolsText("browserAtPrompt", { url: text(input.url) })
+              : botToolsText("browserPrompt"),
         label: (input) =>
           input.app === "terminal"
-            ? "Abrir terminal"
-            : `Abrir navegador${input.url ? ` em ${hostOf(text(input.url))}` : ""}`,
+            ? botToolsText("openTerminal")
+            : input.url
+              ? botToolsText("openBrowserAt", { host: hostOf(text(input.url)) })
+              : botToolsText("openBrowser"),
         run: async (input) => {
           await ready();
           if (input.app === "terminal") return desktop().openTerminal();

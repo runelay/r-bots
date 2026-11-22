@@ -2,6 +2,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ValidationError } from "../../../shared/errors";
 import { guardedFetch } from "../../../shared/net-guard";
+import { integrationsText } from "../constants/integrations-messages.constants";
 import {
   clearStored,
   envLast4,
@@ -29,27 +30,45 @@ interface Definition {
 const definitions: Record<IntegrationId, Definition> = {
   elevenlabs: {
     name: "ElevenLabs",
-    description: "Voz natural nas chamadas e transcrição de áudio no servidor.",
-    unlocks: "Chamada de voz com os bots",
-    fallback: "Sem ElevenLabs a chamada de voz fica desligada e os áudios são transcritos no Mac.",
+    get description() {
+      return integrationsText("elevenlabsInfo");
+    },
+    get unlocks() {
+      return integrationsText("elevenlabsUnlocks");
+    },
+    get fallback() {
+      return integrationsText("elevenlabsFallback");
+    },
     keyUrl: "https://elevenlabs.io/app/settings/api-keys",
     domain: "elevenlabs.io",
     needsUrl: false,
   },
   jev: {
     name: "Jev",
-    description: "Decide sozinho as aprovações de rotina, percebe bot travado e faz a triagem do que é importante.",
-    unlocks: "Aprovações automáticas",
-    fallback: "Sem Jev toda ação de risco espera você aprovar e nada é marcado como lido sozinho.",
+    get description() {
+      return integrationsText("jevInfo");
+    },
+    get unlocks() {
+      return integrationsText("jevUnlocks");
+    },
+    get fallback() {
+      return integrationsText("jevFallback");
+    },
     keyUrl: "https://typesafe.ai",
     domain: "typesafe.ai",
     needsUrl: false,
   },
   runelay: {
     name: "runelay",
-    description: "Conectores (Linear, GitHub, Supabase…), memória e skills compartilhadas em todos os bots.",
-    unlocks: "Conectores, memória e skills",
-    fallback: "Sem runelay os bots trabalham sem conectores, memória e skills.",
+    get description() {
+      return integrationsText("runelayInfo");
+    },
+    get unlocks() {
+      return integrationsText("runelayUnlocks");
+    },
+    get fallback() {
+      return integrationsText("runelayFallback");
+    },
     keyUrl: "https://docs.runelay.com",
     domain: "runelay.com",
     needsUrl: true,
@@ -163,11 +182,11 @@ async function probeRunelay(key: string, url: string) {
     const result = (await client.callTool({ name: "list_connections", arguments: {} }, undefined, {
       timeout: 15_000,
     })) as { isError?: boolean };
-    return result.isError ? "O runelay não listou as conexões com essa chave." : null;
+    return result.isError ? integrationsText("runelayNoList") : null;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (/401|403|unauthori[sz]ed|forbidden/i.test(message)) return "O runelay recusou essa chave.";
-    return "Não consegui falar com o runelay nesse endereço.";
+    if (/401|403|unauthori[sz]ed|forbidden/i.test(message)) return integrationsText("runelayRefused");
+    return integrationsText("runelayUnreachable");
   } finally {
     await transport.close();
   }
@@ -175,7 +194,7 @@ async function probeRunelay(key: string, url: string) {
 
 function normalizeUrl(value: unknown) {
   if (value === undefined || value === null || value === "") return null;
-  if (typeof value !== "string") throw new ValidationError("Endereço inválido.", "url");
+  if (typeof value !== "string") throw new ValidationError(integrationsText("urlInvalid"), "url");
   try {
     const parsed = new URL(value.trim());
     if (parsed.username || parsed.password) throw new Error("userinfo");
@@ -183,16 +202,17 @@ function normalizeUrl(value: unknown) {
       throw new Error("protocol");
     return parsed.toString();
   } catch {
-    throw new ValidationError("Endereço inválido: use https:// (http só para 127.0.0.1).", "url");
+    throw new ValidationError(integrationsText("urlHttps"), "url");
   }
 }
 
 export async function saveIntegration(id: IntegrationId, body: Record<string, unknown>) {
   const key = typeof body.key === "string" ? body.key.trim() : "";
-  if (key.length < 8 || key.length > 4096 || /\s/.test(key)) throw new ValidationError("Cole a chave inteira.", "key");
+  if (key.length < 8 || key.length > 4096 || /\s/.test(key))
+    throw new ValidationError(integrationsText("keyWhole"), "key");
   const definition = definitions[id];
   const url = definition.needsUrl ? (normalizeUrl(body.url) ?? integrationUrl(id)) : null;
-  if (definition.needsUrl && !url) throw new ValidationError("Informe o endereço do seu runelay.", "url");
+  if (definition.needsUrl && !url) throw new ValidationError(integrationsText("runelayUrl"), "url");
   let problem: string | null;
   try {
     problem =
@@ -202,7 +222,7 @@ export async function saveIntegration(id: IntegrationId, body: Record<string, un
           ? await probeJev(key)
           : await probeRunelay(key, url as string);
   } catch {
-    problem = `Não consegui falar com o ${definition.name} agora. Tente de novo em instantes.`;
+    problem = integrationsText("unreachable", { name: definition.name });
   }
   if (problem) throw new IntegrationError(422, "invalid_key", problem);
   await writeStored(id, key, url);

@@ -25,6 +25,7 @@ import { address, colLetters, excelSerial, toEngineFormula } from "../../sheets/
 import { bookFor, cellOf } from "../../sheets/services/sheets.service";
 import { getBlobStore, putBlob, safeName } from "../../storage/services/storage.service";
 import { ensureTool } from "../../tools/services/tools.service";
+import { exportsText } from "../constants/exports-messages.constants";
 
 const mimes: Record<ExportFormat, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -387,7 +388,7 @@ export const maxExportCells = 200_000;
 async function tabGrid(botId: string, sheetId: string, tabId?: string | null) {
   const { sheet, tabs, rows } = await bookFor(botId, sheetId);
   const tab = tabs.find((item) => item.id === tabId) ?? tabs[0];
-  if (tabId && tab.id !== tabId) throw new BlockError("Aba não encontrada.", 404);
+  if (tabId && tab.id !== tabId) throw new BlockError(exportsText("tabNotFound"), 404);
   if (tab.rowCount * tab.colCount > maxExportCells)
     throw new BlockError(
       `A aba tem ${tab.rowCount} linhas por ${tab.colCount} colunas em uso; o limite para exportar é de ${maxExportCells.toLocaleString("pt-BR")} células. Divida a aba ou exporte em xlsx.`,
@@ -517,7 +518,10 @@ export async function createExport(botId: string, body: Record<string, unknown>)
   const format = String(body.format ?? "") as ExportFormat;
   if (!exportFormatsFor(kind).includes(format))
     throw new BlockError(
-      `Formato inválido para ${kind === "note" ? "nota" : "planilha"}: use ${exportFormatsFor(kind).join(", ")}.`,
+      exportsText("formatInvalid", {
+        kind: exportsText(kind === "note" ? "note" : "sheet"),
+        formats: exportFormatsFor(kind).join(", "),
+      }),
     );
   const sourceId = String(body.id ?? "");
   const tabId = typeof body.tabId === "string" && body.tabId ? body.tabId : null;
@@ -544,7 +548,7 @@ export async function readExport(botId: string, exportId: string) {
     .from(exports)
     .where(and(eq(exports.id, exportId), eq(exports.botId, botId)))
     .limit(1);
-  if (!row) throw new BlockError("Exportação não encontrada.", 404);
+  if (!row) throw new BlockError(exportsText("notFound"), 404);
   return jobOf(botId, row);
 }
 
@@ -554,9 +558,9 @@ export async function exportFile(botId: string, exportId: string) {
     .from(exports)
     .where(and(eq(exports.id, exportId), eq(exports.botId, botId)))
     .limit(1);
-  if (row?.status !== "ready" || !row.blobKey) throw new BlockError("Exportação não encontrada.", 404);
+  if (row?.status !== "ready" || !row.blobKey) throw new BlockError(exportsText("notFound"), 404);
   const stream = await getBlobStore().get(row.blobKey);
-  if (!stream) throw new BlockError("Arquivo da exportação não encontrado.", 404);
+  if (!stream) throw new BlockError(exportsText("fileNotFound"), 404);
   return { stream, fileName: row.fileName ?? "arquivo", mime: mimeOf(row.format), size: row.size };
 }
 

@@ -1,6 +1,8 @@
-import { notFound, type Req, type Res, sendJson } from "../../../shared/http";
+import { httpText, notFound, type Req, type Res, sendJson } from "../../../shared/http";
 import { principalOf } from "../../auth/gate";
 import type { BotDefinition } from "../../bots/services/bots.service";
+import { conversationsText } from "../../conversations/constants/conversations-messages.constants";
+import { voiceText } from "../constants/voice-messages.constants";
 import {
   armIdle,
   type CallEvent,
@@ -31,9 +33,9 @@ async function handleRating(res: Res, req: Req, bot: BotDefinition, callId: stri
   const body = await readJson(req);
   const rating = body.rating === "up" || body.rating === "down" || body.rating === null ? body.rating : undefined;
   if (rating === undefined)
-    return sendJson(res, 400, { ok: false, error: "Use rating up, down ou null.", field: "rating" });
+    return sendJson(res, 400, { ok: false, error: voiceText("ratingInvalid"), field: "rating" });
   if (!(await rateCall(bot, callId, rating)))
-    return sendJson(res, 404, { ok: false, code: "call_not_found", error: "Chamada não encontrada." });
+    return sendJson(res, 404, { ok: false, code: "call_not_found", error: voiceText("callNotFound") });
   return sendJson(res, 200, { ok: true, callId, rating });
 }
 
@@ -68,7 +70,10 @@ export async function handleVoices(res: Res, url: URL) {
       });
     return sendJson(res, 502, {
       ok: false,
-      error: `ElevenLabs não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+      error: voiceText("elevenLabsDown", { reason: error instanceof Error ? error.message : String(error) }).slice(
+        0,
+        300,
+      ),
     });
   }
 }
@@ -78,9 +83,10 @@ export async function handleVoice(req: Req, res: Res, method: string, bot: BotDe
     if (rest[0] !== "session") return notFound(res);
     if (rest.length === 1 && method === "POST") {
       await readJson(req).catch(() => ({}));
-      if (bot.deletedAt) return sendJson(res, 409, { ok: false, code: "bot_deleted", error: "Esse bot foi excluído." });
+      if (bot.deletedAt)
+        return sendJson(res, 409, { ok: false, code: "bot_deleted", error: conversationsText("botDeleted") });
       if (bot.archivedAt)
-        return sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
+        return sendJson(res, 409, { ok: false, code: "bot_archived", error: conversationsText("botArchived") });
       const [call, creds] = await Promise.all([startCall(bot), credentials(bot, ["stt", "tts"], requester(req))]);
       return sendJson(res, 201, {
         callId: call.id,
@@ -93,7 +99,7 @@ export async function handleVoice(req: Req, res: Res, method: string, bot: BotDe
     if (rest[2] === "rating" && method === "POST") return handleRating(res, req, bot, rest[1] ?? "");
     const call = findCall(rest[1] ?? "");
     if (!call || call.botId !== bot.id)
-      return sendJson(res, 404, { ok: false, code: "call_not_found", error: "Essa chamada já terminou." });
+      return sendJson(res, 404, { ok: false, code: "call_not_found", error: voiceText("callEnded") });
     const action = rest[2] ?? "";
     if (action === "stream" && method === "GET") return streamCall(req, res, call);
     if (action === "tokens" && method === "POST") {
@@ -106,7 +112,7 @@ export async function handleVoice(req: Req, res: Res, method: string, bot: BotDe
     if (action === "utterance" && method === "POST") {
       const body = await readJson(req);
       const text = typeof body.text === "string" ? body.text.trim() : "";
-      if (!text) return sendJson(res, 400, { ok: false, error: "Mande o texto da fala.", field: "text" });
+      if (!text) return sendJson(res, 400, { ok: false, error: voiceText("textMissing"), field: "text" });
       return sendJson(res, 202, {
         ok: true,
         ...(await onUtterance(call, text.slice(0, 4_000), body.interrupted === true, {
@@ -128,7 +134,8 @@ export async function handleVoice(req: Req, res: Res, method: string, bot: BotDe
     return notFound(res);
   } catch (error) {
     if (error instanceof VoiceError) return sendJson(res, error.status, { ok: false, error: error.message });
-    if (error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: "JSON inválido.", field: "body" });
+    if (error instanceof SyntaxError)
+      return sendJson(res, 400, { ok: false, error: httpText("invalidJson"), field: "body" });
     throw error;
   }
 }

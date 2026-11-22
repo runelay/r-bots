@@ -1,0 +1,38 @@
+import { defineMessages } from "../../../shared/i18n";
+
+export const toolsText = defineMessages({
+  "pt-BR": {
+    downloadFailed: "O download de {url} falhou com status {status}.",
+    unknownTool: "Ferramenta desconhecida. Use chrome ou cutout.",
+    labelChrome: "o navegador",
+    labelCutout: "o recorte de imagem",
+    noArm: "O Chrome for Testing não existe para arm64. Use o chromium do sistema (apt install chromium).",
+    checksum: "O arquivo baixado de {url} não confere com o checksum esperado.",
+    exitCode: "código {code}",
+    unzipFailed: "Não consegui extrair o Chrome",
+    noBinary: "O pacote do Chrome veio sem o executável.",
+    noPython: "O recorte de imagem precisa do python3 do sistema.",
+    venvFailed: "Não consegui criar o ambiente Python",
+    pipFailed: "O pip não instalou o recorte",
+    incomplete: "A instalação de {name} ficou incompleta.",
+    chromeBroken: "O Chrome baixado não abriu: {reason}",
+    pythonBroken: "O Python do recorte não carregou: {reason}",
+  },
+  en: {
+    downloadFailed: "The download of {url} failed with status {status}.",
+    unknownTool: "Unknown tool. Use chrome or cutout.",
+    labelChrome: "the browser",
+    labelCutout: "the image cutout",
+    noArm: "Chrome for Testing doesn't exist for arm64. Use the system chromium (apt install chromium).",
+    checksum: "The file downloaded from {url} doesn't match the expected checksum.",
+    exitCode: "code {code}",
+    unzipFailed: "Couldn't extract Chrome",
+    noBinary: "The Chrome package came without the executable.",
+    noPython: "The image cutout needs the system python3.",
+    venvFailed: "Couldn't create the Python environment",
+    pipFailed: "pip didn't install the cutout",
+    incomplete: "The installation of {name} is incomplete.",
+    chromeBroken: "The downloaded Chrome didn't open: {reason}",
+    pythonBroken: "The cutout Python didn't load: {reason}",
+  },
+});

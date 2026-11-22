@@ -10,6 +10,7 @@ import { getServer, listServers } from "../../code/services/dev-server.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import { resolveProject } from "../../servers/services/projects.service";
 import { optionalTool } from "../../tools/services/tools.service";
+import { testsText } from "../constants/tests-messages.constants";
 
 export type TestKind = "maestro" | "playwright";
 export type TestStatus = "running" | "passed" | "failed" | "error";
@@ -380,7 +381,8 @@ export async function startRun(
     id,
     kind: input.kind,
     title: basename(input.path),
-    target: input.kind === "maestro" ? "simulador" : (input.baseUrl ?? input.server ?? "prévia local"),
+    target:
+      input.kind === "maestro" ? testsText("simulator") : (input.baseUrl ?? input.server ?? testsText("localPreview")),
     status: "running",
     attempt: 1,
     startedAt: new Date().toISOString(),

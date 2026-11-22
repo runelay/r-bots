@@ -8,6 +8,7 @@ import * as env from "../../config/env";
 import { blobDriver, blobsDir, s3Settings } from "../../config/storage";
 import { ValidationError } from "../errors";
 import { notFound, Req, Res, readBody, runelayFailure, sendFile, sendJson, validationResponse } from "../http";
+import { withLanguage } from "../i18n";
 import { readJson, updateJson, writeJson } from "../json-file";
 import {
   forgetAllSecretValues,
@@ -357,6 +358,18 @@ describe("http helpers", () => {
     const body = (await (await fromString.res.response).json()) as { error: string };
     expect(body.error).toHaveLength(300);
     expect(body.error.startsWith("runelay não respondeu: xxx")).toBe(true);
+  });
+
+  test("shared answers follow the request language", async () => {
+    const missing = newRes();
+    withLanguage("en", () => notFound(missing.res));
+    expect(await (await missing.res.response).json()).toEqual({ ok: false, error: "Route not found." });
+    const syntax = newRes();
+    withLanguage("en", () => validationResponse(syntax.res, new SyntaxError("x")));
+    expect(await (await syntax.res.response).json()).toEqual({ ok: false, error: "Invalid JSON.", field: "body" });
+    const runelay = newRes();
+    withLanguage("en", () => runelayFailure(runelay.res, new Error("timeout")));
+    expect(await (await runelay.res.response).json()).toEqual({ ok: false, error: "runelay did not respond: timeout" });
   });
 });
 

@@ -1,6 +1,7 @@
 import { ValidationError } from "../../../shared/errors";
 import { listConnections, runelayCall, runelayEnabled } from "../../connectors/services/runelay.service";
 import { linkForIssue, type PullLink, pullsByLinearKey } from "../../github/services/github.service";
+import { linearText } from "../constants/linear-messages.constants";
 
 export class LinearError extends Error {
   constructor(
@@ -190,8 +191,8 @@ async function call(tool: string, args: Json): Promise<unknown> {
     return await runelayCall("call_tool", { name, args });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (/not found|não encontr|entity/i.test(message)) throw new LinearError(404, "Não achei isso no Linear.");
-    throw new LinearError(502, `O Linear não respondeu: ${message}`.slice(0, 300));
+    if (/not found|não encontr|entity/i.test(message)) throw new LinearError(404, linearText("notFound"));
+    throw new LinearError(502, linearText("noAnswer", { reason: message }).slice(0, 300));
   }
 }
 
@@ -310,7 +311,7 @@ export function listViews(refresh = false): Promise<LinearView[]> {
     return [
       {
         id: "mine",
-        name: "Minhas issues",
+        name: linearText("myIssues"),
         kind: "mine" as const,
         description: null,
         team: null,
@@ -335,7 +336,7 @@ export function listViews(refresh = false): Promise<LinearView[]> {
         .filter((view) => str(view.id))
         .map((view) => ({
           id: `view:${str(view.id)}`,
-          name: str(view.name) ?? "Visão",
+          name: str(view.name) ?? linearText("view"),
           kind: "view" as const,
           description: str(view.description),
           team: teamOf(view.team),
@@ -479,7 +480,7 @@ const filterPattern = /^[\p{L}\p{N}_ .:/&()+#-]{1,80}$/u;
 export function parseFilterValue(value: string | null | undefined, field: string) {
   const trimmed = (value ?? "").trim();
   if (!trimmed) return null;
-  if (!filterPattern.test(trimmed)) throw new ValidationError("Filtro inválido.", field);
+  if (!filterPattern.test(trimmed)) throw new ValidationError(linearText("filterInvalid"), field);
   return trimmed;
 }
 
@@ -491,7 +492,7 @@ async function resolveView(id: string): Promise<LinearView> {
     const [kind] = id.split(":");
     return {
       id,
-      name: kind === "team" ? "Time" : kind === "project" ? "Projeto" : "Visão",
+      name: linearText(kind === "team" ? "team" : kind === "project" ? "project" : "view"),
       kind: kind as ViewKind,
       description: null,
       team: null,
@@ -500,7 +501,7 @@ async function resolveView(id: string): Promise<LinearView> {
       color: null,
     };
   }
-  throw new ValidationError("Visão inválida.", "view");
+  throw new ValidationError(linearText("viewInvalid"), "view");
 }
 
 export function board(input: BoardInput): Promise<Board> {
@@ -511,8 +512,7 @@ export function board(input: BoardInput): Promise<Board> {
     const view = await resolveView(input.view);
     const raw = view.id.slice(view.id.indexOf(":") + 1);
     const searchable = view.kind !== "view";
-    if (input.query && !searchable)
-      throw new ValidationError("A busca não funciona dentro de uma visão salva. Use Minhas issues ou um time.", "q");
+    if (input.query && !searchable) throw new ValidationError(linearText("searchInView"), "q");
     const args: Json = { limit: pageSize, fields: cardFields, orderBy: "updatedAt" };
     if (view.kind === "mine") args.assignee = "me";
     if (view.kind === "team") args.team = raw;
@@ -559,13 +559,13 @@ export function board(input: BoardInput): Promise<Board> {
 const identifierPattern = /^[A-Za-z][A-Za-z0-9]{0,9}-\d{1,7}$|^[0-9a-f-]{36}$/;
 
 export function parseIssueId(value: string | undefined) {
-  if (!value || !identifierPattern.test(value)) throw new ValidationError("Issue inválida.", "id");
+  if (!value || !identifierPattern.test(value)) throw new ValidationError(linearText("issueInvalid"), "id");
   return value;
 }
 
 async function rawIssue(id: string) {
   const issue = record(await call("get_issue", { id }));
-  if (!str(issue.id)) throw new LinearError(404, "Não achei essa issue no Linear.");
+  if (!str(issue.id)) throw new LinearError(404, linearText("issueMissing"));
   return issue;
 }
 
@@ -591,7 +591,7 @@ export async function issueDetail(id: string): Promise<IssueDetail> {
     comments: list(comments.comments)
       .map((comment) => ({
         id: str(comment.id) ?? "",
-        author: nameOf(comment.author) ?? "Alguém",
+        author: nameOf(comment.author) ?? linearText("someone"),
         body: cleanDescription(str(comment.body) ?? ""),
         createdAt: str(comment.createdAt) ?? "",
         parentId: str(comment.parentId),
@@ -624,12 +624,12 @@ export function targetState(states: LinearState[], column: string) {
 }
 
 export async function moveIssue(id: string, column: string) {
-  if (!column) throw new ValidationError("Escolha a coluna.", "column");
+  if (!column) throw new ValidationError(linearText("pickColumn"), "column");
   const issue = await rawIssue(id);
   const teamId = str(issue.teamId);
-  if (!teamId) throw new LinearError(422, "Essa issue não tem time.");
+  if (!teamId) throw new LinearError(422, linearText("noTeam"));
   const state = targetState(await teamStates(teamId), column);
-  if (!state) throw new ValidationError("Esse status não existe no time da issue.", "column");
+  if (!state) throw new ValidationError(linearText("statusMissing"), "column");
   await save({ id, state: state.id });
   return { id, state: state.name, stateType: state.type, column: columnKey(state.type, state.name) };
 }
@@ -647,9 +647,9 @@ export function startedState(states: LinearState[]) {
 export async function startIssue(id: string) {
   const issue = await rawIssue(id);
   const teamId = str(issue.teamId);
-  if (!teamId) throw new LinearError(422, "Essa issue não tem time.");
+  if (!teamId) throw new LinearError(422, linearText("noTeam"));
   const state = startedState(await teamStates(teamId));
-  if (!state) throw new LinearError(422, "O time dessa issue não tem um status de andamento.");
+  if (!state) throw new LinearError(422, linearText("noStartedStatus"));
   await save({ id, state: state.id, ...(str(issue.assigneeId) ? {} : { assignee: "me" }) });
   return {
     id,

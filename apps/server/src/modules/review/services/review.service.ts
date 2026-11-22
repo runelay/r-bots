@@ -7,6 +7,7 @@ import { createConversation, publicConversation } from "../../conversations/serv
 import { deliver } from "../../engine/services/engine.service";
 import { graphql } from "../../github/services/gh-client.service";
 import { LinearError, linearTool, listProjects, listViews } from "../../linear/services/linear.service";
+import { reviewText } from "../constants/review-messages.constants";
 
 export const reviewScopes = ["today", "week", "custom"] as const;
 export type ReviewScope = (typeof reviewScopes)[number];
@@ -37,9 +38,8 @@ export function builtInPresets(): ReviewPreset[] {
   return [
     {
       id: "daily",
-      name: "Daily de hoje",
-      prompt:
-        "Faça um resumo simples do dia para a daily, juntando o que foi feito e o que está em andamento. Três blocos curtos: feito, em andamento e bloqueios. Uma linha por item, com o id da issue ou o número do PR.",
+      name: reviewText("dailyName"),
+      prompt: reviewText("dailyPrompt"),
       scope: "today",
       days: 1,
       linear: true,
@@ -48,9 +48,8 @@ export function builtInPresets(): ReviewPreset[] {
     },
     {
       id: "week",
-      name: "Resumo da semana",
-      prompt:
-        "Faça um resumo simples da semana: o que foi entregue, o que está em andamento e o que travou. Agrupe por projeto quando ajudar e termine com os próximos passos.",
+      name: reviewText("weekName"),
+      prompt: reviewText("weekPrompt"),
       scope: "week",
       days: 7,
       linear: true,
@@ -59,9 +58,8 @@ export function builtInPresets(): ReviewPreset[] {
     },
     {
       id: "pulls",
-      name: "PRs para revisar",
-      prompt:
-        "Liste os PRs que esperam a minha revisão, do mais urgente ao menos urgente, com uma linha sobre o que cada um muda e o link. Depois diga quais PRs meus estão parados.",
+      name: reviewText("pullsName"),
+      prompt: reviewText("pullsPrompt"),
       scope: "week",
       days: 7,
       linear: false,
@@ -76,32 +74,34 @@ export async function readPresets(): Promise<ReviewPreset[]> {
   return Array.isArray(stored) ? stored : builtInPresets();
 }
 
-function text(value: unknown, field: string, max: number) {
-  if (typeof value !== "string" || !value.trim()) throw new ValidationError(`Preencha ${field}.`, field);
-  if (value.trim().length > max) throw new ValidationError(`${field} pode ter até ${max} caracteres.`, field);
+function text(value: unknown, field: string, labelKey: "fieldName" | "fieldPrompt", max: number) {
+  const label = reviewText(labelKey);
+  if (typeof value !== "string" || !value.trim())
+    throw new ValidationError(reviewText("fill", { field: label }), field);
+  if (value.trim().length > max) throw new ValidationError(reviewText("tooLong", { field: label, max }), field);
   return value.trim();
 }
 
 export function presetOf(value: unknown, index: number): ReviewPreset {
   if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new ValidationError("Preset inválido.", `presets.${index}`);
+    throw new ValidationError(reviewText("presetInvalid"), `presets.${index}`);
   const raw = value as Record<string, unknown>;
   const scope = raw.scope;
   if (!(reviewScopes as readonly unknown[]).includes(scope))
-    throw new ValidationError("Use today, week ou custom.", `presets.${index}.scope`);
+    throw new ValidationError(reviewText("scopeInvalid"), `presets.${index}.scope`);
   const days = typeof raw.days === "number" && Number.isInteger(raw.days) ? raw.days : scope === "week" ? 7 : 1;
-  if (days < 1 || days > 90) throw new ValidationError("O período vai de 1 a 90 dias.", `presets.${index}.days`);
+  if (days < 1 || days > 90) throw new ValidationError(reviewText("daysRange"), `presets.${index}.days`);
   const botId = raw.botId === null || raw.botId === undefined || raw.botId === "" ? null : raw.botId;
   if (botId !== null && (typeof botId !== "string" || botId.length > 80))
-    throw new ValidationError("Bot inválido.", `presets.${index}.botId`);
+    throw new ValidationError(reviewText("botInvalid"), `presets.${index}.botId`);
   const id = typeof raw.id === "string" && /^[\w-]{1,40}$/.test(raw.id) ? raw.id : randomUUID().slice(0, 8);
   const linear = raw.linear !== false;
   const github = raw.github !== false;
-  if (!linear && !github) throw new ValidationError("Escolha o Linear, o GitHub ou os dois.", `presets.${index}`);
+  if (!linear && !github) throw new ValidationError(reviewText("sourceRequired"), `presets.${index}`);
   return {
     id,
-    name: text(raw.name, "o nome", 60),
-    prompt: text(raw.prompt, "o pedido", 4000),
+    name: text(raw.name, "o nome", "fieldName", 60),
+    prompt: text(raw.prompt, "o pedido", "fieldPrompt", 4000),
     scope: scope as ReviewScope,
     days,
     linear,
@@ -113,8 +113,8 @@ export function presetOf(value: unknown, index: number): ReviewPreset {
 export async function savePresets(body: unknown) {
   const raw =
     body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>).presets : null;
-  if (!Array.isArray(raw)) throw new ValidationError("Mande a lista em presets.", "presets");
-  if (raw.length > maxPresets) throw new ValidationError(`Até ${maxPresets} presets.`, "presets");
+  if (!Array.isArray(raw)) throw new ValidationError(reviewText("presetsList"), "presets");
+  if (raw.length > maxPresets) throw new ValidationError(reviewText("presetsMax", { max: maxPresets }), "presets");
   const presets = raw.map(presetOf);
   const ids = new Set<string>();
   for (const preset of presets) {
@@ -150,7 +150,12 @@ export async function windowOf(preset: Pick<ReviewPreset, "scope" | "days">, now
   const days = preset.scope === "today" ? 1 : preset.scope === "week" ? 7 : preset.days;
   const start = new Date(now.getTime() - (days - 1) * 86_400_000);
   const day = zonedDay(start, zone);
-  const label = preset.scope === "today" ? "hoje" : days === 7 ? "últimos 7 dias" : `últimos ${days} dias`;
+  const label =
+    preset.scope === "today"
+      ? reviewText("today")
+      : days === 7
+        ? reviewText("lastWeek")
+        : reviewText("lastDays", { days });
   return { since: `${day}T00:00:00${offsetOf(start, zone)}`, day, label };
 }
 
@@ -172,21 +177,21 @@ const issueFields = ["id", "title", "status", "statusType", "url", "project", "c
 
 async function scopeArgs(view: string | null, project: string | null) {
   const args: Json = {};
-  let label = "minhas issues";
+  let label = reviewText("myIssues");
   if (!view || view === "mine") args.assignee = "me";
   else {
     const separator = view.indexOf(":");
     const kind = view.slice(0, separator);
     const id = view.slice(separator + 1);
-    if (!/^[\w-]+$/.test(id)) throw new ValidationError("Visão inválida.", "view");
+    if (!/^[\w-]+$/.test(id)) throw new ValidationError(reviewText("viewInvalid"), "view");
     if (kind === "team") args.team = id;
     else if (kind === "view") args.customView = id;
     else if (kind === "project") args.project = id;
-    else throw new ValidationError("Visão inválida.", "view");
+    else throw new ValidationError(reviewText("viewInvalid"), "view");
     label = (await listViews().catch(() => [])).find((item) => item.id === view)?.name ?? label;
   }
   if (project && !args.project) {
-    if (!/^[\w-]+$/.test(project)) throw new ValidationError("Projeto inválido.", "project");
+    if (!/^[\w-]+$/.test(project)) throw new ValidationError(reviewText("projectInvalid"), "project");
     args.project = project;
     const name = (await listProjects().catch(() => [])).find((item) => item.id === project)?.name;
     if (name) label = `${label} · ${name}`;
@@ -221,11 +226,11 @@ export async function linearContext(window: ReviewWindow, view: string | null, p
     items.length ? [`### ${title} (${items.length})`, ...items.slice(0, 40).map(issueLine)].join("\n") : "";
   return [
     `## Linear (${label})`,
-    section("Concluídas no período", done),
-    section("Começadas no período", begun),
-    section("Em andamento agora", ongoing),
-    section("Mexidas no período", touched),
-    done.length + begun.length + ongoing.length + touched.length === 0 ? "Nada no período." : "",
+    section(reviewText("done"), done),
+    section(reviewText("begun"), begun),
+    section(reviewText("ongoing"), ongoing),
+    section(reviewText("touched"), touched),
+    done.length + begun.length + ongoing.length + touched.length === 0 ? reviewText("nothing") : "",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -248,7 +253,13 @@ interface RawSearch {
 
 function pullLine(pull: RawPull) {
   const state =
-    pull.state === "MERGED" ? "mergeado" : pull.state === "CLOSED" ? "fechado" : pull.isDraft ? "rascunho" : "aberto";
+    pull.state === "MERGED"
+      ? reviewText("merged")
+      : pull.state === "CLOSED"
+        ? reviewText("closed")
+        : pull.isDraft
+          ? reviewText("draft")
+          : reviewText("open");
   return `- ${pull.repository?.nameWithOwner ?? "?"}#${pull.number ?? "?"} ${pull.title ?? ""} (${state}) ${pull.url ?? ""}`;
 }
 
@@ -271,11 +282,11 @@ export async function githubContext(window: ReviewWindow) {
     .join("\n")} }`;
   const data = await graphql<Record<keyof typeof searches, RawSearch | undefined>>(query, searches);
   const titles: Record<keyof typeof searches, string> = {
-    opened: "PRs que abri no período",
-    merged: "PRs meus mergeados no período",
-    reviewed: "PRs que revisei no período",
-    waiting: "PRs esperando a minha revisão",
-    open: "PRs meus abertos agora",
+    opened: reviewText("pullsOpened"),
+    merged: reviewText("pullsMerged"),
+    reviewed: reviewText("pullsReviewed"),
+    waiting: reviewText("pullsWaiting"),
+    open: reviewText("pullsOpen"),
   };
   const parts = keys
     .map((key) => {
@@ -284,42 +295,42 @@ export async function githubContext(window: ReviewWindow) {
       return [`### ${titles[key]} (${data[key]?.issueCount ?? nodes.length})`, ...nodes.map(pullLine)].join("\n");
     })
     .filter(Boolean);
-  return ["## GitHub", ...(parts.length ? parts : ["Nada no período."])].join("\n\n");
+  return ["## GitHub", ...(parts.length ? parts : [reviewText("nothing")])].join("\n\n");
 }
 
 export function composeMessage(preset: ReviewPreset, window: ReviewWindow, sections: string[]) {
   const context = sections.join("\n\n");
-  const trimmed = context.length > maxContext ? `${context.slice(0, maxContext)}\n…(cortado)` : context;
+  const trimmed = context.length > maxContext ? `${context.slice(0, maxContext)}\n${reviewText("cut")}` : context;
   return [
     preset.prompt,
-    `Período: ${window.label} (desde ${window.day}).`,
-    "Contexto juntado pelo app (títulos, ids, estados e links; sem o corpo das issues):",
+    reviewText("period", { label: window.label, day: window.day }),
+    reviewText("contextIntro"),
     trimmed,
-    "Use só o que está acima. Se precisar de detalhe, consulte o Linear ou o GitHub.",
+    reviewText("contextOutro"),
   ].join("\n\n");
 }
 
 export async function runPreset(input: RunInput) {
   const presets = await readPresets();
   const preset = presets.find((item) => item.id === input.presetId);
-  if (!preset) throw new ValidationError("Preset não encontrado.", "presetId");
+  if (!preset) throw new ValidationError(reviewText("presetNotFound"), "presetId");
   const chosen = input.botId ?? preset.botId;
   const bot = chosen ? getBot(chosen) : null;
   const target = usable(bot ?? undefined) ? (bot as BotDefinition) : defaultBot();
-  if (!target) throw new ValidationError("Crie um bot para rodar o review.", "botId");
+  if (!target) throw new ValidationError(reviewText("botRequired"), "botId");
   const window = await windowOf(preset);
   const failures: string[] = [];
   const sections = await Promise.all([
     preset.linear
       ? linearContext(window, input.view, input.project).catch((error) => {
-          failures.push(error instanceof LinearError ? error.message : "o Linear não respondeu");
-          return "## Linear\n\nNão deu para ler o Linear agora.";
+          failures.push(error instanceof LinearError ? error.message : reviewText("linearDown"));
+          return `## Linear\n\n${reviewText("linearUnread")}`;
         })
       : Promise.resolve(""),
     preset.github
       ? githubContext(window).catch(() => {
-          failures.push("o GitHub não respondeu");
-          return "## GitHub\n\nNão deu para ler o GitHub agora.";
+          failures.push(reviewText("githubDown"));
+          return `## GitHub\n\n${reviewText("githubUnread")}`;
         })
       : Promise.resolve(""),
   ]);

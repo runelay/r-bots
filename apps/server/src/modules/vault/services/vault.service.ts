@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { forgetSecretValue, minSecretLength, redactDeep, rememberSecretValue } from "../../../shared/redact";
 import { MacRunnerUnavailable, macRunnerSupports, macSecretResolve } from "../../accounts/services/mac-runner.service";
+import { vaultText } from "../constants/vault-messages.constants";
 import {
   addAudit,
   loadSecretMetas,
@@ -183,8 +184,7 @@ function openCopy(master: Buffer, name: string, sealed: Sealed, policy: Policy) 
 
 async function writeServerCopy(name: string, value: string, policy: Policy) {
   const master = loadMasterKey();
-  if (!master)
-    throw new VaultError("no_key", "O servidor não tem a chave do cofre, então não dá para guardar uma cópia aqui.");
+  if (!master) throw new VaultError("no_key", vaultText("noKey"));
   const sealed = sealCopy(master, name, value, policy);
   master.fill(0);
   await saveSecretMetas(index);
@@ -193,8 +193,7 @@ async function writeServerCopy(name: string, value: string, policy: Policy) {
 
 async function readServerCopy(name: string, policy: Policy) {
   const master = loadMasterKey();
-  if (!master)
-    throw new VaultError("no_key", "O servidor perdeu a chave do cofre e não consegue abrir a cópia guardada aqui.");
+  if (!master) throw new VaultError("no_key", vaultText("lostKey"));
   try {
     const sealed = await readSealed(name);
     if (!sealed) throw new Error("missing");
@@ -297,19 +296,13 @@ export function normalizeDomains(list: unknown) {
     }
     value = value.replace(/\/.*$/, "").replace(/^www\./, "");
     if (!domainPattern.test(value) || value.length > 253)
-      throw new VaultError(
-        "bad_domains",
-        `“${String(item)}” não é um site válido. Use algo como github.com ou *.github.com.`,
-      );
+      throw new VaultError("bad_domains", vaultText("badSite", { site: String(item) }));
     const base = value.replace(/^\*\./, "");
     if (base.split(".").length < 2 || isPublicSuffix(base))
-      throw new VaultError(
-        "bad_domains",
-        `“${String(item)}” é amplo demais (vale para sites de qualquer dono). Use o site exato, como api.exemplo.com.br ou *.exemplo.com.`,
-      );
+      throw new VaultError("bad_domains", vaultText("broadSite", { site: String(item) }));
     if (!out.includes(value)) out.push(value);
   }
-  if (out.length > 30) throw new VaultError("bad_domains", "Use no máximo 30 sites por segredo.");
+  if (out.length > 30) throw new VaultError("bad_domains", vaultText("maxSites"));
   return out;
 }
 
@@ -523,8 +516,7 @@ export function takeExecTicket(ticket: string) {
 
 export async function saveSecretMeta(name: string, body: Record<string, unknown>) {
   if (!loaded) await loadVault();
-  if (!secretNamePattern.test(name))
-    throw new VaultError("bad_name", "Use só letras minúsculas, números, - e _ no nome (até 64).");
+  if (!secretNamePattern.test(name)) throw new VaultError("bad_name", vaultText("nameRule"));
   const now = new Date().toISOString();
   const current = index[name];
   const touchId = body.touchId === undefined ? (current?.touchId ?? "hourly") : String(body.touchId);
@@ -537,7 +529,7 @@ export async function saveSecretMeta(name: string, body: Record<string, unknown>
   if (body.expiresAt !== undefined) {
     expiresAt = body.expiresAt === null || body.expiresAt === "" ? null : String(body.expiresAt);
     if (expiresAt && Number.isNaN(Date.parse(expiresAt)))
-      throw new VaultError("bad_expiry", "Data de validade inválida.");
+      throw new VaultError("bad_expiry", vaultText("expiryInvalid"));
   }
   let bots = current?.bots ?? [];
   if (body.bots !== undefined) {
@@ -587,16 +579,13 @@ export async function deleteSecret(name: string) {
 
 export async function setServerCopy(name: string, value: string | null) {
   const meta = index[name];
-  if (!meta) throw new VaultError("not_found", "Esse segredo não existe no cofre.");
+  if (!meta) throw new VaultError("not_found", vaultText("secretMissing"));
   if (value === null) {
     await writeSealed(name, null);
     meta.storage = "mac";
   } else {
     if (value.length < minSecretLength)
-      throw new VaultError(
-        "too_short",
-        `Valor curto demais: use pelo menos ${minSecretLength} caracteres para o servidor conseguir escondê-lo.`,
-      );
+      throw new VaultError("too_short", vaultText("tooShort", { min: minSecretLength }));
     await writeServerCopy(name, value, meta);
     meta.storage = "mac+server";
   }

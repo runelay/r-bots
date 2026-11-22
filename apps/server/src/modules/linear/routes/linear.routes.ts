@@ -1,5 +1,6 @@
 import { ValidationError } from "../../../shared/errors";
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
 import { cleanText } from "../../github/services/github.service";
 import {
   assignToMe,
@@ -19,7 +20,8 @@ import {
 
 function objectBody(value: unknown) {
   if (value === undefined) return {};
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("Corpo inválido.", "body");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   return value as Record<string, unknown>;
 }
 

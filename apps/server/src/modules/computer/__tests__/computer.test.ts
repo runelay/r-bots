@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
 import { connectFakeRunner } from "../../../../test/media-helpers";
+import { withLanguage } from "../../../shared/i18n";
 import * as macRunner from "../../accounts/services/mac-runner.service";
 import {
   type ComputerContext,
@@ -182,6 +183,9 @@ describe("computerHumanReason", () => {
     );
     expect(computerHumanReason("computer_applescript", { script: "get name" })).toBeNull();
     expect(computerHumanReason("computer_applescript", {})).toBeNull();
+    expect(withLanguage("en", () => computerHumanReason("shell_run", { cmd: "git push" }))).toBe(
+      "git push always goes through a person.",
+    );
     expect(computerHumanReason("files_trash", { paths: Array.from({ length: 11 }, (_, i) => `f${i}`) })).toContain(
       "10 itens",
     );

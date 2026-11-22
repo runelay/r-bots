@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { beginCall, endCall } from "../../code/services/hooks.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
+import { simulatorsText } from "../constants/simulators-messages.constants";
 import { deviceCall, listDevices, openExpo } from "./simulators.service";
 
 type Content = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -44,7 +45,7 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
     "simulator_list",
     "Lista os simuladores iOS e emuladores Android do Mac da pessoa (ligados ou não) e se o Maestro está instalado.",
     {},
-    () => "Ver os simuladores",
+    () => simulatorsText("list"),
     async () => {
       const list = await listDevices(context.signal);
       return { summary: JSON.stringify(list), output: { devices: list.devices.length } };
@@ -54,7 +55,7 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
     "simulator_boot",
     "Liga um simulador do Mac e abre a janela do Simulator.",
     { udid: z.string().min(1).max(80) },
-    (args) => `Ligar o simulador ${String(args.udid).slice(0, 8)}`,
+    (args) => simulatorsText("boot", { id: String(args.udid).slice(0, 8) }),
     async (args) => {
       const result = await deviceCall("sim.boot", { udid: args.udid }, 180_000, context.signal);
       return { summary: `Ligado: ${JSON.stringify(result)}`, output: result };
@@ -64,7 +65,7 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
     "simulator_shutdown",
     "Desliga um simulador do Mac.",
     { udid: z.string().min(1).max(80) },
-    (args) => `Desligar o simulador ${String(args.udid).slice(0, 8)}`,
+    (args) => simulatorsText("shutdown", { id: String(args.udid).slice(0, 8) }),
     async (args) => {
       const result = await deviceCall("sim.shutdown", { udid: args.udid }, 90_000, context.signal);
       return { summary: "Desligado.", output: result };
@@ -74,7 +75,7 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
     "simulator_open_url",
     "Abre uma URL ou deep link (ex.: myapp://home) no simulador ligado.",
     { url: z.string().min(1).max(2000), udid },
-    (args) => `Abrir ${String(args.url).slice(0, 60)} no simulador`,
+    (args) => simulatorsText("openUrl", { url: String(args.url).slice(0, 60) }),
     async (args) => {
       const result = await deviceCall("sim.open_url", { url: args.url, udid: args.udid }, 60_000, context.signal);
       return { summary: "Aberto.", output: result };
@@ -88,7 +89,7 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
       udid,
       client: z.enum(["go", "dev"]).optional().describe("go = Expo Go, dev = dev client; sem isso, detecta"),
     },
-    () => "Abrir o app Expo no simulador",
+    () => simulatorsText("openExpo"),
     async (args) => {
       const result = await openExpo(
         {
@@ -114,7 +115,7 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
     "simulator_screenshot",
     "Print da tela do simulador ligado.",
     { udid },
-    () => "Print do simulador",
+    () => simulatorsText("screenshot"),
     async (args) => {
       const result = await deviceCall("sim.screenshot", { udid: args.udid }, 60_000, context.signal);
       const meta = { width: result.width, height: result.height };
@@ -138,7 +139,7 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
       y: z.number().min(0).max(100).optional(),
       udid,
     },
-    (args) => `Tocar em ${String(args.text ?? args.id ?? `${args.x}%, ${args.y}%`).slice(0, 60)}`,
+    (args) => simulatorsText("tap", { target: String(args.text ?? args.id ?? `${args.x}%, ${args.y}%`).slice(0, 60) }),
     async (args) => {
       const result = await deviceCall("sim.tap", args, 120_000, context.signal);
       return { summary: "Tocado.", output: result };
@@ -148,7 +149,7 @@ export function registerSimulatorTools(server: McpServer, context: ToolContext) 
     "simulator_type",
     "Digita um texto no campo focado do simulador (Maestro inputText).",
     { text: z.string().min(1).max(2000), udid },
-    () => "Digitar no simulador",
+    () => simulatorsText("type"),
     async (args) => {
       const result = await deviceCall("sim.type", args, 120_000, context.signal);
       return { summary: "Digitado.", output: result };

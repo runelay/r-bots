@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { withLanguage } from "../../../shared/i18n";
 import type { Principal } from "../services/auth.middleware";
 import {
   authorize,
@@ -116,6 +117,9 @@ describe("route policy", () => {
       ok: false,
       error: "O token interno não tem acesso a esta rota.",
       code: "forbidden",
+    });
+    expect(await withLanguage("en", () => forbiddenResponse("owner")).json()).toMatchObject({
+      error: "Only the account owner can do this.",
     });
   });
 });

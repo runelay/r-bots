@@ -311,6 +311,10 @@ describe("routes", () => {
     expect((reply.body.issue.states as unknown[]).length).toBe(6);
     expect((await request("/linear/issues/ENG-404")).status).toBe(404);
     expect((await request("/linear/issues/not an id")).status).toBe(400);
+    const english = await request<{ error: string }>("/linear/issues/not an id", {
+      headers: { "accept-language": "en" },
+    });
+    expect(english.body.error).toBe("Invalid issue.");
   });
 
   test("moves, assigns and starts issues", async () => {

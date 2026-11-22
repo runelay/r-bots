@@ -1,12 +1,14 @@
 import { ValidationError } from "../../../shared/errors";
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
 import { CliUpdateError, listVersions, rollback, startUpdate } from "../services/cli-versions.service";
 
 const noStore = { "cache-control": "no-store" };
 
 function versionOf(value: unknown) {
   if (value === undefined) return undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("Corpo inválido.", "body");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   return (value as Record<string, unknown>).version;
 }
 

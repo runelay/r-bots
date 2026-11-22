@@ -20,6 +20,7 @@ import {
 } from "../../../../test/engine-turn-helpers";
 import { fakeProviders, replyWith } from "../../../../test/helpers";
 import { must } from "../../../../test/must";
+import { noteDeviceLanguage, resetLanguageState, setLanguagePreference } from "../../../shared/i18n";
 import * as accounts from "../../accounts/services/accounts.service";
 import { clearLimit, limitOf, markLimited } from "../../accounts/services/limits.service";
 import * as decisions from "../../approvals/services/decisions.service";
@@ -32,6 +33,7 @@ import * as computer from "../../computer/services/computer.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import * as reactions from "../../conversations/services/reactions.service";
 import * as threads from "../../conversations/services/threads.service";
+import { updatePreferences } from "../../settings/services/preferences.service";
 import { metricsText, resetTurnDurations } from "../../status/services/metrics.service";
 import * as uploads from "../../uploads/services/uploads.service";
 import {
@@ -236,6 +238,11 @@ describe("a chat turn", () => {
     fakeProviders.next(({ emit }) => emit({ type: "done", ok: false }));
     await run(session, { text: "e agora" });
     expect((await settledOf(session))?.error?.message).toBe("Falha no provedor.");
+    await updatePreferences({ language: "en" });
+    fakeProviders.next(({ emit }) => emit({ type: "done", ok: false }));
+    await run(session, { text: "and now" });
+    expect((await settledOf(session))?.error?.message).toBe("Provider failure.");
+    await updatePreferences({ language: "system" });
   });
 
   test("reports a provider crash and denies open approvals", async () => {
@@ -280,6 +287,10 @@ describe("a chat turn", () => {
     bot.engine = { account: "vps:claude", model: "x", effort: null, fallback: null };
     await run(session);
     expect((await settledOf(session))?.error?.message).toBe("A conta Claude está fora do ar. caiu");
+    setLanguagePreference("en");
+    await run(session);
+    expect((await settledOf(session))?.error?.message).toBe("The account Claude is down. caiu");
+    resetLanguageState();
     expect(fakeProviders.turns).toHaveLength(0);
   });
 
@@ -337,7 +348,16 @@ describe("the system prompt", () => {
       await run(session);
       expect(lastRequest().systemPrompt).not.toContain("Você acabou de ser criado.");
       expect(lastRequest().systemPrompt).toContain("A pessoa deixou você trocar de modelo quando achar melhor");
+      expect(lastRequest().systemPrompt).not.toContain("## Idioma");
+      await updatePreferences({ language: "pt-BR" });
+      await run(session);
+      expect(lastRequest().systemPrompt).toContain("## Idioma\nResponda sempre em português do Brasil.");
+      await updatePreferences({ language: "system" });
+      noteDeviceLanguage("en");
+      await run(session);
+      expect(lastRequest().systemPrompt).toContain("## Language\nAlways reply to the person in English");
     } finally {
+      resetLanguageState();
       setKnownConnectors([]);
     }
   });

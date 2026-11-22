@@ -10,6 +10,7 @@ import {
   waitFor,
 } from "../../../../test/engine-helpers";
 import { fakeProviders, request, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
+import { withLanguage } from "../../../shared/i18n";
 import { type BotDefinition, engineOf } from "../../bots/services/bots.service";
 import { deliver, isBusy } from "../../engine/services/engine.service";
 import * as captureJobs from "../../memory/services/capture-jobs.service";
@@ -86,6 +87,8 @@ describe("emoji and target input", () => {
     expect(() => normalizeTarget("")).toThrow("target inválido.");
     expect(() => normalizeTarget("x".repeat(201))).toThrow("target inválido.");
     expect(normalizeTarget(" run_0.0 ")).toBe("run_0.0");
+    expect(() => withLanguage("en", () => normalizeEmoji("ok"))).toThrow("Use a single emoji.");
+    expect(() => withLanguage("en", () => normalizeTarget(""))).toThrow("Invalid target.");
   });
 
   test("lists message targets from facts", () => {

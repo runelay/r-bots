@@ -3,6 +3,7 @@ import { promises as dns } from "node:dns";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { ValidationError } from "../errors";
+import { withLanguage } from "../i18n";
 import { guardedFetch, isPublicAddress, resolvePublic } from "../net-guard";
 
 type LookupAnswer = { address: string; family: number };
@@ -99,6 +100,17 @@ describe("resolvePublic", () => {
       "http://100.100.100.100/",
     ])
       await expect(resolvePublic(new URL(raw))).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  test("explains refusals in the request language", async () => {
+    const refusal = (raw: string) =>
+      withLanguage("en", () => resolvePublic(new URL(raw)).catch((error: Error) => error.message));
+    expect(await refusal("ftp://example.com/")).toBe("Only http or https addresses are allowed.");
+    expect(await refusal("https://user@example.com/")).toBe("The address can't carry a user name or password.");
+    expect(await refusal("http://intranet/")).toBe("The site intranet is not a public address.");
+    expect(await resolvePublic(new URL("ftp://example.com/")).catch((error: Error) => error.message)).toBe(
+      "Só endereços http ou https são permitidos.",
+    );
   });
 
   test("returns a literal public address without DNS", async () => {

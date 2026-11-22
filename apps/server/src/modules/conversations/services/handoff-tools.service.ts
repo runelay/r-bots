@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import { readableThread, readThread } from "../../engine/services/side-threads.service";
+import { conversationsText } from "../constants/conversations-messages.constants";
 import { readItem } from "./handoff.service";
 import { getStoredSession } from "./sessions.service";
 
@@ -48,7 +49,7 @@ export function registerThreadTools(server: McpServer, context: ToolContext) {
           type: "call.requested",
           data: {
             callId,
-            capability: { kind: "tool", name: "thread_read", label: "Relendo a conversa" },
+            capability: { kind: "tool", name: "thread_read", label: conversationsText("rereading") },
             input: { ...(itemId ? { itemId, offset } : {}), ...(threadId ? { threadId } : {}) },
             owner: context.ownerCallId ? { callId: context.ownerCallId } : { runId: context.runId() },
             ...(context.origin ? { origin: { agent: context.origin } } : {}),

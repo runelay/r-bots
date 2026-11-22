@@ -1,4 +1,5 @@
 import { requestContext } from "../../../shared/http";
+import { authText } from "../constants/auth-messages.constants";
 import type { Principal } from "./auth.middleware";
 import type { Auth } from "./auth.service";
 import { ownerRole } from "./auth.service";
@@ -146,7 +147,7 @@ export type OriginRegistry = ReturnType<typeof createOriginRegistry>;
 
 export function misdirected() {
   return Response.json(
-    { ok: false, error: "Endereço não reconhecido por este servidor.", code: "misdirected" },
+    { ok: false, error: authText("misdirected"), code: "misdirected" },
     { status: 421, headers: { "cache-control": "no-store" } },
   );
 }

@@ -2,6 +2,7 @@ import { dataDir, host, port, repoDir, rootDir } from "../../config/env";
 import { runnerToken } from "../../config/runtime-secrets";
 import { hasProxyHeaders, isLoopback, requestContext } from "../../shared/http";
 import type { AuthModule, Principal } from ".";
+import { authText } from "./constants/auth-messages.constants";
 import { isPublicRoute } from "./services/auth.middleware";
 import { misdirected } from "./services/origins.service";
 import { authorize, forbiddenResponse } from "./services/policy.service";
@@ -93,7 +94,7 @@ function isBlockedLocalExec(request: Request) {
 }
 
 function notFoundResponse() {
-  return Response.json({ ok: false, error: "Rota não encontrada." }, { status: 404 });
+  return Response.json({ ok: false, error: authText("notFound") }, { status: 404 });
 }
 
 export interface GateOptions {

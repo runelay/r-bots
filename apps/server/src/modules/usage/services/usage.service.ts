@@ -9,6 +9,7 @@ import {
   siblingAccounts,
 } from "../../accounts/services/accounts.service";
 import { engineOf, listBots } from "../../bots/services/bots.service";
+import { usageText } from "../constants/usage-messages.constants";
 import {
   type Counters,
   type SessionRow,
@@ -156,7 +157,8 @@ export function claudeWindows(raw: RawClaudeUsage): LimitWindow[] {
   const weekly = limits.find((item) => item.kind === "weekly_all");
   const sessionUsed = session?.percent ?? raw.five_hour?.utilization;
   const sessionReset = session?.resets_at ?? raw.five_hour?.resets_at ?? null;
-  if (typeof sessionUsed === "number") windows.push(makeWindow("session", "Sessão", sessionUsed, sessionReset, 300));
+  if (typeof sessionUsed === "number")
+    windows.push(makeWindow("session", usageText("session"), sessionUsed, sessionReset, 300));
   const weeklyUsed = weekly?.percent ?? raw.seven_day?.utilization;
   const weeklyReset = weekly?.resets_at ?? raw.seven_day?.resets_at ?? null;
   if (typeof weeklyUsed === "number") windows.push(makeWindow("weekly", "Semanal", weeklyUsed, weeklyReset, 10_080));
@@ -176,7 +178,7 @@ export function codexWindows(raw: RawCodexLimits): LimitWindow[] {
     if (!window || typeof window.usedPercent !== "number") return;
     const minutes = window.windowDurationMins ?? fallbackMinutes;
     const kind = minutes <= 360 ? "session" : minutes <= 10_080 ? "weekly" : "monthly";
-    const label = kind === "session" ? "Sessão" : kind === "weekly" ? "Semanal" : "Mensal";
+    const label = usageText(kind);
     windows.push(
       makeWindow(
         kind,
@@ -213,15 +215,15 @@ async function claudeLimits(account: Account): Promise<Omit<LimitAccount, "failo
   const base = limitBase(account);
   const dir = accountPath(account.id);
   try {
-    if (!dir) return limitFailure(base, `${account.label} não tem diretório de configuração.`);
+    if (!dir) return limitFailure(base, usageText("noDir", { account: account.label }));
     const credentials = JSON.parse(await readFile(join(dir, ".credentials.json"), "utf8")) as {
       claudeAiOauth?: { accessToken?: string; expiresAt?: number; subscriptionType?: string };
     };
     const oauth = credentials.claudeAiOauth;
     if (oauth?.subscriptionType) base.plan = oauth.subscriptionType;
-    if (!oauth?.accessToken) return limitFailure(base, `${account.label} não está logado.`);
+    if (!oauth?.accessToken) return limitFailure(base, usageText("notLogged", { account: account.label }));
     if (oauth.expiresAt && oauth.expiresAt < Date.now())
-      return limitFailure(base, `O login do ${account.label} expirou. Ele renova no próximo turno.`);
+      return limitFailure(base, usageText("expired", { account: account.label }));
     const response = await fetch("https://api.anthropic.com/api/oauth/usage", {
       headers: {
         authorization: `Bearer ${oauth.accessToken}`,
@@ -236,7 +238,7 @@ async function claudeLimits(account: Account): Promise<Omit<LimitAccount, "failo
   } catch (error) {
     return limitFailure(
       base,
-      `Não deu para ler os limites do Claude: ${error instanceof Error ? error.message : String(error)}`,
+      usageText("claudeFailed", { reason: error instanceof Error ? error.message : String(error) }),
     );
   }
 }
@@ -322,7 +324,7 @@ async function codexLimits(account: Account): Promise<Omit<LimitAccount, "failov
   } catch (error) {
     return limitFailure(
       base,
-      `Não deu para ler os limites do Codex: ${error instanceof Error ? error.message : String(error)}`,
+      usageText("codexFailed", { reason: error instanceof Error ? error.message : String(error) }),
     );
   }
 }

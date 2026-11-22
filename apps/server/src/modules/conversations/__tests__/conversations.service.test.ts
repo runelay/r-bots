@@ -3,6 +3,7 @@ import { factsOfType, makeBot, newSession, waitFor } from "../../../../test/engi
 import { fakeProviders, resetData } from "../../../../test/helpers";
 import { must } from "../../../../test/must";
 import { ValidationError } from "../../../shared/errors";
+import { withLanguage } from "../../../shared/i18n";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import type { WorkspaceState } from "../../code/services/workspace.service";
 import { cancel, deliver, isBusy } from "../../engine/services/engine.service";
@@ -75,6 +76,7 @@ describe("autoTitle", () => {
     expect(autoTitle("oi, bom dia! pode por favor, revisar o PR?")).toBe("Revisar o PR");
     expect(autoTitle("```ts\ncode\n``` https://x.com veja isso")).toBe("Veja isso");
     expect(autoTitle("  ?? ")).toBe("Nova conversa");
+    expect(withLanguage("en", () => autoTitle("  ?? "))).toBe("New conversation");
     const long = autoTitle("Preciso que você monte um relatório completo das campanhas de novembro com gráficos");
     expect(long.endsWith("…")).toBe(true);
     expect(long.length).toBeLessThanOrEqual(45);
@@ -265,6 +267,9 @@ describe("updateConversation", () => {
     await expect(updateConversation(session, { title: " " })).rejects.toThrow("de 1 a 80");
     await expect(updateConversation(session, { title: "x".repeat(81) })).rejects.toThrow("de 1 a 80");
     await expect(updateConversation(session, { permission: "root" })).rejects.toThrow("Use readonly");
+    await expect(withLanguage("en", () => updateConversation(session, { title: " " }))).rejects.toThrow(
+      "The title must have 1 to 80 characters.",
+    );
   });
 
   test("renames and sets or clears the permission", async () => {

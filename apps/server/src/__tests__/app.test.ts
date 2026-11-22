@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { makeBot } from "../../test/engine-helpers";
 import { fakeRunelay, request, startTestServer, type TestServer } from "../../test/helpers";
+import { checkBody } from "../app";
 import * as macRunner from "../modules/accounts/services/mac-runner.service";
 import type { AuthModule } from "../modules/auth";
 import { useAuthModule } from "../modules/auth/gate";
@@ -11,6 +12,7 @@ import * as botCode from "../modules/code/services/bot-code.service";
 import * as tunnel from "../modules/simulators/services/tunnel.service";
 import * as status from "../modules/status/routes/status.routes";
 import type { Res } from "../shared/http";
+import { backgroundLanguage, resetLanguageState, withLanguage } from "../shared/i18n";
 import type { Socket } from "../shared/ws";
 
 let server: TestServer;
@@ -123,6 +125,27 @@ describe("HTTP routing", () => {
       errorId: expect.stringMatching(/^[0-9a-f]{8}$/),
     });
     expect(response.text).not.toContain("exploded");
+    const english = await request<{ error: string }>("/meta", { headers: { "accept-language": "en-US,en;q=0.9" } });
+    expect(english.body.error).toBe("Something went wrong on the server. Try again.");
+  });
+
+  test("answers in the language of the request and remembers the device language", async () => {
+    const english = await request<{ error: string }>("/nope", { headers: { "accept-language": "en" } });
+    expect(english.body.error).toBe("Route not found.");
+    expect(backgroundLanguage()).toBe("en");
+    const portuguese = await request<{ error: string }>("/nope", { headers: { "accept-language": "pt-BR" } });
+    expect(portuguese.body.error).toBe("Rota não encontrada.");
+    expect(backgroundLanguage()).toBe("pt-BR");
+    const mcp = await request<{ error: string }>("/mcp/nope", { headers: { "accept-language": "en" } });
+    expect(mcp.body.error).toBe("Rota não encontrada.");
+    const tooLarge = withLanguage("en", () =>
+      checkBody(new Request("http://x/preferences", { method: "PATCH", headers: { "content-length": "999999" } }), [
+        "preferences",
+      ]),
+    );
+    expect(tooLarge?.status).toBe(413);
+    expect(await tooLarge?.json()).toMatchObject({ error: "The request body is over this route's limit." });
+    resetLanguageState();
   });
 
   test("reports non-Error failures and closes a stream that already started", async () => {

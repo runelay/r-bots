@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fakeProcesses } from "../../../../test/helpers";
+import { withLanguage } from "../../../shared/i18n";
 import type { DecisionRecord } from "../../approvals/services/decisions.service";
 import * as decisions from "../../approvals/services/decisions.service";
 import type { PermissionMode } from "../../approvals/services/permissions.service";
@@ -128,6 +129,9 @@ describe("codeLabel", () => {
     expect(codeLabel("Read", { file_path: "/a/b/file.ts" })).toBe("Ler file.ts");
     expect(codeLabel("Edit", { file_path: "a.ts" })).toBe("Editar a.ts");
     expect(codeLabel("NotebookEdit", { notebook_path: "n.ipynb" })).toBe("Editar n.ipynb");
+    expect(withLanguage("en", () => codeLabel("Read", { file_path: "/a/b/file.ts" }))).toBe("Read file.ts");
+    expect(withLanguage("en", () => codeLabel("Bash", { command: "bun test" }))).toBe("Run bun test");
+    expect(withLanguage("en", () => codeLabel("TodoWrite", {}))).toBe("Update the step list");
     expect(codeLabel("Write", { file_path: existing })).toBe("Reescrever exists.txt");
     expect(codeLabel("Write", { file_path: join(root, "missing.txt") })).toBe("Criar missing.txt");
     expect(codeLabel("Write", {})).toBe("Criar ");

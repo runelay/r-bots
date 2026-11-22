@@ -2,12 +2,13 @@ import { randomBytes } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ValidationError } from "../../../shared/errors";
+import { backgroundLanguage, defineMessages, isLanguagePreference, languagePreferences } from "../../../shared/i18n";
 import { redactText } from "../../../shared/redact";
 import { type Account, listAccounts, updateAccount } from "../../accounts/services/accounts.service";
+import { permissionLabel } from "../../approvals/constants/approvals-messages.constants";
 import {
   isPermissionMode,
   type PermissionMode,
-  permissionLabels,
   permissionModes,
   readonlyRemoteMessage,
 } from "../../approvals/services/permissions.service";
@@ -47,7 +48,14 @@ import { deleteProfile, findProfile, listProfiles, saveProfile } from "../../ser
 import { usageLimits } from "../../usage/services/usage.service";
 import { getSecretMeta, listSecretMeta, normalizeDomains, saveSecretMeta } from "../../vault/services/vault.service";
 import { listVoices } from "../../voice/services/voice.service";
-import { notificationKinds, notificationLabels, readPreferences, updatePreferences } from "./preferences.service";
+import { settingsText } from "../constants/settings-messages.constants";
+import {
+  type NotificationKind,
+  notificationKinds,
+  notificationLabel,
+  readPreferences,
+  updatePreferences,
+} from "./preferences.service";
 import { emitSettingsChange, type SettingsArea } from "./settings-events.service";
 
 export interface UndoStep {
@@ -80,6 +88,31 @@ interface Outcome {
 }
 
 class SettingsDenied extends Error {}
+
+const preferenceText = defineMessages({
+  "pt-BR": {
+    turnedOn: "Ligou {name}",
+    turnedOff: "Desligou {name}",
+    microphone: "Microfone: {name}",
+    systemDefault: "padrão do sistema",
+    language: "Idioma: {name}",
+    system: "o do sistema",
+    "pt-BR": "português",
+    en: "inglês",
+    target: "Preferências",
+  },
+  en: {
+    turnedOn: "Turned on {name}",
+    turnedOff: "Turned off {name}",
+    microphone: "Microphone: {name}",
+    systemDefault: "system default",
+    language: "Language: {name}",
+    system: "system",
+    "pt-BR": "Portuguese",
+    en: "English",
+    target: "Preferences",
+  },
+});
 
 const permissionRank: Record<PermissionMode, number> = { readonly: 0, edit: 1, default: 2, full: 3 };
 
@@ -258,13 +291,15 @@ async function settingsState(context: ToolContext, target: BotDefinition) {
       notifications: preferences.notifications,
       microphone: preferences.microphone ?? "padrão do sistema",
       microphones: preferences.microphones,
+      language: preferences.language,
     },
     options: {
       accents,
       glyphs: glyphPresets,
       efforts,
-      permissionModes: permissionModes.map((mode) => ({ id: mode, label: permissionLabels[mode] })),
-      notifications: notificationKinds.map((kind) => ({ id: kind, label: notificationLabels[kind] })),
+      permissionModes: permissionModes.map((mode) => ({ id: mode, label: permissionLabel(mode) })),
+      notifications: notificationKinds.map((kind) => ({ id: kind, label: notificationLabel(kind) })),
+      languages: languagePreferences,
     },
   };
 }
@@ -400,7 +435,7 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       runSetting(
         context,
         "settings_get",
-        "Ver os ajustes",
+        settingsText("labelGet"),
         args,
         async (callId) => {
           startCall(context, callId);
@@ -454,7 +489,7 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       runSetting(
         context,
         "bot_update",
-        "Mudar ajustes",
+        settingsText("labelUpdate"),
         args,
         (callId) => updateBotSettings(context, callId, args),
         !Object.keys(args).every((key) => ["bot", "permission", "permissionScope"].includes(key)),
@@ -472,14 +507,14 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       runSetting(
         context,
         "bot_archive",
-        `${args.archived === false ? "Restaurar" : "Arquivar"} ${String(args.bot)}`,
+        settingsText(args.archived === false ? "labelRestore" : "labelArchive", { bot: String(args.bot) }),
         args,
         async (callId) => {
           const target = findBot(String(args.bot), context.bot);
           const archived = args.archived !== false;
           startCall(context, callId);
           await setArchived(target.id, archived);
-          const text = `${archived ? "Arquivou" : "Restaurou"} ${target.name}`;
+          const text = settingsText(archived ? "archived" : "restored", { name: target.name });
           return {
             reply: `${text}.`,
             line: {
@@ -505,37 +540,43 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "section_update", `Seção ${String(args.name)}`, args, async (callId) => {
-        startCall(context, callId);
-        const name = String(args.name);
-        if (args.section) {
-          const current = pick(listSections(), String(args.section), (section) => [section.id, section.name]);
-          if (!current) throw new Error(`Não achei a seção "${String(args.section)}".`);
-          const previous = current.name;
-          await updateSection(current.id, { name });
-          const text = `Renomeou a seção ${previous} para ${name}`;
+      runSetting(
+        context,
+        "section_update",
+        settingsText("labelSection", { name: String(args.name) }),
+        args,
+        async (callId) => {
+          startCall(context, callId);
+          const name = String(args.name);
+          if (args.section) {
+            const current = pick(listSections(), String(args.section), (section) => [section.id, section.name]);
+            if (!current) throw new Error(`Não achei a seção "${String(args.section)}".`);
+            const previous = current.name;
+            await updateSection(current.id, { name });
+            const text = settingsText("sectionRenamed", { previous, name });
+            return {
+              reply: `${text}.`,
+              line: {
+                area: "sections",
+                text,
+                target: { id: current.id, name },
+                undo: [{ method: "PATCH", path: `/sections/${current.id}`, body: { name: previous } }],
+              },
+            };
+          }
+          const created = await createSection({ name });
+          const text = settingsText("sectionCreated", { name: created.name });
           return {
             reply: `${text}.`,
             line: {
               area: "sections",
               text,
-              target: { id: current.id, name },
-              undo: [{ method: "PATCH", path: `/sections/${current.id}`, body: { name: previous } }],
+              target: { id: created.id, name: created.name },
+              undo: [{ method: "POST", path: `/sections/${created.id}/archive` }],
             },
           };
-        }
-        const created = await createSection({ name });
-        const text = `Criou a seção ${created.name}`;
-        return {
-          reply: `${text}.`,
-          line: {
-            area: "sections",
-            text,
-            target: { id: created.id, name: created.name },
-            undo: [{ method: "POST", path: `/sections/${created.id}/archive` }],
-          },
-        };
-      }),
+        },
+      ),
   );
 
   server.registerTool(
@@ -555,63 +596,72 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "schedule_update", `Rotina ${String(args.name)}`, args, async (callId) => {
-        const target = findBot(args.bot as string | undefined, context.bot);
-        const current = pick(target.schedules, String(args.name), (item) => [item.name]);
-        if (!current)
-          throw new Error(
-            `${target.name} não tem a rotina "${String(args.name)}". Rotinas: ${target.schedules.map((item) => item.name).join(", ") || "nenhuma"}.`,
-          );
-        startCall(context, callId);
-        const next: BotSchedule = { ...current };
-        const changes: string[] = [];
-        if (args.paused !== undefined && args.paused !== (current.paused === true)) {
-          if (args.paused === true) next.paused = true;
-          else delete next.paused;
-          changes.push(args.paused ? "Pausou" : "Retomou");
-        }
-        if (args.cron !== undefined && args.cron !== current.cron) {
-          next.cron = String(args.cron);
-          changes.push(`horário ${next.cron}`);
-        }
-        if (args.timezone !== undefined && args.timezone !== current.timezone) {
-          next.timezone = String(args.timezone);
-          changes.push(`fuso ${next.timezone}`);
-        }
-        if (args.prompt !== undefined && args.prompt !== current.prompt) {
-          next.prompt = String(args.prompt);
-          changes.push("pedido novo");
-        }
-        if (args.description !== undefined && args.description !== current.description) {
-          next.description = String(args.description);
-          changes.push("descrição nova");
-        }
-        if (args.rename !== undefined && args.rename !== current.name) {
-          next.name = String(args.rename);
-          changes.push(`renomeou para ${next.name}`);
-        }
-        if (changes.length === 0) return { reply: `A rotina ${current.name} já estava assim.` };
-        const schedules = target.schedules.map((item) => (item.name === current.name ? next : item));
-        await updateBot(target.id, { schedules });
-        const [first = "", ...rest] = changes;
-        const verb = first === "Pausou" || first === "Retomou";
-        const text = verb
-          ? `${first} a rotina ${next.name}${rest.length ? ` · ${rest.join(" · ")}` : ""}`
-          : `Mudou a rotina ${current.name}: ${changes.join(" · ")}`;
-        return {
-          reply: `${text}.`,
-          output: { ok: true, summary: text, schedule: scheduleView(next) },
-          line: {
-            area: "schedules",
-            areas: ["schedules", "bots"],
-            text,
-            target: { id: target.id, name: next.name },
-            thumbnail: { kind: "bot", id: target.id },
-            otherBot: target.id !== context.bot.id,
-            undo: [{ method: "PATCH", path: `/bots/${target.id}`, body: { schedules: target.schedules } }],
-          },
-        };
-      }),
+      runSetting(
+        context,
+        "schedule_update",
+        settingsText("labelSchedule", { name: String(args.name) }),
+        args,
+        async (callId) => {
+          const target = findBot(args.bot as string | undefined, context.bot);
+          const current = pick(target.schedules, String(args.name), (item) => [item.name]);
+          if (!current)
+            throw new Error(
+              `${target.name} não tem a rotina "${String(args.name)}". Rotinas: ${target.schedules.map((item) => item.name).join(", ") || "nenhuma"}.`,
+            );
+          startCall(context, callId);
+          const next: BotSchedule = { ...current };
+          const changes: string[] = [];
+          let toggled: string | null = null;
+          if (args.paused !== undefined && args.paused !== (current.paused === true)) {
+            if (args.paused === true) next.paused = true;
+            else delete next.paused;
+            toggled = settingsText(args.paused ? "paused" : "resumed");
+          }
+          if (args.cron !== undefined && args.cron !== current.cron) {
+            next.cron = String(args.cron);
+            changes.push(settingsText("scheduleTime", { cron: next.cron }));
+          }
+          if (args.timezone !== undefined && args.timezone !== current.timezone) {
+            next.timezone = String(args.timezone);
+            changes.push(settingsText("scheduleZone", { zone: next.timezone }));
+          }
+          if (args.prompt !== undefined && args.prompt !== current.prompt) {
+            next.prompt = String(args.prompt);
+            changes.push(settingsText("schedulePrompt"));
+          }
+          if (args.description !== undefined && args.description !== current.description) {
+            next.description = String(args.description);
+            changes.push(settingsText("scheduleDescription"));
+          }
+          if (args.rename !== undefined && args.rename !== current.name) {
+            next.name = String(args.rename);
+            changes.push(settingsText("scheduleRenamed", { name: next.name }));
+          }
+          if (!toggled && changes.length === 0) return { reply: `A rotina ${current.name} já estava assim.` };
+          const schedules = target.schedules.map((item) => (item.name === current.name ? next : item));
+          await updateBot(target.id, { schedules });
+          const text = toggled
+            ? settingsText("scheduleToggled", {
+                verb: toggled,
+                name: next.name,
+                rest: changes.length ? ` · ${changes.join(" · ")}` : "",
+              })
+            : settingsText("scheduleChanged", { name: current.name, changes: changes.join(" · ") });
+          return {
+            reply: `${text}.`,
+            output: { ok: true, summary: text, schedule: scheduleView(next) },
+            line: {
+              area: "schedules",
+              areas: ["schedules", "bots"],
+              text,
+              target: { id: target.id, name: next.name },
+              thumbnail: { kind: "bot", id: target.id },
+              otherBot: target.id !== context.bot.id,
+              undo: [{ method: "PATCH", path: `/bots/${target.id}`, body: { schedules: target.schedules } }],
+            },
+          };
+        },
+      ),
   );
 
   server.registerTool(
@@ -622,28 +672,34 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       inputSchema: { bot: z.string().max(80).optional(), name: z.string().min(1).max(40) },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "schedule_run", `Rodar a rotina ${String(args.name)}`, args, async (callId) => {
-        const target = findBot(args.bot as string | undefined, context.bot);
-        if (target.archivedAt) throw new Error(`${target.name} está arquivado.`);
-        const current = pick(target.schedules, String(args.name), (item) => [item.name]);
-        if (!current) throw new Error(`${target.name} não tem a rotina "${String(args.name)}".`);
-        startCall(context, callId);
-        const { fire } = await import("../../schedules/services/scheduler.service");
-        const started = await fire(target.id, current.name, current.prompt);
-        if (!started) throw new Error("Não consegui abrir a conversa do bot.");
-        const text = `Rodou agora a rotina ${current.name}`;
-        return {
-          reply: `${text}. O resultado chega na conversa de ${target.name}.`,
-          output: { ok: true, summary: text, sessionId: started.sessionId },
-          line: {
-            area: "schedules",
-            text,
-            target: { id: target.id, name: current.name },
-            thumbnail: { kind: "bot", id: target.id },
-            otherBot: target.id !== context.bot.id,
-          },
-        };
-      }),
+      runSetting(
+        context,
+        "schedule_run",
+        settingsText("labelScheduleRun", { name: String(args.name) }),
+        args,
+        async (callId) => {
+          const target = findBot(args.bot as string | undefined, context.bot);
+          if (target.archivedAt) throw new Error(`${target.name} está arquivado.`);
+          const current = pick(target.schedules, String(args.name), (item) => [item.name]);
+          if (!current) throw new Error(`${target.name} não tem a rotina "${String(args.name)}".`);
+          startCall(context, callId);
+          const { fire } = await import("../../schedules/services/scheduler.service");
+          const started = await fire(target.id, current.name, current.prompt);
+          if (!started) throw new Error("Não consegui abrir a conversa do bot.");
+          const text = settingsText("scheduleRan", { name: current.name });
+          return {
+            reply: `${text}. O resultado chega na conversa de ${target.name}.`,
+            output: { ok: true, summary: text, sessionId: started.sessionId },
+            line: {
+              area: "schedules",
+              text,
+              target: { id: target.id, name: current.name },
+              thumbnail: { kind: "bot", id: target.id },
+              otherBot: target.id !== context.bot.id,
+            },
+          };
+        },
+      ),
   );
 
   server.registerTool(
@@ -662,44 +718,50 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "server_profile_save", `Salvar o perfil ${String(args.name)}`, args, async (callId) => {
-        let path = typeof args.path === "string" ? args.path : "";
-        if (!path && args.project) path = (await resolveProject({ project: String(args.project) })).repoPath;
-        if (!path) throw new Error("Diga o projeto (nome do repositório liberado) ou a pasta.");
-        const cmd = typeof args.cmd === "string" ? args.cmd : null;
-        const cleared = cmd
-          ? await askPerson(
-              context,
-              callId,
-              `Posso salvar um perfil que roda este comando? ${cmd.slice(0, 160)}`,
-              "Comando livre fora do package.json.",
-            )
-          : undefined;
-        startCall(context, callId, cleared);
-        const previous = await findProfile(String(args.name));
-        const profile = await saveProfile({
-          ...(previous ? { id: previous.id } : {}),
-          name: args.name,
-          path,
-          cwd: args.cwd ?? "",
-          script: args.script ?? null,
-          cmd,
-          port: args.port ?? null,
-        });
-        const text = `${previous ? "Atualizou" : "Salvou"} o perfil ${profile.name}`;
-        return {
-          reply: `${text}.`,
-          output: { ok: true, summary: text, profile },
-          line: {
-            area: "servers",
-            text,
-            target: { id: profile.id, name: profile.name },
-            undo: previous
-              ? [{ method: "POST", path: "/servers/profiles", body: { ...previous } }]
-              : [{ method: "DELETE", path: `/servers/profiles/${encodeURIComponent(profile.id)}` }],
-          },
-        };
-      }),
+      runSetting(
+        context,
+        "server_profile_save",
+        settingsText("labelProfileSave", { name: String(args.name) }),
+        args,
+        async (callId) => {
+          let path = typeof args.path === "string" ? args.path : "";
+          if (!path && args.project) path = (await resolveProject({ project: String(args.project) })).repoPath;
+          if (!path) throw new Error("Diga o projeto (nome do repositório liberado) ou a pasta.");
+          const cmd = typeof args.cmd === "string" ? args.cmd : null;
+          const cleared = cmd
+            ? await askPerson(
+                context,
+                callId,
+                settingsText("profileSavePrompt", { cmd: cmd.slice(0, 160) }),
+                "Comando livre fora do package.json.",
+              )
+            : undefined;
+          startCall(context, callId, cleared);
+          const previous = await findProfile(String(args.name));
+          const profile = await saveProfile({
+            ...(previous ? { id: previous.id } : {}),
+            name: args.name,
+            path,
+            cwd: args.cwd ?? "",
+            script: args.script ?? null,
+            cmd,
+            port: args.port ?? null,
+          });
+          const text = settingsText(previous ? "profileUpdated" : "profileSaved", { name: profile.name });
+          return {
+            reply: `${text}.`,
+            output: { ok: true, summary: text, profile },
+            line: {
+              area: "servers",
+              text,
+              target: { id: profile.id, name: profile.name },
+              undo: previous
+                ? [{ method: "POST", path: "/servers/profiles", body: { ...previous } }]
+                : [{ method: "DELETE", path: `/servers/profiles/${encodeURIComponent(profile.id)}` }],
+            },
+          };
+        },
+      ),
   );
 
   server.registerTool(
@@ -709,22 +771,28 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       inputSchema: { profile: z.string().min(1).max(80) },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "server_profile_delete", `Apagar o perfil ${String(args.profile)}`, args, async (callId) => {
-        const profile = await findProfile(String(args.profile));
-        if (!profile) throw new Error(`Não existe o perfil "${String(args.profile)}".`);
-        startCall(context, callId);
-        await deleteProfile(profile.id);
-        const text = `Apagou o perfil ${profile.name}`;
-        return {
-          reply: `${text}.`,
-          line: {
-            area: "servers",
-            text,
-            target: { id: profile.id, name: profile.name },
-            undo: [{ method: "POST", path: "/servers/profiles", body: { ...profile } }],
-          },
-        };
-      }),
+      runSetting(
+        context,
+        "server_profile_delete",
+        settingsText("labelProfileDelete", { name: String(args.profile) }),
+        args,
+        async (callId) => {
+          const profile = await findProfile(String(args.profile));
+          if (!profile) throw new Error(`Não existe o perfil "${String(args.profile)}".`);
+          startCall(context, callId);
+          await deleteProfile(profile.id);
+          const text = settingsText("profileDeleted", { name: profile.name });
+          return {
+            reply: `${text}.`,
+            line: {
+              area: "servers",
+              text,
+              target: { id: profile.id, name: profile.name },
+              undo: [{ method: "POST", path: "/servers/profiles", body: { ...profile } }],
+            },
+          };
+        },
+      ),
   );
 
   server.registerTool(
@@ -735,14 +803,20 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       inputSchema: { repo: z.string().min(1).max(500).describe("Nome ou caminho do repositório") },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "repo_remove", `Tirar ${String(args.repo)} dos liberados`, args, async (callId) => {
-        const repo = pick(allowedRepos(), String(args.repo), (item) => [item.path, item.name]);
-        if (!repo) throw new Error(`"${String(args.repo)}" não está entre os repositórios liberados.`);
-        startCall(context, callId);
-        await removeAllowedRepo(repo.path);
-        const text = `Tirou ${repo.name} dos repositórios liberados`;
-        return { reply: `${text}.`, line: { area: "repos", text, target: { id: repo.path, name: repo.name } } };
-      }),
+      runSetting(
+        context,
+        "repo_remove",
+        settingsText("labelRepoRemove", { repo: String(args.repo) }),
+        args,
+        async (callId) => {
+          const repo = pick(allowedRepos(), String(args.repo), (item) => [item.path, item.name]);
+          if (!repo) throw new Error(`"${String(args.repo)}" não está entre os repositórios liberados.`);
+          startCall(context, callId);
+          await removeAllowedRepo(repo.path);
+          const text = settingsText("repoRemoved", { name: repo.name });
+          return { reply: `${text}.`, line: { area: "repos", text, target: { id: repo.path, name: repo.name } } };
+        },
+      ),
   );
 
   server.registerTool(
@@ -761,48 +835,62 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "vault_update_meta", `Ajustar o segredo ${String(args.name)}`, args, async (callId) => {
-        const current = getSecretMeta(String(args.name));
-        if (!current) throw new Error(`Não existe o segredo "${String(args.name)}" no cofre.`);
-        const domains = args.domains === undefined ? current.domains : normalizeDomains(args.domains);
-        const widened =
-          args.domains !== undefined &&
-          ((current.domains.length > 0 && domains.length === 0) ||
-            (current.domains.length > 0 && domains.some((domain) => !current.domains.includes(domain))));
-        const cleared = widened
-          ? await askPerson(
-              context,
-              callId,
-              `Posso liberar o segredo:${current.name} para ${domains.length ? domains.join(", ") : "qualquer site"}?`,
-              "Liberar um segredo para um site novo passa por você.",
-            )
-          : undefined;
-        startCall(context, callId, cleared);
-        await saveSecretMeta(current.name, {
-          ...(args.description !== undefined ? { description: args.description } : {}),
-          ...(args.domains !== undefined ? { domains } : {}),
-        });
-        const parts = [
-          ...(args.description !== undefined ? ["descrição"] : []),
-          ...(args.domains !== undefined ? [`sites: ${domains.length ? domains.join(", ") : "qualquer site"}`] : []),
-        ];
-        const text = `Ajustou o segredo ${current.name}${parts.length ? ` · ${parts.join(" · ")}` : ""}`;
-        return {
-          reply: `${text}.`,
-          line: {
-            area: "vault",
-            text,
-            target: { id: current.name, name: current.name },
-            undo: [
-              {
-                method: "PUT",
-                path: `/vault/secrets/${encodeURIComponent(current.name)}`,
-                body: { description: current.description, domains: current.domains },
-              },
-            ],
-          },
-        };
-      }),
+      runSetting(
+        context,
+        "vault_update_meta",
+        settingsText("labelVault", { name: String(args.name) }),
+        args,
+        async (callId) => {
+          const current = getSecretMeta(String(args.name));
+          if (!current) throw new Error(`Não existe o segredo "${String(args.name)}" no cofre.`);
+          const domains = args.domains === undefined ? current.domains : normalizeDomains(args.domains);
+          const widened =
+            args.domains !== undefined &&
+            ((current.domains.length > 0 && domains.length === 0) ||
+              (current.domains.length > 0 && domains.some((domain) => !current.domains.includes(domain))));
+          const cleared = widened
+            ? await askPerson(
+                context,
+                callId,
+                settingsText("vaultPrompt", {
+                  name: current.name,
+                  sites: domains.length ? domains.join(", ") : settingsText("anySite"),
+                }),
+                settingsText("vaultReason"),
+              )
+            : undefined;
+          startCall(context, callId, cleared);
+          await saveSecretMeta(current.name, {
+            ...(args.description !== undefined ? { description: args.description } : {}),
+            ...(args.domains !== undefined ? { domains } : {}),
+          });
+          const parts = [
+            ...(args.description !== undefined ? [settingsText("vaultDescription")] : []),
+            ...(args.domains !== undefined
+              ? [settingsText("vaultSites", { sites: domains.length ? domains.join(", ") : settingsText("anySite") })]
+              : []),
+          ];
+          const text = settingsText("vaultAdjusted", {
+            name: current.name,
+            rest: parts.length ? ` · ${parts.join(" · ")}` : "",
+          });
+          return {
+            reply: `${text}.`,
+            line: {
+              area: "vault",
+              text,
+              target: { id: current.name, name: current.name },
+              undo: [
+                {
+                  method: "PUT",
+                  path: `/vault/secrets/${encodeURIComponent(current.name)}`,
+                  body: { description: current.description, domains: current.domains },
+                },
+              ],
+            },
+          };
+        },
+      ),
   );
 
   server.registerTool(
@@ -815,7 +903,7 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       runSetting(
         context,
         "usage_get",
-        "Ver os limites de uso",
+        settingsText("labelUsage"),
         args,
         async (callId) => {
           startCall(context, callId);
@@ -853,39 +941,45 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "account_update", `Ajustar a conta ${String(args.account)}`, args, async (callId) => {
-        const accounts = await listAccounts();
-        const account = resolveAccount(accounts, String(args.account));
-        startCall(context, callId);
-        const previousDefault = accounts.find((item) => item.provider === account.provider && item.isDefault);
-        await updateAccount(account.id, {
-          ...(args.name !== undefined ? { name: args.name } : {}),
-          ...(args.isDefault === true ? { isDefault: true } : {}),
-        });
-        const shown =
-          typeof args.name === "string" && args.name.trim() ? args.name.trim() : accountName(account, account.id);
-        const parts = [
-          ...(args.name !== undefined ? [`Renomeou a conta para ${shown}`] : []),
-          ...(args.isDefault === true ? [`${shown} virou a conta padrão`] : []),
-        ];
-        const undo: UndoStep[] = [];
-        if (args.name !== undefined)
-          undo.push({ method: "PATCH", path: `/accounts/${account.id}`, body: { name: account.name || null } });
-        if (args.isDefault === true && previousDefault && previousDefault.id !== account.id)
-          undo.push({ method: "PATCH", path: `/accounts/${previousDefault.id}`, body: { isDefault: true } });
-        const text = parts.join(" · ") || `Nada mudou em ${shown}`;
-        return {
-          reply: `${text}.`,
-          line: {
-            area: "accounts",
-            areas: ["accounts", "usage", "bots"],
-            text,
-            target: { id: account.id, name: shown },
-            thumbnail: { kind: "provider", id: account.provider },
-            ...(undo.length ? { undo } : {}),
-          },
-        };
-      }),
+      runSetting(
+        context,
+        "account_update",
+        settingsText("labelAccount", { name: String(args.account) }),
+        args,
+        async (callId) => {
+          const accounts = await listAccounts();
+          const account = resolveAccount(accounts, String(args.account));
+          startCall(context, callId);
+          const previousDefault = accounts.find((item) => item.provider === account.provider && item.isDefault);
+          await updateAccount(account.id, {
+            ...(args.name !== undefined ? { name: args.name } : {}),
+            ...(args.isDefault === true ? { isDefault: true } : {}),
+          });
+          const shown =
+            typeof args.name === "string" && args.name.trim() ? args.name.trim() : accountName(account, account.id);
+          const parts = [
+            ...(args.name !== undefined ? [settingsText("accountRenamed", { name: shown })] : []),
+            ...(args.isDefault === true ? [settingsText("accountDefault", { name: shown })] : []),
+          ];
+          const undo: UndoStep[] = [];
+          if (args.name !== undefined)
+            undo.push({ method: "PATCH", path: `/accounts/${account.id}`, body: { name: account.name || null } });
+          if (args.isDefault === true && previousDefault && previousDefault.id !== account.id)
+            undo.push({ method: "PATCH", path: `/accounts/${previousDefault.id}`, body: { isDefault: true } });
+          const text = parts.join(" · ") || settingsText("accountNothing", { name: shown });
+          return {
+            reply: `${text}.`,
+            line: {
+              area: "accounts",
+              areas: ["accounts", "usage", "bots"],
+              text,
+              target: { id: account.id, name: shown },
+              thumbnail: { kind: "provider", id: account.provider },
+              ...(undo.length ? { undo } : {}),
+            },
+          };
+        },
+      ),
   );
 
   server.registerTool(
@@ -899,49 +993,59 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "integration_setup", `Configurar ${String(args.integration)}`, args, async (callId) => {
-        const id = String(args.integration) as IntegrationId;
-        const definition = listIntegrations().find((item) => item.id === id);
-        if (!definition) throw new Error(`Integração desconhecida: ${id}.`);
-        if (context.isSchedule)
-          throw new SettingsDenied("Ninguém está aqui para preencher o formulário agora. Avise na próxima conversa.");
-        const before = readStored(id)?.validatedAt ?? null;
-        const { choice, interactionId } = await context.requestApproval(
-          `${context.bot.name} quer configurar ${definition.name}: ${String(args.reason)}`,
-          callId,
-          context.origin,
-          {
-            reason: String(args.reason),
-            integration: {
-              id,
+      runSetting(
+        context,
+        "integration_setup",
+        settingsText("labelIntegration", { name: String(args.integration) }),
+        args,
+        async (callId) => {
+          const id = String(args.integration) as IntegrationId;
+          const definition = listIntegrations().find((item) => item.id === id);
+          if (!definition) throw new Error(`Integração desconhecida: ${id}.`);
+          if (context.isSchedule)
+            throw new SettingsDenied("Ninguém está aqui para preencher o formulário agora. Avise na próxima conversa.");
+          const before = readStored(id)?.validatedAt ?? null;
+          const { choice, interactionId } = await context.requestApproval(
+            settingsText("integrationPrompt", {
+              bot: context.bot.name,
               name: definition.name,
-              description: definition.description,
-              unlocks: definition.unlocks,
-              keyUrl: definition.keyUrl,
-              needsUrl: definition.needsUrl,
-              url: definition.url,
-              status: definition.status,
-              path: `/integrations/${id}`,
+              reason: String(args.reason),
+            }),
+            callId,
+            context.origin,
+            {
+              reason: String(args.reason),
+              integration: {
+                id,
+                name: definition.name,
+                description: definition.description,
+                unlocks: definition.unlocks,
+                keyUrl: definition.keyUrl,
+                needsUrl: definition.needsUrl,
+                url: definition.url,
+                status: definition.status,
+                path: `/integrations/${id}`,
+              },
             },
-          },
-        );
-        if (choice !== "approve")
-          throw new SettingsDenied("A pessoa preferiu não configurar agora. Não peça de novo neste turno.");
-        const after = readStored(id)?.validatedAt ?? null;
-        if (!after || after === before)
-          throw new Error("O formulário fechou sem salvar a chave. Pergunte se a pessoa quer tentar de novo.");
-        startCall(context, callId, { interactionId });
-        const text = `Configurou ${definition.name}`;
-        return {
-          reply: `${text}. A chave foi conferida e está guardada cifrada no servidor.`,
-          line: {
-            area: "integrations",
-            text,
-            target: { id, name: definition.name },
-            thumbnail: { kind: "integration", id },
-          },
-        };
-      }),
+          );
+          if (choice !== "approve")
+            throw new SettingsDenied("A pessoa preferiu não configurar agora. Não peça de novo neste turno.");
+          const after = readStored(id)?.validatedAt ?? null;
+          if (!after || after === before)
+            throw new Error("O formulário fechou sem salvar a chave. Pergunte se a pessoa quer tentar de novo.");
+          startCall(context, callId, { interactionId });
+          const text = settingsText("integrationDone", { name: definition.name });
+          return {
+            reply: `${text}. A chave foi conferida e está guardada cifrada no servidor.`,
+            line: {
+              area: "integrations",
+              text,
+              target: { id, name: definition.name },
+              thumbnail: { kind: "integration", id },
+            },
+          };
+        },
+      ),
   );
 
   server.registerTool(
@@ -952,49 +1056,55 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
       inputSchema: { service: z.string().min(1).max(60).describe("Nome do serviço, como sentry ou google drive") },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "connector_connect", `Conectar ${String(args.service)}`, args, async (callId) => {
-        if (!runelayEnabled())
-          throw new Error("A runelay não está configurada. Use integration_setup com runelay antes.");
-        const catalog = await getCatalog(String(args.service));
-        const items = [...catalog.featured, ...catalog.sections.flatMap((section) => section.items)];
-        const item = pick(items, String(args.service), (entry) => [entry.id, entry.name, entry.sourceName ?? ""]);
-        if (!item) throw new Error(`Não achei "${String(args.service)}" no catálogo da runelay.`);
-        if (item.installed && item.status === "ok") {
+      runSetting(
+        context,
+        "connector_connect",
+        settingsText("labelConnector", { name: String(args.service) }),
+        args,
+        async (callId) => {
+          if (!runelayEnabled())
+            throw new Error("A runelay não está configurada. Use integration_setup com runelay antes.");
+          const catalog = await getCatalog(String(args.service));
+          const items = [...catalog.featured, ...catalog.sections.flatMap((section) => section.items)];
+          const item = pick(items, String(args.service), (entry) => [entry.id, entry.name, entry.sourceName ?? ""]);
+          if (!item) throw new Error(`Não achei "${String(args.service)}" no catálogo da runelay.`);
+          if (item.installed && item.status === "ok") {
+            startCall(context, callId);
+            return { reply: `${item.name} já está conectado (${item.sourceName}).` };
+          }
+          if (!item.installed && item.auth === "api_key")
+            throw new Error(
+              `${item.name} pede um token. Peça para a pessoa colar em Ajustes › Conectores; você nunca recebe o token.`,
+            );
           startCall(context, callId);
-          return { reply: `${item.name} já está conectado (${item.sourceName}).` };
-        }
-        if (!item.installed && item.auth === "api_key")
-          throw new Error(
-            `${item.name} pede um token. Peça para a pessoa colar em Ajustes › Conectores; você nunca recebe o token.`,
-          );
-        startCall(context, callId);
-        const started =
-          item.installed && item.sourceName
-            ? await reconnectSource(item.sourceName)
-            : await installCatalogItem(item.id);
-        const url = started.authorizationUrl;
-        const text = url ? `Conectar ${item.name}` : `Conectou ${item.name}`;
-        return {
-          reply: url
-            ? `Mostrei o botão Conectar para ${item.name}. Depois que a pessoa fizer o login, confira com settings_get.`
-            : `${item.name} conectado (${started.sourceName}).`,
-          output: { ok: true, sourceName: started.sourceName, needsLogin: Boolean(url) },
-          line: {
-            area: "connectors",
-            text,
-            target: { id: started.sourceName, name: item.name },
-            thumbnail: { kind: "connector", id: item.icon ?? item.id },
-            ...(url ? { action: { label: "Conectar", url } } : {}),
-          },
-        };
-      }),
+          const started =
+            item.installed && item.sourceName
+              ? await reconnectSource(item.sourceName)
+              : await installCatalogItem(item.id);
+          const url = started.authorizationUrl;
+          const text = settingsText(url ? "connectorConnect" : "connectorConnected", { name: item.name });
+          return {
+            reply: url
+              ? `Mostrei o botão Conectar para ${item.name}. Depois que a pessoa fizer o login, confira com settings_get.`
+              : `${item.name} conectado (${started.sourceName}).`,
+            output: { ok: true, sourceName: started.sourceName, needsLogin: Boolean(url) },
+            line: {
+              area: "connectors",
+              text,
+              target: { id: started.sourceName, name: item.name },
+              thumbnail: { kind: "connector", id: item.icon ?? item.id },
+              ...(url ? { action: { label: settingsText("connectAction"), url } } : {}),
+            },
+          };
+        },
+      ),
   );
 
   server.registerTool(
     "preferences_set",
     {
       description:
-        "Muda as preferências do app no Mac: quais notificações chegam (replies, approvals, routines, failures) e o microfone padrão (nome, ou system para o padrão do sistema).",
+        "Muda as preferências do app no Mac: quais notificações chegam (replies, approvals, routines, failures), o microfone padrão (nome, ou system para o padrão do sistema) e o idioma do app e das respostas (language: system, pt-BR ou en).",
       inputSchema: {
         notifications: z
           .object({
@@ -1005,11 +1115,13 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
           })
           .optional(),
         microphone: z.string().max(120).optional(),
+        language: z.enum(languagePreferences).optional(),
       },
     },
     (args: Record<string, unknown>) =>
-      runSetting(context, "preferences_set", "Mudar as preferências do app", args, async (callId) => {
+      runSetting(context, "preferences_set", settingsText("labelPreferences"), args, async (callId) => {
         const current = await readPreferences();
+        const language = backgroundLanguage();
         const body: Record<string, unknown> = {};
         const parts: string[] = [];
         const notifications = (args.notifications ?? {}) as Record<string, boolean>;
@@ -1017,7 +1129,13 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
           body.notifications = notifications;
           for (const [key, value] of Object.entries(notifications))
             parts.push(
-              `${value ? "Ligou" : "Desligou"} ${notificationLabels[key as keyof typeof notificationLabels].toLowerCase()}`,
+              preferenceText(
+                value ? "turnedOn" : "turnedOff",
+                {
+                  name: notificationLabel(key as NotificationKind, language).toLowerCase(),
+                },
+                language,
+              ),
             );
         }
         if (typeof args.microphone === "string") {
@@ -1029,23 +1147,36 @@ export function registerSettingsTools(server: McpServer, context: ToolContext) {
               `Não achei o microfone "${wanted}". Microfones do Mac: ${current.microphones.join(", ") || "o app ainda não informou"}.`,
             );
           body.microphone = found;
-          parts.push(`Microfone: ${found ?? "padrão do sistema"}`);
+          parts.push(
+            preferenceText(
+              "microphone",
+              { name: found ?? preferenceText("systemDefault", undefined, language) },
+              language,
+            ),
+          );
         }
-        if (parts.length === 0) throw new Error("Diga o que mudar: notifications ou microphone.");
+        if (isLanguagePreference(args.language)) {
+          body.language = args.language;
+          parts.push(
+            preferenceText("language", { name: preferenceText(args.language, undefined, language) }, language),
+          );
+        }
+        if (parts.length === 0) throw new Error("Diga o que mudar: notifications, microphone ou language.");
         startCall(context, callId);
         await updatePreferences(body);
         const text = parts.join(" · ");
+        const undoLanguage = body.language === undefined ? {} : { language: current.language };
         return {
           reply: `${text}.`,
           line: {
             area: "preferences",
             text,
-            target: { id: "preferences", name: "Preferências" },
+            target: { id: "preferences", name: preferenceText("target", undefined, language) },
             undo: [
               {
                 method: "PATCH",
                 path: "/preferences",
-                body: { notifications: current.notifications, microphone: current.microphone },
+                body: { notifications: current.notifications, microphone: current.microphone, ...undoLanguage },
               },
             ],
           },
@@ -1068,12 +1199,12 @@ async function updateBotSettings(
   if (typeof args.name === "string" && args.name !== target.name) {
     body.name = args.name;
     undoBody.name = target.name;
-    parts.push(`Renomeou para ${args.name}`);
+    parts.push(settingsText("renamed", { name: args.name }));
   }
   if (typeof args.role === "string" && args.role !== target.role) {
     body.role = args.role;
     undoBody.role = target.role;
-    parts.push(`Papel: ${args.role}`);
+    parts.push(settingsText("role", { role: args.role }));
   }
   if (typeof args.accent === "string" && args.accent !== target.accent) {
     body.accent = args.accent;
@@ -1083,7 +1214,7 @@ async function updateBotSettings(
     body.glyph = args.glyph;
     undoBody.glyph = target.glyph;
   }
-  if (body.accent !== undefined || body.glyph !== undefined) parts.push("Mudou o rosto");
+  if (body.accent !== undefined || body.glyph !== undefined) parts.push(settingsText("face"));
   const engine: BotEngine = target.engine ?? defaultEngine();
   const engineChange: Record<string, unknown> = {};
   let accountsCache: Account[] | null = null;
@@ -1108,14 +1239,14 @@ async function updateBotSettings(
     const effort = args.effort === "auto" ? null : args.effort;
     if (effort !== engine.effort) {
       engineChange.effort = effort;
-      parts.push(`Esforço: ${effort ?? "automático"}`);
+      parts.push(settingsText("effort", { effort: effort ?? settingsText("effortAuto") }));
     }
   }
   if (args.fallback !== undefined) {
     if (args.fallback === "off") {
       if (engine.fallback !== null) {
         engineChange.fallback = null;
-        parts.push("Sem conta reserva");
+        parts.push(settingsText("noFallback"));
       }
     } else {
       const raw = args.fallback as { account: string; model?: string };
@@ -1123,17 +1254,21 @@ async function updateBotSettings(
       const reserve = resolveAccount(all, raw.account);
       const model = raw.model ? resolveModel(reserve, raw.model) : undefined;
       engineChange.fallback = { account: reserve.id, ...(model ? { model } : {}) };
-      parts.push(`Reserva: ${accountName(reserve, reserve.id)}${model ? ` · ${modelLabel(reserve, model)}` : ""}`);
+      parts.push(
+        settingsText("fallback", {
+          account: `${accountName(reserve, reserve.id)}${model ? ` · ${modelLabel(reserve, model)}` : ""}`,
+        }),
+      );
     }
   }
   if (typeof args.autoSwitch === "boolean" && args.autoSwitch !== (engine.autoSwitch === true)) {
     engineChange.autoSwitch = args.autoSwitch;
-    parts.push(args.autoSwitch ? "Pode trocar de modelo quando achar melhor" : "Só troca de modelo quando pedirem");
+    parts.push(settingsText(args.autoSwitch ? "autoSwitchOn" : "autoSwitchOff"));
   }
   if (engineChange.account !== undefined || engineChange.model !== undefined) {
     const label = accountName(nextAccount, String(engineChange.account ?? engine.account));
     const model = modelLabel(nextAccount, String(engineChange.model ?? engine.model));
-    parts.unshift(`Trocou para ${label} · ${model}`);
+    parts.unshift(settingsText("switched", { account: label, model }));
     areas.push("usage");
   }
   if (Object.keys(engineChange).length > 0) {
@@ -1163,15 +1298,15 @@ async function updateBotSettings(
           }.`,
         );
       voice.voiceId = found?.voiceId ?? raw.voice;
-      parts.push(`Voz: ${found?.name ?? raw.voice}`);
+      parts.push(settingsText("voice", { name: found?.name ?? raw.voice }));
     }
     if (raw.speed !== undefined) {
       voice.speed = raw.speed;
-      parts.push(`Velocidade da voz ${raw.speed}`);
+      parts.push(settingsText("voiceSpeed", { speed: raw.speed }));
     }
     if (raw.language) {
       voice.language = raw.language;
-      parts.push(`Idioma da voz ${raw.language}`);
+      parts.push(settingsText("voiceLanguage", { language: raw.language }));
     }
     if (Object.keys(voice).length) {
       body.voice = voice;
@@ -1184,7 +1319,7 @@ async function updateBotSettings(
   if (typeof args.pinned === "boolean" && args.pinned !== sidebar.pinned) {
     sidebarBody.pinned = args.pinned;
     sidebarUndo.pinned = sidebar.pinned;
-    parts.push(args.pinned ? "Fixou na barra lateral" : "Desafixou");
+    parts.push(settingsText(args.pinned ? "pinned" : "unpinned"));
   }
   let createdSection: string | null = null;
   if (typeof args.section === "string") {
@@ -1203,7 +1338,11 @@ async function updateBotSettings(
     if (sectionId !== sidebar.sectionId) {
       sidebarBody.sectionId = sectionId;
       sidebarUndo.sectionId = sidebar.sectionId;
-      parts.push(none ? "Tirou da seção" : `Moveu para a seção ${args.section}${createdSection ? " (nova)" : ""}`);
+      parts.push(
+        none
+          ? settingsText("sectionLeft")
+          : `${settingsText("sectionMoved", { name: args.section })}${createdSection ? settingsText("sectionNew") : ""}`,
+      );
     }
   }
   let permissionUndo: UndoStep | null = null;
@@ -1219,8 +1358,15 @@ async function updateBotSettings(
         cleared = await askPerson(
           context,
           callId,
-          `Posso subir o modo de permissão ${self ? (scope === "conversation" ? "desta conversa" : "do meu padrão") : `de ${target.name}`} de ${permissionLabels[from]} para ${permissionLabels[mode]}?`,
-          "Subir o modo de permissão sempre passa por você: um texto lido numa página não pode dar mais acesso a um bot.",
+          settingsText(
+            self
+              ? scope === "conversation"
+                ? "permissionPromptConversation"
+                : "permissionPromptMine"
+              : "permissionPromptBot",
+            { bot: target.name, from: permissionLabel(from), to: permissionLabel(mode) },
+          ),
+          settingsText("permissionReason"),
         );
       }
       if (session) {
@@ -1237,7 +1383,7 @@ async function updateBotSettings(
         undoBody.permission = permissionOfBot(target);
       }
       parts.push(
-        `Modo ${scope === "conversation" ? "desta conversa" : "padrão"}: ${permissionLabels[mode]}${permissionRank[mode] > permissionRank[from] ? " (você aprovou)" : ""}`,
+        `${settingsText(scope === "conversation" ? "modeConversation" : "modeDefault", { mode: permissionLabel(mode) })}${permissionRank[mode] > permissionRank[from] ? settingsText("approvedByYou") : ""}`,
       );
     }
   }

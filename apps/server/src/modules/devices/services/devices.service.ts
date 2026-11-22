@@ -8,6 +8,7 @@ import {
 import type { Principal } from "../../auth";
 import { authActive, currentAuthModule } from "../../auth/gate";
 import { apiKeyLifetimeSeconds, apiKeyPrefix, ownerRole } from "../../auth/services/auth.service";
+import { devicesText } from "../constants/devices-messages.constants";
 import type { DeviceRow } from "../repositories/devices.repository";
 
 export const deviceKeyName = "device";
@@ -50,11 +51,11 @@ export async function listRegisteredDevices() {
 function field(body: Record<string, unknown>, name: string, max: number, required = false) {
   const value = body[name];
   if (value === undefined || value === null || value === "") {
-    if (required) throw new ValidationError(`Falta ${name}.`, name);
+    if (required) throw new ValidationError(devicesText("missing", { name }), name);
     return null;
   }
   if (typeof value !== "string" || !value.trim() || value.trim().length > max)
-    throw new ValidationError(`${name} precisa ser um texto de até ${max} caracteres.`, name);
+    throw new ValidationError(devicesText("textMax", { name, max }), name);
   return value.trim();
 }
 
@@ -123,7 +124,7 @@ export async function revokeDevice(principal: Principal, id: string) {
   const module = moduleOrFail();
   const owner = principal.role === ownerRole;
   const matches = (await module.devices.list(owner ? undefined : principal.userId)).filter((item) => item.id === id);
-  if (matches.length === 0) throw new DevicesError(404, "not_found", "Dispositivo não encontrado.");
+  if (matches.length === 0) throw new DevicesError(404, "not_found", devicesText("notFound"));
   await module.devices.remove([id]);
   const disconnected = disconnectMacDevice(id);
   return { id, revoked: true, disconnected };

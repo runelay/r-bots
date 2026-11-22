@@ -6,6 +6,7 @@ import { getDb } from "../../../db";
 import { writeSetting } from "../../../db/settings";
 import { calendarCache } from "../../../db/tables";
 import { noteClientTimezone, resetClock } from "../../../shared/clock";
+import { withLanguage } from "../../../shared/i18n";
 import { agendaVersion, type BlockError } from "../../blocks/services/blocks.shared";
 import * as runelay from "../../connectors/services/runelay.service";
 import {
@@ -389,6 +390,10 @@ describe("createEvent", () => {
     const bot = botId();
     const missing = await failure(createEvent(bot, { accountId: "google_calendar_nope" }, "bot"));
     expect([missing.status, missing.message]).toEqual([404, "Conta de agenda não encontrada."]);
+    const english = await withLanguage("en", () =>
+      failure(createEvent(bot, { accountId: "google_calendar_nope" }, "bot")),
+    );
+    expect(english.message).toBe("Calendar account not found.");
     const reconnect = await failure(createEvent(bot, { accountId: offline.name }, "bot"));
     expect([reconnect.status, reconnect.code, reconnect.extra]).toEqual([
       409,

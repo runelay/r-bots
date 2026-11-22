@@ -78,6 +78,10 @@ describe("GET /usage/limits", () => {
     );
     const response = await request<{ error: string }>("/usage/limits?refresh=1");
     expect(response.body.error).toBe("Não deu para calcular o uso: plain failure");
+    const english = await request<{ error: string }>("/usage/limits?refresh=1", {
+      headers: { "accept-language": "en" },
+    });
+    expect(english.body.error).toBe("Couldn't calculate usage: plain failure");
   });
 });
 

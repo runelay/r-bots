@@ -1,5 +1,6 @@
 import { ValidationError } from "../../../shared/errors";
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
 import { issuePreviewTicket } from "../../code/routes/preview.routes";
 import {
   listServers,
@@ -9,6 +10,7 @@ import {
   rawLines,
   viewServer,
 } from "../../code/services/dev-server.service";
+import { serversText } from "../constants/servers-messages.constants";
 import { listProjects } from "../services/projects.service";
 import {
   deleteProfile,
@@ -24,7 +26,8 @@ import {
 
 function objectBody(value: unknown) {
   if (value === undefined) return {};
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("Corpo inválido.", "body");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   return value as Record<string, unknown>;
 }
 
@@ -60,7 +63,7 @@ function failure(res: Res, error: unknown) {
   if (error instanceof ValidationError || error instanceof SyntaxError) return validationResponse(res, error);
   return sendJson(res, 400, {
     ok: false,
-    error: (error instanceof Error ? error.message : "Erro interno.").slice(0, 400),
+    error: (error instanceof Error ? error.message : serversText("internal")).slice(0, 400),
   });
 }
 
@@ -72,7 +75,7 @@ export async function handleServers(req: Req, res: Res, url: URL, method: string
       const body = objectBody(await readBody(req));
       const port = body.port === undefined ? undefined : Number(body.port);
       if (port !== undefined && (!Number.isInteger(port) || port < 1024 || port > 65535))
-        throw new ValidationError("Porta inválida.", "port");
+        throw new ValidationError(serversText("portInvalid"), "port");
       const { server } = await startProjectServer({
         path: text(body.path),
         cwd: text(body.cwd),
@@ -102,7 +105,7 @@ export async function handleServers(req: Req, res: Res, url: URL, method: string
     if (first === "profiles" && parts.length === 3 && method === "DELETE")
       return (await deleteProfile(second))
         ? sendJson(res, 200, { ok: true })
-        : sendJson(res, 404, { ok: false, error: "Perfil não encontrado." });
+        : sendJson(res, 404, { ok: false, error: serversText("profileNotFound") });
     if (first && parts.length === 2 && method === "GET") return sendJson(res, 200, viewServer(requireServer(first)));
     if (first && parts.length === 2 && method === "DELETE") {
       forget(first);
@@ -113,7 +116,7 @@ export async function handleServers(req: Req, res: Res, url: URL, method: string
     if (first && second === "preview-link" && method === "POST") {
       const server = requireServer(first);
       const target = previewTarget(server.workspaceId, server.port);
-      if (!target) return sendJson(res, 409, { ok: false, error: "O servidor não está no ar." });
+      if (!target) return sendJson(res, 409, { ok: false, error: serversText("notRunning") });
       const ticket = issuePreviewTicket(target.token);
       return sendJson(res, 200, { ok: true, path: `/preview/${server.workspaceId}/${server.port}/?t=${ticket}` });
     }

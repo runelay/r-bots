@@ -5,6 +5,7 @@ import { listAccounts } from "../../accounts/services/accounts.service";
 import { effectivePermission } from "../../approvals/services/permissions.service";
 import { type BotDefinition, getBot, isActive, resolveBotRef } from "../../bots/services/bots.service";
 import { activeWorkspace, activeWorkspaces } from "../../code/services/workspace.service";
+import { conversationsText } from "../../conversations/constants/conversations-messages.constants";
 import {
   autoTitle,
   ConversationError,
@@ -40,17 +41,12 @@ function runningChildren(sessionId: string) {
 }
 
 function checkSpawn(origin: StoredSession) {
-  if (origin.meta.kind === "group")
-    throw new ConversationError("Conversa de grupo não abre conversa secundária.", 400, "group_session");
+  if (origin.meta.kind === "group") throw new ConversationError(conversationsText("groupNoSide"), 400, "group_session");
   if (threadDepth(origin) >= sideLimits.depth)
-    throw new ConversationError(
-      `Limite de ${sideLimits.depth} níveis: esta conversa já é filha de uma conversa filha.`,
-      400,
-      "depth_limit",
-    );
+    throw new ConversationError(conversationsText("depthLimit", { depth: sideLimits.depth }), 400, "depth_limit");
   if (runningChildren(origin.meta.sessionId) >= sideLimits.running)
     throw new ConversationError(
-      `Esta conversa já tem ${sideLimits.running} conversas filhas rodando. Espere alguma terminar.`,
+      conversationsText("tooManyThreads", { count: sideLimits.running }),
       409,
       "too_many_threads",
     );
@@ -92,10 +88,10 @@ export async function openSideThread(
   input: { text?: string; title?: string; report?: boolean } = {},
 ) {
   if (!isConversationSession(parent))
-    throw new ConversationError("Conversa secundária só sai de uma conversa.", 400, "not_conversation");
+    throw new ConversationError(conversationsText("sideOnlyConversation"), 400, "not_conversation");
   checkSpawn(parent);
   const bot = getBot(parent.meta.botId);
-  if (!isActive(bot)) throw new ConversationError("Esse bot não está disponível.", 400, "bot_unavailable");
+  if (!isActive(bot)) throw new ConversationError(conversationsText("botUnavailable"), 400, "bot_unavailable");
   const text = input.text?.trim() ?? "";
   const base = input.title?.trim() || (text ? autoTitle(text) : (await publicConversation(parent)).title);
   const side = await createConversation(bot.id, {
@@ -160,7 +156,8 @@ export async function createThread(
 ) {
   checkSpawn(origin);
   const target = input.bot?.trim() ? resolveBotRef(input.bot) : originBot;
-  if (!isActive(target)) throw new ConversationError(`O bot ${input.bot} não está disponível.`, 400, "bot_unavailable");
+  if (!isActive(target))
+    throw new ConversationError(conversationsText("botUnavailableNamed", { bot: input.bot }), 400, "bot_unavailable");
   const other = target.id !== originBot.id;
   const text = other
     ? `${originBot.name} (${originBot.role || "bot do time"}), outro bot do time, abriu esta conversa com você:\n${input.message}`
@@ -279,7 +276,7 @@ export function registerSideThreadTools(server: McpServer, context: ToolContext)
     (args: Record<string, unknown>) => {
       const message = String(args.message);
       const title = typeof args.title === "string" ? args.title : undefined;
-      return logged(context, "thread_side", "Abrir conversa secundária", { message, title }, async () => {
+      return logged(context, "thread_side", conversationsText("openSide"), { message, title }, async () => {
         const { session } = await openSideThread(originOf(context), {
           text: message,
           ...(title ? { title } : {}),
@@ -311,7 +308,7 @@ export function registerSideThreadTools(server: McpServer, context: ToolContext)
         ...(typeof args.title === "string" ? { title: args.title } : {}),
         ...(typeof args.bot === "string" ? { bot: args.bot } : {}),
       };
-      return logged(context, "thread_create", "Abrir conversa nova", input, async () => {
+      return logged(context, "thread_create", conversationsText("openNew"), input, async () => {
         const session = await createThread(originOf(context), context.bot, input);
         return publicThread(session);
       });
@@ -325,7 +322,7 @@ export function registerSideThreadTools(server: McpServer, context: ToolContext)
       inputSchema: {},
     },
     () =>
-      logged(context, "thread_list", "Ver conversas filhas", {}, async () => ({
+      logged(context, "thread_list", conversationsText("listChildren"), {}, async () => ({
         threads: await Promise.all(childConversations(context.sessionId).map(publicThread)),
       })),
   );

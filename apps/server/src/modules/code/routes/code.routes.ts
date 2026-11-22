@@ -1,8 +1,10 @@
-import { type Req, type Res, sendJson } from "../../../shared/http";
+import { httpText, type Req, type Res, sendJson } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { type Fact, getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import { ensureThread } from "../../conversations/services/threads.service";
 import { isBusy, isRunning } from "../../engine/services/engine.service";
+import { codeText } from "../constants/code-messages.constants";
 import { listGrants, listWorktrees, removeGrant, touchWorktree } from "../repositories/code.repository";
 import { closeTaskWorkspace, deliverWorkspace, openTaskWorkspace } from "../services/actions.service";
 import { devServersOf, stopDevServers } from "../services/dev-server.service";
@@ -31,12 +33,12 @@ async function readBody(req: Req) {
   const text = Buffer.concat(chunks).toString("utf8").trim();
   if (!text) return {} as Record<string, unknown>;
   const value = JSON.parse(text) as unknown;
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new CodeError("Corpo inválido.");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new CodeError(commonText("bodyInvalid"));
   return value as Record<string, unknown>;
 }
 
 function fail(res: Res, error: unknown) {
-  if (error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: "JSON inválido." });
+  if (error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: httpText("invalidJson") });
   if (error instanceof CodeError) return sendJson(res, error.status, { ok: false, error: error.message });
   return sendJson(res, 500, {
     ok: false,
@@ -57,10 +59,10 @@ export async function handleCodeRoute(req: Req, res: Res, url: URL, method: stri
       const removed = await removeGrant(String(body.repo ?? ""), String(body.key ?? ""));
       return removed
         ? sendJson(res, 200, { ok: true })
-        : sendJson(res, 404, { ok: false, error: "Essa permissão não existe." });
+        : sendJson(res, 404, { ok: false, error: codeText("grantMissing") });
     }
     if (parts[1] === "worktrees" && method === "GET") return sendJson(res, 200, await listWorktrees());
-    return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
+    return sendJson(res, 404, { ok: false, error: httpText("notFound") });
   } catch (error) {
     return fail(res, error);
   }
@@ -70,23 +72,19 @@ async function sessionFor(bot: BotDefinition, url: URL) {
   const sessionId = url.searchParams.get("sessionId");
   if (sessionId) {
     const session = getStoredSession(sessionId);
-    if (!session || session.meta.botId !== bot.id) throw new CodeError("Conversa não encontrada.", 404);
+    if (!session || session.meta.botId !== bot.id) throw new CodeError(commonText("conversationNotFound"), 404);
     return session;
   }
   const thread = await ensureThread(bot.id);
   const session = getStoredSession(thread.sessionId);
-  if (!session) throw new CodeError("Conversa não encontrada.", 404);
+  if (!session) throw new CodeError(commonText("conversationNotFound"), 404);
   return session;
 }
 
 function requireWorkspace(session: StoredSession, url?: URL) {
   const id = url?.searchParams.get("workspaceId");
   const workspace = id ? workspaceById(session, id) : activeWorkspace(session);
-  if (!workspace?.active)
-    throw new CodeError(
-      id ? "Esta conversa não tem esse repositório aberto." : "Esta conversa não tem repositório aberto.",
-      404,
-    );
+  if (!workspace?.active) throw new CodeError(id ? codeText("repoNotOpenId") : codeText("repoNotOpen"), 404);
   return workspace;
 }
 
@@ -141,13 +139,14 @@ function duration(seconds: number) {
 function attachmentLabel(attachments: Array<{ kind?: string; name?: string; duration?: number }>) {
   const first = attachments[0];
   if (!first) return null;
-  const extra = attachments.length > 1 ? ` e mais ${attachments.length - 1}` : "";
-  if (first.kind === "audio")
-    return `Áudio${typeof first.duration === "number" ? ` de ${duration(first.duration)}` : ""}${extra}`;
-  if (first.kind === "video")
-    return `Vídeo${typeof first.duration === "number" ? ` de ${duration(first.duration)}` : ""}${extra}`;
-  if (first.kind === "image") return `${attachments.length > 1 ? `${attachments.length} imagens` : "Imagem"}`;
-  return `${first.name ?? "Arquivo"}${extra}`;
+  const extra = attachments.length > 1 ? codeText("andMore", { count: attachments.length - 1 }) : "";
+  const length = (seconds: unknown) =>
+    typeof seconds === "number" ? codeText("ofDuration", { duration: duration(seconds) }) : "";
+  if (first.kind === "audio") return `${codeText("audio")}${length(first.duration)}${extra}`;
+  if (first.kind === "video") return `${codeText("video")}${length(first.duration)}${extra}`;
+  if (first.kind === "image")
+    return attachments.length > 1 ? codeText("images", { count: attachments.length }) : codeText("image");
+  return `${first.name ?? codeText("file")}${extra}`;
 }
 
 function requestLabel(data: Record<string, unknown>) {
@@ -161,8 +160,10 @@ function requestLabel(data: Record<string, unknown>) {
     (data.attachments as Array<{ kind?: string; name?: string; duration?: number }> | undefined) ?? [];
   const body = text || attachmentLabel(attachments);
   const from = (data.from as { name?: string } | undefined)?.name;
-  if (data.source === "delegate" || from) return body ? clipLabel(`${from ?? "Outro bot"} pediu: ${body}`) : null;
-  if (data.source === "schedule") return clipLabel(`Rotina: ${body ?? String(data.scheduleId ?? "")}`.trim());
+  if (data.source === "delegate" || from)
+    return body ? clipLabel(codeText("asked", { from: from ?? codeText("otherBot"), body })) : null;
+  if (data.source === "schedule")
+    return clipLabel(codeText("routine", { body: body ?? String(data.scheduleId ?? "") }).trim());
   return body ? clipLabel(body) : null;
 }
 
@@ -220,9 +221,8 @@ async function turnsFrom(session: StoredSession, first: number) {
 
 async function rewind(session: StoredSession, turnId: string) {
   const number = turnNumber(turnId);
-  if (number < 0) throw new CodeError("Turno inválido.");
-  if (isBusy(session.meta.sessionId))
-    throw new CodeError("O bot ainda está trabalhando. Pare a resposta antes de desfazer.", 409);
+  if (number < 0) throw new CodeError(codeText("turnInvalid"));
+  if (isBusy(session.meta.sessionId)) throw new CodeError(codeText("busyUndo"), 409);
   const open = activeWorkspaces(session);
   const targets = open.length > 0 ? open : workspacesOf(session).filter((item) => item === session.meta.workspace);
   const reverted = new Set(session.meta.revertedTurns ?? []);
@@ -267,9 +267,8 @@ export async function handleBotCode(req: Req, res: Res, url: URL, method: string
     if (tail === "" && method === "GET") return sendJson(res, 200, await codeState(session));
     if (tail === "workspace" && method === "POST") {
       const body = await readBody(req);
-      if (typeof body.repo !== "string" || !body.repo.trim()) throw new CodeError("Diga qual repositório.");
-      if (isBusy(session.meta.sessionId))
-        throw new CodeError("O bot ainda está trabalhando. Abra o repositório quando ele terminar.", 409);
+      if (typeof body.repo !== "string" || !body.repo.trim()) throw new CodeError(codeText("whichRepo"));
+      if (isBusy(session.meta.sessionId)) throw new CodeError(codeText("busyOpen"), 409);
       const task =
         typeof body.task === "string" && body.task.trim()
           ? body.task
@@ -282,12 +281,12 @@ export async function handleBotCode(req: Req, res: Res, url: URL, method: string
       });
     }
     if (tail === "workspace" && method === "DELETE") {
-      if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando.", 409);
+      if (isBusy(session.meta.sessionId)) throw new CodeError(codeText("busy"), 409);
       const id = url.searchParams.get("workspaceId");
       const closed = await closeTaskWorkspace(session, id ? workspaceById(session, id) : null);
       return closed
         ? sendJson(res, 200, { ok: true, path: closed.path, branch: closed.branch })
-        : sendJson(res, 404, { ok: false, error: "Esta conversa não tem repositório aberto." });
+        : sendJson(res, 404, { ok: false, error: codeText("repoNotOpen") });
     }
     if (tail === "files" && method === "GET")
       return sendJson(
@@ -314,11 +313,11 @@ export async function handleBotCode(req: Req, res: Res, url: URL, method: string
     }
     if (tail === "deliver" && method === "POST") {
       const workspace = requireWorkspace(session, url);
-      if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando.", 409);
+      if (isBusy(session.meta.sessionId)) throw new CodeError(codeText("busy"), 409);
       const body = await readBody(req);
       const action =
         body.action === "pr" ? "pr" : body.action === "push" ? "push" : body.action === "commit" ? "commit" : null;
-      if (!action) throw new CodeError("action precisa ser commit, push ou pr.");
+      if (!action) throw new CodeError(codeText("actionInvalid"));
       const result = await deliverWorkspace(workspace, {
         action,
         message: String(body.message ?? ""),
@@ -351,7 +350,7 @@ export async function handleBotCode(req: Req, res: Res, url: URL, method: string
       );
       return sendJson(res, 200, { ok: true, stopped: stopped.map((item) => item.port) });
     }
-    return sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
+    return sendJson(res, 404, { ok: false, error: httpText("notFound") });
   } catch (error) {
     return fail(res, error);
   }

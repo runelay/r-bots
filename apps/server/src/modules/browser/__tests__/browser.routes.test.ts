@@ -71,6 +71,10 @@ describe("GET browser state and screenshots", () => {
     const missing = await request<{ error: string }>(path("browser/latest.png"));
     expect(missing.status).toBe(404);
     expect(missing.body.error).toBe("Nenhum print ainda.");
+    const english = await request<{ error: string }>(path("browser/latest.png"), {
+      headers: { "accept-language": "en" },
+    });
+    expect(english.body.error).toBe("No screenshot yet.");
     await mkdir(join(browserDir(bot.id), "shots"), { recursive: true });
     await writeFile(join(browserDir(bot.id), "latest.png"), pngBytes);
     await writeFile(join(browserDir(bot.id), "shots", "a-1.png"), pngBytes);

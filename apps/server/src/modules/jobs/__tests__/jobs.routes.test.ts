@@ -68,5 +68,7 @@ describe("/jobs", () => {
     const response = await request("/jobs");
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ ok: false, error: "A fila não está ligada." });
+    const english = await request("/jobs", { headers: { "accept-language": "en" } });
+    expect(english.body).toEqual({ ok: false, error: "The queue is not on." });
   });
 });

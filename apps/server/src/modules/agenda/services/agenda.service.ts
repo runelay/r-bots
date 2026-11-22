@@ -13,6 +13,7 @@ import { calendarCache } from "../../../db/tables";
 import { defaultTimezone, offsetOf, userTimezone, zonedDay } from "../../../shared/clock";
 import { BlockError, blockEvent, bumpAgendaVersion, nowIso } from "../../blocks/services/blocks.shared";
 import { type Connection, listConnections, runelayCall } from "../../connectors/services/runelay.service";
+import { agendaText } from "../constants/agenda-messages.constants";
 
 export const agendaTimezone = defaultTimezone;
 
@@ -156,7 +157,7 @@ export async function listAccounts(): Promise<AgendaAccount[]> {
 async function requireAccount(accountId: string) {
   const accounts = await listAccounts();
   const account = accounts.find((item) => item.id === accountId);
-  if (!account) throw new BlockError("Conta de agenda não encontrada.", 404);
+  if (!account) throw new BlockError(agendaText("accountNotFound"), 404);
   if (account.status !== "ready")
     throw new BlockError("Essa conta precisa ser religada na runelay.", 409, "needs_auth", { accountId });
   return { account, accounts };
@@ -174,7 +175,7 @@ export function decodeEventId(eventId: string) {
     if (!accountId || !calendarId || !googleId) throw new Error();
     return { accountId, calendarId, googleId };
   } catch {
-    throw new BlockError("Evento não encontrado.", 404);
+    throw new BlockError(agendaText("eventNotFound"), 404);
   }
 }
 
@@ -189,7 +190,7 @@ export function toEvent(accountId: string, calendarId: string, raw: GoogleEvent)
     id: encodeEventId(accountId, calendarId, raw.id),
     accountId,
     calendarId,
-    title: raw.summary?.trim() || "(sem título)",
+    title: raw.summary?.trim() || agendaText("untitled"),
     start: raw.start?.dateTime ?? raw.start?.date ?? "",
     end: raw.end?.dateTime ?? raw.end?.date ?? "",
     allDay,
@@ -311,10 +312,10 @@ async function fetchEvents(
 
 function isoBound(value: unknown, field: string, zone: string) {
   const text = String(value ?? "").trim();
-  if (!text) throw new BlockError(`${field} é obrigatório.`);
+  if (!text) throw new BlockError(agendaText("required", { field }));
   const withZone = /^\d{4}-\d{2}-\d{2}$/.test(text) ? localMidnight(text, zone) : text;
   const parsed = Date.parse(withZone);
-  if (Number.isNaN(parsed)) throw new BlockError(`${field} inválido.`);
+  if (Number.isNaN(parsed)) throw new BlockError(agendaText("invalid", { field }));
   return new Date(parsed).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
@@ -324,7 +325,7 @@ export async function listEvents(query: Record<string, unknown>, fresh = false):
   const end = isoBound(query.end, "end", zone);
   if (Date.parse(end) <= Date.parse(start)) throw new BlockError("end precisa ser depois de start.");
   if (Date.parse(end) - Date.parse(start) > maxRangeDays * 86_400_000)
-    throw new BlockError(`Período de no máximo ${maxRangeDays} dias.`);
+    throw new BlockError(agendaText("maxRange", { days: maxRangeDays }));
   const wanted =
     typeof query.accounts === "string" && query.accounts.trim()
       ? new Set(query.accounts.split(",").map((item) => item.trim()))
@@ -451,12 +452,12 @@ export async function listEventsBlock(botId: string, query: Record<string, unkno
 
 function normalizeWhen(value: unknown, allDay: boolean, field: string, zone: string) {
   const text = String(value ?? "").trim();
-  if (!text) throw new BlockError(`${field} é obrigatório.`);
+  if (!text) throw new BlockError(agendaText("required", { field }));
   if (allDay) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(text.slice(0, 10))) throw new BlockError(`${field} inválido.`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text.slice(0, 10))) throw new BlockError(agendaText("invalid", { field }));
     return text.slice(0, 10);
   }
-  if (Number.isNaN(Date.parse(text))) throw new BlockError(`${field} inválido.`);
+  if (Number.isNaN(Date.parse(text))) throw new BlockError(agendaText("invalid", { field }));
   if (/[zZ]|[+-]\d{2}:\d{2}$/.test(text)) return text;
   const local = text.length === 16 ? `${text}:00` : text;
   return `${local}${offsetOf(new Date(`${local}Z`), zone)}`;
@@ -464,12 +465,12 @@ function normalizeWhen(value: unknown, allDay: boolean, field: string, zone: str
 
 async function createRaw(accountId: string, calendarId: string, body: Record<string, unknown>) {
   const allDay = Boolean(body.allDay);
-  if (body.meet === true) throw new BlockError("O conector do Google Calendar ainda não cria link do Meet.");
+  if (body.meet === true) throw new BlockError(agendaText("noMeet"));
   const zone = await userTimezone();
   const start = normalizeWhen(body.start, allDay, "start", zone);
   const end = normalizeWhen(body.end, allDay, "end", zone);
   const title = String(body.title ?? "").trim();
-  if (!title) throw new BlockError("title é obrigatório.");
+  if (!title) throw new BlockError(agendaText("titleRequired"));
   const attendees = Array.isArray(body.attendees) ? body.attendees.map(String).filter(Boolean) : [];
   const raw = (await runelayCall("call_tool", {
     name: `${accountId}.calendar_create_event`,
@@ -485,7 +486,7 @@ async function createRaw(accountId: string, calendarId: string, body: Record<str
     },
   })) as GoogleEvent & { event?: GoogleEvent };
   const event = (raw?.event ?? raw) as GoogleEvent;
-  if (!event?.id) throw new BlockError("O Google Calendar não devolveu o evento criado.", 502);
+  if (!event?.id) throw new BlockError(agendaText("noEvent"), 502);
   await invalidate(accountId);
   return toEvent(accountId, calendarId, {
     start: allDay ? { date: start } : { dateTime: start },
@@ -503,7 +504,7 @@ export async function createEvent(botId: string, body: Record<string, unknown>, 
   const { account } = await requireAccount(accountId);
   const calendarId = String(body.calendarId ?? "") || "primary";
   if (calendarId !== "primary" && !account.calendars.some((item) => item.id === calendarId))
-    throw new BlockError("Calendário não encontrado nessa conta.", 404);
+    throw new BlockError(agendaText("calendarNotFound"), 404);
   const event = await createRaw(accountId, calendarId, body);
   const version = await bumpAgendaVersion(botId);
   const preview = await agendaPreview(event.start, event.allDay, [event.id]);
@@ -534,7 +535,7 @@ export async function updateEvent(botId: string, eventId: string, body: Record<s
   const { accountId, calendarId, googleId } = decodeEventId(eventId);
   const { account } = await requireAccount(accountId);
   const current = await cachedEvent(accountId, calendarId, googleId);
-  if (!current) throw new BlockError("Evento não encontrado; liste a agenda do período antes de editar.", 404);
+  if (!current) throw new BlockError(agendaText("eventMissing"), 404);
   const others = (current.attendees ?? []).filter(
     (item) => !item.self && item.email.toLowerCase() !== account.email.toLowerCase(),
   );

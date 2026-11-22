@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fakeAgenda, toolCallsOf } from "../../../../test/agenda-helpers";
 import { makeBot } from "../../../../test/engine-helpers";
+import { withLanguage } from "../../../shared/i18n";
 import { encodeEventId } from "../../agenda/services/agenda.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
@@ -116,6 +117,8 @@ describe("notes", () => {
     expect(patched.blockEvent?.data.changed).toEqual({ lines: [[1, 1]] });
 
     expect(await label("note_list", {})).toBe("Listou as notas");
+    expect(await withLanguage("en", () => label("note_list", {}))).toBe("Listed the notes");
+    expect(await withLanguage("en", () => label("note_tree", {}))).toBe("Opened the note folders");
     expect(((await run("note_list", { folder: `${folder}/Sub` })) as { total: number }).total).toBe(1);
     expect(await label("note_tree", {})).toBe("Abriu as pastas das notas");
     expect(await label("note_tree", { folder })).toBe(`Abriu a pasta “${folder}”`);
@@ -235,6 +238,9 @@ describe("agenda", () => {
 
     expect(await label("agenda_list", { start: "2026-11-20", end: "2026-11-21" })).toBe("Mostrou a agenda do dia");
     expect(await label("agenda_list", { start: "2026-11-16", end: "2026-11-23" })).toBe("Mostrou a agenda");
+    expect(await withLanguage("en", () => label("agenda_list", { start: "2026-11-20", end: "2026-11-21" }))).toBe(
+      "Showed the day's calendar",
+    );
     expect(await label("agenda_list", { start: "2026-11-16", end: "2026-11-23", silent: true })).toBe(
       "Conferiu a agenda",
     );

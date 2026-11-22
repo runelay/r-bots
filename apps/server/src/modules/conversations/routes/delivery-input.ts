@@ -3,6 +3,7 @@ import type { BotDefinition } from "../../bots/services/bots.service";
 import { RunelayApiError, runelayEnabled } from "../../connectors/services/runelay.service";
 import { type LoadedSkill, loadSkill, skillSlugPattern } from "../../skills/services/skills.service";
 import { resolveUploads, type UploadMeta } from "../../uploads/services/uploads.service";
+import { conversationsText } from "../constants/conversations-messages.constants";
 import type { StoredSession } from "../services/sessions.service";
 
 const acceptedFields = [
@@ -47,14 +48,14 @@ export async function resolveSkills(res: Res, body: unknown): Promise<LoadedSkil
   const slugs = [...new Set(((body as { skills?: string[] } | undefined)?.skills ?? []) as string[])];
   if (slugs.length === 0) return [];
   if (!runelayEnabled()) {
-    sendJson(res, 503, { ok: false, error: "runelay não está configurado no servidor." });
+    sendJson(res, 503, { ok: false, error: conversationsText("runelayMissing") });
     return null;
   }
   try {
     return await Promise.all(slugs.map(loadSkill));
   } catch (error) {
     if (error instanceof RunelayApiError && error.status === 404)
-      sendJson(res, 400, { ok: false, error: "Essa skill não existe mais na runelay.", field: "skills" });
+      sendJson(res, 400, { ok: false, error: conversationsText("skillGone"), field: "skills" });
     else runelayFailure(res, error);
     return null;
   }
@@ -70,7 +71,7 @@ export async function resolveAttachments(res: Res, bot: BotDefinition, body: unk
   if (ids.length === 0) return [];
   const metas = await resolveUploads(bot.id, ids);
   if (!metas) {
-    sendJson(res, 400, { ok: false, error: "Um dos anexos não existe mais. Anexe de novo.", field: "attachments" });
+    sendJson(res, 400, { ok: false, error: conversationsText("attachmentGone"), field: "attachments" });
     return null;
   }
   return metas;
@@ -87,11 +88,11 @@ export function accepted(res: Res, session: StoredSession, deliveryId: string) {
 
 export function rejectInactiveBot(res: Res, bot: BotDefinition) {
   if (bot.deletedAt) {
-    sendJson(res, 409, { ok: false, code: "bot_deleted", error: "Esse bot foi excluído." });
+    sendJson(res, 409, { ok: false, code: "bot_deleted", error: conversationsText("botDeleted") });
     return true;
   }
   if (bot.archivedAt) {
-    sendJson(res, 409, { ok: false, code: "bot_archived", error: "Esse bot está arquivado." });
+    sendJson(res, 409, { ok: false, code: "bot_archived", error: conversationsText("botArchived") });
     return true;
   }
   return false;

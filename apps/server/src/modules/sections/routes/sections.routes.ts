@@ -1,5 +1,6 @@
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
 import { clearSection } from "../../bots/services/bots.service";
+import { sectionsText } from "../constants/sections-messages.constants";
 import {
   archiveSection,
   createSection,
@@ -18,12 +19,12 @@ export async function handleSections(req: Req, res: Res, method: string, parts: 
       const section = await updateSection(id, await readBody(req));
       return section
         ? sendJson(res, 200, publicSection(section))
-        : sendJson(res, 404, { ok: false, error: "Seção não encontrada." });
+        : sendJson(res, 404, { ok: false, error: sectionsText("notFound") });
     }
     if (parts.length === 3 && parts[2] === "archive" && method === "POST") {
       await readBody(req).catch(() => undefined);
       const section = await archiveSection(id);
-      if (!section) return sendJson(res, 404, { ok: false, error: "Seção não encontrada." });
+      if (!section) return sendJson(res, 404, { ok: false, error: sectionsText("notFound") });
       await clearSection(id);
       return sendJson(res, 200, { ...publicSection(section), archivedAt: section.archivedAt });
     }

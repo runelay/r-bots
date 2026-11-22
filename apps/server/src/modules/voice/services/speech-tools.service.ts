@@ -7,6 +7,7 @@ import { integrationSecret } from "../../integrations/services/integration-store
 import { trustedServiceUrl } from "../../integrations/services/integrations.service";
 import { outboxDir } from "../../uploads/services/send-file.service";
 import { importBotFile, publicUpload } from "../../uploads/services/uploads.service";
+import { voiceText } from "../constants/voice-messages.constants";
 
 export const maxSpeechChars = 5000;
 const speechModel = process.env.SPEECH_MODEL ?? "eleven_multilingual_v2";
@@ -85,7 +86,9 @@ export function speechTools(bot: BotDefinition): BotTool[] {
       },
       approval: null,
       label: (input) =>
-        typeof input.title === "string" && input.title ? `Gerar áudio: ${input.title}` : "Gerar áudio",
+        typeof input.title === "string" && input.title
+          ? voiceText("speechTitled", { title: input.title })
+          : voiceText("speech"),
       run: async (input, signal) => {
         const { meta, path } = await synthesizeSpeech(
           bot,

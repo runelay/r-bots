@@ -1,4 +1,5 @@
 import { ValidationError } from "../../../shared/errors";
+import { githubText } from "../constants/github-messages.constants";
 import { GitHubError, graphql, rest } from "./gh-client.service";
 
 export const pullFilters = ["mine", "review", "mentions", "merged"] as const;
@@ -244,14 +245,14 @@ export function searchQuery(filter: PullFilter, repo: string | null, text: strin
 export function parseFilter(value: string | null): PullFilter {
   if (!value) return "mine";
   if ((pullFilters as readonly string[]).includes(value)) return value as PullFilter;
-  throw new ValidationError("Filtro inválido.", "filter");
+  throw new ValidationError(githubText("filterInvalid"), "filter");
 }
 
 const repoPattern = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 
 export function parseRepo(value: string | null | undefined): string | null {
   if (!value) return null;
-  if (!repoPattern.test(value)) throw new ValidationError("Repositório inválido.", "repo");
+  if (!repoPattern.test(value)) throw new ValidationError(githubText("repoInvalid"), "repo");
   return value;
 }
 
@@ -550,7 +551,7 @@ function commentOf(raw: RawComment): PullComment {
 
 export function detailOf(repo: RawRepository): PullDetail {
   const raw = repo.pullRequest;
-  if (!raw) throw new GitHubError(404, "Esse PR não existe.");
+  if (!raw) throw new GitHubError(404, githubText("pullMissing"));
   const methods: MergeMethod[] = [];
   if (repo.squashMergeAllowed) methods.push("squash");
   if (repo.mergeCommitAllowed) methods.push("merge");
@@ -643,7 +644,7 @@ function splitRepo(repo: string) {
 export function pullDetail(repo: string, number: number, refresh = false): Promise<PullDetail> {
   return cached(`detail:${repo}#${number}`, detailTtlMs, refresh, async () => {
     const data = await graphql<{ repository?: RawRepository | null }>(detailQuery, { ...splitRepo(repo), number });
-    if (!data.repository) throw new GitHubError(404, "Não achei esse repositório.");
+    if (!data.repository) throw new GitHubError(404, githubText("repoMissing"));
     return detailOf(data.repository);
   });
 }
@@ -660,11 +661,10 @@ export interface MergeInput {
 
 export async function mergePull(repo: string, number: number, input: MergeInput) {
   const current = await pullDetail(repo, number, true);
-  if (current.state !== "open") throw new ValidationError("Esse PR não está aberto.", "state");
-  if (current.draft) throw new ValidationError("Marque o PR como pronto para revisão antes de mergear.", "draft");
-  if (!current.mergeMethods.includes(input.method))
-    throw new ValidationError("Esse repositório não aceita esse tipo de merge.", "method");
-  if (current.mergeable === "conflicting") throw new ValidationError("O PR tem conflitos com a base.", "mergeable");
+  if (current.state !== "open") throw new ValidationError(githubText("pullNotOpen"), "state");
+  if (current.draft) throw new ValidationError(githubText("pullDraft"), "draft");
+  if (!current.mergeMethods.includes(input.method)) throw new ValidationError(githubText("mergeMethod"), "method");
+  if (current.mergeable === "conflicting") throw new ValidationError(githubText("conflicts"), "mergeable");
   await graphql(
     `mutation($id: ID!, $method: PullRequestMergeMethod!, $oid: GitObjectID) {
       mergePullRequest(input: { pullRequestId: $id, mergeMethod: $method, expectedHeadOid: $oid }) { pullRequest { number } }
@@ -687,7 +687,7 @@ export const reviewEvents = ["approve", "request_changes", "comment"] as const;
 export type ReviewEvent = (typeof reviewEvents)[number];
 
 export async function reviewPull(repo: string, number: number, event: ReviewEvent, body: string) {
-  if (event !== "approve" && !body.trim()) throw new ValidationError("Escreva o comentário da revisão.", "body");
+  if (event !== "approve" && !body.trim()) throw new ValidationError(githubText("reviewBody"), "body");
   const current = await pullDetail(repo, number);
   await graphql(
     `mutation($id: ID!, $event: PullRequestReviewEvent!, $body: String) {
@@ -699,7 +699,7 @@ export async function reviewPull(repo: string, number: number, event: ReviewEven
 }
 
 export async function commentPull(repo: string, number: number, body: string) {
-  if (!body.trim()) throw new ValidationError("Escreva o comentário.", "body");
+  if (!body.trim()) throw new ValidationError(githubText("commentBody"), "body");
   const current = await pullDetail(repo, number);
   await graphql(
     `mutation($id: ID!, $body: String!) { addComment(input: { subjectId: $id, body: $body }) { clientMutationId } }`,
@@ -709,10 +709,10 @@ export async function commentPull(repo: string, number: number, body: string) {
 }
 
 export async function replyThread(repo: string, number: number, threadId: string, body: string) {
-  if (!body.trim()) throw new ValidationError("Escreva a resposta.", "body");
+  if (!body.trim()) throw new ValidationError(githubText("replyBody"), "body");
   const current = await pullDetail(repo, number);
   if (!current.threads.some((thread) => thread.id === threadId))
-    throw new ValidationError("Essa conversa não é deste PR.", "threadId");
+    throw new ValidationError(githubText("threadOther"), "threadId");
   await graphql(
     `mutation($thread: ID!, $body: String!) {
       addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $thread, body: $body }) { comment { id } }
@@ -741,7 +741,7 @@ export async function rerunFailed(repo: string, number: number) {
         .map((check) => check.runId as number),
     ),
   ];
-  if (runs.length === 0) throw new ValidationError("Nenhum check falhou para rodar de novo.", "checks");
+  if (runs.length === 0) throw new ValidationError(githubText("noFailedChecks"), "checks");
   for (const runId of runs) await rest("POST", `repos/${repo}/actions/runs/${runId}/rerun-failed-jobs`);
   return { pull: await afterWrite(repo, number), reruns: runs.length };
 }

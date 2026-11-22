@@ -26,6 +26,7 @@ import {
   shouldMerge,
   staleCheck,
 } from "../../blocks/services/blocks.shared";
+import { sheetsText } from "../constants/sheets-messages.constants";
 import {
   address,
   type BookCell,
@@ -59,21 +60,21 @@ function db(): Db {
   return getDb();
 }
 
-function cleanTitle(value: unknown, what = "Título") {
+function cleanTitle(value: unknown, missing: "titleRequired" | "tabNameRequired" = "titleRequired") {
   const title = String(value ?? "")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 120);
-  if (!title) throw new BlockError(`${what} é obrigatório.`);
+  if (!title) throw new BlockError(sheetsText(missing));
   return title;
 }
 
 function cleanTabName(value: unknown) {
-  const name = cleanTitle(value, "Nome da aba")
+  const name = cleanTitle(value, "tabNameRequired")
     .replace(/[[\]:*?/\\]/g, " ")
     .trim()
     .slice(0, 31);
-  if (!name) throw new BlockError("Nome da aba é obrigatório.");
+  if (!name) throw new BlockError(sheetsText("tabNameRequired"));
   return name;
 }
 
@@ -89,7 +90,7 @@ export async function requireSheet(botId: string, sheetId: string) {
       .where(and(liveSheets(botId), eq(sheets.id, sheetId)))
       .limit(1)
   )[0];
-  if (!row) throw new BlockError("Planilha não encontrada.", 404);
+  if (!row) throw new BlockError(sheetsText("notFound"), 404);
   return row;
 }
 
@@ -105,7 +106,7 @@ async function requireTab(sheetId: string, tabId?: unknown) {
   const tabs = await tabsOf(sheetId);
   if (tabId === undefined || tabId === null || tabId === "") return tabs[0];
   const tab = tabs.find((item) => item.id === tabId || normalizeTitle(item.name) === normalizeTitle(String(tabId)));
-  if (!tab) throw new BlockError("Aba não encontrada.", 404);
+  if (!tab) throw new BlockError(sheetsText("tabNotFound"), 404);
   return tab;
 }
 
@@ -418,7 +419,7 @@ export async function createSheet(botId: string, body: Record<string, unknown>, 
   const names = Array.isArray(body.tabs) && body.tabs.length ? body.tabs.map(cleanTabName) : ["Planilha1"];
   if (new Set(names.map(normalizeTitle)).size !== names.length) throw new BlockError("Nomes de aba repetidos.");
   const cells = Array.isArray(body.cells) ? (body.cells as Array<{ a: string; input: string }>) : [];
-  if (cells.length > maxWriteCells) throw new BlockError(`No máximo ${maxWriteCells} células por escrita.`);
+  if (cells.length > maxWriteCells) throw new BlockError(sheetsText("maxWrite", { max: maxWriteCells }));
   return writeTransaction(async () => {
     const at = nowIso();
     const row: SheetRow = {
@@ -479,7 +480,7 @@ export async function readRange(
   const r2 = Math.min(range.r2, Math.max(tab.rowCount - 1, range.r1));
   const c2 = Math.min(range.c2, Math.max(tab.colCount - 1, range.c1));
   if ((r2 - range.r1 + 1) * (c2 - range.c1 + 1) > maxReadCells)
-    throw new BlockError(`No máximo ${maxReadCells} células por leitura; peça uma janela menor.`);
+    throw new BlockError(sheetsText("maxRead", { max: maxReadCells }));
   const rows = await db()
     .select()
     .from(sheetCells)
@@ -504,8 +505,8 @@ export async function writeCells(
   author: BlockAuthor,
 ) {
   const cells = body.cells;
-  if (!Array.isArray(cells) || !cells.length) throw new BlockError("cells é obrigatório.");
-  if (cells.length > maxWriteCells) throw new BlockError(`No máximo ${maxWriteCells} células por escrita.`);
+  if (!Array.isArray(cells) || !cells.length) throw new BlockError(sheetsText("cellsRequired"));
+  if (cells.length > maxWriteCells) throw new BlockError(sheetsText("maxWrite", { max: maxWriteCells }));
   return writeTransaction(async () => {
     const sheet = await requireSheet(botId, sheetId);
     staleCheck(sheet, body.baseVersion, author);
@@ -532,18 +533,18 @@ export async function writeCells(
 
 function cleanFormat(value: unknown): Record<string, unknown> | null {
   if (value === null) return null;
-  if (!value || typeof value !== "object") throw new BlockError("format inválido.");
+  if (!value || typeof value !== "object") throw new BlockError(sheetsText("formatInvalid"));
   const input = value as Record<string, unknown>;
   const types = ["general", "number", "brl", "percent", "date", "datetime", "text"];
   const out: Record<string, unknown> = {};
   if (input.type !== undefined) {
-    if (!types.includes(String(input.type))) throw new BlockError("Tipo de formato inválido.");
+    if (!types.includes(String(input.type))) throw new BlockError(sheetsText("formatType"));
     out.type = input.type;
   }
   if (input.decimals !== undefined) out.decimals = Math.max(0, Math.min(10, Math.floor(Number(input.decimals) || 0)));
   if (input.bold !== undefined) out.bold = Boolean(input.bold);
   if (input.align !== undefined) {
-    if (!["left", "center", "right"].includes(String(input.align))) throw new BlockError("Alinhamento inválido.");
+    if (!["left", "center", "right"].includes(String(input.align))) throw new BlockError(sheetsText("align"));
     out.align = input.align;
   }
   return out;
@@ -561,7 +562,7 @@ export async function formatCells(
     : typeof body.ranges === "string"
       ? [body.ranges]
       : [];
-  if (!ranges.length) throw new BlockError("ranges é obrigatório.");
+  if (!ranges.length) throw new BlockError(sheetsText("rangesRequired"));
   const format = cleanFormat(body.format);
   return writeTransaction(async () => {
     const sheet = await requireSheet(botId, sheetId);
@@ -579,7 +580,7 @@ export async function formatCells(
       const r2 = Math.min(range.r2, Math.max(tab.rowCount - 1, range.r1));
       const c2 = Math.min(range.c2, Math.max(tab.colCount - 1, range.c1));
       if ((r2 - range.r1 + 1) * (c2 - range.c1 + 1) + touched.length > maxWriteCells)
-        throw new BlockError(`No máximo ${maxWriteCells} células por formatação.`);
+        throw new BlockError(sheetsText("maxFormat", { max: maxWriteCells }));
       texts.push(rangeText({ ...range, r2, c2 }));
       for (let r = range.r1; r <= r2; r++)
         for (let c = range.c1; c <= c2; c++) {
@@ -672,7 +673,7 @@ async function tabResult(_botId: string, sheet: SheetRow, tab: TabRow, author: B
 
 async function requireTabRow(tabId: string) {
   const row = (await db().select().from(sheetTabs).where(eq(sheetTabs.id, tabId)).limit(1))[0];
-  if (!row) throw new BlockError("Aba não encontrada.", 404);
+  if (!row) throw new BlockError(sheetsText("tabNotFound"), 404);
   return row;
 }
 
@@ -682,7 +683,7 @@ export async function addTab(botId: string, sheetId: string, body: Record<string
     const tabs = await tabsOf(sheet.id);
     const name = cleanTabName(body.name ?? `Planilha${tabs.length + 1}`);
     if (tabs.some((tab) => normalizeTitle(tab.name) === normalizeTitle(name)))
-      throw new BlockError("Já existe uma aba com esse nome.", 409, "exists");
+      throw new BlockError(sheetsText("tabTaken"), 409, "exists");
     const position =
       Number(
         (
@@ -718,7 +719,7 @@ export async function patchTab(
           (item) => item.id !== tab.id && normalizeTitle(item.name) === normalizeTitle(name),
         )
       )
-        throw new BlockError("Já existe uma aba com esse nome.", 409, "exists");
+        throw new BlockError(sheetsText("tabTaken"), 409, "exists");
       if (name !== tab.name) {
         await rewriteAll(sheet.id, (input) => renameSheetRefs(input, tab.name, name));
         set.name = name;
@@ -748,7 +749,7 @@ export async function deleteTab(botId: string, sheetId: string, tabId: string, a
     const sheet = await requireSheet(botId, sheetId);
     const tabs = await tabsOf(sheet.id);
     const tab = await requireTab(sheet.id, tabId);
-    if (tabs.length <= 1) throw new BlockError("A última aba não pode sair.");
+    if (tabs.length <= 1) throw new BlockError(sheetsText("lastTab"));
     await db()
       .update(sheetTabs)
       .set({ deletedAt: nowIso(), position: -1 - Date.now() })
@@ -768,11 +769,11 @@ export async function structure(
 ) {
   const ops: SheetStructureOp[] = ["insert_rows", "delete_rows", "insert_cols", "delete_cols"];
   const op = body.op as SheetStructureOp;
-  if (!ops.includes(op)) throw new BlockError("op inválida.");
+  if (!ops.includes(op)) throw new BlockError(sheetsText("opInvalid"));
   const at = Math.floor(Number(body.at));
   const count = Math.floor(Number(body.count ?? 1));
   if (!Number.isFinite(at) || at < 0 || !Number.isFinite(count) || count < 1 || count > 10_000)
-    throw new BlockError("at/count inválidos.");
+    throw new BlockError(sheetsText("atCount"));
   return writeTransaction(async () => {
     const sheet = await requireSheet(botId, sheetId);
     staleCheck(sheet, body.baseVersion, author);
@@ -815,7 +816,7 @@ export async function sheetTabTool(botId: string, input: Record<string, unknown>
     );
     return { sheet: result.sheet, event: result.event };
   }
-  throw new BlockError("op inválida: use add, rename, delete, freeze ou structure.");
+  throw new BlockError(sheetsText("opList"));
 }
 
 export async function markSheetSeen(botId: string, sheetId: string) {

@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { LiveMessage, LivePush, Provider, ProviderEvent, Usage } from "@runelay-bots/protocol";
 import { emptyUsage } from "@runelay-bots/protocol";
 import { nowNote, userTimezone } from "../../../shared/clock";
+import { backgroundLanguage, defineMessages, type Language, preferredLanguage } from "../../../shared/i18n";
 import {
   type Account,
   findAccount,
@@ -49,6 +50,7 @@ import {
 } from "../../bots/services/bots.service";
 import { startLiveView } from "../../browser/services/browser.service";
 import { canvasEditNote, canvasGuide } from "../../canvas/services/canvas.service";
+import { codeToolsText } from "../../code/constants/code-tools-messages.constants";
 import { touchWorktree } from "../../code/repositories/code.repository";
 import { adoptWorkspaceAt, mentionedRepo, openTaskWorkspace } from "../../code/services/actions.service";
 import { botHomePath, ensureBotHome, shellSupported } from "../../code/services/bot-home.service";
@@ -91,6 +93,7 @@ import {
   questionInteraction,
   resolveAnswers,
 } from "../../questions/services/questions.service";
+import { readPreferences } from "../../settings/services/preferences.service";
 import { settingsGuide } from "../../settings/services/settings-tools.service";
 import { type LoadedSkill, skillsBlock, skillsIndex } from "../../skills/services/skills.service";
 import { observeTurnDuration } from "../../status/services/metrics.service";
@@ -108,6 +111,7 @@ import {
 } from "../../uploads/services/uploads.service";
 import { noteSessionAccount } from "../../usage/services/usage-scan.service";
 import { vaultGuide } from "../../vault/services/vault-tools.service";
+import { engineText } from "../constants/engine-messages.constants";
 import { type ApprovalDetails, toolsFor } from "./bot-tools.service";
 import { type ApprovalResult, newToken, registerContext, type ToolContext } from "./mcp-gateway.service";
 import { sideContext } from "./side-threads.service";
@@ -402,6 +406,36 @@ const sideThreadsGuide = [
   "No máximo 3 filhas rodando ao mesmo tempo por conversa (o servidor recusa acima de 5). Cada filha ocupa uma vaga de turno (o `max` de turnos simultâneos no /status): com as vagas cheias ela espera na fila. Depois de abrir, não fique esperando em loop: diga em uma linha o que deixou rodando e termine; o resultado chega sozinho.",
   "`thread_create` abre uma conversa nova e independente (sua ou de outro bot), sem o contexto daqui e sem devolver resultado. `thread_list` mostra as filhas desta conversa com o status; `thread_read` com `threadId` lê as últimas mensagens de uma delas. Filha de filha pode; mais fundo que isso o servidor recusa.",
 ].join("\n");
+
+const replyLanguageGuides: Record<Language, string> = {
+  "pt-BR": "## Idioma\nResponda sempre em português do Brasil.",
+  en: "## Language\nAlways reply to the person in English, even though these instructions are in Portuguese. Keep code, commands and names as they are.",
+};
+
+const cardText = defineMessages({
+  "pt-BR": {
+    save: "Salvar",
+    notNow: "Agora não",
+    approve: "Aprovar",
+    alwaysRepo: "Sempre neste repositório",
+    untilTurnEnd: "Permitir até o fim da tarefa",
+    deny: "Negar",
+  },
+  en: {
+    save: "Save",
+    notNow: "Not now",
+    approve: "Approve",
+    alwaysRepo: "Always in this repository",
+    untilTurnEnd: "Allow until the task ends",
+    deny: "Deny",
+  },
+});
+
+async function replyLanguageGuide() {
+  await readPreferences();
+  const language = preferredLanguage();
+  return language ? replyLanguageGuides[language] : "";
+}
 
 function clip(text: string, max: number) {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -961,11 +995,16 @@ function addUsage(total: Usage, usage: Usage) {
 }
 
 function unavailableMessage(accountId: string, account: Account | undefined) {
-  if (!account) return `A conta ${accountId} não existe.`;
-  const reason = { offline: "está fora do ar", logged_out: "está sem login", missing: "não está instalada", ready: "" }[
-    account.status
-  ];
-  return `A conta ${account.label} ${reason}. ${account.detail}`.trim();
+  if (!account) return engineText("accountMissing", { id: accountId });
+  const key = (
+    {
+      offline: "accountOffline",
+      logged_out: "accountLoggedOut",
+      missing: "accountNotInstalled",
+      ready: "accountReady",
+    } as const
+  )[account.status];
+  return engineText(key, { label: account.label, detail: account.detail }).trim();
 }
 
 export interface GroupTurn {
@@ -1127,6 +1166,7 @@ async function executeProvider(run: ProviderRun) {
       home?.path ?? null,
     ),
     run.extraSystem,
+    await replyLanguageGuide(),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -1185,6 +1225,7 @@ function requestApproval(
 ) {
   const interactionId = randomBytes(12).toString("base64url").slice(0, 16);
   const scope = { turnId: turn.turnId };
+  const language = backgroundLanguage();
   return new Promise<ApprovalResult>((resolve) => {
     let expiry: ReturnType<typeof setTimeout> | undefined;
     turn.interactions.set(interactionId, {
@@ -1210,17 +1251,17 @@ function requestApproval(
             options:
               details?.secret || details?.integration
                 ? [
-                    { id: "approve", label: "Salvar" },
-                    { id: "deny", label: "Agora não" },
+                    { id: "approve", label: cardText("save", undefined, language) },
+                    { id: "deny", label: cardText("notNow", undefined, language) },
                   ]
                 : [
-                    { id: "approve", label: "Aprovar" },
+                    { id: "approve", label: cardText("approve", undefined, language) },
                     ...(details?.grant
-                      ? [{ id: "approve_always", label: "Sempre neste repositório" }]
+                      ? [{ id: "approve_always", label: cardText("alwaysRepo", undefined, language) }]
                       : details?.untilTurnEnd
-                        ? [{ id: "approve_always", label: "Permitir até o fim da tarefa" }]
+                        ? [{ id: "approve_always", label: cardText("untilTurnEnd", undefined, language) }]
                         : []),
-                    { id: "deny", label: "Negar" },
+                    { id: "deny", label: cardText("deny", undefined, language) },
                   ],
             ...(details?.secret ? { secret: details.secret } : {}),
             ...(details?.integration ? { integration: details.integration } : {}),
@@ -1473,7 +1514,7 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
       return files.length ? `${reply}\n\n${filesBlock(target.name, files)}` : reply;
     }
     if (result.outcome === "failed") {
-      update("failed", { error: result.error ?? "Falha no bot delegado." });
+      update("failed", { error: result.error ?? engineText("delegateFailed") });
       throw new Error(`${target.name} falhou: ${result.error ?? "erro desconhecido"}`);
     }
     update("cancelled");
@@ -1535,7 +1576,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
   runtime.turn = turn;
   setStatus(session.meta.sessionId, session.meta.botId, "working");
   const from = delivery.source === "delegate" ? delivery.from : undefined;
-  let result: DelegationResult = { outcome: "failed", reply: "", error: "O turno não terminou." };
+  let result: DelegationResult = { outcome: "failed", reply: "", error: engineText("turnUnfinished") };
   const isSchedule = delivery.source === "schedule";
   const now = () => new Date().toISOString();
   let stopLive: () => void = () => undefined;
@@ -1619,7 +1660,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       await recordThreadMessage(meta.botId, meta.sessionId, { role: "user", text: titleFrom(shownText), at: now() });
     }
     if (!bot) {
-      settle("failed", { error: { code: "BOT_NOT_FOUND", message: "Esse bot não existe mais." } });
+      settle("failed", { error: { code: "BOT_NOT_FOUND", message: engineText("botGone") } });
       return;
     }
     const engine = engineOf(bot);
@@ -1858,7 +1899,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         if (event.botId && event.botId !== bot.id) return;
         if (turn.abort.signal.aborted) return;
         turn.cancelled = true;
-        turn.cancelReason = event.type === "stop" ? "A pessoa apertou Parar." : "Você assumiu o computador.";
+        turn.cancelReason = engineText(event.type === "stop" ? "stopped" : "takenOver");
         turn.abort.abort();
       });
       const previous = stopLive;
@@ -1936,10 +1977,16 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
               const input = event.input ?? {};
               const label =
                 event.name === "Bash"
-                  ? `Rodar ${String(input.command ?? "")
-                      .replace(/\s+/g, " ")
-                      .slice(0, 70)}`
-                  : `Editar ${((input.files as string[] | undefined) ?? []).map((file) => file.split("/").pop()).join(", ")}`;
+                  ? codeToolsText("run", {
+                      command: String(input.command ?? "")
+                        .replace(/\s+/g, " ")
+                        .slice(0, 70),
+                    })
+                  : codeToolsText("edit", {
+                      name: ((input.files as string[] | undefined) ?? [])
+                        .map((file) => file.split("/").pop())
+                        .join(", "),
+                    });
               log.emit({
                 type: "call.requested",
                 data: {
@@ -1959,7 +2006,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
                   outcome: event.ok === false ? "failed" : "completed",
                   output: event.output ?? null,
                   ...(event.ok === false
-                    ? { error: { code: "TOOL_EXECUTION_FAILED", message: "O comando falhou." } }
+                    ? { error: { code: "TOOL_EXECUTION_FAILED", message: codeToolsText("commandFailed") } }
                     : {}),
                 },
                 scope: { runId, turnId },
@@ -1979,7 +2026,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
           } else if (event.type === "warning") {
             console.warn(`provider warning ${account.id}: ${event.message}`);
           } else if (event.type === "done" && !event.ok) {
-            if (!switching) failure = event.message ?? "Falha no provedor.";
+            if (!switching) failure = event.message ?? engineText("providerFailed");
           }
         },
       });
@@ -2185,7 +2232,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         .slice(-6)
         .map((call) => `- ${clip(call, 200)}`)
         .join("\n");
-      const value = `Parei aqui porque não estava avançando no seu pedido e não quis gastar sua assinatura à toa.\n\nO que tentei:\n${tried}\n\nMe diga como seguir ou reformule o pedido.`;
+      const value = engineText("guardStop", { tried });
       const partId = `${runId}.guard`;
       log.emit({
         type: "content.completed",
@@ -2204,7 +2251,11 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       const suggestion = engine.fallback ?? suggestedFallback(from.id);
       const target = suggestion.account !== from.id ? await findAccount(suggestion.account) : undefined;
       const usable = target && target.status === "ready" && !limitOf(target.id) ? target : null;
-      const message = `O limite do ${from.label} acabou${state.known ? `, volta ${formatReset(state.until)}` : ""}.${usable ? ` Quer que eu continue com o ${usable.label}?` : ""}`;
+      const message = `${
+        state.known
+          ? engineText("limitHitUntil", { account: from.label, when: formatReset(state.until) })
+          : engineText("limitHit", { account: from.label })
+      }${usable ? engineText("limitSuggest", { account: usable.label }) : ""}`;
       settle("failed", {
         error: {
           code: "ACCOUNT_LIMIT",
