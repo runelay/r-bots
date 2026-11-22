@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.14
+
 ### Releases
 
 - The image is no longer signed with cosign, so a release stops adding a `sha256-<digest>` version to the GHCR package. `SHA256SUMS` stays signed, and the image digest is in the release notes.
