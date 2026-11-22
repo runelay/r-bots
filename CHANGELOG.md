@@ -6,6 +6,18 @@
 
 - The server menu at the top of the sidebar (Mac) and of the bot list (iPhone) has a "Onde roda" section that lists where the active server can run bots, each with its status dot. Picking one switches it for every bot on that server, and the dot on the closed menu now shows whether that place is online. Servers that do not list environments keep the menu as before.
 
+### Where turns run
+
+- Turns run directly on the host as the owner, like Claude Code in a terminal: the same user, home, `git`, `gh`, `supabase`, `wrangler`, Node and Docker as the machine. A new `rbots-runner.service` (systemd user unit) runs them; the Docker boxes are off by default.
+- Each turn runs in a `systemd-run --user` scope with the box memory and CPU limits, and in `bwrap` with the r/bots data, backups and config hidden from the model. Without systemd or `bwrap` the runner says so once at boot and runs without them.
+- New `environment` preference (`vps` or `mac`) and `GET /environments`. If the chosen environment is offline the turn says so in the chat instead of silently running elsewhere.
+- Bash on the host never goes through `sudo runelaytool`; the test lock and heavy-command limits still apply.
+- The system prompt tells the model to stop and say which tool failed and why, instead of trying another route.
+
+### Upgrading
+
+- Run `rbots update` (or the installer): it installs and starts `rbots-runner.service`, sets `BOTS_HOST_RUNNER=on` and `BOTS_SANDBOX=off`, and removes the `runner` container. The host needs `bun`. On Ubuntu 24.04, `bwrap` needs the AppArmor profile in `docs/hosting.md`; the installer adds it when `sudo` works without a password.
+
 ## v0.1.16
 
 ### Boxes

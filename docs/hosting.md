@@ -44,6 +44,24 @@ Hoje os bots rodam Bash, navegador, desktop virtual e worktrees no mesmo contain
 - Vários servidores atrás de um balanceador. A fila já distribui; o que ainda é estado em memória (streams de conversa, cards de aprovação abertos, chamadas de voz) precisa de afinidade por conversa ou de pub/sub no Redis.
 - Observabilidade por workspace: falhos da fila, turnos por minuto, custo de IA.
 
+## Runner da VPS (turnos direto na máquina)
+
+Desde a etapa 1 de [ambiente-direto](architecture/ambiente-direto.md), o turno roda no host, como o dono: mesmo usuário, mesmo home e os `git`, `gh`, `supabase`, `wrangler`, Node e Docker da máquina. Quem roda é o `rbots-runner.service` (systemd de usuário), que o `install.sh` e o `rbots update` instalam e reiniciam. O container `runner` das caixas só sobe com `BOTS_SANDBOX=docker`.
+
+- **Variáveis.** O instalador grava `BOTS_HOST_RUNNER=on` e `BOTS_SANDBOX=off` no `.env.local`. Com `BOTS_HOST_RUNNER=on` o servidor escreve o token do runner em `<dados>/runner/box-runner.token` e, se o runner cair, o turno roda no container do servidor com um aviso no chat.
+- **Onde roda.** `PATCH /preferences {"environment": "vps" | "mac"}` escolhe o ambiente; `GET /environments` diz qual está no ar. Com o Mac escolhido e desconectado, o turno falha com uma mensagem, sem trocar de lugar sozinho.
+- **Limites.** Cada turno roda em `systemd-run --user --scope` com `BOX_MEM_MB` e `BOX_CPUS`. Sem systemd de usuário (ou sem linger: `sudo loginctl enable-linger $USER`), o runner avisa no boot e roda sem limite.
+- **Pasta de dados escondida.** Cada turno roda em `bwrap` sem trocar de usuário, com `tmpfs` sobre `<dados>`, `~/.local/share/runelay-bots-backups` e `~/.config/runelay-bots` (voltam só a pasta de trabalho do bot, os uploads, `locks` e `clis`). No Ubuntu 24.04 o `bwrap` sem root precisa de um perfil do AppArmor; o instalador grava `/etc/apparmor.d/rbots-bwrap` quando tem `sudo` sem senha. Sem isso, rode uma vez:
+
+  ```sh
+  printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile rbots-bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n}\n' | sudo tee /etc/apparmor.d/rbots-bwrap
+  sudo apparmor_parser -r /etc/apparmor.d/rbots-bwrap
+  systemctl --user restart rbots-runner
+  ```
+
+  O log do runner (`journalctl --user -u rbots-runner`) diz no boot se os limites estão ligados e se os dados estão escondidos.
+- **PATH.** O runner lê o PATH de `~/.config/runelay-bots/runner.env`, gravado pelo instalador com o PATH de quem rodou. Edite ali se um CLI não for achado.
+
 ## Banco externo (Neon)
 
 O servidor fala com qualquer Postgres 15+ que tenha `unaccent` e `pg_trgm` (o Neon tem as duas). Trocar o banco local pelo Neon é só configurar a URL; nada no código muda.
