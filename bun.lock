@@ -12,7 +12,7 @@
     },
     "apps/server": {
       "name": "@runelay-bots/server",
-      "version": "0.1.21",
+      "version": "0.1.22",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.328",
         "@better-auth/api-key": "1.7.26",
@@ -40,11 +40,11 @@
     },
     "packages/protocol": {
       "name": "@runelay-bots/protocol",
-      "version": "0.1.21",
+      "version": "0.1.22",
     },
     "packages/providers": {
       "name": "@runelay-bots/providers",
-      "version": "0.1.21",
+      "version": "0.1.22",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "0.3.328",
         "@runelay-bots/protocol": "workspace:*",
@@ -52,7 +52,7 @@
     },
     "packages/runner": {
       "name": "@runelay-bots/runner",
-      "version": "0.1.21",
+      "version": "0.1.22",
       "dependencies": {
         "@runelay-bots/protocol": "workspace:*",
         "@runelay-bots/providers": "workspace:*",
