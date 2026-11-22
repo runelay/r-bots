@@ -624,6 +624,10 @@ function settleCompletion(deliveryId: string) {
 
 export const steerLead =
   "A pessoa mandou esta mensagem enquanto você trabalhava. Considere agora, ajuste o que está fazendo e responda a ela:";
+export const finalReplyLead =
+  "Você terminou o turno sem mandar a mensagem final e a pessoa está esperando. Não chame mais ferramentas: escreva agora, em poucas linhas, o que fez, o resultado e o que ficou pendente (se já tinha dito antes de uma ferramenta, repita curto).";
+export const finalReplyFallback =
+  "Terminei por aqui, mas não consegui escrever o resumo final. Os passos que rodei estão acima; me diga se quer que eu explique ou continue.";
 const pausedLead =
   "A pessoa respondeu por mensagem enquanto seu pedido de aprovação ou sua pergunta estava aberta. O card foi fechado e a ação pendente não rodou. Siga a partir desta mensagem, numa resposta só:";
 
@@ -2106,10 +2110,35 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         );
       }
     }
+    const silent = () =>
+      !group &&
+      !turn.cancelled &&
+      !failure &&
+      !limitFailure &&
+      !turn.guardStop &&
+      !turn.abort.signal.aborted &&
+      turn.calls.length > 0 &&
+      replyTexts.length === 0 &&
+      !pendingTexts.some((part) => part.value.trim());
+    if (silent() && providerSession) {
+      switching = false;
+      needsRun = true;
+      await runProvider(finalReplyLead, providerSession);
+    }
     turn.accepting = false;
     if (codeLive) await codeLive.scan(null, "sweep");
 
     flush("reply");
+    if (silent()) {
+      const partId = `${runId}.final`;
+      log.emit({
+        type: "content.completed",
+        data: { kind: "text", partId, phase: "reply", runId, value: finalReplyFallback },
+        scope: { runId, turnId },
+      });
+      replyParts.push(partId);
+      replyTexts.push(finalReplyFallback);
+    }
     if (usageSeen || usage.inputTokens + usage.outputTokens > 0) {
       log.emit({
         type: "usage.recorded",

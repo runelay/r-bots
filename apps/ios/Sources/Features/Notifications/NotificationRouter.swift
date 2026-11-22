@@ -8,6 +8,7 @@ final class NotificationRouter: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationRouter()
 
     var pendingBotID: String?
+    var pendingSessionID: String?
 
     func install() {
         UNUserNotificationCenter.current().delegate = self

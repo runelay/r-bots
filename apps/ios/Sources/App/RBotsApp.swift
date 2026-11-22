@@ -5,6 +5,7 @@ struct RBotsApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     init() {
         BrandFonts.prepare()
+        BotActivityCenter.shared.installHandler()
     }
 
     var body: some Scene {
@@ -99,19 +100,27 @@ struct MainView: View {
         .onChange(of: NotificationRouter.shared.pendingBotID) {
             openPendingNotification()
         }
+        .onOpenURL { url in
+            guard let link = BotActivityLink.parse(url) else { return }
+            NotificationRouter.shared.pendingSessionID = link.sessionID
+            NotificationRouter.shared.pendingBotID = link.botID
+        }
         .task(id: AuthSession.shared.serverRevision) {
             path = []
             openPendingNotification()
             model.stop()
             await model.start()
+            BotActivityCenter.shared.attach(model)
             await LocalNotifier.requestAuthorization()
         }
     }
 
     private func openPendingNotification() {
         guard let botID = NotificationRouter.shared.pendingBotID else { return }
+        let sessionID = NotificationRouter.shared.pendingSessionID
         NotificationRouter.shared.pendingBotID = nil
+        NotificationRouter.shared.pendingSessionID = nil
         showsSettings = false
-        path = [.conversation(botID: botID)]
+        path = [.conversation(botID: botID, sessionID: sessionID)]
     }
 }
