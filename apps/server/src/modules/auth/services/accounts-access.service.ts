@@ -3,6 +3,7 @@ import { and, asc, count, eq, gt, isNull } from "drizzle-orm";
 import { ulid } from "ulid";
 import { invite, user } from "../../../db/schema/auth";
 import { ValidationError } from "../../../shared/errors";
+import { authText } from "../constants/auth-messages.constants";
 import { type Auth, type AuthDatabase, apiKeyPrefix, memberRole, ownerRole } from "./auth.service";
 
 export const runnerKeyName = "mac-runner";
@@ -38,14 +39,14 @@ export function safeEqual(given: string, expected: string) {
 }
 
 function readCredentials(body: unknown): Credentials {
-  if (!body || typeof body !== "object") throw new ValidationError("Envie nome, e-mail e senha.", "body");
+  if (!body || typeof body !== "object") throw new ValidationError(authText("credentialsMissing"), "body");
   const input = body as Record<string, unknown>;
   const name = typeof input.name === "string" ? input.name.trim() : "";
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   const password = typeof input.password === "string" ? input.password : "";
-  if (!name) throw new ValidationError("Informe o nome.", "name");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ValidationError("E-mail inválido.", "email");
-  if (password.length < 8) throw new ValidationError("A senha precisa de pelo menos 8 caracteres.", "password");
+  if (!name) throw new ValidationError(authText("nameMissing"), "name");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new ValidationError(authText("emailInvalid"), "email");
+  if (password.length < 8) throw new ValidationError(authText("passwordShort"), "password");
   return { name, email, password };
 }
 
@@ -105,12 +106,12 @@ export function createAccessService(auth: Auth, db: AuthDatabase, options: Acces
 
   async function setupOwner(body: unknown, headerToken?: string | null): Promise<IssuedSession> {
     const credentials = readCredentials(body);
-    if (setupRunning) throw new SetupClosedError("O primeiro acesso já está em andamento.");
+    if (setupRunning) throw new SetupClosedError(authText("setupRunning"));
     const given = headerToken || (body as Record<string, unknown>).setupToken;
     const run = (async () => {
-      if (!(await needsOwner())) throw new SetupClosedError("O dono já foi criado. Peça um convite.");
+      if (!(await needsOwner())) throw new SetupClosedError(authText("ownerExists"));
       if (options.setupGuard && !options.setupGuard.verify(given))
-        throw new SetupTokenError("Informe o código de primeiro acesso que está no arquivo setup.token do servidor.");
+        throw new SetupTokenError(authText("setupTokenRequired"));
       await createAccount(credentials, ownerRole);
       options.setupGuard?.consume();
       const session = await signIn(credentials.email, credentials.password);
@@ -165,19 +166,19 @@ export function createAccessService(auth: Auth, db: AuthDatabase, options: Acces
     const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     const code = typeof input.code === "string" ? input.code.trim() : "";
     const credentials = readCredentials(body);
-    if (!code) throw new InviteInvalidError("Convite inválido ou vencido.");
+    if (!code) throw new InviteInvalidError(authText("inviteInvalid"));
     const [row] = await db
       .select()
       .from(invite)
       .where(and(eq(invite.codeHash, hashCode(code)), isNull(invite.usedAt), gt(invite.expiresAt, new Date())));
-    if (!row) throw new InviteInvalidError("Convite inválido ou vencido.");
-    if (row.email && row.email !== credentials.email) throw new InviteInvalidError("Este convite é para outro e-mail.");
+    if (!row) throw new InviteInvalidError(authText("inviteInvalid"));
+    if (row.email && row.email !== credentials.email) throw new InviteInvalidError(authText("inviteOtherEmail"));
     const claimed = await db
       .update(invite)
       .set({ usedAt: new Date() })
       .where(and(eq(invite.id, row.id), isNull(invite.usedAt)))
       .returning({ id: invite.id });
-    if (claimed.length === 0) throw new InviteInvalidError("Convite inválido ou vencido.");
+    if (claimed.length === 0) throw new InviteInvalidError(authText("inviteInvalid"));
     const userId = await createAccount(credentials, row.role);
     await db.update(invite).set({ usedBy: userId }).where(eq(invite.id, row.id));
     return signIn(credentials.email, credentials.password);

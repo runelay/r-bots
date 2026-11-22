@@ -1,5 +1,7 @@
 import { stat } from "node:fs/promises";
 import { notFound, type Req, type Res, sendFile, sendJson } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
+import { testsText } from "../constants/tests-messages.constants";
 import { getRun, publicRun, rerun, runFile } from "../services/test-runs.service";
 
 const types: Record<string, string> = {
@@ -13,7 +15,7 @@ const types: Record<string, string> = {
 export async function handleTests(req: Req, res: Res, method: string, parts: string[]) {
   const [, id, action] = parts;
   const run = id ? await getRun(id) : null;
-  if (!run) return sendJson(res, 404, { ok: false, error: "Teste não encontrado." });
+  if (!run) return sendJson(res, 404, { ok: false, error: testsText("notFound") });
   if (method === "GET" && parts.length === 2) return sendJson(res, 200, publicRun(run));
   if (method === "POST" && action === "rerun" && parts.length === 3) {
     try {
@@ -26,7 +28,7 @@ export async function handleTests(req: Req, res: Res, method: string, parts: str
   if (method === "GET" && action === "files" && parts.length === 4 && types[parts[3]]) {
     const path = runFile(run.id, parts[3]);
     const info = path ? await stat(path).catch(() => null) : null;
-    if (!path || !info?.isFile()) return sendJson(res, 404, { ok: false, error: "Arquivo não encontrado." });
+    if (!path || !info?.isFile()) return sendJson(res, 404, { ok: false, error: commonText("fileNotFound") });
     return sendFile(res, Bun.file(path), { "content-type": types[parts[3]], "cache-control": "no-store" });
   }
   void req;

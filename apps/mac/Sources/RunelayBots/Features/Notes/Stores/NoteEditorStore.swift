@@ -45,12 +45,12 @@ final class NoteEditorStore {
     }
 
     var statusText: String {
-        if failed != nil { return "Não consegui salvar. Tentando de novo ao editar." }
-        if saving || dirty { return "Salvando…" }
-        if let remoteEditedAt, Date().timeIntervalSince(remoteEditedAt) < 60 { return "O bot acabou de editar" }
-        if savedAt != nil { return "Salvo" }
-        guard let note else { return "Nota" }
-        return note.folder.isEmpty ? "Nota" : note.folder.replacingOccurrences(of: "/", with: " › ")
+        if failed != nil { return tr("Não consegui salvar. Tentando de novo ao editar.") }
+        if saving || dirty { return tr("Salvando…") }
+        if let remoteEditedAt, Date().timeIntervalSince(remoteEditedAt) < 60 { return tr("O bot acabou de editar") }
+        if savedAt != nil { return tr("Salvo") }
+        guard let note else { return tr("Nota") }
+        return note.folder.isEmpty ? tr("Nota") : note.folder.replacingOccurrences(of: "/", with: " › ")
     }
 
     func load() async {
@@ -238,7 +238,7 @@ final class NoteEditorStore {
         } else {
             text = latest.content
             dirty = false
-            BlockCenter.shared.flash("O bot mudou o mesmo trecho; ficou a versão dele")
+            BlockCenter.shared.flash(tr("O bot mudou o mesmo trecho; ficou a versão dele"))
         }
         textRevision += 1
         remoteEditedAt = Date()

@@ -287,7 +287,7 @@ final class LinearStore {
                 cards[fresh] = original
             }
             recount()
-            show(.failure("Não deu para mover \(id): \(error.localizedDescription)"))
+            show(.failure(tr("Não deu para mover %@: %@", id, error.localizedDescription)))
         }
     }
 
@@ -300,9 +300,9 @@ final class LinearStore {
             apply(reply)
             if let branch = reply.branch, !branch.isEmpty {
                 copy(branch)
-                show(.success("\(id) em \(reply.state). Branch copiada"))
+                show(.success(tr("%1$@ em %2$@. Branch copiada", id, reply.state)))
             } else {
-                show(.success("\(id) em \(reply.state)"))
+                show(.success(tr("%1$@ em %2$@", id, reply.state)))
             }
             if selectedID == id { await reloadDetail() }
         } catch {
@@ -316,7 +316,7 @@ final class LinearStore {
         defer { busy = nil }
         do {
             try await client.linearAssign(id)
-            show(.success("\(id) agora é seu"))
+            show(.success(tr("%@ agora é seu", id)))
             if selectedID == id { await reloadDetail() }
             if let fresh = detail, fresh.card.id == id, let index = cards.firstIndex(where: { $0.id == id }) {
                 cards[index].assignee = fresh.card.assignee

@@ -67,7 +67,7 @@ struct InlineTokenText: View {
             let client = model.client
             Task {
                 guard let local = await AttachmentOpening.localFile(ref, client: client) else {
-                    model.showNotice("Não consegui abrir \(ref.name).")
+                    model.showNotice(tr("Não consegui abrir %@.", ref.name))
                     return
                 }
                 QuickLookPanel.shared.show([local], selected: local)
@@ -99,7 +99,7 @@ struct SkillDescriptionCard: View {
                 .foregroundStyle(Theme.textTertiary)
             Group {
                 if let description {
-                    Text(description.isEmpty ? "Essa skill não tem descrição." : description)
+                    Text(description.isEmpty ? tr("Essa skill não tem descrição.") : description)
                         .foregroundStyle(description.isEmpty ? Theme.textTertiary : Theme.textSecondary)
                 } else {
                     ProgressView()

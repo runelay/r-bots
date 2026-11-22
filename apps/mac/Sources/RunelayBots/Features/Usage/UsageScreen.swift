@@ -11,7 +11,7 @@ struct UsageScreen: View {
                 PageContainer {
                     VStack(alignment: .leading, spacing: Spacing.xl) {
                         HStack(alignment: .center, spacing: Spacing.l) {
-                            ScreenTitle(title: "Uso", subtitle: "Limites de cada conta e tokens gastos pelos bots.")
+                            ScreenTitle(title: tr("Uso"), subtitle: tr("Limites de cada conta e tokens gastos pelos bots."))
                             Spacer(minLength: Spacing.l)
                             UsageRefreshButton(isBusy: store.summaryLoading) {
                                 Task { await store.refreshLimits(force: true) }
@@ -25,9 +25,9 @@ struct UsageScreen: View {
                             if store.tab != .limits {
                                 UsageSegmented(options: UsageRange.allCases.map { ($0, $0.title) }, selection: $store.range, namespaceID: "range")
                             }
-                            UsageFilterMenu(title: "Provedor", options: [(nil, "Todos"), ("claude", "Claude"), ("codex", "Codex")], selection: $store.provider)
+                            UsageFilterMenu(title: tr("Provedor"), options: [(nil, tr("Todos")), ("claude", "Claude"), ("codex", "Codex")], selection: $store.provider)
                             if store.accounts.count > 1 {
-                                UsageFilterMenu(title: "Conta", options: [(nil, "Todas")] + store.accounts.map { ($0.id, $0.label) }, selection: $store.account)
+                                UsageFilterMenu(title: tr("Conta"), options: [(nil, tr("Todas"))] + store.accounts.map { ($0.id, $0.label) }, selection: $store.account)
                             }
                         }
 
@@ -213,7 +213,7 @@ private struct UsageLimitsTab: View {
                     .controlSize(.small)
                     .frame(maxWidth: .infinity, minHeight: 120)
             } else if visibleAccounts.isEmpty {
-                UsageNote(text: "Nenhuma conta com limite para mostrar com esses filtros.")
+                UsageNote(text: tr("Nenhuma conta com limite para mostrar com esses filtros."))
             }
             ForEach(visibleAccounts) { account in
                 UsageAccountLimits(account: account)
@@ -250,7 +250,7 @@ private struct UsageAccountLimits: View {
                     RoleTag(text: plan.capitalized)
                 }
                 if account.isDefault == true, store.accounts(for: account.provider).count > 1 {
-                    RoleTag(text: "Padrão")
+                    RoleTag(text: tr("Padrão"))
                 }
             }
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: Spacing.m, alignment: .top)], alignment: .leading, spacing: Spacing.m) {
@@ -259,10 +259,10 @@ private struct UsageAccountLimits: View {
                 }
             }
             if !account.ok {
-                UsageNote(text: account.error ?? "Sem dados desta conta.", systemImage: "exclamationmark.circle", color: Theme.textTertiary)
+                UsageNote(text: account.error ?? tr("Sem dados desta conta."), systemImage: "exclamationmark.circle", color: Theme.textTertiary)
             }
             if account.ok, account.windows.contains(where: { $0.remainingPercent < 25 }), let line = UsageStore.failoverLine(account) {
-                UsageNote(text: "Se \(account.label) acabar: \(line)", systemImage: "arrow.triangle.swap", color: Theme.attention)
+                UsageNote(text: tr("Se %1$@ acabar: %2$@", account.label, line), systemImage: "arrow.triangle.swap", color: Theme.attention)
             }
         }
     }
@@ -323,9 +323,9 @@ private struct UsageAccountBar: View {
 
     private var paceHelp: String {
         guard let pace = window.pacePercent else { return "" }
-        if window.remainingPercent + 5 < pace { return "Gastando mais rápido que o ritmo da janela." }
-        if window.remainingPercent > pace + 5 { return "Abaixo do ritmo: sobra limite." }
-        return "No ritmo da janela."
+        if window.remainingPercent + 5 < pace { return tr("Gastando mais rápido que o ritmo da janela.") }
+        if window.remainingPercent > pace + 5 { return tr("Abaixo do ritmo: sobra limite.") }
+        return tr("No ritmo da janela.")
     }
 
     var body: some View {
@@ -449,34 +449,34 @@ private struct UsageTokensTab: View {
 
             if mode == .tokens {
                 UsageStatGrid(stats: [
-                    UsageStat(title: "Processados", value: UsageFormat.tokens(totals.processed)),
-                    UsageStat(title: "Input em cache", value: UsageFormat.tokens(totals.cacheRead)),
-                    UsageStat(title: "Input fora do cache", value: UsageFormat.tokens(totals.input + totals.cacheWrite)),
-                    UsageStat(title: "Output", value: UsageFormat.tokens(totals.output)),
-                    UsageStat(title: "Economia do cache", value: UsageFormat.usd(totals.savingsUsd), detail: cacheShare(totals)),
+                    UsageStat(title: tr("Processados"), value: UsageFormat.tokens(totals.processed)),
+                    UsageStat(title: tr("Input em cache"), value: UsageFormat.tokens(totals.cacheRead)),
+                    UsageStat(title: tr("Input fora do cache"), value: UsageFormat.tokens(totals.input + totals.cacheWrite)),
+                    UsageStat(title: tr("Output"), value: UsageFormat.tokens(totals.output)),
+                    UsageStat(title: tr("Economia do cache"), value: UsageFormat.usd(totals.savingsUsd), detail: cacheShare(totals)),
                 ])
                 UsageTypeBar(
-                    title: "Tokens por tipo",
+                    title: tr("Tokens por tipo"),
                     segments: [
-                        ("Fora do cache", totals.input, UsagePalette.uncached),
-                        ("Escrita no cache", totals.cacheWrite, UsagePalette.cacheWrite),
-                        ("Leitura do cache", totals.cacheRead, UsagePalette.cacheRead),
-                        ("Output", totals.output, UsagePalette.output),
+                        (tr("Fora do cache"), totals.input, UsagePalette.uncached),
+                        (tr("Escrita no cache"), totals.cacheWrite, UsagePalette.cacheWrite),
+                        (tr("Leitura do cache"), totals.cacheRead, UsagePalette.cacheRead),
+                        (tr("Output"), totals.output, UsagePalette.output),
                     ], format: UsageFormat.tokens)
             } else {
                 UsageStatGrid(stats: [
-                    UsageStat(title: "Custo total", value: UsageFormat.usd(totals.costUsd)),
-                    UsageStat(title: "Economia do cache", value: UsageFormat.usd(totals.savingsUsd)),
-                    UsageStat(title: "Por sessão", value: UsageFormat.usd(totals.sessions > 0 ? totals.costUsd / totals.sessions : 0)),
-                    UsageStat(title: "Por chamada", value: UsageFormat.usd(totals.requests > 0 ? totals.costUsd / totals.requests : 0)),
+                    UsageStat(title: tr("Custo total"), value: UsageFormat.usd(totals.costUsd)),
+                    UsageStat(title: tr("Economia do cache"), value: UsageFormat.usd(totals.savingsUsd)),
+                    UsageStat(title: tr("Por sessão"), value: UsageFormat.usd(totals.sessions > 0 ? totals.costUsd / totals.sessions : 0)),
+                    UsageStat(title: tr("Por chamada"), value: UsageFormat.usd(totals.requests > 0 ? totals.costUsd / totals.requests : 0)),
                 ])
                 UsageTypeBar(
-                    title: "Custo por tipo",
+                    title: tr("Custo por tipo"),
                     segments: [
-                        ("Input fora do cache", summary.costByType.input, UsagePalette.uncached),
-                        ("Escrita no cache", summary.costByType.cacheWrite, UsagePalette.cacheWrite),
-                        ("Leitura do cache", summary.costByType.cacheRead, UsagePalette.cacheRead),
-                        ("Output", summary.costByType.output, UsagePalette.output),
+                        (tr("Input fora do cache"), summary.costByType.input, UsagePalette.uncached),
+                        (tr("Escrita no cache"), summary.costByType.cacheWrite, UsagePalette.cacheWrite),
+                        (tr("Leitura do cache"), summary.costByType.cacheRead, UsagePalette.cacheRead),
+                        (tr("Output"), summary.costByType.output, UsagePalette.output),
                     ], format: UsageFormat.usd)
                 UsageSpeedCard(speeds: summary.speeds)
             }
@@ -492,13 +492,13 @@ private struct UsageTokensTab: View {
     private func cacheShare(_ totals: UsageTotals) -> String {
         let input = totals.input + totals.cacheWrite + totals.cacheRead
         guard input > 0 else { return "" }
-        return "\(UsageFormat.percent(totals.cacheRead / input * 100)) do input veio do cache"
+        return tr("%@ do input veio do cache", UsageFormat.percent(totals.cacheRead / input * 100))
     }
 
     private func notes(_ summary: UsageSummary) -> [String] {
         var list: [String] = []
         if mode == .cost, summary.totals.unpricedTokens > 0 {
-            list.append("\(UsageFormat.tokens(summary.totals.unpricedTokens)) tokens são de modelos sem preço público e ficaram fora da conta.")
+            list.append(tr("%@ tokens são de modelos sem preço público e ficaram fora da conta.", UsageFormat.tokens(summary.totals.unpricedTokens)))
         }
         return list
     }
@@ -657,17 +657,17 @@ private struct UsageAreaChart: View {
     private func axisLabel(_ value: Double) -> String {
         guard mode == .cost else { return UsageFormat.tokens(value) }
         let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = LanguageStore.shared.locale
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = value >= 1000 ? 1 : 0
         let shown = value >= 1000 ? value / 1000 : value
         let number = formatter.string(from: NSNumber(value: shown)) ?? "\(Int(shown))"
-        return "US$ " + number + (value >= 1000 ? " mil" : "")
+        return tr("US$ %@", value >= 1000 ? tr("%@ mil", number) : number)
     }
 
     private func label(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = LanguageStore.shared.locale
         formatter.timeZone = TimeZone(identifier: "America/Sao_Paulo")
         formatter.dateFormat = hourly ? "d MMM, HH'h'" : "EEE, d MMM"
         return formatter.string(from: date)
@@ -675,7 +675,7 @@ private struct UsageAreaChart: View {
 
     private func tick(_ date: Date) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = LanguageStore.shared.locale
         formatter.timeZone = TimeZone(identifier: "America/Sao_Paulo")
         formatter.dateFormat = hourly ? "HH'h'" : "d MMM"
         return formatter.string(from: date)
@@ -1086,7 +1086,7 @@ private struct UsageDetailTable: View {
                         .font(TypeScale.sectionTitle)
                         .foregroundStyle(Theme.textPrimary)
                     Spacer()
-                    UsageSegmented(options: [(DetailGrouping.model, "Modelo"), (DetailGrouping.day, "Dia")], selection: $grouping, namespaceID: "detail")
+                    UsageSegmented(options: [(DetailGrouping.model, tr("Modelo")), (DetailGrouping.day, tr("Dia"))], selection: $grouping, namespaceID: "detail")
                 }
                 Grid(alignment: .trailing, horizontalSpacing: Spacing.l, verticalSpacing: 0) {
                     GridRow {
@@ -1137,7 +1137,7 @@ private struct UsageDetailTable: View {
                             Text(UsageFormat.tokens(line.output))
                             Text(UsageFormat.tokens(line.processed))
                                 .foregroundStyle(mode == .tokens ? Theme.textPrimary : Theme.textSecondary)
-                            Text(line.priced ? UsageFormat.usd(line.cost) : "sem preço")
+                            Text(line.priced ? UsageFormat.usd(line.cost) : tr("sem preço"))
                                 .foregroundStyle(mode == .cost ? Theme.textPrimary : Theme.textSecondary)
                         }
                         .lineLimit(1)

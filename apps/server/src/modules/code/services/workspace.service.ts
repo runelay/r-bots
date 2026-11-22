@@ -5,6 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { childEnv, findBinary, run } from "@runelay-bots/providers/proc";
 import { dataDir } from "../../../config/env";
 import type { StoredSession } from "../../conversations/services/sessions.service";
+import { codeText } from "../constants/code-messages.constants";
 import type { PrSnapshot, PrStatus } from "./pull-request.service";
 import { allowedRepos, expandHome, worktreesRoot } from "./repos.service";
 import { sandboxArgv, sandboxGroup, sandboxMarker, sandboxMode, sandboxProblem } from "./sandbox.service";
@@ -231,7 +232,7 @@ function loose(text: string) {
 
 export async function resolveRepo(input: string) {
   const value = input.trim().replace(/^@/, "");
-  if (!value) throw new CodeError("Diga qual repositório.");
+  if (!value) throw new CodeError(codeText("whichRepo"));
   const repos = await listRepos();
   if (isAbsolute(value) || value.startsWith("~/")) {
     const path = resolve(expandHome(value));
@@ -676,7 +677,10 @@ export async function openWorkspace(session: StoredSession, botId: string, repoI
   await mkdir(root, { recursive: true });
   const added = await git(repo.path, ["worktree", "add", "-b", branch, path, commit], 180_000);
   if (added.code !== 0)
-    throw new CodeError(`Não consegui criar a worktree: ${(added.stderr || added.stdout).trim().slice(0, 400)}`, 500);
+    throw new CodeError(
+      codeText("worktreeFailed", { reason: (added.stderr || added.stdout).trim().slice(0, 400) }),
+      500,
+    );
   const workspace: WorkspaceState = {
     id,
     repo: repo.path,
@@ -956,7 +960,8 @@ export async function revertFile(workspace: WorkspaceState, path: string) {
   const inBase = (await git(workspace.path, ["cat-file", "-e", `${workspace.baseCommit}:${rel}`])).code === 0;
   if (inBase) {
     const restored = await git(workspace.path, ["checkout", workspace.baseCommit, "--", rel]);
-    if (restored.code !== 0) throw new CodeError(`Não consegui desfazer: ${restored.stderr.trim().slice(0, 300)}`, 500);
+    if (restored.code !== 0)
+      throw new CodeError(codeText("undoFailed", { reason: restored.stderr.trim().slice(0, 300) }), 500);
     await git(workspace.path, ["reset", "--quiet", "--", rel]);
   } else {
     await git(workspace.path, ["rm", "--cached", "--quiet", "--ignore-unmatch", "--", rel]);
@@ -1014,7 +1019,7 @@ async function snapshotTree(workspace: WorkspaceState) {
     await git(workspace.path, ["read-tree", "HEAD"], 60_000, env);
     const added = await git(workspace.path, ["add", "-A", "--", "."], 120_000, env);
     if (added.code !== 0)
-      throw new CodeError(`Não consegui guardar o ponto de volta: ${added.stderr.trim().slice(0, 300)}`, 500);
+      throw new CodeError(codeText("checkpointFailed", { reason: added.stderr.trim().slice(0, 300) }), 500);
     const tree = await git(workspace.path, ["write-tree"], 60_000, env);
     return tree.stdout.trim();
   });
@@ -1043,7 +1048,7 @@ export async function createCheckpoint(session: StoredSession, workspace: Worksp
     },
   );
   if (commit.code !== 0)
-    throw new CodeError(`Não consegui guardar o ponto de volta: ${commit.stderr.trim().slice(0, 300)}`, 500);
+    throw new CodeError(codeText("checkpointFailed", { reason: commit.stderr.trim().slice(0, 300) }), 500);
   const ref = checkpointRef(session.meta.sessionId, turnId);
   await git(workspace.path, ["update-ref", ref, commit.stdout.trim()]);
   const checkpoint: Checkpoint = {
@@ -1071,9 +1076,10 @@ export async function restoreTree(path: string, commit: string) {
   const restored = await withIndex(async (env) => {
     const read = await git(path, ["read-tree", commit], 60_000, env);
     if (read.code !== 0)
-      throw new CodeError(`Esse ponto de volta não existe mais: ${read.stderr.trim().slice(0, 200)}`, 404);
+      throw new CodeError(codeText("checkpointGone", { reason: read.stderr.trim().slice(0, 200) }), 404);
     const out = await git(path, ["checkout-index", "-a", "-f"], 120_000, env);
-    if (out.code !== 0) throw new CodeError(`Não consegui voltar os arquivos: ${out.stderr.trim().slice(0, 300)}`, 500);
+    if (out.code !== 0)
+      throw new CodeError(codeText("restoreFailed", { reason: out.stderr.trim().slice(0, 300) }), 500);
     return then.size;
   });
   let removed = 0;

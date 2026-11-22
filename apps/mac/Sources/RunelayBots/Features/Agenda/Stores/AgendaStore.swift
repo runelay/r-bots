@@ -19,7 +19,7 @@ final class AgendaStore {
         case week
 
         var id: String { rawValue }
-        var title: String { self == .day ? "Dia" : "Semana" }
+        var title: String { self == .day ? tr("Dia") : tr("Semana") }
     }
 
     static let defaultHours = 8..<19
@@ -75,10 +75,10 @@ final class AgendaStore {
     var rangeTitle: String {
         guard let first = days.first, let last = days.last else { return "" }
         if mode == .day {
-            return first.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)).replacingOccurrences(of: ".", with: "").capitalizedFirst
+            return first.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).locale(LanguageStore.shared.locale)).replacingOccurrences(of: ".", with: "").capitalizedFirst
         }
         let calendar = Calendar.agenda
-        let month: (Date) -> String = { $0.formatted(.dateTime.month(.abbreviated)).replacingOccurrences(of: ".", with: "").lowercased() }
+        let month: (Date) -> String = { $0.formatted(.dateTime.month(.abbreviated).locale(LanguageStore.shared.locale)).replacingOccurrences(of: ".", with: "").lowercased() }
         if calendar.isDate(first, equalTo: last, toGranularity: .month) {
             return "\(first.formatted(.dateTime.day()))–\(last.formatted(.dateTime.day())) \(month(last))"
         }
@@ -91,10 +91,10 @@ final class AgendaStore {
 
     var statusText: String {
         if let failed { return failed }
-        if loading { return "Atualizando…" }
-        if let remoteEditedAt, Date().timeIntervalSince(remoteEditedAt) < 60 { return "O bot acabou de mexer na agenda" }
+        if loading { return tr("Atualizando…") }
+        if let remoteEditedAt, Date().timeIntervalSince(remoteEditedAt) < 60 { return tr("O bot acabou de mexer na agenda") }
         let ready = accounts.filter { $0.status == "ready" }.count
-        return ready == 1 ? "1 conta ligada" : "\(ready) contas ligadas"
+        return ready == 1 ? tr("1 conta ligada") : tr("%lld contas ligadas", ready)
     }
 
     var visibleAccounts: [AgendaAccount] {
@@ -318,7 +318,7 @@ final class AgendaStore {
 extension Calendar {
     static var agenda: Calendar {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.locale = Locale(identifier: "pt_BR")
+        calendar.locale = LanguageStore.shared.locale
         calendar.timeZone = .current
         calendar.firstWeekday = 2
         return calendar

@@ -1,3 +1,4 @@
+import { approvalsText } from "../constants/approvals-messages.constants";
 export interface DeliveryAsk {
   commit: boolean;
   push: boolean;
@@ -34,7 +35,5 @@ export function askedDelivery(text: string, skills: { slug: string; name?: strin
 }
 
 export function askedReason(kind: "commit" | "push" | "pr") {
-  if (kind === "pr") return "Você pediu o PR.";
-  if (kind === "push") return "Você pediu o push.";
-  return "Você pediu o commit.";
+  return approvalsText(kind === "pr" ? "askedPr" : kind === "push" ? "askedPush" : "askedCommit");
 }

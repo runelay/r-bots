@@ -23,12 +23,12 @@ enum SetupStepID: String, CaseIterable, Identifiable, Codable {
 
     var railName: String {
         switch self {
-        case .profile: "Seu perfil"
-        case .bot: "Primeiro bot"
-        case .accounts: "Contas de IA"
-        case .integrations: "Integrações"
-        case .connectors: "Conectores"
-        case .computer: "Uso do Mac"
+        case .profile: tr("Seu perfil")
+        case .bot: tr("Primeiro bot")
+        case .accounts: tr("Contas de IA")
+        case .integrations: tr("Integrações")
+        case .connectors: tr("Conectores")
+        case .computer: tr("Uso do Mac")
         }
     }
 

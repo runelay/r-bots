@@ -1,0 +1,21 @@
+{
+  "%lld dias": "%lld days",
+  "Apagar este preset": "Delete this preset",
+  "Crie um preset.": "Create a preset.",
+  "Dias": "Days",
+  "Editar presets…": "Edit presets…",
+  "Faça um resumo simples do período, juntando o que foi feito e o que está em andamento.": "Write a simple summary of the period, covering what was done and what's in progress.",
+  "Juntando o contexto de %@…": "Gathering context for %@…",
+  "Linear e GitHub": "Linear and GitHub",
+  "Novo": "New",
+  "Novo review": "New review",
+  "Não deu para rodar %1$@: %2$@": "Couldn't run %1$@: %2$@",
+  "O que o bot deve fazer": "What the bot should do",
+  "Presets de review": "Review presets",
+  "Resumos prontos para a daily e a semana": "Ready-made summaries for the daily and the week",
+  "Sem conexão com o servidor.": "No connection to the server.",
+  "Sem nome": "Untitled",
+  "bot padrão": "default bot",
+  "Último dia": "Last day",
+  "Últimos %lld dias": "Last %lld days"
+}

@@ -32,10 +32,10 @@ struct ArtifactSummary: Decodable, Identifiable, Equatable, Sendable {
 enum ArtifactKindInfo {
     static func label(_ kind: String) -> String {
         switch kind {
-        case "slides": "Apresentação"
+        case "slides": tr("Apresentação")
         case "dashboard": "Dashboard"
         case "canvas": "Canvas"
-        default: "Página"
+        default: tr("Página")
         }
     }
 
@@ -145,7 +145,7 @@ final class ArtifactCenter {
     }
 
     func openFiles(botID: String, client: BotsClient) {
-        open(ArtifactRef(botID: botID, id: BlockKind.filesKind, title: "Arquivos do bot", kind: BlockKind.filesKind, version: 1), client: client)
+        open(ArtifactRef(botID: botID, id: BlockKind.filesKind, title: tr("Arquivos do bot"), kind: BlockKind.filesKind, version: 1), client: client)
     }
 
     func retitle(_ ref: ArtifactRef) {
@@ -227,9 +227,9 @@ final class ArtifactCenter {
             let file = try Self.downloadsFile(name: current.title, ext: "html")
             try html.write(to: file, atomically: true, encoding: .utf8)
             NSWorkspace.shared.open(file)
-            flash("Salvo em Downloads e aberto no navegador")
+            flash(tr("Salvo em Downloads e aberto no navegador"))
         } catch {
-            flash("Não consegui abrir no navegador")
+            flash(tr("Não consegui abrir no navegador"))
         }
     }
 
@@ -243,9 +243,9 @@ final class ArtifactCenter {
             let file = try Self.downloadsFile(name: current.title, ext: "pdf")
             try data.write(to: file)
             NSWorkspace.shared.activateFileViewerSelecting([file])
-            flash("PDF salvo em Downloads")
+            flash(tr("PDF salvo em Downloads"))
         } catch {
-            flash("Não consegui exportar o PDF")
+            flash(tr("Não consegui exportar o PDF"))
         }
     }
 
@@ -255,25 +255,25 @@ final class ArtifactCenter {
             let file = try? Self.downloadsFile(name: current.title, ext: pdf ? "pdf" : "png"),
             (try? data.write(to: file)) != nil
         else {
-            flash(pdf ? "Não consegui exportar o PDF" : "Não consegui exportar a imagem")
+            flash(pdf ? tr("Não consegui exportar o PDF") : tr("Não consegui exportar a imagem"))
             return
         }
         NSWorkspace.shared.activateFileViewerSelecting([file])
-        flash(pdf ? "PDF salvo em Downloads" : "Imagem salva em Downloads")
+        flash(pdf ? tr("PDF salvo em Downloads") : tr("Imagem salva em Downloads"))
     }
 
     func copyMermaid() {
         guard let canvas else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(canvas.mermaid, forType: .string)
-        flash("Copiado como Mermaid")
+        flash(tr("Copiado como Mermaid"))
     }
 
     func copyLink() {
         guard let url = currentURL else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
-        flash("Link copiado")
+        flash(tr("Link copiado"))
     }
 
     private func loadVersions() async {

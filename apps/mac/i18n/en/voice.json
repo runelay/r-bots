@@ -1,0 +1,23 @@
+{
+  "%@, escolhido": "%@, selected",
+  "Abrir Ajustes": "Open Settings",
+  "Escolher o microfone": "Choose microphone",
+  "Fale algo: a barra do microfone escolhido tem que mexer.": "Say something: the selected microphone's bar should move.",
+  "Fechar aviso": "Dismiss notice",
+  "Microfone": "Microphone",
+  "Não deu para ouvir o microfone agora.": "Couldn't listen to the microphone right now.",
+  "Não estou te ouvindo pelo %@.": "I can't hear you through %@.",
+  "Não reconheci fala no áudio.": "No speech recognized in the audio.",
+  "O %@ não está mais conectado. Voltei para o padrão do sistema.": "%@ is no longer connected. Switched back to the system default.",
+  "O microfone está bloqueado para o r/bots.": "The microphone is blocked for r/bots.",
+  "O reconhecimento de fala em português não está disponível no Mac.": "Speech recognition for this language isn't available on the Mac.",
+  "O reconhecimento de fala está bloqueado para o r/bots.": "Speech recognition is blocked for r/bots.",
+  "Padrão do sistema": "System default",
+  "Padrão do sistema (%@)": "System default (%@)",
+  "Parar de ouvir": "Stop listening",
+  "Parar de ouvir (solte ⌥Espaço)": "Stop listening (release ⌥Space)",
+  "Sem permissão de reconhecimento de fala no Mac.": "No speech recognition permission on the Mac.",
+  "Trocar": "Change",
+  "microfone escolhido": "the selected microphone",
+  "microfone padrão": "the default microphone"
+}

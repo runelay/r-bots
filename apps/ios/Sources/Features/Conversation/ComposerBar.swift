@@ -89,7 +89,7 @@ struct ComposerBar: View {
         .fullScreenCover(isPresented: $takingPhoto) {
             CameraPicker { image in
                 if let data = image.jpegData(compressionQuality: 0.85),
-                    let url = AttachmentPasteboard.writeTemporary(data, name: "Foto.jpg")
+                    let url = AttachmentPasteboard.writeTemporary(data, name: tr("Foto") + ".jpg")
                 {
                     store.attachFiles([url], ownsFiles: true)
                 }
@@ -108,7 +108,7 @@ struct ComposerBar: View {
     }
 
     private var notice: String? {
-        if recorder.phase == .denied { return "O microfone está bloqueado. Libere em Ajustes do iPhone." }
+        if recorder.phase == .denied { return tr("O microfone está bloqueado. Libere em Ajustes do iPhone.") }
         if case .failed(let message) = recorder.phase { return message }
         if voice.showsNotice(for: store) {
             if voice.deniedPermission != nil { return voice.deniedPermission?.message }
@@ -140,7 +140,7 @@ struct ComposerBar: View {
             .accessibilityLabel("Anexar")
             .padding(.leading, 6)
             .padding(.bottom, 6)
-            TextField(dictating ? "Ouvindo…" : placeholder, text: visibleText, axis: .vertical)
+            TextField(dictating ? tr("Ouvindo…") : placeholder, text: visibleText, axis: .vertical)
                 .font(BrandFonts.sans(16))
                 .foregroundStyle(Theme.textPrimary)
                 .lineLimit(1...6)
@@ -163,10 +163,10 @@ struct ComposerBar: View {
     private var accent: Color { Theme.accent(store.bot.accent) }
 
     private var placeholder: String {
-        let full = "Mensagem para \(store.bot.headline)"
+        let full = tr("Mensagem para %@", store.bot.headline)
         let font = BrandFonts.uiSans(16, weight: .regular)
         let width = (full as NSString).size(withAttributes: [.font: font]).width
-        return width <= fieldWidth - Spacing.xs - 4 ? full : "Mensagem para \(store.bot.name)"
+        return width <= fieldWidth - Spacing.xs - 4 ? full : tr("Mensagem para %@", store.bot.name)
     }
 
     private var hasContent: Bool { !typed.isEmpty || !store.composerAttachments.isEmpty }
@@ -314,7 +314,7 @@ struct ComposerBar: View {
             guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
             let type = item.supportedContentTypes.first
             let ext = type?.preferredFilenameExtension ?? "jpg"
-            let base = type?.conforms(to: .movie) == true ? "Vídeo" : "Foto"
+            let base = type?.conforms(to: .movie) == true ? tr("Vídeo") : tr("Foto")
             if let url = AttachmentPasteboard.writeTemporary(data, name: "\(base).\(ext)") {
                 urls.append(url)
             }

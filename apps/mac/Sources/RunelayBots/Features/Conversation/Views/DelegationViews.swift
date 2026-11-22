@@ -170,7 +170,7 @@ struct DelegateRow: View {
         if state == .failed, let error = call.delegation?.error ?? call.errorMessage {
             return error
         }
-        return "Abrir a conversa de \(name)"
+        return tr("Abrir a conversa de %@", name)
     }
 }
 
@@ -205,7 +205,7 @@ struct DelegatedRequestBubble: View {
                 if let from {
                     BotCharacter(bot: from, mood: .idle, size: 14)
                 }
-                Text("\(from?.name ?? message.fromName ?? "Outro bot") pediu")
+                Text("\(from?.name ?? message.fromName ?? tr("Outro bot")) pediu")
                 BubbleTime(date: date)
             }
             .font(TypeScale.caption)

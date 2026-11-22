@@ -4,6 +4,7 @@ import { z } from "zod";
 import { displayPath } from "../../accounts/services/account-dirs.service";
 import { getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
+import { codeToolsText } from "../constants/code-tools-messages.constants";
 import {
   closeTaskWorkspace,
   deliverProblem,
@@ -101,13 +102,13 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
               ? { kind: "allow" }
               : {
                   kind: "human",
-                  prompt: `Liberar o repositório ${basename(shown)} (${shown}) para os bots? Motivo: ${reason}`,
-                  reason: "Liberar repositório sempre passa por você.",
+                  prompt: codeToolsText("allowPrompt", { name: basename(shown), path: shown, reason }),
+                  reason: codeToolsText("allowReason"),
                   hard: true,
                 };
       const start = await beginCall(context, {
         name: "workspace_add",
-        label: `Liberar ${shown}`,
+        label: codeToolsText("allow", { path: shown }),
         input: { path: repoPath ?? String(args.path), reason },
         gate,
         target: { label: shown, role: "repo" },
@@ -135,7 +136,7 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       const task = String(args.task);
       const start = await beginCall(context, {
         name: "workspace_open",
-        label: `Abrir ${repo.split("/").pop()}`,
+        label: codeToolsText("open", { name: repo.split("/").pop() ?? repo }),
         input: { repo, task },
         gate: { kind: "allow" },
       });
@@ -184,7 +185,7 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
     async (args: Record<string, unknown>) => {
       const start = await beginCall(context, {
         name: "workspace_close",
-        label: "Fechar o repositório",
+        label: codeToolsText("close"),
         input: {},
         gate: { kind: "allow" },
       });
@@ -240,7 +241,7 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       }
       const start = await beginCall(context, {
         name: "dev_server_start",
-        label: `Subir ${cmd.replace(/\s+/g, " ").slice(0, 60)}`,
+        label: codeToolsText("start", { cmd: cmd.replace(/\s+/g, " ").slice(0, 60) }),
         input: args,
         gate: gateCommand(cmd, workspace),
         workspace,
@@ -306,7 +307,7 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       }
       const start = await beginCall(context, {
         name: "dev_server_stop",
-        label: args.port ? `Parar o servidor da porta ${String(args.port)}` : "Parar o servidor",
+        label: args.port ? codeToolsText("stopPort", { port: String(args.port) }) : codeToolsText("stop"),
         input: args,
         gate: { kind: "allow" },
       });
@@ -342,7 +343,7 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       }
       const start = await beginCall(context, {
         name: "dev_server_logs",
-        label: "Ver o log do servidor",
+        label: codeToolsText("logs"),
         input: args,
         gate: { kind: "allow" },
       });
@@ -403,18 +404,18 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       const problem = deliverProblem(input, input.action === "commit");
       const label =
         input.action === "pr"
-          ? `Abrir PR da branch ${workspace.branch}`
+          ? codeToolsText("pr", { branch: workspace.branch })
           : input.action === "push"
-            ? `Push da branch ${workspace.branch}`
-            : `Commit na branch ${workspace.branch}`;
+            ? codeToolsText("push", { branch: workspace.branch })
+            : codeToolsText("commit", { branch: workspace.branch });
       const risky = problem ? [] : await deliverRisk(workspace);
       const gate: Gate = problem
         ? { kind: "deny", message: problem }
         : risky.length > 0
           ? {
               kind: "human",
-              prompt: `${label}? Esta entrega muda hooks ou scripts: ${risky.join(", ")}.`,
-              reason: "Hooks do git ou scripts de instalação mudaram nesta entrega.",
+              prompt: codeToolsText("riskyPrompt", { label, files: risky.join(", ") }),
+              reason: codeToolsText("riskyReason"),
               hard: false,
             }
           : { kind: "allow" };

@@ -199,17 +199,17 @@ struct TopStrip: View {
             UpdateAvailableButton()
             HeaderIconButton(
                 systemImage: "sidebar.left",
-                help: sidebarCollapsed ? "Mostrar as conversas (⌃⌘S)" : "Ocultar as conversas (⌃⌘S)",
+                help: sidebarCollapsed ? tr("Mostrar as conversas (⌃⌘S)") : tr("Ocultar as conversas (⌃⌘S)"),
                 isActive: !sidebarCollapsed
             ) {
                 sidebarCollapsed.toggle()
             }
-            GlassMenuIconButton(systemImage: "plus", help: "Novo bot ou grupo", iconSize: 15, size: 28) {
+            GlassMenuIconButton(systemImage: "plus", help: tr("Novo bot ou grupo"), iconSize: 15, size: 28) {
                 [
-                    GlassMenuItem("Novo bot", systemImage: "person.badge.plus") {
+                    GlassMenuItem(tr("Novo bot"), systemImage: "person.badge.plus") {
                         model.openEditor(for: nil)
                     },
-                    GlassMenuItem("Novo grupo", systemImage: "person.3") {
+                    GlassMenuItem(tr("Novo grupo"), systemImage: "person.3") {
                         model.openGroupEditor(for: nil)
                     },
                 ]
@@ -236,7 +236,7 @@ struct TopStrip: View {
                         if bot.hasComputer {
                             HeaderIconButton(
                                 systemImage: bot.hasBrowser ? "globe" : "desktopcomputer",
-                                help: "Abrir o computador de \(bot.name)",
+                                help: tr("Abrir o computador de %@", bot.name),
                                 isActive: model.computerMode
                             ) {
                                 model.toggleComputer()
@@ -244,7 +244,7 @@ struct TopStrip: View {
                         }
                         HeaderIconButton(
                             systemImage: "sidebar.right",
-                            help: "Mostrar ou ocultar o painel (⌥⌘I)",
+                            help: tr("Mostrar ou ocultar o painel (⌥⌘I)"),
                             isActive: model.inspectorPresented
                         ) {
                             model.toggleInspector()
@@ -324,8 +324,8 @@ struct DetailView: View {
                         VStack(spacing: Spacing.m) {
                             PanelEmptyState(
                                 systemImage: "person.badge.plus",
-                                title: "Seu time ainda está vazio",
-                                message: "Crie um bot e diga a ele o que fazer."
+                                title: tr("Seu time ainda está vazio"),
+                                message: tr("Crie um bot e diga a ele o que fazer.")
                             )
                             Button("Criar seu primeiro bot") {
                                 model.openEditor(for: nil)
@@ -336,8 +336,8 @@ struct DetailView: View {
                     } else {
                         PanelEmptyState(
                             systemImage: "person.2",
-                            title: "Nenhum bot por aqui",
-                            message: "Escolha alguém do time na barra lateral."
+                            title: tr("Nenhum bot por aqui"),
+                            message: tr("Escolha alguém do time na barra lateral.")
                         )
                     }
                     Spacer(minLength: 0)

@@ -1,5 +1,7 @@
 import { ValidationError } from "../../../shared/errors";
 import { notFound, type Req, type Res, readBody, sendFile, sendJson, validationResponse } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
+import { githubText } from "../constants/github-messages.constants";
 import { fetchGitHubAsset, GitHubError } from "../services/gh-client.service";
 import {
   cleanText,
@@ -21,7 +23,8 @@ import {
 
 function objectBody(value: unknown) {
   if (value === undefined) return {};
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("Corpo inválido.", "body");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   return value as Record<string, unknown>;
 }
 
@@ -31,7 +34,7 @@ function text(value: unknown) {
 
 function pullNumber(value: string | undefined) {
   const number = Number(value);
-  if (!Number.isInteger(number) || number < 1) throw new ValidationError("Número do PR inválido.", "number");
+  if (!Number.isInteger(number) || number < 1) throw new ValidationError(githubText("pullNumber"), "number");
   return number;
 }
 
@@ -51,12 +54,12 @@ async function pullAction(req: Req, res: Res, repo: string, number: number, acti
   switch (action) {
     case "merge": {
       const method = text(body.method) as MergeMethod;
-      if (!mergeMethods.has(method)) throw new ValidationError("Escolha squash, merge ou rebase.", "method");
+      if (!mergeMethods.has(method)) throw new ValidationError(githubText("pickMethod"), "method");
       return sendJson(res, 200, await mergePull(repo, number, { method, deleteBranch: body.deleteBranch === true }));
     }
     case "review": {
       const event = text(body.event) as ReviewEvent;
-      if (!reviewEvents.includes(event)) throw new ValidationError("Revisão inválida.", "event");
+      if (!reviewEvents.includes(event)) throw new ValidationError(githubText("reviewInvalid"), "event");
       return sendJson(res, 200, { pull: await reviewPull(repo, number, event, text(body.body)) });
     }
     case "comment":

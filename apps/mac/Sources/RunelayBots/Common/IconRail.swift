@@ -39,7 +39,7 @@ struct IconRail: View {
             }
             Spacer(minLength: 0)
             if showsLauncher {
-                RailButton(help: "Atalhos", isSelected: model.launcherPresented) {
+                RailButton(help: tr("Atalhos"), isSelected: model.launcherPresented) {
                     withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
                         model.launcherPresented.toggle()
                     }
@@ -51,7 +51,7 @@ struct IconRail: View {
             }
             UsageRailIndicator()
                 .padding(.bottom, Spacing.xs)
-            RailButton(systemImage: "gearshape", help: "Configurações (⌘,)", isSelected: model.settingsPresented) {
+            RailButton(systemImage: "gearshape", help: tr("Configurações (⌘,)"), isSelected: model.settingsPresented) {
                 withAnimation(Motion.animation(reduceMotion: reduceMotion)) {
                     if model.settingsPresented {
                         model.closeSettings()
@@ -70,7 +70,7 @@ struct IconRail: View {
 
     private func help(for section: AppSection) -> String {
         switch section {
-        case .conversations: "Conversas (⌥⌘1)"
+        case .conversations: tr("Conversas (⌥⌘1)")
         case .git: "GitHub (⌥⌘2)"
         case .linear: "Linear (⌥⌘3)"
         default: section.title

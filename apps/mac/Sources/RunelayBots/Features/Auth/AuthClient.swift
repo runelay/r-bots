@@ -52,14 +52,14 @@ enum AuthFailure: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "O endereço do servidor não parece válido."
+            return tr("O endereço do servidor não parece válido.")
         case .server(let status, let message):
             if let message, !message.isEmpty { return message }
-            if status == 401 { return "E-mail ou senha incorretos." }
-            if status == 429 { return "Muitas tentativas. Espere um minuto." }
-            return "O servidor respondeu com erro \(status)."
+            if status == 401 { return tr("E-mail ou senha incorretos.") }
+            if status == 429 { return tr("Muitas tentativas. Espere um minuto.") }
+            return tr("O servidor respondeu com erro %lld.", status)
         case .unreachable:
-            return "Não deu para falar com o servidor."
+            return tr("Não deu para falar com o servidor.")
         }
     }
 }
@@ -79,9 +79,9 @@ enum SetupFailure: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .ownerExists:
-            return "Este servidor já tem dono. Entre com o seu e-mail e senha."
+            return tr("Este servidor já tem dono. Entre com o seu e-mail e senha.")
         case .invalidSetupToken:
-            return "Esse código não confere. Copie de novo o conteúdo do arquivo setup.token, na pasta de dados do servidor."
+            return tr("Esse código não confere. Copie de novo o conteúdo do arquivo setup.token, na pasta de dados do servidor.")
         }
     }
 }
@@ -123,6 +123,7 @@ struct AuthClient: Sendable {
         headers: [String: String] = [:]
     ) async throws -> (Data, HTTPURLResponse) {
         var request = URLRequest(url: try url(path))
+        request.setAppLanguage()
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         for (name, value) in headers {
@@ -201,13 +202,14 @@ struct AuthClient: Sendable {
         )
         try Self.ensure(data, response)
         guard let token = Self.object(data)["token"] as? String else {
-            throw AuthFailure.server(response.statusCode, "O servidor não devolveu a sessão.")
+            throw AuthFailure.server(response.statusCode, tr("O servidor não devolveu a sessão."))
         }
         return token
     }
 
     func changePassword(token: String, current: String, new: String) async throws -> String? {
         var request = URLRequest(url: try url("/api/auth/change-password"))
+        request.setAppLanguage()
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -236,7 +238,7 @@ struct AuthClient: Sendable {
         if http.statusCode == 400 || http.statusCode == 401 {
             let message = Self.message(data) ?? ""
             if message.localizedCaseInsensitiveContains("password") {
-                throw AuthFailure.server(http.statusCode, "A senha atual não confere.")
+                throw AuthFailure.server(http.statusCode, tr("A senha atual não confere."))
             }
         }
         try Self.ensure(data, http)
@@ -253,7 +255,7 @@ struct AuthClient: Sendable {
         try Self.ensure(data, response)
         if let token = response.value(forHTTPHeaderField: "set-auth-token"), !token.isEmpty { return token }
         if let token = Self.object(data)["token"] as? String { return token }
-        throw AuthFailure.server(response.statusCode, "O servidor não devolveu a sessão.")
+        throw AuthFailure.server(response.statusCode, tr("O servidor não devolveu a sessão."))
     }
 
     static let setupTokenHeader = "x-setup-token"
@@ -271,7 +273,7 @@ struct AuthClient: Sendable {
         }
         try Self.ensure(data, response)
         guard let token = Self.object(data)["token"] as? String else {
-            throw AuthFailure.server(response.statusCode, "O servidor não devolveu a sessão.")
+            throw AuthFailure.server(response.statusCode, tr("O servidor não devolveu a sessão."))
         }
         return token
     }
@@ -283,7 +285,7 @@ struct AuthClient: Sendable {
         guard let user = body["user"] as? [String: Any],
             let id = user["id"] as? String,
             let email = user["email"] as? String
-        else { throw AuthFailure.server(response.statusCode, "Resposta estranha do servidor.") }
+        else { throw AuthFailure.server(response.statusCode, tr("Resposta estranha do servidor.")) }
         let cookie = (body["cookie"] as? [String: Any]).flatMap { item -> AuthCookie? in
             guard let name = item["name"] as? String, let value = item["value"] as? String else { return nil }
             return AuthCookie(name: name, value: value)
@@ -309,6 +311,7 @@ struct AuthClient: Sendable {
 
     func uploadAvatar(token: String, data: Data, mime: String) async throws -> String? {
         var request = URLRequest(url: try url("/auth/me/avatar"))
+        request.setAppLanguage()
         request.httpMethod = "PUT"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue(mime, forHTTPHeaderField: "Content-Type")
@@ -342,7 +345,7 @@ struct AuthClient: Sendable {
         let (data, response) = try await send("POST", "/auth/runner-key", token: token)
         try Self.ensure(data, response)
         guard let key = Self.object(data)["key"] as? String else {
-            throw AuthFailure.server(response.statusCode, "O servidor não devolveu a chave do runner.")
+            throw AuthFailure.server(response.statusCode, tr("O servidor não devolveu a chave do runner."))
         }
         return key
     }
@@ -358,7 +361,7 @@ struct AuthClient: Sendable {
         guard let deviceCode = body["device_code"] as? String,
             let userCode = body["user_code"] as? String,
             let complete = (body["verification_uri_complete"] as? String).flatMap(URL.init(string:))
-        else { throw AuthFailure.server(response.statusCode, "Resposta estranha do servidor.") }
+        else { throw AuthFailure.server(response.statusCode, tr("Resposta estranha do servidor.")) }
         return DeviceGrant(
             deviceCode: deviceCode,
             userCode: userCode,

@@ -247,7 +247,7 @@ struct BotListScreen: View {
                         .foregroundStyle(Theme.textTertiary)
                         .padding(Spacing.l)
                 case .loaded(let found):
-                    BotListSectionHeader(title: "Resultados")
+                    BotListSectionHeader(title: tr("Resultados"))
                     if found.isEmpty {
                         Text("Nenhum bot com esse nome.")
                             .font(TypeScale.caption)
@@ -294,12 +294,12 @@ struct BotListScreen: View {
         }
 
         if model.groupBySection {
-            add("Fixados", model.pinnedBots)
+            add(tr("Fixados"), model.pinnedBots)
             for section in model.activeSections {
                 add(section.name, model.visibleBots.filter { $0.sectionId == section.id }, section: section)
             }
         }
-        add("Todos", model.visibleBots)
+        add(tr("Todos"), model.visibleBots)
         return result
     }
 
@@ -718,11 +718,11 @@ struct BotRow: View {
     private func subtitle(status: BotStatus, activity: ThreadActivity?) -> some View {
         switch status {
         case .working:
-            StatusText(text: "Trabalhando…", color: Theme.brandText)
+            StatusText(text: tr("Trabalhando…"), color: Theme.brandText)
         case .awaitingApproval:
-            StatusText(text: "Precisa de você", color: Theme.attention)
+            StatusText(text: tr("Precisa de você"), color: Theme.attention)
         case .error:
-            StatusText(text: "Algo deu errado", color: Theme.danger)
+            StatusText(text: tr("Algo deu errado"), color: Theme.danger)
         case .idle:
             if let activity {
                 Text(preview(activity))
@@ -731,7 +731,7 @@ struct BotRow: View {
                     .lineLimit(2)
                     .truncationMode(.tail)
             } else {
-                Text(bot.role.isEmpty ? "Sem mensagens ainda" : bot.role)
+                Text(bot.role.isEmpty ? tr("Sem mensagens ainda") : bot.role)
                     .font(TypeScale.rowSubtitle)
                     .foregroundStyle(Theme.textTertiary)
                     .lineLimit(1)
@@ -745,7 +745,7 @@ struct BotRow: View {
             .replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "`", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return activity.isUser ? "Você: \(flat)" : flat
+        return activity.isUser ? tr("Você: %@", flat) : flat
     }
 }
 

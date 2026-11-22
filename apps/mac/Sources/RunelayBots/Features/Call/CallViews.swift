@@ -49,7 +49,7 @@ struct CallBar: View {
             CallClock(startedAt: call.startedAt, connecting: call.phase == .connecting)
                 .fixedSize()
                 .padding(.trailing, Spacing.s)
-            CallIconButton(systemImage: "gearshape", help: "Voz, idioma e microfone", isActive: call.settingsOpen) {
+            CallIconButton(systemImage: "gearshape", help: tr("Voz, idioma e microfone"), isActive: call.settingsOpen) {
                 call.settingsOpen.toggle()
             }
             .glassPopup(isPresented: $call.settingsOpen) {
@@ -64,14 +64,15 @@ struct CallBar: View {
                 .frame(width: 300)
             }
             CallIconButton(
-                systemImage: call.captionsVisible ? "captions.bubble.fill" : "captions.bubble", help: call.captionsVisible ? "Esconder legendas" : "Mostrar legendas", isActive: call.captionsVisible
+                systemImage: call.captionsVisible ? "captions.bubble.fill" : "captions.bubble", help: call.captionsVisible ? tr("Esconder legendas") : tr("Mostrar legendas"),
+                isActive: call.captionsVisible
             ) {
                 call.captionsVisible.toggle()
             }
             if call.pushToTalk {
                 HoldToTalkButton()
             } else {
-                CallIconButton(systemImage: call.isMuted ? "mic.slash.fill" : "mic", help: call.isMuted ? "Ativar microfone" : "Silenciar microfone", isActive: call.isMuted) {
+                CallIconButton(systemImage: call.isMuted ? "mic.slash.fill" : "mic", help: call.isMuted ? tr("Ativar microfone") : tr("Silenciar microfone"), isActive: call.isMuted) {
                     call.toggleMute()
                 }
             }
@@ -310,7 +311,7 @@ struct CallCaptions: View {
                 .glassSurface(RoundedRectangle(cornerRadius: Radius.medium, style: .continuous), fallback: Theme.surface)
                 .contentTransition(.opacity)
                 .allowsHitTesting(false)
-                .accessibilityLabel(showsBot ? "Bot: \(text)" : "Você: \(text)")
+                .accessibilityLabel(showsBot ? tr("Bot: %@", text) : tr("Você: %@", text))
         }
     }
 }
@@ -362,8 +363,8 @@ struct CallStartButton: View {
                 call.toggle(bot: bot, store: store, client: model.client)
             } else {
                 model.showNotice(
-                    "Conecte o ElevenLabs para voz natural.",
-                    action: NoticeAction(title: "Conectar") { model.openIntegrations() }
+                    tr("Conecte o ElevenLabs para voz natural."),
+                    action: NoticeAction(title: tr("Conectar")) { model.openIntegrations() }
                 )
             }
         } label: {
@@ -377,7 +378,7 @@ struct CallStartButton: View {
         }
         .buttonStyle(PressableButtonStyle())
         .opacity(voiceOn ? 1 : 0.55)
-        .help(active ? "Encerrar o chat de voz" : voiceOn ? "Começar um chat de voz com \(bot.name)" : "Conecte o ElevenLabs para voz natural")
+        .help(active ? tr("Encerrar o chat de voz") : voiceOn ? tr("Começar um chat de voz com %@", bot.name) : tr("Conecte o ElevenLabs para voz natural"))
         .accessibilityLabel(active ? "Encerrar o chat de voz" : "Chat de voz")
     }
 }
@@ -403,10 +404,10 @@ struct VoiceCallLine: View {
                 .font(.system(size: 11, weight: .semibold))
             Text("Chat de voz · \(CallDuration.format(seconds))")
                 .monospacedDigit()
-            RatingButton(systemImage: rating == "up" ? "hand.thumbsup.fill" : "hand.thumbsup", help: "Chamada boa", isOn: rating == "up") {
+            RatingButton(systemImage: rating == "up" ? "hand.thumbsup.fill" : "hand.thumbsup", help: tr("Chamada boa"), isOn: rating == "up") {
                 rate(rating == "up" ? nil : "up")
             }
-            RatingButton(systemImage: rating == "down" ? "hand.thumbsdown.fill" : "hand.thumbsdown", help: "Chamada ruim", isOn: rating == "down") {
+            RatingButton(systemImage: rating == "down" ? "hand.thumbsdown.fill" : "hand.thumbsdown", help: tr("Chamada ruim"), isOn: rating == "down") {
                 rate(rating == "down" ? nil : "down")
             }
         }
@@ -450,7 +451,7 @@ struct VoiceChatSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
-            SectionCaption(title: "Chat de voz")
+            SectionCaption(title: tr("Chat de voz"))
             SoftCard {
                 VoiceSettingsForm(botID: bot.id)
             }
@@ -495,7 +496,7 @@ struct VoiceSettingsForm: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            settingRow("Voz") {
+            settingRow(tr("Voz")) {
                 Button {
                     voicePickerOpen.toggle()
                 } label: {
@@ -510,14 +511,14 @@ struct VoiceSettingsForm: View {
                     voicePicker
                 }
             }
-            settingRow("Idioma") {
+            settingRow(tr("Idioma")) {
                 GlassSelect(
                     options: BotVoiceSettings.languages.map { GlassSelectOption($0.label, value: $0.id) },
                     selection: Binding(
                         get: { settings?.language ?? "pt" },
                         set: { language in save { $0.language = language } }
                     ),
-                    help: "Idioma da chamada",
+                    help: tr("Idioma da chamada"),
                     edge: .trailing,
                     minWidth: 160
                 )
@@ -543,8 +544,8 @@ struct VoiceSettingsForm: View {
     }
 
     private var voiceSummary: String {
-        let name = voices.first { $0.voiceId == settings?.voiceId }?.shortName ?? (settings == nil ? "…" : "Voz")
-        return "\(name) \(speed.formatted(.number.precision(.fractionLength(1))))×"
+        let name = voices.first { $0.voiceId == settings?.voiceId }?.shortName ?? (settings == nil ? "…" : tr("Voz"))
+        return "\(name) \(speed.formatted(.number.precision(.fractionLength(1)).locale(LanguageStore.shared.locale)))×"
     }
 
     private var voicePicker: some View {
@@ -583,7 +584,7 @@ struct VoiceSettingsForm: View {
                         speed = value
                         save { $0.speed = value }
                     } label: {
-                        Text(value.formatted(.number.precision(.fractionLength(1))) + "×")
+                        Text(value.formatted(.number.precision(.fractionLength(1)).locale(LanguageStore.shared.locale)) + "×")
                             .font(TypeScale.caption)
                             .monospacedDigit()
                             .fixedSize()
@@ -615,14 +616,14 @@ struct VoiceSettingsForm: View {
         } catch  where BotsClient.isNotConfigured(error) {
             voicesUnavailable = true
         } catch {
-            loadError = "Não consegui carregar as vozes. Tenta de novo."
+            loadError = tr("Não consegui carregar as vozes. Tenta de novo.")
         }
         do {
             let value = try await current
             settings = value
             speed = value.speed
         } catch {
-            if !voicesUnavailable { loadError = "Não consegui carregar as vozes. Tenta de novo." }
+            if !voicesUnavailable { loadError = tr("Não consegui carregar as vozes. Tenta de novo.") }
         }
     }
 
@@ -649,7 +650,7 @@ struct VoiceSettingsForm: View {
                 guard !Task.isCancelled else { return }
                 settings = previous
                 speed = previous.speed
-                loadError = "Não consegui salvar a voz. Tenta de novo."
+                loadError = tr("Não consegui salvar a voz. Tenta de novo.")
             }
         }
     }

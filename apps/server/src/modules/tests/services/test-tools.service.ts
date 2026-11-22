@@ -7,6 +7,7 @@ import type { Gate } from "../../code/services/policy.service";
 import { activeWorkspace } from "../../code/services/workspace.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
+import { testsText } from "../constants/tests-messages.constants";
 import { installPlaywright, isLocalUrl, startRun, type TestInput, type TestRun } from "./test-runs.service";
 
 function text(value: unknown, isError = false) {
@@ -39,8 +40,8 @@ function realDataGate(writes: boolean, where: string): Gate {
   return writes
     ? {
         kind: "human",
-        prompt: `Rodar um teste que escreve dado real (${where})?`,
-        reason: "Teste que cria ou envia algo de verdade passa por você.",
+        prompt: testsText("realDataPrompt", { where }),
+        reason: testsText("realDataReason"),
         hard: true,
       }
     : { kind: "allow" };
@@ -119,9 +120,9 @@ export function registerTestTools(server: McpServer, context: ToolContext) {
     (args: Record<string, unknown>) =>
       run(
         "test_maestro",
-        `Testar ${String(args.path)} no simulador`,
+        testsText("maestro", { path: String(args.path) }),
         args,
-        realDataGate(args.writesRealData === true, "simulador"),
+        realDataGate(args.writesRealData === true, testsText("simulator")),
         {
           kind: "maestro",
           path: pathOf(args),
@@ -153,12 +154,12 @@ export function registerTestTools(server: McpServer, context: ToolContext) {
       const gate: Gate = remote
         ? {
             kind: "human",
-            prompt: `Rodar o teste contra ${baseUrl}?`,
-            reason: "Teste fora da prévia local passa por você.",
+            prompt: testsText("remotePrompt", { url: baseUrl }),
+            reason: testsText("remoteReason"),
             hard: false,
           }
-        : realDataGate(args.writesRealData === true, "prévia local");
-      return run("test_playwright", `Testar ${String(args.path)} no navegador`, args, gate, {
+        : realDataGate(args.writesRealData === true, testsText("localPreview"));
+      return run("test_playwright", testsText("playwright", { path: String(args.path) }), args, gate, {
         kind: "playwright",
         path: pathOf(args),
         ...(typeof args.project === "string" ? { project: args.project } : {}),
@@ -176,7 +177,7 @@ export function registerTestTools(server: McpServer, context: ToolContext) {
         name,
         label,
         input: {},
-        gate: { kind: "human", prompt: `${label}?`, reason: "Instalar ferramenta passa por você.", hard: true },
+        gate: { kind: "human", prompt: `${label}?`, reason: testsText("installReason"), hard: true },
         alwaysHuman: true,
       });
       if (!start.allowed) return text(start.message ?? "Negado.", true);
@@ -191,13 +192,13 @@ export function registerTestTools(server: McpServer, context: ToolContext) {
     });
   install(
     "maestro_install",
-    "Instalar o Maestro no Mac",
+    testsText("installMaestro"),
     "Instala o Maestro no Mac da pessoa pelo instalador oficial (precisa de Java 17+). Use só quando simulator_list disser que não está instalado.",
     () => macDeviceCall("maestro.install", {}, 10 * 60_000, context.signal),
   );
   install(
     "playwright_install",
-    "Instalar o Playwright no servidor",
+    testsText("installPlaywright"),
     "Instala o @playwright/test numa pasta de ferramentas do servidor (fora dos repositórios). Os testes usam o Chrome que o servidor já tem.",
     () => installPlaywright(),
   );

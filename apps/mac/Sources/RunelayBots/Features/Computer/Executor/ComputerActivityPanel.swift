@@ -187,7 +187,7 @@ final class ComputerControlTab {
             ? QuestionWizard(store: prompt.store, approvalID: prompt.approvalID, index: step, revealOther: true)
             : nil
         let card = IslandPromptCard(prompt: prompt, width: width, avatar: nil, bodyLimits: limits, wizard: wizard, open: {})
-        let view = NSHostingView(rootView: card.environment(\.appReduceMotion, true).environment(\.colorScheme, .dark))
+        let view = NSHostingView(rootView: card.environment(\.appReduceMotion, true).environment(\.colorScheme, .dark).appLanguage())
         view.appearance = NSAppearance(named: .darkAqua)
         return ceil(view.fittingSize.height) + Self.cardPadding * 2
     }
@@ -273,10 +273,17 @@ struct ControlTabView: View {
         .animation(morph, value: state.prompt?.id)
         .environment(\.appReduceMotion, state.reduceMotion)
         .environment(\.colorScheme, .dark)
+        .appLanguage()
         .padding(.horizontal, ComputerControlTab.shadowPad)
         .padding(.bottom, ComputerControlTab.shadowPad)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .help(expanded ? "" : state.computerActive ? "\(state.botName) está usando o computador. Mexer no mouse ou no teclado também para o bot." : "\(state.botName) está esperando sua resposta.")
+        .help(helpText)
+    }
+
+    private var helpText: String {
+        if expanded { return "" }
+        if state.computerActive { return tr("%@ está usando o computador. Mexer no mouse ou no teclado também para o bot.", state.botName) }
+        return tr("%@ está esperando sua resposta.", state.botName)
     }
 
     private var topRow: some View {

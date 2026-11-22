@@ -218,7 +218,7 @@ final class VoiceCall {
             } catch {
                 logger.error("call audio failed: \(String(describing: error), privacy: .public)")
                 CallDebug.log("áudio falhou: \(error)")
-                fail("Não consegui usar o microfone. Tenta de novo.")
+                fail(tr("Não consegui usar o microfone. Tenta de novo."))
                 return
             }
             attach(ticket.credentials)
@@ -233,17 +233,17 @@ final class VoiceCall {
     private static func humanMessage(_ error: Error) -> String {
         if let client = error as? BotsClient.ClientError, case .http(let status, let message) = client {
             if status == 503 {
-                return "O chat de voz não está configurado no servidor."
+                return tr("O chat de voz não está configurado no servidor.")
             }
             if let message, !message.isEmpty, !message.contains("Error"), !message.contains("error") {
                 return message
             }
-            return "O servidor não abriu a chamada. Tenta de novo."
+            return tr("O servidor não abriu a chamada. Tenta de novo.")
         }
         if error is URLError {
-            return "Não consegui falar com o servidor. Confere a conexão e tenta de novo."
+            return tr("Não consegui falar com o servidor. Confere a conexão e tenta de novo.")
         }
-        return "Não consegui começar a chamada. Tenta de novo."
+        return tr("Não consegui começar a chamada. Tenta de novo.")
     }
 
     private static var recordPermissionLabel: String {
@@ -398,7 +398,7 @@ final class VoiceCall {
             try? await Task.sleep(for: .milliseconds(min(400 * reconnectAttempts, 2_000)))
         }
         guard reconnectAttempts <= 5 else {
-            fail("A chamada caiu. Tenta ligar de novo.")
+            fail(tr("A chamada caiu. Tenta ligar de novo."))
             return
         }
         do {
@@ -408,7 +408,7 @@ final class VoiceCall {
             attach(credentials)
         } catch {
             CallDebug.log("reconectar falhou: \(error)")
-            fail("A chamada caiu. Tenta ligar de novo.")
+            fail(tr("A chamada caiu. Tenta ligar de novo."))
         }
     }
 
@@ -420,7 +420,7 @@ final class VoiceCall {
                 self.handle(event)
             }
             guard let self, self.callID == callID, self.phase != .idle else { return }
-            self.fail("A chamada foi encerrada pelo servidor.")
+            self.fail(tr("A chamada foi encerrada pelo servidor."))
         }
     }
 
@@ -549,7 +549,7 @@ final class VoiceCall {
                 }
             } catch {
                 CallDebug.log("fala não entregue: \(error)")
-                self?.notice = "Não consegui mandar o que você falou. Fala de novo."
+                self?.notice = tr("Não consegui mandar o que você falou. Fala de novo.")
                 if self?.phase == .thinking {
                     self?.phase = .listening
                 }
@@ -889,9 +889,9 @@ final class VoiceCall {
 }
 
 enum CallNotice {
-    static let reconnecting = "Reconectando…"
-    static let deaf = "Não estou te ouvindo, confira o microfone."
-    static let blocked = "O microfone está bloqueado para o r/bots."
+    static var reconnecting: String { tr("Reconectando…") }
+    static var deaf: String { tr("Não estou te ouvindo, confira o microfone.") }
+    static var blocked: String { tr("O microfone está bloqueado para o r/bots.") }
 }
 
 enum CallDebug {

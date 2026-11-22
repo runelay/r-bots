@@ -8,7 +8,7 @@ import {
   hostHello,
   runnerDevice,
 } from "../../../../test/runner-helpers";
-import { macDroppedMessage } from "../../environments/constants/environments.constants";
+import { environmentsText } from "../../environments/constants/environments-messages.constants";
 import {
   disconnectMacDevice,
   environmentStates,
@@ -145,7 +145,7 @@ describe("box runners in the hub", () => {
     await runner.next("request");
     runner.drop();
     await dropped;
-    expect(events).toEqual([{ type: "done", ok: false, message: macDroppedMessage }]);
+    expect(events).toEqual([{ type: "done", ok: false, message: environmentsText("macDropped") }]);
   });
 
   test("fails a running host turn with the runner message when the runner drops", async () => {

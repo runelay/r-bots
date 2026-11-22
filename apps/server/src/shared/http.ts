@@ -1,8 +1,32 @@
 import { EventEmitter } from "node:events";
 import type { BunFile } from "bun";
 import { ValidationError } from "./errors";
+import { defineMessages } from "./i18n";
 
 type Headers = Record<string, string | undefined>;
+
+export const httpText = defineMessages({
+  "pt-BR": {
+    notFound: "Rota não encontrada.",
+    invalidJson: "JSON inválido.",
+    runelayFailed: "runelay não respondeu: {reason}",
+    internal: "Algo deu errado no servidor. Tente de novo.",
+    lengthRequired: "Envie o tamanho do corpo (Content-Length).",
+    invalidLength: "Content-Length inválido.",
+    tooLarge: "O corpo da requisição passa do limite desta rota.",
+    invalidPath: "Caminho inválido.",
+  },
+  en: {
+    notFound: "Route not found.",
+    invalidJson: "Invalid JSON.",
+    runelayFailed: "runelay did not respond: {reason}",
+    internal: "Something went wrong on the server. Try again.",
+    lengthRequired: "Send the body size (Content-Length).",
+    invalidLength: "Invalid Content-Length.",
+    tooLarge: "The request body is over this route's limit.",
+    invalidPath: "Invalid path.",
+  },
+});
 type Body = string | Uint8Array | BunFile | Blob;
 
 export class Req extends EventEmitter {
@@ -158,20 +182,21 @@ export function sendFile(res: Res, file: BunFile | Blob, headers: Record<string,
 }
 
 export function notFound(res: Res) {
-  sendJson(res, 404, { ok: false, error: "Rota não encontrada." });
+  sendJson(res, 404, { ok: false, error: httpText("notFound") });
 }
 
 export function validationResponse(res: Res, error: unknown) {
   if (error instanceof ValidationError)
     return sendJson(res, 400, { ok: false, error: error.message, field: error.field });
-  if (error instanceof SyntaxError) return sendJson(res, 400, { ok: false, error: "JSON inválido.", field: "body" });
+  if (error instanceof SyntaxError)
+    return sendJson(res, 400, { ok: false, error: httpText("invalidJson"), field: "body" });
   throw error;
 }
 
 export function runelayFailure(res: Res, error: unknown) {
   return sendJson(res, 502, {
     ok: false,
-    error: `runelay não respondeu: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+    error: httpText("runelayFailed", { reason: error instanceof Error ? error.message : String(error) }).slice(0, 300),
   });
 }
 
@@ -297,8 +322,7 @@ export function withSecurityHeaders(response: Response, pathname: string) {
 export function internalError(res: Res, error: unknown) {
   const errorId = crypto.randomUUID().slice(0, 8);
   console.error(`request failed (${errorId})`, error);
-  if (!res.headersSent)
-    sendJson(res, 500, { ok: false, error: "Algo deu errado no servidor. Tente de novo.", errorId });
+  if (!res.headersSent) sendJson(res, 500, { ok: false, error: httpText("internal"), errorId });
   else res.end();
   return errorId;
 }

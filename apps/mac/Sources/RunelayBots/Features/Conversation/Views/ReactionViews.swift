@@ -34,15 +34,15 @@ struct ReactionPill: View {
     private var tooltip: String {
         var names: [String] = []
         if group.mine {
-            names.append("você")
+            names.append(tr("você"))
         }
         let others = group.userCount - (group.mine ? 1 : 0)
         if others > 0 {
-            names.append(others == 1 ? "outra pessoa" : "\(others) pessoas")
+            names.append(others == 1 ? tr("outra pessoa") : tr("%lld pessoas", others))
         }
         names.append(contentsOf: bots.map(\.name))
-        let who = names.count > 1 ? names.dropLast().joined(separator: ", ") + " e " + (names.last ?? "") : names.first ?? ""
-        let hint = group.mine ? "Clique para tirar a sua reação" : "Clique para reagir também"
+        let who = names.count > 1 ? names.dropLast().joined(separator: ", ") + tr(" e ") + (names.last ?? "") : names.first ?? ""
+        let hint = group.mine ? tr("Clique para tirar a sua reação") : tr("Clique para reagir também")
         return "\(group.emoji) \(who)\n\(hint)"
     }
 

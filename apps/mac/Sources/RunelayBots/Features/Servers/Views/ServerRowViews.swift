@@ -116,40 +116,40 @@ enum ServerActions {
         ]
         if server.status == .running {
             items.append(
-                GlassMenuItem("Abrir no painel", systemImage: "sidebar.right", startsSection: true) {
+                GlassMenuItem(tr("Abrir no painel"), id: "Abrir no painel", systemImage: "sidebar.right", startsSection: true) {
                     store.openPanel(server, botID: botID, tab: .preview)
                 })
             items.append(
-                GlassMenuItem("Abrir no navegador", systemImage: "safari") {
+                GlassMenuItem(tr("Abrir no navegador"), id: "Abrir no navegador", systemImage: "safari") {
                     store.openInBrowser(server)
                 })
             items.append(
-                GlassMenuItem("Copiar URL", systemImage: "link") {
+                GlassMenuItem(tr("Copiar URL"), systemImage: "link") {
                     store.copyURL(server)
                 })
         }
         if server.isMobile, let device = SimulatorStore.shared.preferredDevice {
             items.append(
-                GlassMenuItem(device.booted ? "Desligar \(device.name)" : "Ligar \(device.name)", systemImage: "power") {
+                GlassMenuItem(device.booted ? tr("Desligar %@", device.name) : tr("Ligar %@", device.name), systemImage: "power") {
                     SimulatorStore.shared.toggle(device)
                 })
         }
         items.append(
-            GlassMenuItem("Logs", systemImage: "text.alignleft", startsSection: server.status != .running) {
+            GlassMenuItem(tr("Logs"), id: "Logs", systemImage: "text.alignleft", startsSection: server.status != .running) {
                 store.openPanel(server, botID: botID, tab: .logs)
             })
         items.append(
-            GlassMenuItem(server.status.isLive ? "Reiniciar" : "Rodar de novo", systemImage: "arrow.clockwise") {
+            GlassMenuItem(server.status.isLive ? tr("Reiniciar") : tr("Rodar de novo"), systemImage: "arrow.clockwise") {
                 store.restart(server.id)
             })
         if server.status.isLive {
             items.append(
-                GlassMenuItem("Parar", systemImage: "stop.fill", destructive: true) {
+                GlassMenuItem(tr("Parar"), systemImage: "stop.fill", destructive: true) {
                     store.stop(server.id)
                 })
         } else {
             items.append(
-                GlassMenuItem("Tirar da lista", systemImage: "xmark") {
+                GlassMenuItem(tr("Tirar da lista"), systemImage: "xmark") {
                     store.forget(server.id)
                 })
         }
@@ -229,11 +229,11 @@ struct DevicePicker: View {
         let ios = store.iosDevices
         if let current = store.preferredDevice {
             GlassSelect(
-                options: ios.map { GlassSelectOption("\($0.name) · \($0.runtime)", value: $0.udid, systemImage: "iphone", subtitle: $0.booted ? "Ligado" : nil) },
+                options: ios.map { GlassSelectOption("\($0.name) · \($0.runtime)", value: $0.udid, systemImage: "iphone", subtitle: $0.booted ? tr("Ligado") : nil) },
                 selection: Binding(get: { current.udid }, set: { store.preferredUDID = $0 }),
-                prefix: "no",
+                prefix: tr("no"),
                 title: current.name,
-                help: "Trocar o aparelho",
+                help: tr("Trocar o aparelho"),
                 maxWidth: 190
             )
             .fixedSize()
@@ -263,7 +263,7 @@ struct ServerRow: View {
                     .controlSize(.mini)
                     .transition(.opacity)
             } else {
-                GlassMenuButton(edge: .trailing, help: "Ações do servidor", items: { ServerActions.items(server, botID: botID) }) { isOpen in
+                GlassMenuButton(edge: .trailing, help: tr("Ações do servidor"), items: { ServerActions.items(server, botID: botID) }) { isOpen in
                     BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen)
                 }
                 .fixedSize()
@@ -274,7 +274,7 @@ struct ServerRow: View {
                 DevicePicker()
             }
         }
-        .accessibilityLabel("\(server.title), \(server.status.label), porta \(server.port)\(server.branch.map { ", branch \($0)" } ?? "")")
+        .accessibilityLabel(tr("%1$@, %2$@, porta %3$lld", server.title, server.status.label, server.port) + (server.branch.map { tr(", branch %@", $0) } ?? ""))
     }
 }
 
@@ -287,7 +287,7 @@ struct ServersSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
-            SectionCaption(title: "Projetos rodando") {
+            SectionCaption(title: tr("Projetos rodando")) {
                 Button {
                     running.toggle()
                 } label: {
@@ -369,11 +369,11 @@ struct ServerCard: View {
             }
             Spacer(minLength: Spacing.m)
             if server.status == .running, !server.isMobile {
-                ServerCardButton(title: "Abrir", systemImage: "sidebar.right") {
+                ServerCardButton(title: tr("Abrir"), systemImage: "sidebar.right") {
                     ServerStore.shared.openPanel(server, botID: ref.botID, tab: .preview)
                 }
             }
-            ServerCardButton(title: "Logs", systemImage: "text.alignleft") {
+            ServerCardButton(title: tr("Logs"), systemImage: "text.alignleft") {
                 ServerStore.shared.openPanel(server, botID: ref.botID, tab: .logs)
             }
         }

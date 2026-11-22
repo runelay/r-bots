@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, type Mock, spyOn, test } from "bun:test";
 import { fakeProcesses, request, startTestServer, type TestServer } from "../../../../test/helpers";
+import { withLanguage } from "../../../shared/i18n";
 import {
   fetchGitHubAsset,
   type GhOutput,
@@ -197,6 +198,8 @@ describe("pure helpers", () => {
     expect(parseFilter(null)).toBe("mine");
     expect(parseFilter("merged")).toBe("merged");
     expect(() => parseFilter("all")).toThrow("Filtro inválido.");
+    expect(() => withLanguage("en", () => parseFilter("all"))).toThrow("Invalid filter.");
+    expect(() => withLanguage("en", () => parseRepo("acme"))).toThrow("Invalid repository.");
     expect(parseRepo("acme/api")).toBe("acme/api");
     expect(parseRepo("")).toBeNull();
     expect(() => parseRepo("acme")).toThrow("Repositório inválido.");

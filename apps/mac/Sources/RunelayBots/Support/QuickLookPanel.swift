@@ -55,7 +55,7 @@ final class QuickLookPanel: NSObject, NSWindowDelegate {
         guard let window, items.indices.contains(index) else { return }
         let url = items[index]
         preview?.previewItem = url as NSURL
-        window.title = items.count > 1 ? "\(url.lastPathComponent) · \(index + 1) de \(items.count)" : url.lastPathComponent
+        window.title = items.count > 1 ? tr("%@ · %lld de %lld", url.lastPathComponent, index + 1, items.count) : url.lastPathComponent
         guard fitting else { return }
         let screen = (NSApp.keyWindow?.screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
         var size = NSSize(width: 900, height: 600)

@@ -14,7 +14,7 @@ struct LinearIssueInspector: View {
             } else if case .failed(let message) = store.detailPhase {
                 VStack(spacing: 0) {
                     closeRow
-                    BoardInlineNotice(systemImage: "exclamationmark.icloud", title: "Não deu para abrir a issue", message: message, actionTitle: "Tentar de novo") {
+                    BoardInlineNotice(systemImage: "exclamationmark.icloud", title: tr("Não deu para abrir a issue"), message: message, actionTitle: tr("Tentar de novo")) {
                         Task { await store.reloadDetail() }
                     }
                 }
@@ -36,7 +36,7 @@ struct LinearIssueInspector: View {
     private var closeRow: some View {
         HStack {
             Spacer()
-            BoardIconButton(systemImage: "xmark", help: "Fechar (Esc)") { store.select(nil) }
+            BoardIconButton(systemImage: "xmark", help: tr("Fechar (Esc)")) { store.select(nil) }
         }
         .padding(.top, Spacing.m)
         .padding(.horizontal, Spacing.m)
@@ -67,7 +67,7 @@ private struct LinearIssueContent: View {
                 }
                 if !detail.children.isEmpty {
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        BoardCaption(text: "SUB-ISSUES")
+                        BoardCaption(text: tr("SUB-ISSUES"))
                             .padding(.bottom, Spacing.xs)
                         ForEach(detail.children) { child in
                             LinearChildRow(card: child)
@@ -76,7 +76,7 @@ private struct LinearIssueContent: View {
                 }
                 if !detail.attachments.isEmpty {
                     VStack(alignment: .leading, spacing: Spacing.xxs) {
-                        BoardCaption(text: "LINKS")
+                        BoardCaption(text: tr("LINKS"))
                             .padding(.bottom, Spacing.xs)
                         ForEach(detail.attachments, id: \.url) { link in
                             LinearLinkRow(link: link)
@@ -84,7 +84,7 @@ private struct LinearIssueContent: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: Spacing.m) {
-                    BoardCaption(text: detail.comments.isEmpty ? "SEM COMENTÁRIOS" : "\(detail.comments.count) COMENTÁRIO\(detail.comments.count == 1 ? "" : "S")")
+                    BoardCaption(text: detail.comments.isEmpty ? tr("SEM COMENTÁRIOS") : detail.comments.count == 1 ? tr("1 COMENTÁRIO") : tr("%lld COMENTÁRIOS", detail.comments.count))
                     ForEach(detail.comments) { comment in
                         LinearCommentView(comment: comment)
                     }
@@ -116,15 +116,15 @@ private struct LinearIssueContent: View {
                     .textSelection(.enabled)
                 Spacer(minLength: 0)
                 if let branch = card.branch {
-                    BoardIconButton(systemImage: "arrow.triangle.branch", help: "Copiar a branch \(branch)") {
+                    BoardIconButton(systemImage: "arrow.triangle.branch", help: tr("Copiar a branch %@", branch)) {
                         store.copy(branch)
-                        store.show(.success("Branch copiada"))
+                        store.show(.success(tr("Branch copiada")))
                     }
                 }
-                BoardIconButton(systemImage: "arrow.up.right.square", help: "Abrir no Linear") {
+                BoardIconButton(systemImage: "arrow.up.right.square", help: tr("Abrir no Linear")) {
                     BoardLinks.open(card.url)
                 }
-                BoardIconButton(systemImage: "xmark", help: "Fechar (Esc)") {
+                BoardIconButton(systemImage: "xmark", help: tr("Fechar (Esc)")) {
                     store.select(nil)
                 }
             }
@@ -140,22 +140,22 @@ private struct LinearIssueContent: View {
     private var actions: some View {
         HStack(spacing: Spacing.s) {
             if card.stateType != "started" && card.stateType != "completed" {
-                BoardActionButton(title: "Iniciar", systemImage: "play.fill", prominent: true, isBusy: store.busy == "start") {
+                BoardActionButton(title: tr("Iniciar"), systemImage: "play.fill", prominent: true, isBusy: store.busy == "start") {
                     Task { await store.startIssue(card.id) }
                 }
                 .help("Move para o andamento do time e copia a branch")
             } else if let branch = card.branch {
-                BoardActionButton(title: "Copiar branch", systemImage: "arrow.triangle.branch") {
+                BoardActionButton(title: tr("Copiar branch"), systemImage: "arrow.triangle.branch") {
                     store.copy(branch)
-                    store.show(.success("Branch copiada"))
+                    store.show(.success(tr("Branch copiada")))
                 }
             }
             if card.assignee == nil {
-                BoardActionButton(title: "Atribuir a mim", systemImage: "person.crop.circle.badge.plus", isBusy: store.busy == "assign") {
+                BoardActionButton(title: tr("Atribuir a mim"), systemImage: "person.crop.circle.badge.plus", isBusy: store.busy == "assign") {
                     Task { await store.assignToMe(card.id) }
                 }
             }
-            BoardActionButton(title: "Abrir no Linear", systemImage: "arrow.up.right") {
+            BoardActionButton(title: tr("Abrir no Linear"), systemImage: "arrow.up.right") {
                 BoardLinks.open(card.url)
             }
         }
@@ -164,9 +164,9 @@ private struct LinearIssueContent: View {
 
     private var properties: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
-            PropertyRow(label: "Status") {
+            PropertyRow(label: tr("Status")) {
                 GlassMenuButton(
-                    help: "Mudar o status",
+                    help: tr("Mudar o status"),
                     items: {
                         detail.states.map { state in
                             GlassMenuItem(state.name, id: state.id, isOn: state.name == card.state, leading: AnyView(StateIcon(type: state.type, name: state.name, size: 12))) {
@@ -189,13 +189,13 @@ private struct LinearIssueContent: View {
                     .background(isOpen ? Theme.selection : Theme.hover, in: Capsule())
                 }
             }
-            PropertyRow(label: "Prioridade") {
+            PropertyRow(label: tr("Prioridade")) {
                 HStack(spacing: 6) {
                     PriorityIcon(priority: card.priority)
                     Text(LNStyle.priorityTitle(card.priority)).propertyValue()
                 }
             }
-            PropertyRow(label: "Responsável") {
+            PropertyRow(label: tr("Responsável")) {
                 if let assignee = card.assignee {
                     HStack(spacing: 6) {
                         RemoteAvatar(url: store.avatar(for: assignee), name: assignee, size: 18)
@@ -206,7 +206,7 @@ private struct LinearIssueContent: View {
                 }
             }
             if let creator = detail.createdBy {
-                PropertyRow(label: "Criada por") {
+                PropertyRow(label: tr("Criada por")) {
                     HStack(spacing: 6) {
                         RemoteAvatar(url: store.avatar(for: creator), name: creator, size: 18)
                         Text(creator).propertyValue()
@@ -214,7 +214,7 @@ private struct LinearIssueContent: View {
                 }
             }
             if let team = card.team {
-                PropertyRow(label: "Time") {
+                PropertyRow(label: tr("Time")) {
                     HStack(spacing: 6) {
                         if let view = store.views.first(where: { $0.kind == "team" && $0.name == team }) {
                             LinearViewIcon(view: view, size: 14)
@@ -224,7 +224,7 @@ private struct LinearIssueContent: View {
                 }
             }
             if let project = card.project {
-                PropertyRow(label: "Projeto") {
+                PropertyRow(label: tr("Projeto")) {
                     HStack(spacing: 6) {
                         LinearEntityIcon(icon: store.project(named: project)?.icon, color: store.project(named: project)?.color, name: project, size: 14)
                         Text(project).propertyValue()
@@ -232,13 +232,13 @@ private struct LinearIssueContent: View {
                 }
             }
             if let estimate = card.estimate {
-                PropertyRow(label: "Estimativa") { Text(estimate.formatted()).propertyValue() }
+                PropertyRow(label: tr("Estimativa")) { Text(estimate.formatted()).propertyValue() }
             }
             if let due = BoardDates.parse(detail.dueDate.map { $0.count == 10 ? "\($0)T12:00:00Z" : $0 }) {
-                PropertyRow(label: "Prazo") { Text(due.formatted(.dateTime.day().month(.wide))).propertyValue() }
+                PropertyRow(label: tr("Prazo")) { Text(due.formatted(.dateTime.day().month(.wide).locale(LanguageStore.shared.locale))).propertyValue() }
             }
             if !card.labels.isEmpty {
-                PropertyRow(label: "Etiquetas") {
+                PropertyRow(label: tr("Etiquetas")) {
                     BoardFlow(spacing: 4) {
                         ForEach(card.labels, id: \.self) { label in
                             LinearLabelTag(name: label, color: store.labelColor(label))
@@ -246,7 +246,7 @@ private struct LinearIssueContent: View {
                     }
                 }
             }
-            PropertyRow(label: "Atualizada") { Text(BoardDates.relative(card.updatedAt)).propertyValue(muted: true) }
+            PropertyRow(label: tr("Atualizada")) { Text(BoardDates.relative(card.updatedAt)).propertyValue(muted: true) }
         }
         .padding(Spacing.m)
         .background(Theme.hover, in: RoundedRectangle(cornerRadius: Radius.large, style: .continuous))

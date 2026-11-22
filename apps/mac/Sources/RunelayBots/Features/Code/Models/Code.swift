@@ -86,9 +86,9 @@ struct CodeFileChange: Identifiable, Hashable, Sendable {
 
     var statusLabel: String {
         switch status {
-        case "added", "untracked": "novo"
-        case "deleted": "apagado"
-        case "renamed": "renomeado"
+        case "added", "untracked": tr("novo")
+        case "deleted": tr("apagado")
+        case "renamed": tr("renomeado")
         default: ""
         }
     }
@@ -140,7 +140,7 @@ struct CodeWorkspace: Hashable, Sendable {
     init?(_ value: JSONValue?) {
         guard let value, let id = value["id"]?.stringValue else { return nil }
         self.id = id
-        repoName = value["repoName"]?.stringValue ?? "repositório"
+        repoName = value["repoName"]?.stringValue ?? tr("repositório")
         path = value["path"]?.stringValue ?? ""
         branch = value["branch"]?.stringValue ?? ""
         base = value["base"]?.stringValue ?? ""
@@ -349,7 +349,7 @@ enum CodeDiffLayout {
             var part = 0
             while start < rows.count {
                 let end = min(rows.count, start + size)
-                result.append(.hunk(id: part == 0 ? id : "\(id)-\(part)", title: part == 0 ? title : "\(title) · continua", section: part == 0 ? section : nil, rows: Array(rows[start..<end])))
+                result.append(.hunk(id: part == 0 ? id : "\(id)-\(part)", title: part == 0 ? title : tr("%@ · continua", title), section: part == 0 ? section : nil, rows: Array(rows[start..<end])))
                 start = end
                 part += 1
             }
@@ -383,7 +383,7 @@ enum CodeDiffLayout {
         let start = hunk.newLines == 0 ? hunk.oldStart : hunk.newStart
         let count = hunk.newLines == 0 ? hunk.oldLines : hunk.newLines
         let end = start + max(count, 1) - 1
-        return end > start ? "linhas \(start)–\(end)" : "linha \(start)"
+        return end > start ? tr("linhas %lld–%lld", start, end) : tr("linha %lld", start)
     }
 
     private static func expand(_ text: String) -> String {

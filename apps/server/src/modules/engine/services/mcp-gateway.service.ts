@@ -62,6 +62,8 @@ import {
   prepareSecretInput,
   registerVaultTools,
 } from "../../vault/services/vault-tools.service";
+import { engineText } from "../constants/engine-messages.constants";
+import { gatewayText } from "../constants/gateway-messages.constants";
 import type { ApprovalDetails, BotTool } from "./bot-tools.service";
 import { registerSideThreadTools } from "./side-threads.service";
 
@@ -368,7 +370,7 @@ async function runDelegate(context: ToolContext, ref: string, message: string) {
       type: "call.requested",
       data: {
         callId,
-        capability: { kind: "tool", name: target, label: `Delegar para ${bot?.name ?? target}` },
+        capability: { kind: "tool", name: target, label: gatewayText("delegateTo", { name: bot?.name ?? target }) },
         input: { bot: target, message },
         delegation: { botId: target },
         owner: owner(context),
@@ -402,11 +404,11 @@ async function runDelegate(context: ToolContext, ref: string, message: string) {
 
 type ConfigGate = "human" | "config" | "always" | "none";
 
-const configHumanReason: Record<string, string> = {
-  human: "Pedido de capacidade sempre passa por uma pessoa.",
-  config: "Mudar papel ou instruções do bot sempre passa por uma pessoa.",
-  always: "Criar rotina sempre passa por uma pessoa, em qualquer modo.",
-};
+const configHumanReason = {
+  human: "reasonCapability",
+  config: "reasonConfig",
+  always: "reasonSchedule",
+} as const;
 
 interface ConfigChange {
   body: Record<string, unknown>;
@@ -474,7 +476,7 @@ async function runConfigTool(
         outcome: "blocked",
         latencyMs: 0,
         model: null,
-        reason: "Modo Somente leitura.",
+        reason: gatewayText("reasonReadonly"),
         tool: name,
         callId,
       });
@@ -491,7 +493,7 @@ async function runConfigTool(
         outcome: "human",
         latencyMs: 0,
         model: null,
-        reason: configHumanReason[gate],
+        reason: gatewayText(configHumanReason[gate as keyof typeof configHumanReason]),
         tool: name,
         callId,
       });
@@ -605,7 +607,7 @@ async function runRemote(context: ToolContext, spec: RemoteSpec, work: () => Pro
         outcome: "blocked",
         latencyMs: 0,
         model: null,
-        reason: "Modo Somente leitura.",
+        reason: gatewayText("reasonReadonly"),
         tool: spec.capability,
         callId,
       });
@@ -618,9 +620,7 @@ async function runRemote(context: ToolContext, spec: RemoteSpec, work: () => Pro
       const decision = await decideHardList(
         {
           ...(await approvalState(context, spec.capability, spec.input)),
-          reason: spec.alwaysHuman
-            ? "Escrita em banco pelo conector."
-            : "Mensagem para fora ou dinheiro pelo conector.",
+          reason: gatewayText(spec.alwaysHuman ? "reasonDatabase" : "reasonOutbound"),
           isSchedule: context.isSchedule,
         },
         callId,
@@ -643,10 +643,7 @@ async function runRemote(context: ToolContext, spec: RemoteSpec, work: () => Pro
         outcome: "human",
         latencyMs: 0,
         model: null,
-        reason:
-          spec.kind === "outbound" || spec.alwaysHuman
-            ? "Lista dura (mensagem para fora, dinheiro, deploy, merge, apagar ou banco): passa por uma pessoa."
-            : "Modo Editar: escrita em conector pede sua confirmação.",
+        reason: gatewayText(spec.kind === "outbound" || spec.alwaysHuman ? "reasonHardList" : "reasonEditMode"),
         tool: spec.capability,
         callId,
       });
@@ -776,21 +773,21 @@ const computerSpecs: ComputerSpec[] = [
       region: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).optional(),
     },
     act: false,
-    label: () => "Print do Mac",
+    label: () => gatewayText("macScreenshot"),
   },
   {
     name: "computer_ui_tree",
     description: "Árvore de acessibilidade do app (role, title, value, frame, id). Use os ids em computer_click.",
     shape: { app: z.string().optional() },
     act: false,
-    label: (a) => `Ler a tela${a.app ? ` do ${String(a.app)}` : ""}`,
+    label: (a) => (a.app ? gatewayText("readScreenOf", { app: String(a.app) }) : gatewayText("readScreen")),
   },
   {
     name: "computer_apps",
     description: "Apps abertos e o app em primeiro plano.",
     shape: {},
     act: false,
-    label: () => "Listar apps",
+    label: () => gatewayText("listApps"),
   },
   { name: "computer_windows", description: "Janelas abertas.", shape: {}, act: false, label: () => "Listar janelas" },
   {
@@ -804,36 +801,36 @@ const computerSpecs: ComputerSpec[] = [
       reason: reasonField,
     },
     act: true,
-    label: () => "Clicar num ponto da tela",
+    label: () => gatewayText("clickPoint"),
   },
   {
     name: "computer_type",
     description: "Digita no Mac real da pessoa, onde estiver o foco. Para site ou app web, use browser_fill.",
     shape: { text: z.string().min(1).max(4000), reason: reasonField },
     act: true,
-    label: (a) => `Digitar "${String(a.text).slice(0, 40)}"`,
-    prompt: (a) => `Posso digitar no seu Mac: "${String(a.text).slice(0, 120)}"?`,
+    label: (a) => gatewayText("type", { text: String(a.text).slice(0, 40) }),
+    prompt: (a) => gatewayText("typePrompt", { text: String(a.text).slice(0, 120) }),
   },
   {
     name: "computer_key",
     description: "Aperta tecla ou atalho (ex.: cmd+l, return).",
     shape: { combo: z.string().min(1).max(60), reason: reasonField },
     act: true,
-    label: (a) => `Tecla ${String(a.combo)}`,
+    label: (a) => gatewayText("key", { combo: String(a.combo) }),
   },
   {
     name: "computer_scroll",
     description: "Rola a tela.",
     shape: { ...point, deltaX: z.number().optional(), deltaY: z.number() },
     act: true,
-    label: () => "Rolar",
+    label: () => gatewayText("scroll"),
   },
   {
     name: "computer_drag",
     description: "Arrasta de um ponto a outro.",
     shape: { fromX: z.number(), fromY: z.number(), toX: z.number(), toY: z.number() },
     act: true,
-    label: () => "Arrastar",
+    label: () => gatewayText("drag"),
   },
   {
     name: "computer_open",
@@ -841,64 +838,64 @@ const computerSpecs: ComputerSpec[] = [
       "Abre um app, uma URL ou um arquivo no Mac real da pessoa, tomando a tela dela. Sites e apps web abrem no seu navegador com browser_open; use url aqui só quando a tarefa precisa da sessão logada no Mac e o seu navegador não consegue entrar.",
     shape: { app: z.string().optional(), url: z.string().optional(), path: z.string().optional(), reason: reasonField },
     act: true,
-    label: (a) => `Abrir ${String(a.url ?? a.app ?? a.path ?? "")}`,
+    label: (a) => gatewayText("open", { target: String(a.url ?? a.app ?? a.path ?? "") }),
   },
   {
     name: "computer_applescript",
     description: "Roda um AppleScript (Mail, Finder, Safari). Prefira isso a cliques quando der.",
     shape: { script: z.string().min(1).max(8000) },
     act: true,
-    label: () => "Rodar AppleScript",
-    prompt: (a) => `Posso rodar este AppleScript no seu Mac?\n${String(a.script).slice(0, 300)}`,
+    label: () => gatewayText("appleScript"),
+    prompt: (a) => gatewayText("appleScriptPrompt", { script: String(a.script).slice(0, 300) }),
   },
   {
     name: "files_list",
     description: "Lista uma pasta dentro das pastas permitidas.",
     shape: { path: z.string() },
     act: false,
-    label: (a) => `Listar ${String(a.path)}`,
+    label: (a) => gatewayText("list", { path: String(a.path) }),
   },
   {
     name: "files_read",
     description: "Lê um arquivo de texto pequeno dentro das pastas permitidas.",
     shape: { path: z.string() },
     act: false,
-    label: (a) => `Ler ${String(a.path)}`,
+    label: (a) => gatewayText("read", { path: String(a.path) }),
   },
   {
     name: "files_move",
     description: "Move um arquivo ou pasta.",
     shape: { from: z.string(), to: z.string() },
     act: true,
-    label: (a) => `Mover ${String(a.from)}`,
+    label: (a) => gatewayText("move", { path: String(a.from) }),
   },
   {
     name: "files_rename",
     description: "Renomeia um arquivo ou pasta.",
     shape: { path: z.string(), name: z.string() },
     act: true,
-    label: (a) => `Renomear ${String(a.path)}`,
+    label: (a) => gatewayText("rename", { path: String(a.path) }),
   },
   {
     name: "files_mkdir",
     description: "Cria uma pasta.",
     shape: { path: z.string() },
     act: true,
-    label: (a) => `Criar pasta ${String(a.path)}`,
+    label: (a) => gatewayText("mkdir", { path: String(a.path) }),
   },
   {
     name: "files_trash",
     description: "Manda itens para a Lixeira (nunca apaga de vez).",
     shape: { paths: z.array(z.string()).min(1) },
     act: true,
-    label: (a) => `Lixeira (${(a.paths as unknown[]).length} itens)`,
+    label: (a) => gatewayText("trash", { count: (a.paths as unknown[]).length }),
   },
   {
     name: "files_write",
     description: "Escreve um arquivo de texto (só dentro de ~/runelay-bots-workspace).",
     shape: { path: z.string(), content: z.string().max(200_000) },
     act: true,
-    label: (a) => `Escrever ${String(a.path)}`,
+    label: (a) => gatewayText("write", { path: String(a.path) }),
   },
   {
     name: "shell_run",
@@ -907,7 +904,7 @@ const computerSpecs: ComputerSpec[] = [
     shape: { cmd: z.string().min(1).max(2000), cwd: z.string() },
     act: true,
     label: (a) => `$ ${String(a.cmd).slice(0, 60)}`,
-    prompt: (a) => `Posso rodar no seu Mac: ${String(a.cmd).slice(0, 200)}?`,
+    prompt: (a) => gatewayText("shellPrompt", { cmd: String(a.cmd).slice(0, 200) }),
   },
   {
     name: "record_start",
@@ -918,21 +915,21 @@ const computerSpecs: ComputerSpec[] = [
       region: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).optional(),
     },
     act: true,
-    label: () => "Gravar a tela",
+    label: () => gatewayText("record"),
   },
   {
     name: "record_stop",
     description: "Para a gravação e devolve o caminho do vídeo.",
     shape: {},
     act: true,
-    label: () => "Parar gravação",
+    label: () => gatewayText("recordStop"),
   },
   {
     name: "record_status",
     description: "Diz se está gravando.",
     shape: {},
     act: false,
-    label: () => "Status da gravação",
+    label: () => gatewayText("recordStatus"),
   },
 ];
 
@@ -940,7 +937,7 @@ async function runComputerTool(context: ToolContext, spec: ComputerSpec, input: 
   const { reason: _reason, ...args } = input;
   const details = spec.act ? computerDetails(context.bot.id, input) : undefined;
   const element = spec.name === "computer_click" ? details?.target?.label : undefined;
-  const label = element ? `Clicar em “${element}”` : spec.label(args);
+  const label = element ? gatewayText("clickOn", { element }) : spec.label(args);
   const callId = newCallId();
   const log = context.log;
   context.onCallStart();
@@ -1013,7 +1010,9 @@ async function runComputerTool(context: ToolContext, spec: ComputerSpec, input: 
         if (context.isSchedule) return reject(null);
         const { choice, interactionId, always } = await context.requestApproval(
           spec.prompt?.(args) ??
-            `Posso ${label.charAt(0).toLowerCase()}${label.slice(1)}${spec.name === "computer_click" && !element ? "" : " no seu Mac"}?`,
+            gatewayText(spec.name === "computer_click" && !element ? "computerPrompt" : "computerPromptMac", {
+              action: `${label.charAt(0).toLowerCase()}${label.slice(1)}`,
+            }),
           callId,
           context.origin,
           { ...details, ...(hard ? {} : { untilTurnEnd: true }) },
@@ -1080,7 +1079,7 @@ async function runComputerTool(context: ToolContext, spec: ComputerSpec, input: 
         scope: scopeOf(context),
       });
       if (code === "user_took_over" || code === "stopped")
-        context.cancelTurn(code === "stopped" ? "A pessoa apertou Parar." : "Você assumiu o computador.");
+        context.cancelTurn(engineText(code === "stopped" ? "stopped" : "takenOver"));
       return textResult(code === "COMPUTER_UNAVAILABLE" ? `COMPUTER_UNAVAILABLE: ${message}` : message, true);
     }
   } finally {
@@ -1115,7 +1114,7 @@ function registerConnectorTools(server: McpServer, context: ToolContext) {
           {
             name: "connector_search",
             capability: "connector_search",
-            label: `Procurar ferramentas: ${String(args.query)}`,
+            label: gatewayText("searchTools", { query: String(args.query) }),
             input: args,
             kind: "read",
             prompt: "",
@@ -1146,12 +1145,12 @@ function registerConnectorTools(server: McpServer, context: ToolContext) {
           {
             name: "connector_call",
             capability: `connector:${tool}`,
-            label: `${label}: ${short}`,
+            label: gatewayText("connectorCall", { connection: label, tool: short }),
             input: toolArgs,
             kind,
             connector: connection,
             alwaysHuman: kind !== "read" && touchesDatabase(tool),
-            prompt: `Posso rodar ${label} ${short}? ${brief(toolArgs, 160)}`,
+            prompt: gatewayText("connectorPrompt", { connection: label, tool: short, args: brief(toolArgs, 160) }),
           },
           () => runelayCall("call_tool", { name: tool, args: toolArgs }),
         );
@@ -1171,7 +1170,7 @@ function registerConnectorTools(server: McpServer, context: ToolContext) {
           {
             name: "memory_search",
             capability: "memory_search",
-            label: `Memória: ${String(args.query)}`,
+            label: gatewayText("memorySearch", { query: String(args.query) }),
             input: args,
             kind: "read",
             prompt: "",
@@ -1193,7 +1192,7 @@ function registerConnectorTools(server: McpServer, context: ToolContext) {
           {
             name: "memory_read",
             capability: "memory_read",
-            label: `Ler memória ${String(args.slug)}`,
+            label: gatewayText("memoryRead", { slug: String(args.slug) }),
             input: args,
             kind: "read",
             prompt: "",
@@ -1213,7 +1212,7 @@ function registerConnectorTools(server: McpServer, context: ToolContext) {
           {
             name: "skill_read",
             capability: "skill_read",
-            label: `Ler skill ${String(args.slug)}`,
+            label: gatewayText("skillRead", { slug: String(args.slug) }),
             input: args,
             kind: "read",
             prompt: "",
@@ -1242,10 +1241,10 @@ function registerConnectorTools(server: McpServer, context: ToolContext) {
           {
             name: "memory_write",
             capability: "memory_write",
-            label: `Salvar memória ${String(args.slug)}`,
+            label: gatewayText("memorySave", { slug: String(args.slug) }),
             input: { slug: args.slug, name: args.name, description: args.description },
             kind: "free",
-            prompt: `Posso salvar a memória "${String(args.slug)}"? ${brief(args.body, 160)}`,
+            prompt: gatewayText("memorySavePrompt", { slug: String(args.slug), body: brief(args.body, 160) }),
           },
           () => runelayCall("write_memory", args),
         ),
@@ -1387,7 +1386,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
           type: "call.requested",
           data: {
             callId,
-            capability: { kind: "tool", name: "create_group", label: `Criar o grupo ${name}` },
+            capability: { kind: "tool", name: "create_group", label: gatewayText("createGroup", { name }) },
             input: args,
             owner: owner(context),
             ...(context.origin ? { origin: { agent: context.origin } } : {}),
@@ -1457,7 +1456,7 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
           type: "call.requested",
           data: {
             callId,
-            capability: { kind: "tool", name: "create_bot", label: `Criar o bot ${name}` },
+            capability: { kind: "tool", name: "create_bot", label: gatewayText("createBot", { name }) },
             input: args,
             owner: owner(context),
             ...(context.origin ? { origin: { agent: context.origin } } : {}),
@@ -1500,10 +1499,10 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
       runConfigTool(
         context,
         "set_role",
-        `Mudar papel para "${String(args.text)}"`,
+        gatewayText("setRole", { text: String(args.text) }),
         args,
         "none",
-        `Posso mudar o meu papel para "${String(args.text)}"?`,
+        gatewayText("setRolePrompt", { text: String(args.text) }),
         (bot) => ({
           body: { role: String(args.text) },
           summary: `Papel: "${bot.role}" → "${String(args.text)}".`,
@@ -1521,10 +1520,10 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
       runConfigTool(
         context,
         "update_instructions",
-        args.mode === "replace" ? "Substituir instruções" : "Acrescentar às instruções",
+        gatewayText(args.mode === "replace" ? "replaceInstructions" : "appendInstructions"),
         args,
         "none",
-        `Posso ${args.mode === "replace" ? "substituir as minhas instruções por" : "acrescentar às instruções"}: ${brief(args.markdown, 300)}?`,
+        gatewayText(args.mode === "replace" ? "replacePrompt" : "appendPrompt", { text: brief(args.markdown, 300) }),
         (bot) => {
           const markdown = String(args.markdown).trim();
           const next = args.mode === "replace" ? markdown : `${bot.instructions.trim()}\n\n${markdown}`.trim();
@@ -1552,10 +1551,14 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
       runConfigTool(
         context,
         "add_schedule",
-        `Criar rotina ${String(args.name)} (${String(args.cron)})`,
+        gatewayText("addSchedule", { name: String(args.name), cron: String(args.cron) }),
         args,
         "none",
-        `Posso criar a rotina "${String(args.name)}" (${String(args.cron)}, ${String(args.timezone ?? "America/Sao_Paulo")})? Ela roda sozinha e gasta sua assinatura.`,
+        gatewayText("addSchedulePrompt", {
+          name: String(args.name),
+          cron: String(args.cron),
+          timezone: String(args.timezone ?? "America/Sao_Paulo"),
+        }),
         (bot) => {
           const schedule = {
             name: String(args.name),
@@ -1582,10 +1585,10 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
       runConfigTool(
         context,
         "remove_schedule",
-        `Remover rotina ${String(args.name)}`,
+        gatewayText("removeSchedule", { name: String(args.name) }),
         args,
         "none",
-        `Posso remover a rotina "${String(args.name)}"?`,
+        gatewayText("removeSchedulePrompt", { name: String(args.name) }),
         (bot) => {
           if (!bot.schedules.some((item) => item.name === String(args.name)))
             throw new Error(`Não existe rotina "${String(args.name)}".`);
@@ -1608,10 +1611,10 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
       return runConfigTool(
         context,
         "request_connector",
-        `Pedir acesso a ${connection}`,
+        gatewayText("requestConnector", { name: connection }),
         args,
         "human",
-        `Posso ganhar acesso a ${connection}? Motivo: ${String(args.reason)}`,
+        gatewayText("requestConnectorPrompt", { name: connection, reason: String(args.reason) }),
         (bot) => {
           const current = connectorsOf(bot);
           if (current.allowed.includes(connection)) throw new Error(`Já tenho acesso a ${connection}.`);
@@ -1632,14 +1635,14 @@ function registerConfigTools(server: McpServer, context: ToolContext) {
     },
     (args: Record<string, unknown>) => {
       const capability = String(args.name);
-      const label = "navegador";
+      const label = gatewayText("browser");
       return runConfigTool(
         context,
         "request_capability",
-        `Pedir ${label}`,
+        gatewayText("requestCapability", { name: label }),
         args,
         "human",
-        `Posso ganhar acesso a ${label}? Motivo: ${String(args.reason)}`,
+        gatewayText("requestConnectorPrompt", { name: label, reason: String(args.reason) }),
         (bot) => {
           if (bot.capabilities[capability as "browser"]) throw new Error(`Já tenho ${label}.`);
           return { body: { capabilities: { [capability]: true } }, summary: `Capacidade ${label} liberada.` };

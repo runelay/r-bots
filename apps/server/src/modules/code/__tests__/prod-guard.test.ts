@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
+import { withLanguage } from "../../../shared/i18n";
 import { botHomePath, ensureBotHome, shellSupported } from "../services/bot-home.service";
 import { criticalCommand, prodReadCommand } from "../services/prod-guard.service";
 import { worktreesRoot } from "../services/repos.service";
@@ -26,6 +27,9 @@ describe("criticalCommand", () => {
     ]) {
       expect(criticalCommand(command)?.reason).toBe(prod);
     }
+    expect(withLanguage("en", () => criticalCommand("wrangler kv key delete k")?.reason)).toBe(
+      "This touches production, so I need your ok.",
+    );
   });
 
   test("flags deploys, merges and publishing", () => {

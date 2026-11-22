@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { makeBot } from "../../../../test/engine-helpers";
 import { resetData, testDataDir } from "../../../../test/helpers";
+import { withLanguage } from "../../../shared/i18n";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import * as browser from "../../browser/services/browser.service";
 import * as guard from "../../browser/services/browser-guard.service";
@@ -184,6 +185,13 @@ describe("toolsFor", () => {
     expect(open.label({ app: "browser", url: "https://www.a.com/x" })).toBe("Abrir navegador em a.com");
     expect(open.label({ app: "browser", url: "bad url" })).toBe("Abrir navegador em bad url");
     expect(open.label({ app: "browser" })).toBe("Abrir navegador");
+    expect(withLanguage("en", () => open.label({ app: "browser", url: "https://www.a.com/x" }))).toBe(
+      "Open browser at a.com",
+    );
+    expect(withLanguage("en", () => open.approval?.({ app: "terminal" }))).toBe(
+      "Can I open a terminal on the computer?",
+    );
+    expect(withLanguage("en", () => scroll.label({ direction: "up" }))).toBe("Scroll up");
     expect(await open.details?.({ app: "browser", url: "https://a.com" })).toEqual({
       target: { label: "a.com", role: "page", url: "https://a.com" },
     });

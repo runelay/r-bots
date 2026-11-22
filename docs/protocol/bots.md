@@ -263,3 +263,57 @@ turno no Mac com claude instalado e sem login: turn.settled {"outcome":"failed",
 turno no Mac com Mac desligado: turn.settled {"outcome":"failed","error":{"message":"Este Mac está desconectado; abra o app no Mac ou troque para VPS."}}
 POST /bots/assistente/code/deliver {"action":"push",…} -> {"action":"push","commit":"82c6f68",…}; refs/rbots/sync/feat/mac-sync-check some do GitHub e do repositório local
 ```
+
+---
+
+## v62 (22/11): idioma do app e das respostas
+
+O produto deixa de ser só pt-BR: o app escolhe entre inglês e português, e o servidor responde no mesmo idioma.
+
+### Preferência `language`
+
+- `GET /preferences` ganha `"language":"system"|"pt-BR"|"en"` (padrão `"system"`).
+- `PATCH /preferences` (dono) aceita `language`; outro valor → 400 com `field:"language"`. A mudança sai na linha `preferences` do `/status/stream`, como as outras.
+- `preferences_set` aceita `language` (`system`, `pt-BR`, `en`); a linha `settings.changed` sai no idioma guardado e o `undo` volta o `language` anterior. `settings_get` mostra `preferences.language` e `options.languages`.
+
+### Cabeçalho `Accept-Language`
+
+- O app manda `Accept-Language: pt-BR` ou `en` em toda requisição HTTP e no upgrade de WebSocket.
+- Regra: só a primeira etiqueta conta; começa com `en` → inglês; qualquer outra → pt-BR; sem cabeçalho (ou `*`) → idioma guardado (`language`), e com `system` o idioma da última requisição de um aparelho da pessoa, senão pt-BR.
+- Respondem no idioma da requisição: erros comuns (`Rota não encontrada.`, `JSON inválido.`, 500 genérico, `runelay não respondeu`, limites de corpo e caminho), o portão de login (401, 403, 421, 429), `/auth/*` (cadastro, convite, foto, chave do runner) e a validação de `/preferences`.
+- A página `/device` segue o `Accept-Language` do navegador; `?lang=en` ou `?lang=pt-BR` na URL tem prioridade (o app pode mandar o idioma escolhido junto com o `user_code`).
+- O que nasce sem requisição (opções do card de aprovação e linhas de ajustes feitas num turno) usa o idioma guardado, com a mesma regra do `system`.
+
+### Textos do servidor nos dois idiomas
+
+- Erros de validação e de rota de todos os módulos (bots, conversas, grupos, seções, review, navegador, GitHub, Linear, contas, servidores, código, notas, planilhas, agenda, exportações, cofre, anexos, integrações, jobs, voz, simuladores, testes, provedores, ferramentas) saem no idioma da requisição. Os códigos (`code`) e campos (`field`) não mudam.
+- O que nasce num turno usa o idioma guardado: `capability.label` de `call.requested`, `prompt` e `reason` dos cards de aprovação, razões das decisões, linhas `settings.changed` de todas as ferramentas de ajustes, mensagens de falha do turno (`ACCOUNT_UNAVAILABLE`, `ACCOUNT_LIMIT`, provedor) e o aviso de parada por falta de progresso. Requisições em `/mcp/*` ignoram o `Accept-Language` do CLI e seguem o idioma guardado.
+- Este Mac (v61) também segue o idioma: `label` do `GET /environments` (`Este Mac`/`This Mac`), erro de `environment` no `/preferences`, aviso de turno no container e falhas do turno com o Mac fora, desconectado ou sem como receber o código.
+- Continuam em pt-BR: descrições de ferramentas, system prompt, resultados devolvidos ao modelo e logs.
+- O app não deve ler o texto do rótulo para decidir nada. Delegação vem de `delegation.botId` (e `input.bot`); comando "cru" do Bash é o que não tem `input.description`. Para apps antigos, os rótulos mantêm o formato (`“…”` em volta do alvo, `Rótulo: argumento` com `: `), e o app aceita os prefixos dos dois idiomas (`Posso `/`Can I `, `Delegar para `/`Delegate to `).
+
+### Idioma da resposta do bot
+
+O system prompt do turno ganha no fim uma seção curta: com `language:"en"` (ou `system` com o último aparelho em inglês) `## Language` mandando responder em inglês; com `pt-BR` (ou `system` com aparelho em português) `## Idioma` mandando responder em português do Brasil. Com `system` e nenhum aparelho conhecido, nada muda.
+
+### Verificado
+
+```
+GET /preferences
+200 {"notifications":{"replies":true,"approvals":true,"routines":true,"failures":true},"microphone":null,"microphones":["MacBook Air Microphone"],"language":"system","updatedAt":"2026-11-22T12:41:20.857Z"}
+
+PATCH /preferences {"language":"en"}
+200 {"notifications":{"replies":true,"approvals":true,"routines":true,"failures":true},"microphone":null,"microphones":["MacBook Air Microphone"],"language":"en","updatedAt":"2026-11-22T12:41:20.864Z"}
+
+PATCH /preferences {"language":"es"}  Accept-Language: en
+400 {"ok":false,"error":"language must be system, pt-BR, en.","field":"language"}
+
+PATCH /preferences {"language":"es"}  Accept-Language: pt-BR
+400 {"ok":false,"error":"language precisa ser system, pt-BR, en.","field":"language"}
+
+GET /nada  Accept-Language: en
+404 {"ok":false,"error":"Route not found."}
+
+GET /nada  Accept-Language: pt-BR
+404 {"ok":false,"error":"Rota não encontrada."}
+```

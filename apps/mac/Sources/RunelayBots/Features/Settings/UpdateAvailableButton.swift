@@ -16,7 +16,7 @@ struct UpdateAvailableButton: View {
     }
 
     private var help: String {
-        count == 1 ? "Atualização disponível" : "\(count) atualizações disponíveis"
+        count == 1 ? tr("Atualização disponível") : tr("%lld atualizações disponíveis", count)
     }
 
     var body: some View {

@@ -8,10 +8,11 @@ import { waitFor } from "../../../../test/engine-helpers";
 import { fakeProviders, resetData } from "../../../../test/helpers";
 import { dropAllRunners, fakeRunner, hostHello, runnerDevice } from "../../../../test/runner-helpers";
 import { runOnAccount } from "../../accounts/services/accounts.service";
+import { codeText } from "../../code/constants/code-messages.constants";
 import * as sync from "../../code/services/mac-sync.service";
-import { noGithubMessage, resetMacSync } from "../../code/services/mac-sync.service";
+import { resetMacSync } from "../../code/services/mac-sync.service";
 import { updatePreferences } from "../../settings/services/preferences.service";
-import { macOfflineMessage } from "../constants/environments.constants";
+import { environmentsText } from "../constants/environments-messages.constants";
 import { runningOnMac } from "../services/host-turns.service";
 import { macTurnOf } from "../services/mac-turns.service";
 
@@ -69,7 +70,7 @@ describe("turns on this Mac", () => {
   test("never fall back to the VPS when the Mac is offline", async () => {
     const events: ProviderEvent[] = [];
     await runOnAccount(account, turnRequest("o1", null), new AbortController().signal, (e) => events.push(e));
-    expect(events).toEqual([{ type: "done", ok: false, message: macOfflineMessage }]);
+    expect(events).toEqual([{ type: "done", ok: false, message: environmentsText("macOffline") }]);
     expect(fakeProviders.turns).toEqual([]);
   });
 
@@ -148,7 +149,7 @@ describe("turns on this Mac", () => {
     const local = await makeRepo("mac-local", { origin: true });
     const events: ProviderEvent[] = [];
     await runOnAccount(account, turnRequest("r1", local.path), new AbortController().signal, (e) => events.push(e));
-    expect(events).toEqual([{ type: "done", ok: false, message: noGithubMessage }]);
+    expect(events).toEqual([{ type: "done", ok: false, message: codeText("macNoGithub") }]);
     const prepare = spyOn(sync, "prepareMacSync").mockRejectedValue(new Error("disco cheio"));
     await runOnAccount(account, turnRequest("r2", local.path), new AbortController().signal, (e) => events.push(e));
     expect(events.at(-1)).toEqual({
@@ -161,6 +162,6 @@ describe("turns on this Mac", () => {
     await nextRequest(runner);
     runner.say({ type: "response", id: "r3", ok: false, error: "box.capacity" });
     await refused;
-    expect(events.at(-1)).toEqual({ type: "done", ok: false, message: macOfflineMessage });
+    expect(events.at(-1)).toEqual({ type: "done", ok: false, message: environmentsText("macOffline") });
   });
 });

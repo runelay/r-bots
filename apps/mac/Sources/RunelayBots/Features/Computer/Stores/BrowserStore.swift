@@ -69,13 +69,13 @@ final class BrowserStore {
         guard let updatedAt else { return "" }
         let seconds = max(0, Int(now.timeIntervalSince(updatedAt)))
         if seconds < 60 {
-            return "atualizado há \(seconds) s"
+            return tr("atualizado há %lld s", seconds)
         }
         let minutes = seconds / 60
         if minutes < 60 {
-            return "atualizado há \(minutes) min"
+            return tr("atualizado há %lld min", minutes)
         }
-        return "atualizado há \(minutes / 60) h"
+        return tr("atualizado há %lld h", minutes / 60)
     }
 
     private func refresh(client: BotsClient, botID: String) async {

@@ -14,7 +14,7 @@ enum ScreenTools {
         do {
             content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         } catch {
-            throw ToolFailure(403, code: "permission_denied", "O macOS não deixou ler a tela: \(error.localizedDescription)")
+            throw ToolFailure(403, code: "permission_denied", tr("O macOS não deixou ler a tela: %@", error.localizedDescription))
         }
         let (index, target) = try pick(display, in: content)
         let bounds = CGDisplayBounds(target.displayID)
@@ -22,7 +22,7 @@ enum ScreenTools {
         if let region {
             source = region.offsetBy(dx: -bounds.minX, dy: -bounds.minY).intersection(source)
             guard !source.isNull, source.width >= 1, source.height >= 1 else {
-                throw ToolFailure.badArgs("A região está fora da tela \(index).")
+                throw ToolFailure.badArgs(tr("A região está fora da tela %lld.", index))
             }
         }
         let scale = min(1, maxLongSide / max(source.width, source.height))
@@ -36,10 +36,10 @@ enum ScreenTools {
         do {
             image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
         } catch {
-            throw ToolFailure(500, code: "capture_failed", "Não deu para tirar o print: \(error.localizedDescription)")
+            throw ToolFailure(500, code: "capture_failed", tr("Não deu para tirar o print: %@", error.localizedDescription))
         }
         guard let data = NSBitmapImageRep(cgImage: image).representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
-            throw ToolFailure(500, code: "capture_failed", "Não deu para gerar a imagem do print.")
+            throw ToolFailure(500, code: "capture_failed", tr("Não deu para gerar a imagem do print."))
         }
         let origin = CGPoint(x: bounds.minX + source.minX, y: bounds.minY + source.minY)
         return .object([
@@ -51,7 +51,7 @@ enum ScreenTools {
             "display": .int(index),
             "displayCount": .int(content.displays.count),
             "origin": .object(["x": .point(origin.x), "y": .point(origin.y)]),
-            "coordinates": .string("Para clicar: x = origin.x + pixelX / scale, y = origin.y + pixelY / scale (pontos globais da tela)."),
+            "coordinates": .string(tr("Para clicar: x = origin.x + pixelX / scale, y = origin.y + pixelY / scale (pontos globais da tela).")),
         ])
     }
 
@@ -61,10 +61,10 @@ enum ScreenTools {
             if rhs.displayID == CGMainDisplayID() { return false }
             return lhs.displayID < rhs.displayID
         }
-        guard !displays.isEmpty else { throw ToolFailure(500, code: "no_display", "Nenhuma tela disponível.") }
+        guard !displays.isEmpty else { throw ToolFailure(500, code: "no_display", tr("Nenhuma tela disponível.")) }
         let index = display ?? 0
         guard displays.indices.contains(index) else {
-            throw ToolFailure.badArgs("A tela \(index) não existe. Há \(displays.count) tela(s), de 0 a \(displays.count - 1).")
+            throw ToolFailure.badArgs(tr("A tela %1$lld não existe. Há %2$lld tela(s), de 0 a %3$lld.", index, displays.count, displays.count - 1))
         }
         return (index, displays[index])
     }
@@ -106,7 +106,7 @@ final class ScreenRecorder: NSObject {
             throw ToolFailure.missing(.screenRecording)
         }
         guard !isRecording else {
-            throw ToolFailure(409, code: "already_recording", "Já tem uma gravação em andamento. Use record_stop antes.")
+            throw ToolFailure(409, code: "already_recording", tr("Já tem uma gravação em andamento. Use record_stop antes."))
         }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         let filter: SCContentFilter
@@ -119,7 +119,7 @@ final class ScreenRecorder: NSObject {
                 let app = candidate.owningApplication?.applicationName.lowercased() ?? ""
                 return title.contains(query) || app.contains(query)
             }
-            guard let match else { throw ToolFailure(404, code: "window_not_found", "Não achei janela com \"\(window)\".") }
+            guard let match else { throw ToolFailure(404, code: "window_not_found", tr("Não achei janela com \"%@\".", window)) }
             filter = SCContentFilter(desktopIndependentWindow: match)
         } else {
             let (_, target) = try ScreenTools.pick(display, in: content)
@@ -127,7 +127,7 @@ final class ScreenRecorder: NSObject {
             if let region {
                 let bounds = CGDisplayBounds(target.displayID)
                 let source = region.offsetBy(dx: -bounds.minX, dy: -bounds.minY).intersection(CGRect(origin: .zero, size: bounds.size))
-                guard !source.isNull, source.width >= 2, source.height >= 2 else { throw ToolFailure.badArgs("A região está fora da tela.") }
+                guard !source.isNull, source.width >= 2, source.height >= 2 else { throw ToolFailure.badArgs(tr("A região está fora da tela.")) }
                 configuration.sourceRect = source
             }
         }
@@ -140,7 +140,7 @@ final class ScreenRecorder: NSObject {
 
         try FileManager.default.createDirectory(at: Self.folder, withIntermediateDirectories: true)
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd 'às' HH.mm.ss"
+        formatter.dateFormat = tr("yyyy-MM-dd 'às' HH.mm.ss")
         let safeName = botName.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
         let url = Self.folder.appending(path: "\(safeName) \(formatter.string(from: Date())).mov")
 
@@ -163,7 +163,7 @@ final class ScreenRecorder: NSObject {
                 }
             }
         } catch {
-            throw ToolFailure(500, code: "record_failed", "Não deu para começar a gravar: \(error.localizedDescription)")
+            throw ToolFailure(500, code: "record_failed", tr("Não deu para começar a gravar: %@", error.localizedDescription))
         }
         self.stream = stream
         self.output = output
@@ -177,7 +177,7 @@ final class ScreenRecorder: NSObject {
 
     func stop() async throws -> JSONValue {
         guard let stream, let fileURL, let startedAt else {
-            throw ToolFailure(409, code: "not_recording", "Não tem gravação em andamento.")
+            throw ToolFailure(409, code: "not_recording", tr("Não tem gravação em andamento."))
         }
         let seconds = Int(Date().timeIntervalSince(startedAt))
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
@@ -196,7 +196,7 @@ final class ScreenRecorder: NSObject {
         self.startedAt = nil
         self.botName = nil
         if let failure {
-            throw ToolFailure(500, code: "record_failed", "A gravação falhou: \(failure)")
+            throw ToolFailure(500, code: "record_failed", tr("A gravação falhou: %@", failure))
         }
         return .object([
             "recording": .bool(false),

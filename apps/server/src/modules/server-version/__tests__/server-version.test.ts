@@ -457,6 +457,13 @@ describe("server version route", () => {
     const missing = await request<{ code: string }>("/server/update", { method: "POST" });
     expect(missing.status).toBe(422);
     expect(missing.body).toMatchObject({ ok: false, code: "agent_missing" });
+    const english = await request<{ error: string }>("/server/update", {
+      method: "POST",
+      headers: { "accept-language": "en" },
+    });
+    expect(english.body.error).toBe(
+      "The update watcher is not installed on this server. Run rbots update on the server.",
+    );
     await writeUpdate("agent.json", agent);
     runningTurns = 1;
     const busy = await request("/server/update", { method: "POST", body: {} });

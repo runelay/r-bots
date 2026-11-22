@@ -118,12 +118,12 @@ final class InputTools {
                 continue
             }
             guard keyCode == nil, let code = Self.keyCodes[name] else {
-                throw ToolFailure.badArgs("Não conheço a tecla \"\(name)\" em \"\(combo)\". Use algo como cmd+l, return, esc, tab, up.")
+                throw ToolFailure.badArgs(tr("Não conheço a tecla \"%1$@\" em \"%2$@\". Use algo como cmd+l, return, esc, tab, up.", name, combo))
             }
             keyCode = code
         }
         guard let keyCode else {
-            throw ToolFailure.badArgs("\"\(combo)\" não tem tecla, só modificadores.")
+            throw ToolFailure.badArgs(tr("\"%@\" não tem tecla, só modificadores.", combo))
         }
         pressKey(code: keyCode, flags: flags)
     }

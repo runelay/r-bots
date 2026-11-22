@@ -1,0 +1,4 @@
+"NSMicrophoneUsageDescription" = "O r/bots usa o microfone para ditar mensagens, gravar áudios e falar com os bots.";
+"NSSpeechRecognitionUsageDescription" = "O r/bots transcreve sua fala no aparelho para escrever a mensagem.";
+"NSCameraUsageDescription" = "O r/bots usa a câmera para você mandar fotos aos bots.";
+"NSFaceIDUsageDescription" = "O r/bots usa o Face ID para abrir os segredos do cofre.";

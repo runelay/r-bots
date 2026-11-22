@@ -28,12 +28,12 @@ struct CatalogItem: Identifiable, Hashable {
     }
 
     var statusLabel: String {
-        guard installed else { return "Disponível" }
+        guard installed else { return tr("Disponível") }
         switch status {
-        case "ok": return toolCount.map { "Conectado · \($0) ferramentas" } ?? "Conectado"
-        case "needs_auth": return "Precisa reconectar"
-        case "error": return "Com erro"
-        default: return "Instalado"
+        case "ok": return toolCount.map { tr("Conectado · %lld ferramentas", $0) } ?? tr("Conectado")
+        case "needs_auth": return tr("Precisa reconectar")
+        case "error": return tr("Com erro")
+        default: return tr("Instalado")
         }
     }
 }
@@ -110,7 +110,7 @@ struct ConnectorsScreen: View {
             var sections: [CatalogSection] = []
             let featured = (json["featured"]?.arrayValue ?? []).compactMap { CatalogItem($0, toolCounts: counts) }
             if !featured.isEmpty {
-                sections.append(CatalogSection(id: "featured", title: "Destaque", items: featured))
+                sections.append(CatalogSection(id: "featured", title: tr("Destaque"), items: featured))
             }
             for section in json["sections"]?.arrayValue ?? [] {
                 let items = (section["items"]?.arrayValue ?? []).compactMap { CatalogItem($0, toolCounts: counts) }
@@ -367,7 +367,7 @@ struct UsageScreen: View {
         .task(id: range) { await load() }
     }
 
-    private func metric(_ title: String, _ value: String) -> some View {
+    private func metric(_ title: LocalizedStringKey, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(BrandFonts.sans(18, weight: .semibold))
@@ -442,7 +442,7 @@ struct AccountsScreen: View {
                                     .foregroundStyle(Theme.brandText)
                             }
                         }
-                        Text([account.email, account.plan, account.models.isEmpty ? nil : "\(account.models.count) modelos"].compactMap { $0 }.joined(separator: " · "))
+                        Text([account.email, account.plan, account.models.isEmpty ? nil : tr("%lld modelos", account.models.count)].compactMap { $0 }.joined(separator: " · "))
                             .font(TypeScale.caption)
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
@@ -578,11 +578,11 @@ struct VaultScreen: View {
         }
         Task {
             do {
-                try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Abrir o cofre do r/bots")
+                try await context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: tr("Abrir o cofre do r/bots"))
                 unlocked = true
                 await load()
             } catch {
-                failure = "Não deu para confirmar."
+                failure = tr("Não deu para confirmar.")
             }
         }
     }
@@ -614,7 +614,7 @@ struct DevicesScreen: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(device["name"]?.stringValue ?? "Mac")
                                 .font(BrandFonts.sans(15, weight: .medium))
-                            Text(RelativeText.date(device["lastSeenAt"]?.stringValue).map { "Visto \($0)" } ?? "")
+                            Text(RelativeText.date(device["lastSeenAt"]?.stringValue).map { tr("Visto %@", $0) } ?? "")
                                 .font(TypeScale.caption)
                                 .foregroundStyle(Theme.textSecondary)
                         }
@@ -755,7 +755,7 @@ struct ServerProfileSheet: View {
     }
 
     private var parsed: URL? { ServerConfig.parse(AuthSession.normalized(address)) }
-    private var placeholder: String { parsed.map(AuthSession.defaultName(for:)) ?? "Local, VPS…" }
+    private var placeholder: String { parsed.map(AuthSession.defaultName(for:)) ?? tr("Local, VPS…") }
     private var preview: ServerProfile {
         ServerProfile(id: target.id, name: name, address: address, color: color, symbol: symbol)
     }

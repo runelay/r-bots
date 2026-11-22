@@ -74,8 +74,8 @@ final class SimulatorMirror {
 
         var label: String? {
             switch self {
-            case .booting: "Ligando o simulador…"
-            case .opening: "Abrindo a tela…"
+            case .booting: tr("Ligando o simulador…")
+            case .opening: tr("Abrindo a tela…")
             default: nil
             }
         }
@@ -240,7 +240,7 @@ final class SimulatorMirror {
                 } else {
                     misses += 1
                     if misses >= 5, first {
-                        self?.state = .failed("Não consegui ver a tela do simulador.")
+                        self?.state = .failed(tr("Não consegui ver a tela do simulador."))
                         return
                     }
                 }

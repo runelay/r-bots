@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { ValidationError } from "../../../shared/errors";
 import { allowedRepoFor, allowedRepos, expandHome, insideAllowedArea } from "../../code/services/repos.service";
 import { git } from "../../code/services/workspace.service";
+import { serversText } from "../constants/servers-messages.constants";
 
 export interface ProjectWorktree {
   path: string;
@@ -108,19 +109,18 @@ export async function resolveProject(input: { path?: string; project?: string; b
       allowedRepos().find((item) => item.name.toLowerCase() === wanted) ??
       allowedRepos().find((item) => item.path === resolve(expandHome(input.project ?? ""))) ??
       allowedRepos().find((item) => item.name.toLowerCase().includes(wanted));
-    if (!repo)
-      throw new ValidationError(`O projeto ${input.project} não está liberado. Use workspace_add antes.`, "project");
+    if (!repo) throw new ValidationError(serversText("projectLocked", { name: input.project }), "project");
     path = repo.path;
     if (input.branch) {
       const worktree = (await worktreesOf(repo.path)).find((item) => item.branch === input.branch);
       if (!worktree)
-        throw new ValidationError(`Não achei worktree da branch ${input.branch} em ${repo.name}.`, "project");
+        throw new ValidationError(serversText("worktreeMissing", { branch: input.branch, repo: repo.name }), "project");
       path = worktree.path;
     }
   }
-  if (!path) throw new ValidationError("Diga o projeto (path ou project).", "project");
-  if (!insideAllowedArea(path)) throw new ValidationError("Esse caminho não está num repositório liberado.", "project");
-  if (!(await isDir(path))) throw new ValidationError("Essa pasta não existe.", "project");
+  if (!path) throw new ValidationError(serversText("projectMissing"), "project");
+  if (!insideAllowedArea(path)) throw new ValidationError(serversText("pathOutside"), "project");
+  if (!(await isDir(path))) throw new ValidationError(serversText("folderMissing"), "project");
   const top = await git(path, ["rev-parse", "--show-toplevel"], 10_000);
   const root = top.code === 0 && top.stdout.trim() ? top.stdout.trim() : path;
   const common = await git(root, ["rev-parse", "--path-format=absolute", "--git-common-dir"], 10_000);
@@ -128,7 +128,7 @@ export async function resolveProject(input: { path?: string; project?: string; b
   const branchResult = await git(root, ["rev-parse", "--abbrev-ref", "HEAD"], 10_000);
   const branch = branchResult.code === 0 ? branchResult.stdout.trim() || null : null;
   const cwd = resolve(root, input.cwd ?? relative(root, path));
-  if (!within(root, cwd)) throw new ValidationError("A pasta precisa ficar dentro do projeto.", "project");
+  if (!within(root, cwd)) throw new ValidationError(serversText("cwdOutside"), "project");
   const repo = allowedRepoFor(repoPath);
   return {
     name: repo?.name ?? basename(repoPath),

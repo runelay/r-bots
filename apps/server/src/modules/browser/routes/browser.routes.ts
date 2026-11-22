@@ -1,9 +1,10 @@
 import { stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { dataDir } from "../../../config/env";
-import { notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
+import { httpText, notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { botIsCoding } from "../../code/services/bot-code.service";
+import { browserText } from "../constants/browser-messages.constants";
 import {
   browserAlive,
   browserDir,
@@ -19,7 +20,7 @@ import { publishLiveState } from "../services/live-view.service";
 async function handleBrowser(res: Res, bot: BotDefinition) {
   markBrowserViewed(bot.id);
   const state = await readBrowserState(bot.id);
-  if (!state) return sendJson(res, 404, { ok: false, error: "Esse bot ainda não abriu nenhuma página." });
+  if (!state) return sendJson(res, 404, { ok: false, error: browserText("noPage") });
   sendJson(res, 200, {
     ...state,
     screenshotPath: `/bots/${bot.id}/browser/latest.png`,
@@ -29,13 +30,16 @@ async function handleBrowser(res: Res, bot: BotDefinition) {
 }
 
 async function handleFullScreenshot(res: Res, bot: BotDefinition) {
-  if (!(await readBrowserState(bot.id))) return sendJson(res, 404, { ok: false, error: "Nenhum print ainda." });
+  if (!(await readBrowserState(bot.id))) return sendJson(res, 404, { ok: false, error: browserText("noScreenshot") });
   try {
     await fullScreenshot(bot.id);
   } catch (error) {
     return sendJson(res, 502, {
       ok: false,
-      error: `Não consegui tirar o print: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+      error: browserText("screenshotFailed", { reason: error instanceof Error ? error.message : String(error) }).slice(
+        0,
+        300,
+      ),
     });
   }
   return handleScreenshot(res, bot, "full.png");
@@ -54,7 +58,7 @@ async function handleScreenshot(res: Res, bot: BotDefinition, name = "latest.png
     });
     res.end(Bun.file(file));
   } catch {
-    sendJson(res, 404, { ok: false, error: "Nenhum print ainda." });
+    sendJson(res, 404, { ok: false, error: browserText("noScreenshot") });
   }
 }
 
@@ -70,7 +74,7 @@ async function handleDesktopScreenshot(res: Res, bot: BotDefinition) {
     });
     res.end(Bun.file(file));
   } catch {
-    sendJson(res, 404, { ok: false, error: "Nenhum print do computador ainda." });
+    sendJson(res, 404, { ok: false, error: browserText("noDesktopScreenshot") });
   }
 }
 
@@ -81,10 +85,10 @@ export async function handleBotBrowser(req: Req, res: Res, method: string, bot: 
     try {
       body = await readBody(req);
     } catch {
-      return sendJson(res, 400, { ok: false, error: "JSON inválido.", field: "body" });
+      return sendJson(res, 400, { ok: false, error: httpText("invalidJson"), field: "body" });
     }
     if (!bot.capabilities.browser && !(await botIsCoding(bot.id).catch(() => false)))
-      return sendJson(res, 409, { ok: false, code: "no_browser", error: "Esse bot não tem navegador." });
+      return sendJson(res, 409, { ok: false, code: "no_browser", error: browserText("noBrowser") });
     const raw = (body as { url?: unknown } | undefined)?.url;
     let target: URL | null = null;
     try {
@@ -93,7 +97,7 @@ export async function handleBotBrowser(req: Req, res: Res, method: string, bot: 
       target = null;
     }
     if (!target || !["http:", "https:"].includes(target.protocol)) {
-      return sendJson(res, 400, { ok: false, error: "Use uma URL http ou https.", field: "url" });
+      return sendJson(res, 400, { ok: false, error: browserText("useHttp"), field: "url" });
     }
     try {
       const state = await browserOpen(bot.id, target.toString(), undefined, true);
@@ -107,7 +111,10 @@ export async function handleBotBrowser(req: Req, res: Res, method: string, bot: 
     } catch (error) {
       return sendJson(res, 502, {
         ok: false,
-        error: `Não consegui abrir a página: ${error instanceof Error ? error.message : String(error)}`.slice(0, 500),
+        error: browserText("openFailed", { reason: error instanceof Error ? error.message : String(error) }).slice(
+          0,
+          500,
+        ),
       });
     }
   }
@@ -116,20 +123,20 @@ export async function handleBotBrowser(req: Req, res: Res, method: string, bot: 
     try {
       body = await readBody(req);
     } catch {
-      return sendJson(res, 400, { ok: false, error: "JSON inválido.", field: "body" });
+      return sendJson(res, 400, { ok: false, error: httpText("invalidJson"), field: "body" });
     }
     const mode = (body as { mode?: unknown } | undefined)?.mode;
     if (mode !== "user" && mode !== "bot")
-      return sendJson(res, 400, { ok: false, error: "Use mode user ou bot.", field: "mode" });
+      return sendJson(res, 400, { ok: false, error: browserText("modeInvalid"), field: "mode" });
     if (!bot.capabilities.browser && !bot.capabilities.desktop && !(await botIsCoding(bot.id).catch(() => false)))
-      return sendJson(res, 409, { ok: false, code: "no_browser", error: "Esse bot não tem navegador nem computador." });
+      return sendJson(res, 409, { ok: false, code: "no_browser", error: browserText("noBrowserOrComputer") });
     setController(bot.id, mode);
     return sendJson(res, 200, { ok: true, controller: controllerOf(bot.id) });
   }
   if (["browser/back", "browser/forward", "browser/reload"].includes(tail) && method === "POST") {
     await readBody(req).catch(() => undefined);
     if (!bot.capabilities.browser && !(await botIsCoding(bot.id).catch(() => false)))
-      return sendJson(res, 409, { ok: false, code: "no_browser", error: "Esse bot não tem navegador." });
+      return sendJson(res, 409, { ok: false, code: "no_browser", error: browserText("noBrowser") });
     try {
       const state = await browserHistory(bot.id, tail.split("/")[1] as "back" | "forward" | "reload");
       publishLiveState(bot.id);
@@ -143,7 +150,10 @@ export async function handleBotBrowser(req: Req, res: Res, method: string, bot: 
     } catch (error) {
       return sendJson(res, 502, {
         ok: false,
-        error: `Falha no navegador: ${error instanceof Error ? error.message : String(error)}`.slice(0, 300),
+        error: browserText("browserFailed", { reason: error instanceof Error ? error.message : String(error) }).slice(
+          0,
+          300,
+        ),
       });
     }
   }

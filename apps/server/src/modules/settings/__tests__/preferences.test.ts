@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { request, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
 import { writeSetting } from "../../../db/settings";
+import { backgroundLanguage, resetLanguageState } from "../../../shared/i18n";
 import { requiresOwner } from "../../auth/services/policy.service";
 import {
   type AppPreferences,
   currentEnvironment,
   defaultPreferences,
+  notificationLabel,
   onPreferences,
   readPreferences,
   updatePreferences,
@@ -27,8 +29,10 @@ beforeEach(async () => {
     notifications: defaultPreferences().notifications,
     microphone: null,
     microphones: [],
+    language: "system",
     environment: "vps",
   });
+  resetLanguageState();
 });
 
 describe("preferences", () => {
@@ -41,6 +45,7 @@ describe("preferences", () => {
     expect(first.body).toMatchObject({
       notifications: defaultPreferences().notifications,
       microphone: null,
+      language: "system",
       environment: "vps",
     });
     const patched = await request<AppPreferences>("/preferences", {
@@ -91,5 +96,36 @@ describe("preferences", () => {
     expect((await request("/preferences/x")).status).toBe(404);
     expect(requiresOwner("PATCH", ["preferences"])).toBe(true);
     expect(requiresOwner("GET", ["preferences"])).toBe(false);
+  });
+
+  test("stores the language and answers errors in it", async () => {
+    const patched = await request<AppPreferences>("/preferences", { method: "PATCH", body: { language: "en" } });
+    expect(patched.body.language).toBe("en");
+    expect(backgroundLanguage()).toBe("en");
+    expect((await readPreferences()).language).toBe("en");
+    const english = await request<{ ok: boolean; error: string; field: string }>("/preferences", {
+      method: "PATCH",
+      headers: { "accept-language": "en" },
+      body: { language: "es" },
+    });
+    expect([english.status, english.body]).toEqual([
+      400,
+      { ok: false, error: "language must be system, pt-BR, en.", field: "language" },
+    ]);
+    const portuguese = await request<{ error: string }>("/preferences", {
+      method: "PATCH",
+      headers: { "accept-language": "pt-BR" },
+      body: { notifications: { sms: true } },
+    });
+    expect(portuguese.body.error).toBe("Notificação desconhecida: sms.");
+    await updatePreferences({ language: "pt-BR" });
+    expect(backgroundLanguage()).toBe("pt-BR");
+    expect(notificationLabel("replies", "en")).toBe("Bot replies");
+    expect(notificationLabel("replies", "pt-BR")).toBe("Respostas dos bots");
+  });
+
+  test("falls back to system for a stored language it does not know", async () => {
+    await writeSetting("app.preferences", { language: "klingon" });
+    expect((await readPreferences()).language).toBe("system");
   });
 });

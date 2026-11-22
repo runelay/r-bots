@@ -13,18 +13,18 @@ struct BotsClient: Sendable {
         var errorDescription: String? {
             switch self {
             case .invalidURL:
-                return "O endereço do servidor não parece válido."
+                return tr("O endereço do servidor não parece válido.")
             case .invalidResponse:
-                return "O servidor mandou uma resposta estranha."
+                return tr("O servidor mandou uma resposta estranha.")
             case .http(let status, let message):
                 if let message, !message.isEmpty {
                     return message
                 }
-                return "O servidor respondeu com erro \(status)."
+                return tr("O servidor respondeu com erro %lld.", status)
             case .missingSession:
-                return "O servidor não devolveu o id da conversa."
+                return tr("O servidor não devolveu o id da conversa.")
             case .unsupported:
-                return "O servidor ainda não aceita essa ação."
+                return tr("O servidor ainda não aceita essa ação.")
             case .validation(let message, _):
                 return message
             }
@@ -130,9 +130,19 @@ struct BotsClient: Sendable {
     }
 
     func selectEnvironment(_ id: String) async throws {
+        try await updatePreferences(.object(["environment": .string(id)]))
+    }
+
+    func preferences() async throws -> JSONValue {
+        let (data, response) = try await perform(try request(path: "/preferences"))
+        try validate(response, data: data)
+        return try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+
+    func updatePreferences(_ body: JSONValue) async throws {
         var urlRequest = try request(path: "/preferences")
         urlRequest.httpMethod = "PATCH"
-        urlRequest.httpBody = try JSONEncoder().encode(JSONValue.object(["environment": .string(id)]))
+        urlRequest.httpBody = try JSONEncoder().encode(body)
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let (data, response) = try await perform(urlRequest)
         try validate(response, data: data)
@@ -227,7 +237,7 @@ struct BotsClient: Sendable {
         }
         if response.statusCode == 400 {
             let json = try? JSONDecoder().decode(JSONValue.self, from: data)
-            throw ClientError.validation(json?["error"]?.stringValue ?? "Confira os campos.", json?["field"]?.stringValue)
+            throw ClientError.validation(json?["error"]?.stringValue ?? tr("Confira os campos."), json?["field"]?.stringValue)
         }
         try validate(response, data: data)
         let json = try? JSONDecoder().decode(JSONValue.self, from: data)
@@ -438,7 +448,7 @@ struct BotsClient: Sendable {
         }
         if response.statusCode == 400 {
             let json = try? JSONDecoder().decode(JSONValue.self, from: data)
-            let message = json?["error"]?.stringValue ?? "Confira os campos."
+            let message = json?["error"]?.stringValue ?? tr("Confira os campos.")
             throw ClientError.validation(message, json?["field"]?.stringValue)
         }
         try validate(response, data: data)
@@ -589,6 +599,7 @@ struct BotsClient: Sendable {
         urlRequest.timeoutInterval = 20
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
         urlRequest.setValue(TimeZone.current.identifier, forHTTPHeaderField: "X-Timezone")
+        urlRequest.setAppLanguage()
         AuthStore.authorize(&urlRequest)
         return urlRequest
     }

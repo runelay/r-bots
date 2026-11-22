@@ -7,12 +7,12 @@ struct InspectorView: View {
         VStack(spacing: 0) {
             HStack {
                 if let bot = model.selectedBot {
-                    RoundIconButton(systemImage: "gearshape", help: "Perfil de \(bot.name)") {
+                    RoundIconButton(systemImage: "gearshape", help: tr("Perfil de %@", bot.name)) {
                         model.openProfile(bot)
                     }
                 }
                 Spacer(minLength: 0)
-                RoundIconButton(systemImage: "xmark", help: "Fechar painel (⌥⌘I)") {
+                RoundIconButton(systemImage: "xmark", help: tr("Fechar painel (⌥⌘I)")) {
                     model.toggleInspector()
                 }
             }
@@ -60,8 +60,8 @@ struct InspectorView: View {
                 Spacer(minLength: 0)
                 PanelEmptyState(
                     systemImage: "sidebar.right",
-                    title: "Nada para mostrar",
-                    message: "Escolha um bot para ver o que ele está fazendo."
+                    title: tr("Nada para mostrar"),
+                    message: tr("Escolha um bot para ver o que ele está fazendo.")
                 )
                 Spacer(minLength: 0)
             }
@@ -141,7 +141,7 @@ struct ActivitySection: View {
 
             if bot.hasBrowser {
                 VStack(alignment: .leading, spacing: Spacing.s) {
-                    SectionCaption(title: "Computador")
+                    SectionCaption(title: tr("Computador"))
                     ComputerCard(
                         bot: bot,
                         store: model.browser,
@@ -156,7 +156,7 @@ struct ActivitySection: View {
             }
 
             VStack(alignment: .leading, spacing: Spacing.s) {
-                SectionCaption(title: "Sugestões") {
+                SectionCaption(title: tr("Sugestões")) {
                     Button(suggestionsHidden ? "Mostrar" : "Ocultar") {
                         suggestionsHidden.toggle()
                     }
@@ -166,7 +166,7 @@ struct ActivitySection: View {
                     .clickable()
                 }
                 if !suggestionsHidden {
-                    ActionRowCard(systemImage: "clock", title: "Criar uma rotina") {
+                    ActionRowCard(systemImage: "clock", title: tr("Criar uma rotina")) {
                         model.inspectorTab = .routines
                     }
                     .transition(.opacity)
@@ -283,9 +283,9 @@ struct ComputerCard: View {
             if let url = store.info?.url, !url.isEmpty {
                 return url
             }
-            return "Navegando"
+            return tr("Navegando")
         }
-        return "Em repouso"
+        return tr("Em repouso")
     }
 
     @ViewBuilder
@@ -316,7 +316,7 @@ struct RoutinesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
-            SectionCaption(title: "Rotinas de \(bot.name)")
+            SectionCaption(title: tr("Rotinas de %@", bot.name))
             SoftCard {
                 if bot.schedules.isEmpty {
                     Text("\(bot.name) ainda não tem rotinas.")

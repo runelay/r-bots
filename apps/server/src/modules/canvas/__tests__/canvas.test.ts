@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { resetData } from "../../../../test/helpers";
+import { withLanguage } from "../../../shared/i18n";
 import { artifactContentKey } from "../../artifacts/repositories/artifacts.repository";
 import * as artifacts from "../../artifacts/services/artifacts.service";
 import { type ArtifactMeta, readArtifact, saveArtifactMeta } from "../../artifacts/services/artifacts.service";
@@ -700,6 +701,7 @@ describe("canvasTools", () => {
     const create = tool("canvas_create");
     expect(create.label({ title: "Mapa" })).toBe("Criar canvas: Mapa");
     expect(create.label({})).toBe("Criar canvas: ");
+    expect(withLanguage("en", () => create.label({ title: "Map" }))).toBe("Create canvas: Map");
     expect(create.approval).toBeNull();
     const out = (await create.run(
       {

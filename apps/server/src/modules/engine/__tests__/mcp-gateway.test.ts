@@ -16,6 +16,7 @@ import {
 import { fakeRunelay, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
 import { must } from "../../../../test/must";
 import { ValidationError } from "../../../shared/errors";
+import { setLanguagePreference } from "../../../shared/i18n";
 import * as bots from "../../bots/services/bots.service";
 import { type BotDefinition, getBot } from "../../bots/services/bots.service";
 import * as actions from "../../code/services/actions.service";
@@ -1000,6 +1001,17 @@ describe("delegate and handoff", () => {
     expect((await factsOfType(session, "call.requested"))[1].data).toMatchObject({
       capability: { name: late.id, label: `Delegar para ${late.name}` },
     });
+    setLanguagePreference("en");
+    await harness.call("delegate", { bot: mate.id, message: "de novo" });
+    expect((await factsOfType(session, "call.requested"))[2].data).toMatchObject({
+      capability: { label: `Delegate to ${mate.name}` },
+      delegation: { botId: mate.id },
+    });
+    await harness.call("set_role", { text: "Analyst" });
+    expect((await factsOfType(session, "call.requested"))[3].data).toMatchObject({
+      capability: { label: 'Change role to "Analyst"' },
+    });
+    setLanguagePreference("system");
     const failing = await open({
       delegates: [mate],
       origin: "Bia",

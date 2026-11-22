@@ -3,6 +3,7 @@ import { resetData } from "../../../../test/helpers";
 import { must } from "../../../../test/must";
 import { getDb } from "../../../db";
 import { notes, sheets } from "../../../db/tables";
+import { withLanguage } from "../../../shared/i18n";
 import { blocksEditNote } from "../../blocks/services/block-tools.service";
 import { createExport, exportBytes } from "../../exports/services/exports.service";
 import { addTab, createSheet, readRange, structure, writeCells } from "../../sheets/services/sheets.service";
@@ -29,6 +30,17 @@ beforeEach(async () => {
 });
 
 describe("notes", () => {
+  test("missing notes and sheets answer in the saved language", async () => {
+    await expect(requireNote(bot, "note_missing")).rejects.toThrow("Nota não encontrada.");
+    await expect(withLanguage("en", () => requireNote(bot, "note_missing"))).rejects.toThrow("Note not found.");
+    await expect(withLanguage("en", () => readRange(bot, "sheet_missing", undefined, "A1"))).rejects.toThrow(
+      "Spreadsheet not found.",
+    );
+    await expect(withLanguage("en", () => createNote(bot, { title: " " }, "bot"))).rejects.toThrow(
+      "Title is required.",
+    );
+  });
+
   test("links, backlinks, rename relink, search without accents and trash", async () => {
     const plano = (
       await createNote(

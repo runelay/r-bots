@@ -1,12 +1,9 @@
 import type { SyncResult, WorkspaceSync } from "@runelay-bots/protocol";
 import { runnerSync } from "../../accounts/services/mac-runner.service";
+import { codeText } from "../constants/code-messages.constants";
 import { CodeError, git, isAncestor, restoreTree, withIndex } from "./workspace.service";
 
 export const syncRefPrefix = "refs/rbots/sync/";
-export const noGithubMessage =
-  "Este repositório não tem remoto no GitHub, então o Mac não tem como receber o código. Troque para VPS para trabalhar nele.";
-export const detachedMessage =
-  "A worktree desta tarefa não está numa branch, então o Mac não tem como recebê-la. Troque para VPS ou volte para a branch da tarefa.";
 
 const syncAuthor = {
   GIT_AUTHOR_NAME: "r/bots",
@@ -50,12 +47,12 @@ export async function snapshotCommit(cwd: string) {
   const tree = await withIndex(async (env) => {
     await git(cwd, ["read-tree", "HEAD"], 60_000, env);
     const added = await git(cwd, ["add", "-A", "--", "."], 120_000, env);
-    if (added.code !== 0) throw new CodeError(`Não consegui guardar o estado da worktree: ${clip(added.stderr)}`, 500);
+    if (added.code !== 0) throw new CodeError(codeText("snapshotFailed", { reason: clip(added.stderr) }), 500);
     return (await git(cwd, ["write-tree"], 60_000, env)).stdout.trim();
   });
   const head = await output(cwd, ["rev-parse", "HEAD"]);
   const commit = await git(cwd, ["commit-tree", tree, "-p", head, "-m", "r/bots sync"], 60_000, syncAuthor);
-  if (commit.code !== 0) throw new CodeError(`Não consegui guardar o estado da worktree: ${clip(commit.stderr)}`, 500);
+  if (commit.code !== 0) throw new CodeError(codeText("snapshotFailed", { reason: clip(commit.stderr) }), 500);
   return commit.stdout.trim();
 }
 
@@ -63,14 +60,14 @@ export async function prepareMacSync(cwd: string): Promise<MacSyncPlan> {
   if ((await output(cwd, ["rev-parse", "--is-inside-work-tree"])) !== "true") return { kind: "plain" };
   await applyPendingSync(cwd);
   const repo = githubRepoOf(await output(cwd, ["config", "--get", "remote.origin.url"]));
-  if (!repo) return { kind: "refused", message: noGithubMessage };
+  if (!repo) return { kind: "refused", message: codeText("macNoGithub") };
   const branch = await output(cwd, ["symbolic-ref", "--short", "HEAD"]);
-  if (!branch) return { kind: "refused", message: detachedMessage };
+  if (!branch) return { kind: "refused", message: codeText("macDetached") };
   const commit = await snapshotCommit(cwd);
   const ref = syncRefOf(branch);
   const pushed = await git(cwd, ["push", "--no-verify", "--quiet", "--force", "origin", `${commit}:${ref}`], 180_000);
   if (pushed.code !== 0)
-    return { kind: "refused", message: `Não consegui mandar o código para o GitHub: ${clip(pushed.stderr)}` };
+    return { kind: "refused", message: codeText("syncPushFailed", { reason: clip(pushed.stderr) }) };
   await git(cwd, ["update-ref", ref, commit]);
   const [, name = repo] = repo.split("/");
   return {
@@ -81,9 +78,9 @@ export async function prepareMacSync(cwd: string): Promise<MacSyncPlan> {
 
 export async function applySync(cwd: string, { ref, commit }: SyncResult) {
   const fetched = await git(cwd, ["fetch", "--quiet", "--no-tags", "origin", `+${ref}:${ref}`], 180_000);
-  if (fetched.code !== 0) throw new CodeError(`Não consegui baixar o código do Mac: ${clip(fetched.stderr)}`, 502);
+  if (fetched.code !== 0) throw new CodeError(codeText("syncFetchFailed", { reason: clip(fetched.stderr) }), 502);
   const parent = await output(cwd, ["rev-parse", `${commit}^`]);
-  if (!parent) throw new CodeError("O código do Mac chegou incompleto.", 502);
+  if (!parent) throw new CodeError(codeText("syncIncomplete"), 502);
   const head = await output(cwd, ["rev-parse", "HEAD"]);
   if (parent !== head && (await isAncestor(cwd, head, parent))) await git(cwd, ["reset", "--quiet", parent]);
   await restoreTree(cwd, commit);

@@ -1,4 +1,6 @@
 import { notFound, type Req, type Res, readBody, runelayFailure, sendFile, sendJson } from "../../../shared/http";
+import { conversationsText } from "../../conversations/constants/conversations-messages.constants";
+import { connectorsText } from "../constants/connectors-messages.constants";
 import {
   connectorLogo,
   getCatalog,
@@ -27,7 +29,7 @@ export async function handleConnectorActions(req: Req, res: Res, url: URL, metho
     }
     const name = parts[1] ?? "";
     if (!/^[a-z0-9_-]{1,60}$/.test(name))
-      return sendJson(res, 400, { ok: false, error: "Nome de conector inválido.", field: "name" });
+      return sendJson(res, 400, { ok: false, error: connectorsText("nameInvalid"), field: "name" });
     if (parts.length === 3 && parts[2] === "install" && method === "POST") {
       const body = ((await readBody(req).catch(() => undefined)) ?? {}) as { token?: unknown };
       const connectorToken = typeof body.token === "string" && body.token.trim() ? body.token.trim() : undefined;
@@ -47,7 +49,7 @@ export async function handleConnectorActions(req: Req, res: Res, url: URL, metho
 
 export async function handleConnections(req: Req, res: Res, url: URL, method: string) {
   if (method === "POST") await readBody(req).catch(() => undefined);
-  if (!runelayEnabled()) return sendJson(res, 503, { ok: false, error: "runelay não está configurado no servidor." });
+  if (!runelayEnabled()) return sendJson(res, 503, { ok: false, error: conversationsText("runelayMissing") });
   try {
     return sendJson(res, 200, await listConnections(method === "POST" || url.searchParams.get("refresh") === "1"));
   } catch (error) {

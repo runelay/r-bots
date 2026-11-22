@@ -15,11 +15,11 @@ enum LauncherDestination: String, CaseIterable, Identifiable {
         switch self {
         case .git: "GitHub"
         case .linear: "Linear"
-        case .agenda: "Agenda"
-        case .notes: "Notas e planilhas"
-        case .routines: "Rotinas"
-        case .connectors: "Conectores"
-        case .usage: "Uso"
+        case .agenda: tr("Agenda")
+        case .notes: tr("Notas e planilhas")
+        case .routines: tr("Rotinas")
+        case .connectors: tr("Conectores")
+        case .usage: tr("Uso")
         }
     }
 
@@ -120,7 +120,7 @@ private struct LauncherPanel: View {
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
-                BoardIconButton(systemImage: "xmark", help: "Fechar (Esc)", action: close)
+                BoardIconButton(systemImage: "xmark", help: tr("Fechar (Esc)"), action: close)
             }
 
             VStack(spacing: Spacing.xxs) {
@@ -208,42 +208,42 @@ private struct LauncherPanel: View {
             let store = GitHubStore.shared
             if let counts = store.summary {
                 if counts.review > 0 {
-                    return counts.review == 1 ? "1 PR esperando sua revisão" : "\(counts.review) PRs esperando sua revisão"
+                    return counts.review == 1 ? tr("1 PR esperando sua revisão") : tr("%lld PRs esperando sua revisão", counts.review)
                 }
                 if counts.mine > 0 {
-                    return counts.mine == 1 ? "1 PR seu aberto" : "\(counts.mine) PRs seus abertos"
+                    return counts.mine == 1 ? tr("1 PR seu aberto") : tr("%lld PRs seus abertos", counts.mine)
                 }
-                return "Nenhum PR pendente"
+                return tr("Nenhum PR pendente")
             }
-            if store.summaryError != nil { return "Não deu para falar com o GitHub" }
-            return "Carregando…"
+            if store.summaryError != nil { return tr("Não deu para falar com o GitHub") }
+            return tr("Carregando…")
         case .linear:
             let store = LinearStore.shared
             if let summary = store.summary {
                 let count = "\(summary.started)\(summary.more ? "+" : "")"
-                if summary.started == 0 { return "Nada em andamento com você" }
-                return summary.started == 1 && !summary.more ? "1 issue em andamento" : "\(count) issues em andamento"
+                if summary.started == 0 { return tr("Nada em andamento com você") }
+                return summary.started == 1 && !summary.more ? tr("1 issue em andamento") : tr("%@ issues em andamento", count)
             }
             if let error = store.summaryError {
-                return error.localizedCaseInsensitiveContains("conect") ? "Conecte o Linear em Conectores" : "Não deu para falar com o Linear"
+                return error.localizedCaseInsensitiveContains("conect") ? tr("Conecte o Linear em Conectores") : tr("Não deu para falar com o Linear")
             }
-            return "Carregando…"
+            return tr("Carregando…")
         case .agenda:
-            guard let bot else { return "Crie um bot para usar a agenda" }
-            return "Semana com suas contas do Google · \(bot.name)"
+            guard let bot else { return tr("Crie um bot para usar a agenda") }
+            return tr("Semana com suas contas do Google · %@", bot.name)
         case .notes:
-            guard let bot else { return "Crie um bot para guardar notas" }
-            return "Arquivos de \(bot.name)"
+            guard let bot else { return tr("Crie um bot para guardar notas") }
+            return tr("Arquivos de %@", bot.name)
         case .routines:
-            return "Tarefas que seus bots fazem sozinhos"
+            return tr("Tarefas que seus bots fazem sozinhos")
         case .connectors:
             if case .loaded(let list) = model.connectors {
                 let ready = list.filter { $0.status == "ok" }.count
-                return ready == 1 ? "1 conta conectada" : "\(ready) contas conectadas"
+                return ready == 1 ? tr("1 conta conectada") : tr("%lld contas conectadas", ready)
             }
-            return "Catálogo de contas e ferramentas"
+            return tr("Catálogo de contas e ferramentas")
         case .usage:
-            return "Limites e consumo das contas de IA"
+            return tr("Limites e consumo das contas de IA")
         }
     }
 
@@ -265,7 +265,7 @@ private struct LauncherPanel: View {
                 }
                 if destination == .agenda {
                     ArtifactCenter.shared.open(
-                        ArtifactRef(botID: bot.id, id: BlockKind.agendaID, title: "Agenda", kind: BlockKind.agenda.rawValue, version: 1),
+                        ArtifactRef(botID: bot.id, id: BlockKind.agendaID, title: tr("Agenda"), kind: BlockKind.agenda.rawValue, version: 1),
                         client: model.client
                     )
                 } else {

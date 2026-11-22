@@ -19,27 +19,27 @@ struct ComposerView: View {
         var items: [GlassMenuItem] = []
         if !bot.isGroup {
             items.append(
-                GlassMenuItem("Trabalhar num repositório…", systemImage: "arrow.triangle.branch") {
+                GlassMenuItem(tr("Trabalhar num repositório…"), systemImage: "arrow.triangle.branch") {
                     model.activeSheet = .repoPicker(bot.id)
                 })
             if store.codeState?.workspace != nil {
                 items.append(
-                    GlassMenuItem("Ver mudanças", systemImage: "plusminus") {
+                    GlassMenuItem(tr("Ver mudanças"), systemImage: "plusminus") {
                         store.changesWorkspaceID = nil
                         model.activeSheet = .changes(bot.id)
                     })
             }
             items.append(
-                GlassMenuItem("Anexar arquivo…", systemImage: "paperclip", startsSection: true) {
+                GlassMenuItem(tr("Anexar arquivo…"), systemImage: "paperclip", startsSection: true) {
                     AttachmentPicker.choose(for: store)
                 })
         }
         items.append(
-            GlassMenuItem("Perfil de \(bot.name)", id: "profile", systemImage: "person.crop.circle", startsSection: !items.isEmpty) {
+            GlassMenuItem(tr("Perfil de %@", bot.name), id: "profile", systemImage: "person.crop.circle", startsSection: !items.isEmpty) {
                 store.onOpenProfile?()
             })
         items.append(
-            GlassMenuItem("Limpar campo", systemImage: "eraser", isEnabled: !(store.draft.isEmpty && store.composerAttachments.isEmpty)) {
+            GlassMenuItem(tr("Limpar campo"), systemImage: "eraser", isEnabled: !(store.draft.isEmpty && store.composerAttachments.isEmpty)) {
                 store.clearDraft()
             })
         return items
@@ -47,7 +47,7 @@ struct ComposerView: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: Spacing.s) {
-            GlassMenuButton(help: "Mais ações", items: { composerActions }) { _ in
+            GlassMenuButton(help: tr("Mais ações"), items: { composerActions }) { _ in
                 ComposerIcon(systemName: "plus")
             }
 
@@ -299,9 +299,9 @@ struct ComposerView: View {
             return ""
         }
         if store.isWaitingForUploads {
-            return "Enviando os anexos…"
+            return tr("Enviando os anexos…")
         }
-        return store.hasOpenQuestion ? "Digite sua resposta" : "Mensagem para \(bot.name)"
+        return store.hasOpenQuestion ? tr("Digite sua resposta") : tr("Mensagem para %@", bot.name)
     }
 
     @ViewBuilder
@@ -332,19 +332,19 @@ struct ComposerView: View {
         let target = bot
         let all =
             [
-                SlashCommand(id: "limpar", title: "/limpar", subtitle: "Começar a conversa do zero (⌘K)", systemImage: "eraser") {
+                SlashCommand(id: "limpar", title: "/limpar", subtitle: tr("Começar a conversa do zero (⌘K)"), systemImage: "eraser") {
                     if model.canClearConversation(target) {
                         model.clearConversation(target)
                     } else if target.isGroup {
-                        model.showNotice("Conversa de grupo não dá para limpar.")
+                        model.showNotice(tr("Conversa de grupo não dá para limpar."))
                     } else {
-                        model.showNotice("Essa conversa já está limpa.")
+                        model.showNotice(tr("Essa conversa já está limpa."))
                     }
                 },
-                SlashCommand(id: "novo-bot", title: "/novo-bot", subtitle: "Criar um bot novo", systemImage: "person.badge.plus") {
+                SlashCommand(id: "novo-bot", title: "/novo-bot", subtitle: tr("Criar um bot novo"), systemImage: "person.badge.plus") {
                     model.openEditor(for: nil)
                 },
-                SlashCommand(id: "repo", title: "/repo", subtitle: "Trabalhar num repositório", systemImage: "arrow.triangle.branch") {
+                SlashCommand(id: "repo", title: "/repo", subtitle: tr("Trabalhar num repositório"), systemImage: "arrow.triangle.branch") {
                     if !target.isGroup {
                         model.activeSheet = .repoPicker(target.id)
                     }
@@ -353,7 +353,7 @@ struct ComposerView: View {
             + (target.isGroup
                 ? []
                 : [
-                    SlashCommand(id: "side", title: "/side", subtitle: "Conversa secundária ao lado, com o contexto desta", systemImage: "rectangle.split.2x1") {
+                    SlashCommand(id: "side", title: "/side", subtitle: tr("Conversa secundária ao lado, com o contexto desta"), systemImage: "rectangle.split.2x1") {
                         openSide(text: store.draft.trimmingCharacters(in: .whitespacesAndNewlines))
                     }
                 ])

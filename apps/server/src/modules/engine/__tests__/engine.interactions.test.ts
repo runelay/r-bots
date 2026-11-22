@@ -17,10 +17,12 @@ import {
   track,
 } from "../../../../test/engine-turn-helpers";
 import { type FakeTurn, fakeProviders, replyWith } from "../../../../test/helpers";
+import { resetLanguageState } from "../../../shared/i18n";
 import * as decisions from "../../approvals/services/decisions.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import type { StoredSession } from "../../conversations/services/sessions.service";
 import * as threads from "../../conversations/services/threads.service";
+import { updatePreferences } from "../../settings/services/preferences.service";
 import * as uploads from "../../uploads/services/uploads.service";
 import { answer, botStatus, cancel, conversationStatus, isBusy, steerLead } from "../services/engine.service";
 import type { ApprovalResult } from "../services/mcp-gateway.service";
@@ -116,6 +118,29 @@ describe("approvals", () => {
     answer(session, "dlv_turn", card.interactionId, "approve_always");
     await idle(session);
     expect(ask.results[0]).toEqual({ choice: "approve", interactionId: card.interactionId, always: true });
+  });
+
+  test("labels the card options in the stored language", async () => {
+    await updatePreferences({ language: "en" });
+    try {
+      const bot = await makeBot();
+      const session = await newSession(bot.id);
+      const ask = asking("Can I run it?", { untilTurnEnd: true });
+      fakeProviders.next(ask.script);
+      send(session);
+      const card = await nextInteraction(session);
+      expect((card.request.options as Array<{ label: string }>).map((option) => option.label)).toEqual([
+        "Approve",
+        "Allow until the task ends",
+        "Deny",
+      ]);
+      expect(lastRequest().systemPrompt).toContain("Always reply to the person in English");
+      answer(session, "dlv_en", card.interactionId, "deny");
+      await idle(session);
+    } finally {
+      await updatePreferences({ language: "system" });
+      resetLanguageState();
+    }
   });
 
   test("asks for a secret and records a denial", async () => {

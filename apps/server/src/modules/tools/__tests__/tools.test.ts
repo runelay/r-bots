@@ -14,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
 import { toolsDir } from "../../../config/env";
+import { withLanguage } from "../../../shared/i18n";
 import { requiresOwner } from "../../auth/services/policy.service";
 import { cutoutRuntime } from "../../images/services/cutout.service";
 import type { SpawnResult } from "../../providers/types/providers.types";
@@ -281,6 +282,7 @@ describe("chrome", () => {
   test("on arm64 uses the system chromium or fails with a clear message", async () => {
     useToolDeps({ ...fakes(), arch: () => "arm64" });
     await expect(ensureTool("chrome")).rejects.toThrow("Use o chromium do sistema");
+    await expect(withLanguage("en", () => ensureTool("chrome"))).rejects.toThrow("Use the system chromium");
     expect(() => startInstall("chrome")).toThrow(ToolError);
     which.chromium = "/usr/bin/chromium";
     expect(await ensureTool("chrome")).toBe("/usr/bin/chromium");

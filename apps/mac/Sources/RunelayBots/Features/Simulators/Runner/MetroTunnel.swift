@@ -22,7 +22,7 @@ final class MetroTunnel: @unchecked Sendable {
                 return port
             }
         }
-        throw NSError(domain: "runelay.tunnel", code: 1, userInfo: [NSLocalizedDescriptionKey: "Não consegui abrir a porta local para o Metro."])
+        throw NSError(domain: "runelay.tunnel", code: 1, userInfo: [NSLocalizedDescriptionKey: tr("Não consegui abrir a porta local para o Metro.")])
     }
 
     func closeAll() {
@@ -80,6 +80,7 @@ final class MetroTunnel: @unchecked Sendable {
             return
         }
         var request = URLRequest(url: url)
+        request.setAppLanguage()
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let socket = session.webSocketTask(with: request)
         socket.maximumMessageSize = 64 * 1024 * 1024

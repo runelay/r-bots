@@ -9,10 +9,10 @@ struct DevServerInfo: Identifiable, Equatable, Hashable, Sendable {
 
         var label: String {
             switch self {
-            case .starting: "Subindo"
-            case .running: "No ar"
-            case .exited: "Caiu"
-            case .stopped: "Parado"
+            case .starting: tr("Subindo")
+            case .running: tr("No ar")
+            case .exited: tr("Caiu")
+            case .stopped: tr("Parado")
             }
         }
 
@@ -108,7 +108,7 @@ enum ServerTool {
         case "rust": "Cargo"
         case "go": "Go"
         case "node": "Node"
-        default: "Processo"
+        default: tr("Processo")
         }
     }
 }

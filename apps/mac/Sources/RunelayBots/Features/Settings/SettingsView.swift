@@ -9,10 +9,10 @@ enum SettingsRoute: Hashable {
     @MainActor
     var title: String {
         switch self {
-        case .profile(let id): ServerProfiles.shared.profile(id: id)?.name ?? "Servidor"
-        case .addProfile: "Adicionar servidor"
+        case .profile(let id): ServerProfiles.shared.profile(id: id)?.name ?? tr("Servidor")
+        case .addProfile: tr("Adicionar servidor")
         case .secret(let name): name
-        case .newSecret: "Novo segredo"
+        case .newSecret: tr("Novo segredo")
         }
     }
 }
@@ -41,10 +41,10 @@ enum SettingsSectionGroup: Int, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .account: "Conta e servidor"
-        case .app: "App"
-        case .automation: "Bots e automação"
-        case .about: "Sobre"
+        case .account: tr("Conta e servidor")
+        case .app: tr("App")
+        case .automation: tr("Bots e automação")
+        case .about: tr("Sobre")
         }
     }
 }
@@ -96,10 +96,14 @@ extension SettingsSection {
     }
 
     var keywords: [String] {
+        keywordKeys.map { tr($0) }
+    }
+
+    private var keywordKeys: [String] {
         switch self {
         case .server: ["perfil", "endereço", "local", "vps", "conexão", "latência", "motor", "modelo", "padrão"]
         case .account: ["senha", "foto", "sair", "login", "primeiros passos"]
-        case .appearance: ["tema", "escuro", "claro", "movimento", "texto", "fonte"]
+        case .appearance: ["tema", "escuro", "claro", "movimento", "texto", "fonte", "idioma", "language", "português", "english"]
         case .notifications: ["avisos", "respostas", "aprovações", "rotinas", "erros"]
         case .bots: ["arquivados", "ocultos", "excluídos", "restaurar", "novo bot", "editar", "rodar", "este mac", "onde roda", "runner"]
         case .aiAccounts: ["contas", "claude", "codex", "grok", "cursor", "modelos", "padrão", "adicionar"]
@@ -115,14 +119,16 @@ extension SettingsSection {
 
     var info: String? {
         switch self {
-        case .server: "Cada servidor guarda o próprio login neste Mac. Trocar de servidor recarrega o app sem misturar bots, conversas e caches. Atalho: ⌃⌘1 a ⌃⌘9."
+        case .server: tr("Cada servidor guarda o próprio login neste Mac. Trocar de servidor recarrega o app sem misturar bots, conversas e caches. Atalho: ⌃⌘1 a ⌃⌘9.")
         case .computer:
-            "Bots com \"Seu Mac\" ligado podem ver a tela, clicar, digitar e mexer nas pastas liberadas. O botão Parar aparece no topo da tela enquanto um bot age. Depois de reinstalar o app, o macOS pode pedir as permissões de novo."
-        case .aiAccounts: "As contas de IA logadas no servidor. Cada bot escolhe uma conta e um modelo; se ela acabar ou cair, o pedido segue na outra conta do mesmo provedor."
-        case .vault: "Os valores ficam no Keychain deste Mac e nunca aparecem sem Touch ID. Abrir o cofre pede confirmação e ele tranca de novo em 5 minutos ou quando o app sai da frente."
-        case .integrations: "Serviços opcionais. Os bots funcionam sem eles; cada chave liga uma parte a mais. A chave fica cifrada no servidor e nunca volta para o app."
-        case .notifications: "O número no ícone do Dock mostra o total de mensagens não lidas."
-        case .versions: "O r/bots atualiza com um comando no servidor. Os CLIs dos bots atualizam por aqui, sem reiniciar nada: o próximo pedido já usa a versão nova."
+            tr(
+                "Bots com \"Seu Mac\" ligado podem ver a tela, clicar, digitar e mexer nas pastas liberadas. O botão Parar aparece no topo da tela enquanto um bot age. Depois de reinstalar o app, o macOS pode pedir as permissões de novo."
+            )
+        case .aiAccounts: tr("As contas de IA logadas no servidor. Cada bot escolhe uma conta e um modelo; se ela acabar ou cair, o pedido segue na outra conta do mesmo provedor.")
+        case .vault: tr("Os valores ficam no Keychain deste Mac e nunca aparecem sem Touch ID. Abrir o cofre pede confirmação e ele tranca de novo em 5 minutos ou quando o app sai da frente.")
+        case .integrations: tr("Serviços opcionais. Os bots funcionam sem eles; cada chave liga uma parte a mais. A chave fica cifrada no servidor e nunca volta para o app.")
+        case .notifications: tr("O número no ícone do Dock mostra o total de mensagens não lidas.")
+        case .versions: tr("O r/bots atualiza com um comando no servidor. Os CLIs dos bots atualizam por aqui, sem reiniciar nada: o próximo pedido já usa a versão nova.")
         default: nil
         }
     }
@@ -287,7 +293,7 @@ struct SettingsScreen: View {
                 .transition(.opacity)
             }
             Spacer(minLength: 0)
-            RoundIconButton(systemImage: "xmark", help: "Fechar ajustes", size: 28) {
+            RoundIconButton(systemImage: "xmark", help: tr("Fechar ajustes"), size: 28) {
                 model.closeSettings()
             }
         }
@@ -358,7 +364,7 @@ struct SettingsScreen: View {
                 if isOwner {
                     VersionsSettings()
                 } else {
-                    EmptyStateView(systemImage: "lock", title: "Só para a dona da conta", description: "Quem cuida do servidor vê e atualiza as versões por aqui.")
+                    EmptyStateView(systemImage: "lock", title: tr("Só para a dona da conta"), description: tr("Quem cuida do servidor vê e atualiza as versões por aqui."))
                 }
             case .about: AboutSettings()
             }
@@ -778,7 +784,7 @@ struct AppearanceSettings: View {
 
     var body: some View {
         SettingsGroup {
-            SettingsRow(title: "Tema", icon: SettingsIcon("circle.lefthalf.filled", SettingsTint.slate)) {
+            SettingsRow(title: tr("Tema"), icon: SettingsIcon("circle.lefthalf.filled", SettingsTint.slate)) {
                 SettingsSegmented(
                     options: AppearancePreference.allCases,
                     selection: Binding(
@@ -788,7 +794,17 @@ struct AppearanceSettings: View {
                     title: \.title
                 )
             }
-            SettingsRow(title: "Reduzir movimento", icon: SettingsIcon("wind", SettingsTint.teal), info: "Troca molas e ondas por transições curtas.") {
+            SettingsRow(title: tr("Idioma"), icon: SettingsIcon("globe", SettingsTint.blue)) {
+                SettingsSegmented(
+                    options: AppLanguage.allCases,
+                    selection: Binding(
+                        get: { LanguageStore.shared.selection },
+                        set: { LanguageStore.shared.select($0) }
+                    ),
+                    title: \.title
+                )
+            }
+            SettingsRow(title: tr("Reduzir movimento"), icon: SettingsIcon("wind", SettingsTint.teal), info: tr("Troca molas e ondas por transições curtas.")) {
                 SettingsSegmented(
                     options: MotionPreference.allCases,
                     selection: Binding(
@@ -798,7 +814,7 @@ struct AppearanceSettings: View {
                     title: \.title
                 )
             }
-            SettingsRow(title: "Texto da conversa", icon: SettingsIcon("textformat.size", SettingsTint.indigo)) {
+            SettingsRow(title: tr("Texto da conversa"), icon: SettingsIcon("textformat.size", SettingsTint.indigo)) {
                 SettingsSegmented(
                     options: ConversationTextSize.allCases,
                     selection: Binding(
@@ -828,18 +844,18 @@ struct ShortcutsSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
-            SettingsGroup(caption: "Voz") {
-                SettingsRow(title: "Enviar ao terminar de falar", icon: SettingsIcon("waveform", SettingsTint.red), info: "Manda a mensagem sozinha depois de 1,2 s de silêncio.") {
-                    SettingsToggle(title: "Enviar ao terminar de falar", isOn: $voiceAutoSend)
+            SettingsGroup(caption: tr("Voz")) {
+                SettingsRow(title: tr("Enviar ao terminar de falar"), icon: SettingsIcon("waveform", SettingsTint.red), info: tr("Manda a mensagem sozinha depois de 1,2 s de silêncio.")) {
+                    SettingsToggle(title: tr("Enviar ao terminar de falar"), isOn: $voiceAutoSend)
                 }
                 MicrophoneSettingRow {
                     VoiceCall.shared.microphoneChanged()
                 }
             }
-            SettingsGroup(caption: "Teclado") {
+            SettingsGroup(caption: tr("Teclado")) {
                 ForEach(shortcuts, id: \.0) { shortcut in
-                    SettingsRow(title: shortcut.0, icon: SettingsIcon(shortcut.1, SettingsTint.graphite)) {
-                        Text(shortcut.2)
+                    SettingsRow(title: tr(shortcut.0), icon: SettingsIcon(shortcut.1, SettingsTint.graphite)) {
+                        Text(tr(shortcut.2))
                             .font(TypeScale.counter)
                             .foregroundStyle(Theme.textSecondary)
                             .padding(.horizontal, Spacing.s)
@@ -868,11 +884,11 @@ struct AboutSettings: View {
                 }
             }
             SettingsGroup {
-                SettingsRow(title: "App para Mac", icon: SettingsIcon("macwindow", SettingsTint.graphite)) {
+                SettingsRow(title: tr("App para Mac"), icon: SettingsIcon("macwindow", SettingsTint.graphite)) {
                     SettingsValue(text: AppInfo.version)
                 }
                 if let version = model.meta.version {
-                    SettingsRow(title: "Servidor", icon: SettingsIcon("server.rack", SettingsTint.blue)) {
+                    SettingsRow(title: tr("Servidor"), icon: SettingsIcon("server.rack", SettingsTint.blue)) {
                         SettingsValue(text: version)
                     }
                 }
@@ -906,10 +922,10 @@ struct ConnectionStatusLine: View {
 
     private var label: String {
         switch status {
-        case .unknown: "Ainda não testado"
-        case .checking: "Conectando…"
-        case .online(let count): count == 1 ? "Conectado, 1 bot" : "Conectado, \(count) bots"
-        case .offline(let message): "Sem conexão. \(message)"
+        case .unknown: tr("Ainda não testado")
+        case .checking: tr("Conectando…")
+        case .online(let count): count == 1 ? tr("Conectado, 1 bot") : tr("Conectado, %lld bots", count)
+        case .offline(let message): tr("Sem conexão. %@", message)
         }
     }
 }
@@ -920,13 +936,14 @@ struct NotificationSettings: View {
             if !Notifier.shared.isAvailable {
                 SettingsGroup {
                     SettingsRow(
-                        title: "Só no app instalado", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: "As notificações funcionam no r/bots instalado em Aplicativos."
+                        title: tr("Só no app instalado"), icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber),
+                        detail: tr("As notificações funcionam no r/bots instalado em Aplicativos.")
                     ) {
                         EmptyView()
                     }
                 }
             }
-            SettingsGroup(caption: "Avisar quando") {
+            SettingsGroup(caption: tr("Avisar quando")) {
                 ForEach(NotificationPreference.allCases) { preference in
                     NotificationToggleRow(preference: preference)
                 }
@@ -975,16 +992,16 @@ struct MacLinkStatus: View {
 
     private var label: String {
         switch state {
-        case .connecting: "Conectando"
-        case .connected: "Conectado"
-        case .offline: "Desconectado"
+        case .connecting: tr("Conectando")
+        case .connected: tr("Conectado")
+        case .offline: tr("Desconectado")
         }
     }
 
     private var help: String {
         switch state {
-        case .connecting: "Conectando o Mac ao servidor…"
-        case .connected: "Mac conectado ao servidor"
+        case .connecting: tr("Conectando o Mac ao servidor…")
+        case .connected: tr("Mac conectado ao servidor")
         case .offline(let message): message
         }
     }

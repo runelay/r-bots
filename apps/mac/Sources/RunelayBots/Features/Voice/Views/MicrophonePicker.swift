@@ -18,7 +18,7 @@ struct MicrophonePicker: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.bottom, 2)
             }
-            row(nil, title: "Padrão do sistema", detail: catalog.systemName.isEmpty ? nil : catalog.systemName)
+            row(nil, title: tr("Padrão do sistema"), detail: catalog.systemName.isEmpty ? nil : catalog.systemName)
             ForEach(catalog.devices) { microphone in
                 row(microphone, title: microphone.name, detail: nil)
             }
@@ -76,7 +76,7 @@ struct MicrophonePicker: View {
         }
         .buttonStyle(.plain)
         .clickable()
-        .accessibilityLabel(isSelected ? "\(title), escolhido" : title)
+        .accessibilityLabel(isSelected ? tr("%@, escolhido", title) : title)
     }
 }
 
@@ -108,10 +108,10 @@ struct MicrophoneSettingRow: View {
     @State private var isVisible = false
     var body: some View {
         SettingsRow(
-            title: "Microfone",
+            title: tr("Microfone"),
             icon: SettingsIcon("mic.fill", SettingsTint.red),
             detail: catalog.lostName.map(Microphones.lostNotice),
-            info: "Fale algo: a barra do microfone escolhido tem que mexer."
+            info: tr("Fale algo: a barra do microfone escolhido tem que mexer.")
         ) {
             HStack(spacing: Spacing.m) {
                 MicrophoneLevelBar(meter: meter, width: 64, isActive: isVisible)
@@ -142,7 +142,7 @@ struct MicrophoneSettingRow: View {
     }
 
     private var systemTitle: String {
-        catalog.systemName.isEmpty ? "Padrão do sistema" : "Padrão do sistema (\(catalog.systemName))"
+        catalog.systemName.isEmpty ? tr("Padrão do sistema") : tr("Padrão do sistema (%@)", catalog.systemName)
     }
 
     private var currentTitle: String {
@@ -166,7 +166,7 @@ struct MicrophoneSettingRow: View {
                 }
             ),
             title: currentTitle,
-            help: "Escolher o microfone",
+            help: tr("Escolher o microfone"),
             maxWidth: 240,
             edge: .trailing
         )

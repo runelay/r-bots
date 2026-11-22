@@ -140,9 +140,9 @@ struct Connector: Identifiable, Hashable, Sendable, Decodable {
 
     var statusLabel: String {
         switch status {
-        case "ok": "Conectado"
-        case "needs_auth": "Reconectar"
-        default: "Erro"
+        case "ok": tr("Conectado")
+        case "needs_auth": tr("Reconectar")
+        default: tr("Erro")
         }
     }
 }
@@ -471,21 +471,23 @@ struct ServerMeta: Equatable, Sendable, Decodable {
 
     var engineLabel: String? {
         switch engine {
-        case "claude-agent-sdk": "Claude · assinatura"
-        case "multi-provider": "Vários provedores"
+        case "claude-agent-sdk": tr("Claude · assinatura")
+        case "multi-provider": tr("Vários provedores")
         case "eve": "eve"
         case .some(let value): value
         case .none: nil
         }
     }
 
-    static let fallback = ServerMeta(
-        accents: ["electric", "teal", "violet", "royal", "sky", "indigo"],
-        capabilities: [
-            MetaCapability(id: "browser", label: "Navegador", description: "Abre páginas, clica, preenche e tira print."),
-            MetaCapability(id: "delegate", label: "Delegar", description: "Passa partes do trabalho para outros bots do time."),
-        ]
-    )
+    static var fallback: ServerMeta {
+        ServerMeta(
+            accents: ["electric", "teal", "violet", "royal", "sky", "indigo"],
+            capabilities: [
+                MetaCapability(id: "browser", label: tr("Navegador"), description: tr("Abre páginas, clica, preenche e tira print.")),
+                MetaCapability(id: "delegate", label: tr("Delegar"), description: tr("Passa partes do trabalho para outros bots do time.")),
+            ]
+        )
+    }
 }
 
 struct BotSchedule: Identifiable, Hashable, Sendable, Decodable {
@@ -591,10 +593,10 @@ enum BotStatus: Int, Comparable, Sendable {
 
     var label: String {
         switch self {
-        case .idle: "Disponível"
-        case .working: "Trabalhando"
-        case .awaitingApproval: "Esperando aprovação"
-        case .error: "Com erro"
+        case .idle: tr("Disponível")
+        case .working: tr("Trabalhando")
+        case .awaitingApproval: tr("Esperando aprovação")
+        case .error: tr("Com erro")
         }
     }
 }

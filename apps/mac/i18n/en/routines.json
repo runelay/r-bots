@@ -1,0 +1,14 @@
+{
+  "%lld rotinas": "%lld routines",
+  "1 rotina": "1 routine",
+  "Nenhuma rotina ainda": "No routines yet",
+  "O que o time roda sozinho, na ordem em que vai rodar.": "What the team runs on its own, in the order it will run.",
+  "Peça a um bot para rodar algo todo dia, ou crie a rotina no perfil dele.": "Ask a bot to run something every day, or create the routine in its profile.",
+  "Rodando…": "Running…",
+  "Rodar %@ agora": "Run %@ now",
+  "Rodar agora": "Run now",
+  "Sem horário": "No time set",
+  "em %lld d": "in %lld d",
+  "em %lld h": "in %lld h",
+  "rodando": "running"
+}

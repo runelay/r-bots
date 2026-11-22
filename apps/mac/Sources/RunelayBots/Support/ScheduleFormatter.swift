@@ -1,7 +1,7 @@
 import Foundation
 
 enum ScheduleFormatter {
-    private static let locale = Locale(identifier: "pt_BR")
+    private static var locale: Locale { LanguageStore.shared.locale }
 
     static func nextDate(for schedule: BotSchedule, now: Date) -> Date? {
         var scheduleCalendar = Calendar(identifier: .gregorian)
@@ -11,8 +11,8 @@ enum ScheduleFormatter {
 
     static func dayLabel(_ date: Date) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) { return "Hoje" }
-        if calendar.isDateInTomorrow(date) { return "Amanhã" }
+        if calendar.isDateInToday(date) { return tr("Hoje") }
+        if calendar.isDateInTomorrow(date) { return tr("Amanhã") }
         let text = date.formatted(Date.FormatStyle().weekday(.wide).day().month(.wide).locale(locale))
         return text.prefix(1).uppercased() + text.dropFirst()
     }
@@ -33,19 +33,19 @@ enum ScheduleFormatter {
         let interval = next.timeIntervalSince(now)
         if interval < 60 * 60 {
             let minutes = max(1, Int((interval / 60).rounded(.up)))
-            return "em \(minutes) min"
+            return tr("em %lld min", minutes)
         }
 
         let calendar = Calendar.current
         let time = next.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale))
         if calendar.isDateInToday(next) {
-            return "hoje às \(time)"
+            return tr("hoje às %@", time)
         }
         if calendar.isDateInTomorrow(next) {
-            return "amanhã às \(time)"
+            return tr("amanhã às %@", time)
         }
         let weekday = next.formatted(Date.FormatStyle().weekday(.wide).locale(locale))
-        return "\(weekday) às \(time)"
+        return tr("%@ às %@", weekday, time)
     }
 
     private static func fallback(for schedule: BotSchedule) -> String {

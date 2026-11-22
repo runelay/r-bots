@@ -231,6 +231,11 @@ describe("POST /bots/:id/schedules/:name/run", () => {
     const missing = await request(`/bots/${bot.id}/schedules/outra/run`, { method: "POST" });
     expect(missing.status).toBe(404);
     expect(missing.body).toEqual({ ok: false, error: "Rotina não encontrada." });
+    const english = await request(`/bots/${bot.id}/schedules/outra/run`, {
+      method: "POST",
+      headers: { "accept-language": "en" },
+    });
+    expect(english.body).toEqual({ ok: false, error: "Routine not found." });
     expect((await request(`/bots/${bot.id}/schedules/diaria/run`)).status).toBe(404);
     expect((await request(`/bots/${bot.id}/schedules/diaria/go`, { method: "POST" })).status).toBe(404);
   });

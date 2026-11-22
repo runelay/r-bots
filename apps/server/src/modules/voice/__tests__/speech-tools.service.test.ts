@@ -4,6 +4,7 @@ import { z } from "zod";
 import { fakeProcesses, resetData } from "../../../../test/helpers";
 import { mediaTools } from "../../../../test/media-helpers";
 import { getDb, tables } from "../../../db";
+import { withLanguage } from "../../../shared/i18n";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { fileEventOf, uploadGuide, uploadTools } from "../../uploads/services/uploads.service";
 import { maxSpeechChars, speechFileName, speechTools, synthesizeSpeech } from "../services/speech-tools.service";
@@ -125,6 +126,7 @@ describe("speech_create", () => {
   test("labels, shape and guide", async () => {
     expect(await tool().label({ title: "Nota" })).toBe("Gerar áudio: Nota");
     expect(await tool().label({})).toBe("Gerar áudio");
+    expect(await withLanguage("en", () => tool().label({ title: "Note" }))).toBe("Generate audio: Note");
     expect(tool().approval).toBeNull();
     const shape = z.object(tool().shape);
     expect(shape.safeParse({ text: "x".repeat(maxSpeechChars + 1) }).success).toBe(false);

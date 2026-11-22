@@ -6,17 +6,17 @@ struct ComputerSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
-            SettingsGroup(caption: "Permissões do macOS") {
+            SettingsGroup(caption: tr("Permissões do macOS")) {
                 ForEach(ComputerPermission.allCases) { permission in
                     ComputerPermissionRow(permission: permission, isGranted: activity.permissions.isGranted(permission))
                 }
             }
 
-            SettingsGroup(caption: "Neste Mac") {
-                SettingsRow(title: "Executor local", icon: SettingsIcon("bolt.fill", SettingsTint.amber), info: executorInfo) {
+            SettingsGroup(caption: tr("Neste Mac")) {
+                SettingsRow(title: tr("Executor local"), icon: SettingsIcon("bolt.fill", SettingsTint.amber), info: executorInfo) {
                     SettingsPill(text: executorLabel, color: executorColor, pulsing: isStarting)
                 }
-                SettingsRow(title: "Gravações", icon: SettingsIcon("film.fill", SettingsTint.red), info: "Os vídeos que os bots gravam ficam em ~/Movies/runelay bots.") {
+                SettingsRow(title: tr("Gravações"), icon: SettingsIcon("film.fill", SettingsTint.red), info: tr("Os vídeos que os bots gravam ficam em ~/Movies/runelay bots.")) {
                     Button {
                         let folder = ScreenRecorder.folder
                         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -44,15 +44,15 @@ struct ComputerSettings: View {
 
     private var executorLabel: String {
         switch activity.executor {
-        case .starting: "Iniciando"
-        case .running: "Ativo"
-        case .failed: "Parado"
+        case .starting: tr("Iniciando")
+        case .running: tr("Ativo")
+        case .failed: tr("Parado")
         }
     }
 
     private var executorInfo: String {
         switch activity.executor {
-        case .starting, .running: "Recebe as ações dos bots pela conexão com o servidor."
+        case .starting, .running: tr("Recebe as ações dos bots pela conexão com o servidor.")
         case .failed(let message): message
         }
     }
@@ -81,7 +81,7 @@ struct ComputerPermissionRow: View {
     var body: some View {
         SettingsRow(title: permission.title, icon: icon, info: permission.detail) {
             HStack(spacing: Spacing.s) {
-                SettingsPill(text: isGranted ? "Liberada" : "Falta", color: isGranted ? Theme.success : Theme.warning)
+                SettingsPill(text: isGranted ? tr("Liberada") : tr("Falta"), color: isGranted ? Theme.success : Theme.warning)
                 if !isGranted {
                     Button("Liberar") {
                         Task { await ComputerPermissionsSnapshot.request(permission) }

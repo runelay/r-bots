@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { fakeJev, stopJev } from "../../../../test/engine-helpers";
+import { withLanguage } from "../../../shared/i18n";
 import {
   type ApprovalState,
   decideApproval,
@@ -34,6 +35,13 @@ function score(value: number, confidence: number) {
 }
 
 describe("hardHumanReason", () => {
+  test("explains in the saved language", () => {
+    expect(withLanguage("en", () => hardHumanReason("browser_fill", { text: "x" }, 'textbox "Senha"'))).toBe(
+      "Sensitive field (password, card, ID document or token).",
+    );
+    expect(withLanguage("en", () => askedReason("push"))).toBe("You asked for the push.");
+  });
+
   test("flags sensitive fills and dangerous clicks", () => {
     expect(hardHumanReason("browser_fill", { text: "x" }, 'textbox "Senha"')).toBe(
       "Campo sensível (senha, cartão, documento ou token).",

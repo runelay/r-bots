@@ -11,6 +11,7 @@ import {
   writeArtifactContent,
 } from "../../artifacts/services/artifacts.service";
 import type { BotTool } from "../../engine/services/bot-tools.service";
+import { canvasText } from "../constants/canvas-messages.constants";
 
 export type CanvasLayout = "flow" | "mindmap" | "diagram";
 export type NodeShape = "box" | "round" | "diamond" | "ellipse" | "note";
@@ -1021,7 +1022,7 @@ export function canvasTools(botId: string): BotTool[] {
         groups: z.array(groupInput).max(40).optional(),
       },
       approval: null,
-      label: (input) => `Criar canvas: ${String(input.title ?? "")}`,
+      label: (input) => canvasText("create", { title: String(input.title ?? "") }),
       run: async (input) => {
         const { meta, doc } = await createCanvas(botId, String(input.title).trim(), {
           layout: typeof input.kind === "string" ? input.kind : "diagram",
@@ -1038,7 +1039,7 @@ export function canvasTools(botId: string): BotTool[] {
         "Lê o estado ATUAL de um canvas, incluindo o que a pessoa editou no app. Use antes de alterar um canvas que a pessoa pode ter mexido.",
       shape: { id: z.string().min(1) },
       approval: null,
-      label: () => "Ler canvas",
+      label: () => canvasText("read"),
       run: async (input) => {
         const { meta, doc, userEdits, version } = await readCanvasForBot(botId, String(input.id));
         return {
@@ -1060,7 +1061,7 @@ export function canvasTools(botId: string): BotTool[] {
         title: z.string().min(1).max(120).optional(),
       },
       approval: null,
-      label: () => "Atualizar canvas",
+      label: () => canvasText("update"),
       run: async (input) => {
         const { meta, doc, userEdits } = await updateCanvas(
           botId,

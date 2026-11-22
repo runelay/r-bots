@@ -12,6 +12,7 @@ import type { Gate } from "../../code/services/policy.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
 import { registerSimulatorTools } from "../../simulators/services/simulator-tools.service";
 import { registerTestTools } from "../../tests/services/test-tools.service";
+import { serversText } from "../constants/servers-messages.constants";
 import { listProjects } from "./projects.service";
 import { listProfiles, requireServer, restart, startProjectServer, stopServer } from "./servers.service";
 
@@ -53,7 +54,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
     async () => {
       const start = await beginCall(context, {
         name: "server_list",
-        label: "Ver os servidores",
+        label: serversText("listLabel"),
         input: {},
         gate: { kind: "allow" },
       });
@@ -91,15 +92,17 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
       const gate: Gate = cmd
         ? {
             kind: "human",
-            prompt: `Posso subir este comando como servidor? ${cmd.slice(0, 160)}`,
-            reason: "Comando livre fora do package.json.",
+            prompt: serversText("startPrompt", { cmd: cmd.slice(0, 160) }),
+            reason: serversText("startReason"),
             hard: true,
           }
         : { kind: "allow" };
-      const label = String(args.profile ?? args.script ?? cmd ?? "servidor");
+      const label = String(args.profile ?? args.script ?? cmd ?? serversText("defaultWhat"));
       const start = await beginCall(context, {
         name: "server_start",
-        label: `Rodar ${String(args.project ?? "")} ${label}`.replace(/\s+/g, " ").trim(),
+        label: serversText("startLabel", { project: String(args.project ?? ""), what: label })
+          .replace(/\s+/g, " ")
+          .trim(),
         input: args,
         gate,
         target: { label, role: "command" },
@@ -167,7 +170,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
   simple(
     "server_stop",
     "Para um servidor de desenvolvimento pelo id (de server_list).",
-    (id) => `Parar o servidor ${id}`,
+    (id) => serversText("stopLabel", { id }),
     async (id) => {
       const stopped = await stopServer(id);
       emitServerCard(context, stopped);
@@ -177,7 +180,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
   simple(
     "server_restart",
     "Reinicia um servidor de desenvolvimento pelo id e espera ele responder.",
-    (id) => `Reiniciar o servidor ${id}`,
+    (id) => serversText("restartLabel", { id }),
     async (id) => {
       const { ready } = await restart(id);
       const { logs, ...view } = await ready;
@@ -199,7 +202,7 @@ export function registerServerTools(server: McpServer, context: ToolContext) {
     async (args: Record<string, unknown>) => {
       const start = await beginCall(context, {
         name: "server_logs",
-        label: "Ler o log do servidor",
+        label: serversText("logsLabel"),
         input: args,
         gate: { kind: "allow" },
       });

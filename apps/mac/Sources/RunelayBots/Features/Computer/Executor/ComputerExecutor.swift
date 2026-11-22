@@ -130,7 +130,7 @@ final class ComputerExecutor {
             try checkBarrier(call.botId)
             if usesPointer, lastUserActionAt > startedAt, case .object(var object) = result {
                 object["userInterrupted"] = .bool(true)
-                object["note"] = .string("A pessoa mexeu no Mac durante esta ação. Tire um print para conferir se deu certo antes de seguir.")
+                object["note"] = .string(tr("A pessoa mexeu no Mac durante esta ação. Tire um print para conferir se deu certo antes de seguir."))
                 result = .object(object)
             }
             return (200, .object(["ok": .bool(true), "result": result]))
@@ -209,7 +209,7 @@ final class ComputerExecutor {
         case "record_status":
             return recorder.status()
         default:
-            throw ToolFailure(404, code: "unknown_tool", "A ferramenta \(call.tool) não existe no executor.")
+            throw ToolFailure(404, code: "unknown_tool", tr("A ferramenta %@ não existe no executor.", call.tool))
         }
     }
 
@@ -232,7 +232,7 @@ final class ComputerExecutor {
                 return .object(["elementId": .string(elementId), "method": .string("ax_press")])
             }
             guard let frame else {
-                throw ToolFailure(422, code: "element_without_frame", "O elemento \(elementId) não tem posição na tela.")
+                throw ToolFailure(422, code: "element_without_frame", tr("O elemento %@ não tem posição na tela.", elementId))
             }
             let point = CGPoint(x: frame.midX, y: frame.midY)
             await input.click(at: point, button: button, double: double, restoreTo: userCursorToRestore())
@@ -240,7 +240,7 @@ final class ComputerExecutor {
             return .object(["elementId": .string(elementId), "method": .string("mouse"), "x": .point(point.x), "y": .point(point.y)])
         }
         guard let point = try optionalPoint(call) else {
-            throw ToolFailure.badArgs("Informe elementId ou x e y.")
+            throw ToolFailure.badArgs(tr("Informe elementId ou x e y."))
         }
         await overlay?.moveCursor(to: point)
         await input.click(at: point, button: button, double: double, restoreTo: userCursorToRestore())
@@ -250,7 +250,7 @@ final class ComputerExecutor {
 
     private func type(_ call: ExecutorCall) async throws -> JSONValue {
         try accessibility.requireTrusted()
-        guard var text = call.rawString("text"), !text.isEmpty else { throw ToolFailure.badArgs("Falta o campo \"text\".") }
+        guard var text = call.rawString("text"), !text.isEmpty else { throw ToolFailure.badArgs(tr("Falta o campo \"text\".")) }
         let secretRefs = VaultText.refs(in: text)
         let onlySecrets = !secretRefs.isEmpty && text.replacingOccurrences(of: "segredo:[a-z0-9][a-z0-9_-]{0,63}", with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces).isEmpty
         if !secretRefs.isEmpty {
@@ -261,7 +261,7 @@ final class ComputerExecutor {
             }
         }
         if !onlySecrets, accessibility.focusedIsSecure() || IsSecureEventInputEnabled() {
-            throw ToolFailure(403, code: "secure_field", "O foco está num campo de senha. Não digito em campo seguro, peça para a pessoa digitar.")
+            throw ToolFailure(403, code: "secure_field", tr("O foco está num campo de senha. Não digito em campo seguro, peça para a pessoa digitar."))
         }
         if let frame = accessibility.focusedFrame() {
             await overlay?.moveCursor(to: CGPoint(x: frame.minX + min(24, frame.width / 2), y: frame.midY))
@@ -314,7 +314,7 @@ final class ComputerExecutor {
         if let elementId = call.string("elementId") {
             let element = try accessibility.element(elementId, session: call.sessionId)
             guard let frame = accessibility.frame(of: element) else {
-                throw ToolFailure(422, code: "element_without_frame", "O elemento \(elementId) não tem posição na tela.")
+                throw ToolFailure(422, code: "element_without_frame", tr("O elemento %@ não tem posição na tela.", elementId))
             }
             return CGPoint(x: frame.midX, y: frame.midY)
         }
@@ -326,23 +326,23 @@ final class ComputerExecutor {
         let workspace = NSWorkspace.shared
         if let raw = call.string("url") {
             guard let url = URL(string: raw), let scheme = url.scheme?.lowercased(), scheme != "file" else {
-                throw ToolFailure.badArgs("URL inválida: \(raw). Para arquivos use path.")
+                throw ToolFailure.badArgs(tr("URL inválida: %@. Para arquivos use path.", raw))
             }
-            guard workspace.open(url) else { throw ToolFailure(500, code: "open_failed", "O macOS não abriu \(raw).") }
+            guard workspace.open(url) else { throw ToolFailure(500, code: "open_failed", tr("O macOS não abriu %@.", raw)) }
             return .object(["opened": .string(raw)])
         }
         if let raw = call.string("path") {
             let sandbox = PathSandbox(allowedRoots: call.allowedRoots)
             let url = try sandbox.resolve(raw)
             guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
-                throw ToolFailure(404, code: "not_found", "\(url.path(percentEncoded: false)) não existe.")
+                throw ToolFailure(404, code: "not_found", tr("%@ não existe.", url.path(percentEncoded: false)))
             }
-            guard workspace.open(url) else { throw ToolFailure(500, code: "open_failed", "O macOS não abriu \(raw).") }
+            guard workspace.open(url) else { throw ToolFailure(500, code: "open_failed", tr("O macOS não abriu %@.", raw)) }
             return .object(["opened": .string(url.path(percentEncoded: false))])
         }
-        guard let app = call.string("app") else { throw ToolFailure.badArgs("Informe app, url ou path.") }
+        guard let app = call.string("app") else { throw ToolFailure.badArgs(tr("Informe app, url ou path.")) }
         guard let appURL = applicationURL(app) else {
-            throw ToolFailure(404, code: "app_not_found", "Não achei o app \"\(app)\" no Mac.")
+            throw ToolFailure(404, code: "app_not_found", tr("Não achei o app \"%@\" no Mac.", app))
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
@@ -350,7 +350,7 @@ final class ComputerExecutor {
             let running = try await workspace.openApplication(at: appURL, configuration: configuration)
             return .object(["opened": .string(running.localizedName ?? app), "bundleId": running.bundleIdentifier.map(JSONValue.string) ?? .null])
         } catch {
-            throw ToolFailure(500, code: "open_failed", "Não deu para abrir \(app): \(error.localizedDescription)")
+            throw ToolFailure(500, code: "open_failed", tr("Não deu para abrir %1$@: %2$@", app, error.localizedDescription))
         }
     }
 
@@ -379,16 +379,16 @@ final class ComputerExecutor {
 
     private func applescript(_ call: ExecutorCall) throws -> JSONValue {
         let source = try call.requiredString("script")
-        guard let script = NSAppleScript(source: source) else { throw ToolFailure.badArgs("AppleScript inválido.") }
+        guard let script = NSAppleScript(source: source) else { throw ToolFailure.badArgs(tr("AppleScript inválido.")) }
         var error: NSDictionary?
         let descriptor = script.executeAndReturnError(&error)
         if let error {
             let number = error[NSAppleScript.errorNumber] as? Int ?? 0
-            let message = error[NSAppleScript.errorMessage] as? String ?? "Erro desconhecido."
+            let message = error[NSAppleScript.errorMessage] as? String ?? tr("Erro desconhecido.")
             if number == -1743 || number == -1744 {
-                throw ToolFailure(403, code: "automation_denied", "O macOS bloqueou a automação. Libere o r/bots em Ajustes do Sistema → Privacidade e Segurança → Automação.")
+                throw ToolFailure(403, code: "automation_denied", tr("O macOS bloqueou a automação. Libere o r/bots em Ajustes do Sistema → Privacidade e Segurança → Automação."))
             }
-            throw ToolFailure(422, code: "applescript_error", "AppleScript falhou (\(number)): \(message)")
+            throw ToolFailure(422, code: "applescript_error", tr("AppleScript falhou (%1$lld): %2$@", number, message))
         }
         return .object(["result": descriptor.stringValue.map(JSONValue.string) ?? .null])
     }

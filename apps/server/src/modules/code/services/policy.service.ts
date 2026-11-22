@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { dataDir, env } from "../../../config/env";
+import { type PolicyVerb, policyText } from "../constants/policy-messages.constants";
 import { hostHome, insideAllowedArea, insideHome } from "./repos.service";
 import type { WorkspaceState } from "./workspace.service";
 
@@ -180,8 +181,8 @@ function readGate(workspace: WorkspaceState, raw: unknown, cwd = workspace.path)
   if (!sensitive) return { kind: "allow" };
   return {
     kind: "human",
-    prompt: `Ler ${shownPath(workspace, path)}? Parece um arquivo com segredo.`,
-    reason: "Arquivo de segredo.",
+    prompt: policyText("readSecret", { path: shownPath(workspace, path) }),
+    reason: policyText("secretFile"),
     hard: true,
   };
 }
@@ -223,8 +224,8 @@ function writeGate(workspace: WorkspaceState, raw: unknown): Gate {
   if (outsideRepos(workspace, real) || outsideRepos(workspace, path)) return outsideDeny(workspace, path);
   return {
     kind: "human",
-    prompt: `Editar ${shownPath(workspace, path)}, fora da tarefa?`,
-    reason: "Edição fora da worktree da tarefa.",
+    prompt: policyText("editOutside", { path: shownPath(workspace, path) }),
+    reason: policyText("editOutsideReason"),
     hard: true,
   };
 }
@@ -1093,7 +1094,8 @@ function hard(prompt: string, reason: string): Verdict {
   return { kind: "human", prompt, reason, hard: true };
 }
 
-function pathVerdict(workspace: WorkspaceState, cwd: string, target: string, verb: string): Verdict | null {
+function pathVerdict(workspace: WorkspaceState, cwd: string, target: string, verbKey: PolicyVerb): Verdict | null {
+  const verb = policyText(verbKey);
   if (!target || target === "-" || target.startsWith("$SUB")) return null;
   const expanded = expand(target);
   const lexical = resolve(cwd, expanded);
@@ -1103,14 +1105,14 @@ function pathVerdict(workspace: WorkspaceState, cwd: string, target: string, ver
     /^(\/|~)/.test(target) &&
     !inWorkspace(workspace, resolve(cwd, expanded.replace(/[*?].*$/, "")))
   )
-    return hard(`${verb} ${target}, fora da tarefa?`, "Fora da worktree.");
+    return hard(policyText("outsideTask", { verb, path: target }), policyText("outsideWorktree"));
   const { real } = resolveReal(expanded, cwd);
   if (protectedPath(lexical) || protectedPath(real)) return protectedDeny(workspace, lexical) as Verdict;
   if (blocked(lexical) || blocked(real)) return blockedDeny(workspace, lexical) as Verdict;
   if (inWorkspace(workspace, real) || within("/tmp", real)) return null;
   if (outsideRepos(workspace, real) || outsideRepos(workspace, lexical))
     return outsideDeny(workspace, lexical) as Verdict;
-  return hard(`${verb} ${shownPath(workspace, lexical)}, fora da tarefa?`, "Fora da worktree.");
+  return hard(policyText("outsideTask", { verb, path: shownPath(workspace, lexical) }), policyText("outsideWorktree"));
 }
 
 function linkVerdict(workspace: WorkspaceState, cwd: string, args: string[]): Verdict | null {
@@ -1127,8 +1129,7 @@ function linkVerdict(workspace: WorkspaceState, cwd: string, args: string[]): Ve
         ? destinationReal
         : dirname(destinationReal);
   for (const source of sources) {
-    if (source.includes("$"))
-      return hard(`Criar link para um destino montado na hora: ${source}?`, "Link para fora da worktree.");
+    if (source.includes("$")) return hard(policyText("linkDynamic", { source }), policyText("linkOutsideReason"));
     const from = symbolic
       ? isAbsolute(expand(source))
         ? expand(source)
@@ -1138,7 +1139,7 @@ function linkVerdict(workspace: WorkspaceState, cwd: string, args: string[]): Ve
     if (blocked(from) || blocked(real)) return blockedDeny(workspace, from) as Verdict;
     if (protectedPath(real)) return protectedDeny(workspace, from) as Verdict;
     if (!inWorkspace(workspace, real) && !within("/tmp", real))
-      return hard(`Criar link para ${shownPath(workspace, real)}, fora da tarefa?`, "Link para fora da worktree.");
+      return hard(policyText("linkOutside", { path: shownPath(workspace, real) }), policyText("linkOutsideReason"));
   }
   return null;
 }
@@ -1241,12 +1242,12 @@ function pushVerdict(call: GitCall, line: string, branch: string, indirect: bool
     call.args.some((arg) => pushForce.test(arg) || /^--(receive-pack|exec)(=|$)/.test(arg)) ||
     pushRefs(call.args).some((ref) => ref.startsWith("+") || ref.startsWith(":") || ref.includes(":+"))
   )
-    return hard(`Forçar ou apagar no remote: ${line}?`, "Push forçado sempre passa por você.");
+    return hard(policyText("forcePush", { line }), policyText("forcePushReason"));
   const refs = pushRefs(call.args);
   if (indirect || refs.some(unknownRef))
-    return hard(`Push com destino montado na hora: ${line}?`, "Não dá para saber para qual branch vai o push.");
+    return hard(policyText("pushDynamic", { line }), policyText("pushDynamicReason"));
   const target = pushTarget(refs, branch);
-  if (target) return hard(`Push direto na ${target}?`, "Push direto em main, master ou develop sempre passa por você.");
+  if (target) return hard(policyText("pushDirect", { branch: target }), policyText("pushDirectReason"));
   return { level: "dev" };
 }
 
@@ -1254,11 +1255,7 @@ function gitVerdict(tokens: string[], workspace: WorkspaceState, indirect = fals
   const branch = workspace.branch;
   const call = parseGit(tokens.slice(1));
   const line = short(tokens.join(" "));
-  if (unsafeGitConfig(call))
-    return hard(
-      `Rodar git com configuração na linha de comando: ${line}?`,
-      "Configuração do git pode mudar para onde vai o push ou rodar programas.",
-    );
+  if (unsafeGitConfig(call)) return hard(policyText("gitConfigInline", { line }), policyText("gitConfigInlineReason"));
   const onProtected = protectedBranch.test(branch);
   const sub = call.sub;
   if (sub === "commit") {
@@ -1271,19 +1268,16 @@ function gitVerdict(tokens: string[], workspace: WorkspaceState, indirect = fals
   }
   if (sub === "push") return pushVerdict(call, line, branch, indirect);
   if (["send-pack", "http-push", "receive-pack", "upload-pack"].includes(sub))
-    return hard(`Mandar objetos direto para o remote: ${line}?`, "Push forçado sempre passa por você.");
+    return hard(policyText("sendObjects", { line }), policyText("forcePushReason"));
   if (["merge", "pull", "rebase", "cherry-pick", "revert", "am"].includes(sub) && onProtected)
-    return hard(
-      `Rodar git ${sub} direto na ${branch}?`,
-      "Mexer direto em main, master ou develop sempre passa por você.",
-    );
+    return hard(policyText("gitOnProtected", { sub, branch }), policyText("gitOnProtectedReason"));
   if (
     sub === "config" &&
     !call.args.some((arg) => ["--get", "--list", "-l", "--get-all", "--get-regexp", "--show-origin"].includes(arg))
   )
     return { kind: "deny", message: "Configuração do git é protegida: bots não mudam git config." };
   if (sub === "worktree" && call.args.some((arg) => ["remove", "prune", "move"].includes(arg)))
-    return hard(`Mexer nas worktrees: ${line}?`, "Pode apagar trabalho de outro bot.");
+    return hard(policyText("worktrees", { line }), policyText("worktreesReason"));
   return gitReadSubcommands.has(sub) ? { level: "read" } : { level: "dev" };
 }
 
@@ -1307,7 +1301,8 @@ function ghVerdict(tokens: string[]): Verdict {
   const line = short(tokens.join(" "));
   const text = tokens.join(" ");
   const action = args.filter((arg) => !arg.startsWith("-"));
-  if (action[0] === "pr" && action[1] === "merge") return hard(`Fazer merge do PR: ${line}?`, "Merge só com o seu ok.");
+  if (action[0] === "pr" && action[1] === "merge")
+    return hard(policyText("prMerge", { line }), policyText("mergeReason"));
   if (action[0] === "pr" && ["create", "edit"].includes(action[1] ?? "") && /co-authored-by|generated with/i.test(text))
     return {
       kind: "deny",
@@ -1322,20 +1317,20 @@ function ghVerdict(tokens: string[]): Verdict {
       graphql &&
       (ghMutations.test(text) || args.some((arg) => arg === "--input" || arg.startsWith("--input=") || /=@/.test(arg)))
     )
-      return hard(`Fazer merge ou mudar branch pelo GitHub: ${line}?`, "Merge só com o seu ok.");
-    if (writes && ghWritePaths.test(text)) return hard(`Fazer merge pelo GitHub: ${line}?`, "Merge só com o seu ok.");
+      return hard(policyText("githubMergeBranch", { line }), policyText("mergeReason"));
+    if (writes && ghWritePaths.test(text)) return hard(policyText("githubMerge", { line }), policyText("mergeReason"));
   }
   if (action[0] === "release" && ["create", "delete", "upload", "edit"].includes(action[1] ?? ""))
-    return hard(`Publicar release: ${line}?`, "Publicação sempre passa por você.");
+    return hard(policyText("release", { line }), policyText("releaseReason"));
   if (action[0] === "repo" && ["delete", "archive", "rename", "edit"].includes(action[1] ?? ""))
-    return hard(`Mexer no repositório do GitHub: ${line}?`, "Apaga ou muda o repositório.");
+    return hard(policyText("githubRepo", { line }), policyText("githubRepoReason"));
   if (
     ["auth", "secret", "ssh-key", "gpg-key", "variable"].includes(action[0] ?? "") &&
     !["view", "list", "status"].includes(action[1] ?? "")
   )
-    return hard(`Mexer na conta do GitHub: ${line}?`, "Conta e segredos do GitHub.");
+    return hard(policyText("githubAccount", { line }), policyText("githubAccountReason"));
   if (action[0] === "workflow" && action[1] === "run" && /deploy|prod|release/i.test(text))
-    return hard(`Isso parece um deploy: ${line}?`, "Deploy só com o seu ok.");
+    return hard(policyText("deploy", { line }), policyText("deployReason"));
   return { level: "dev" };
 }
 
@@ -1429,10 +1424,9 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
   const [command, ...args] = tokens;
   const line = short(tokens.join(" "));
   if (!command) return { level: "read" };
-  if (command.includes("$"))
-    return hard(`Rodar um comando montado na hora: ${line}?`, "Não dá para saber o que vai rodar.");
+  if (command.includes("$")) return hard(policyText("dynamicCommand", { line }), policyText("dynamicCommandReason"));
   if (segment.piped && interpreters.has(command) && !args.some((arg) => !arg.startsWith("-") && arg !== "-")) {
-    return hard(`Rodar como script o que veio de outro comando: ${line}?`, "Script vindo de um pipe.");
+    return hard(policyText("pipedScript", { line }), policyText("pipedScriptReason"));
   }
   const secret = args.find(
     (arg) =>
@@ -1442,22 +1436,21 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
   );
   if (secret)
     return hard(
-      `Mexer em ${shownPath(workspace, resolve(cwd, expand(secret)))}? Parece um arquivo com segredo.`,
-      "Arquivo de segredo.",
+      policyText("touchSecret", { path: shownPath(workspace, resolve(cwd, expand(secret))) }),
+      policyText("secretFile"),
     );
   if (subscriptCommands.has(command) && args.some((arg) => /\[.*(\$\(|`)/.test(arg)))
-    return hard(`Rodar ${line}?`, "Expressão que executa um comando escondido.");
+    return hard(policyText("run", { line }), policyText("hiddenCommand"));
   if (command === "eval" || command === "exec" || command === "source" || command === ".")
-    return hard(`Rodar ${line}?`, "Executa código montado na hora.");
+    return hard(policyText("run", { line }), policyText("evalReason"));
   if (command === "sudo" || command === "su" || command === "doas" || command === "pkexec")
-    return hard(`Rodar como administrador: ${line}?`, "sudo sempre passa por você.");
+    return hard(policyText("sudo", { line }), policyText("sudoReason"));
   if (["nohup", "disown", "setsid", "screen", "tmux"].includes(command))
     return {
       kind: "deny",
       message: "Para deixar algo rodando (servidor, watcher), use a ferramenta dev_server_start.",
     };
-  if (commandRunners.has(command))
-    return hard(`Rodar um comando por dentro de ${command}: ${line}?`, "Comando que roda outro comando por dentro.");
+  if (commandRunners.has(command)) return hard(policyText("runner", { command, line }), policyText("runnerReason"));
   if (command === "git") return gitVerdict(tokens, workspace);
   if (!readOnlyCommands.has(command)) {
     const embedded = args.indexOf("git");
@@ -1474,14 +1467,13 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
       ((args.includes("d1") || args.includes("kv") || args.includes("r2") || args.includes("queues")) &&
         !args.includes("--local"))
     ) {
-      return hard(`Isso mexe em produção (Cloudflare): ${line}. Pode rodar?`, "Deploy e produção só com o seu ok.");
+      return hard(policyText("cloudflare", { line }), policyText("cloudflareReason"));
     }
     return { level: "dev" };
   }
   if (tokens.some((arg) => /^deploy(:|$)/i.test(arg)) && !readOnlyCommands.has(command))
-    return hard(`Isso parece um deploy: ${line}. Pode rodar?`, "Deploy só com o seu ok.");
-  if (infraCommands.includes(command))
-    return hard(`Isso publica ou mexe em infraestrutura: ${line}. Pode rodar?`, "Deploy só com o seu ok.");
+    return hard(policyText("deployAsk", { line }), policyText("deployReason"));
+  if (infraCommands.includes(command)) return hard(policyText("infra", { line }), policyText("deployReason"));
   if (command === "supabase") {
     if (
       args.includes("--linked") ||
@@ -1493,7 +1485,7 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
       (args.includes("migration") && (args.includes("up") || args.includes("repair"))) ||
       args.includes("functions")
     ) {
-      return hard(`Isso mexe no Supabase de verdade: ${line}. Pode rodar?`, "Banco e funções remotas só com o seu ok.");
+      return hard(policyText("supabase", { line }), policyText("supabaseReason"));
     }
     return { level: "dev" };
   }
@@ -1502,11 +1494,11 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
     args.some((arg) => ["push", "deploy", "migrate", "drop"].includes(arg)) &&
     /\b(prod|production)\b/i.test(tokens.join(" "))
   )
-    return hard(`Aplicar migration em produção: ${line}?`, "Migration em produção só com o seu ok.");
+    return hard(policyText("migrationApply", { line }), policyText("migrationReason"));
   if (/migrat/i.test(tokens.join(" ")) && /\b(prod|production|--remote|remote)\b/i.test(tokens.join(" ")))
-    return hard(`Migration em produção: ${line}?`, "Migration em produção só com o seu ok.");
+    return hard(policyText("migration", { line }), policyText("migrationReason"));
   if (databaseCommands.includes(command) && !/(localhost|127\.0\.0\.1|::1)/.test(tokens.join(" ")))
-    return hard(`Conectar num banco fora da VPS: ${line}?`, "Banco de produção sempre passa por você.");
+    return hard(policyText("remoteDb", { line }), policyText("remoteDbReason"));
   if (["npm", "pnpm", "yarn", "bun"].includes(command)) {
     const sub = args.find((arg) => !arg.startsWith("-")) ?? "";
     if (
@@ -1526,10 +1518,10 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
         "set",
       ].includes(sub)
     )
-      return hard(`Isso publica ou mexe na conta do ${command}: ${line}?`, "Publicação de pacote.");
+      return hard(policyText("publish", { command, line }), policyText("publishReason"));
     const script = sub === "run" || sub === "run-script" ? (args[args.indexOf(sub) + 1] ?? "") : sub;
     if (/deploy|publish|release|prod/i.test(script))
-      return hard(`Rodar o script ${script}? Parece publicar ou mexer em produção.`, "Script de deploy ou produção.");
+      return hard(policyText("script", { script }), policyText("scriptReason"));
     return { level: "dev" };
   }
   if (["curl", "wget", "http", "https", "xh", "httpie"].includes(command)) {
@@ -1539,20 +1531,16 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
       messaging &&
       args.some((arg) => /^(-X|--request|-d|--data|--data-raw|--data-binary|-F|--form|--json)$/.test(arg))
     )
-      return hard(`Mandar para ${messaging}: ${line}?`, "Mensagem para fora ou dinheiro sempre passa por você.");
+      return hard(policyText("messaging", { target: messaging, line }), policyText("messagingReason"));
     if (outside.length > 0) return { level: "dev" };
     if (args.some((arg) => /^(-o|--output|-O|--remote-name)$/.test(arg))) return { level: "dev" };
     return command === "curl" ? { level: "read" } : { level: "dev" };
   }
-  if (remoteCommands.includes(command))
-    return hard(`Conectar em outra máquina: ${line}?`, "Acesso à rede fora da VPS.");
+  if (remoteCommands.includes(command)) return hard(policyText("ssh", { line }), policyText("networkReason"));
   if (command === "rsync" && args.some((arg) => /^[\w.@-]+:/.test(arg)))
-    return hard(`Copiar para outra máquina: ${line}?`, "Acesso à rede fora da VPS.");
+    return hard(policyText("scp", { line }), policyText("networkReason"));
   if (systemCommands.includes(command))
-    return hard(
-      `Mexer no sistema: ${line}?`,
-      command.includes("kill") ? "Para parar servidor, use dev_server_stop." : "Comando de sistema.",
-    );
+    return hard(policyText("system", { line }), policyText(command.includes("kill") ? "killReason" : "systemReason"));
   if (command === "docker" || command === "podman") {
     if (
       args.some((arg) =>
@@ -1573,7 +1561,7 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
         ].includes(arg),
       )
     )
-      return hard(`Mexer nos containers: ${line}?`, "Docker compartilhado da VPS.");
+      return hard(policyText("docker", { line }), policyText("dockerReason"));
     const sub = args.find((arg) => !arg.startsWith("-")) ?? "";
     return ["ps", "images", "logs", "inspect", "version", "info", "stats", "top", "port", "history"].includes(sub)
       ? { level: "read" }
@@ -1585,7 +1573,7 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
     return inspect({ ...segment, piped: false }, inner, cwd, workspace, depth + 1);
   }
   for (const output of outputTargets(command, args)) {
-    const verdict = pathVerdict(workspace, cwd, output, "Escrever em");
+    const verdict = pathVerdict(workspace, cwd, output, "verbWrite");
     if (verdict) return verdict;
   }
   if (command === "find") {
@@ -1593,7 +1581,7 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
     const roots = args.slice(0, firstFlag === -1 ? args.length : firstFlag);
     if (args.includes("-delete")) {
       for (const root of roots.length > 0 ? roots : ["."]) {
-        const verdict = pathVerdict(workspace, cwd, root, "Apagar arquivos em");
+        const verdict = pathVerdict(workspace, cwd, root, "verbDeleteIn");
         if (verdict) return verdict;
       }
       return { level: "dev" };
@@ -1620,17 +1608,17 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
             : targets;
     const verb =
       command === "rm" || command === "rmdir" || command === "unlink"
-        ? "Apagar"
+        ? "verbDelete"
         : command === "chmod" || command === "chown"
-          ? "Mudar permissão de"
-          : "Escrever em";
+          ? "verbChmod"
+          : "verbWrite";
     for (const target of checked) {
       const verdict = pathVerdict(workspace, cwd, target, verb);
       if (verdict) return verdict;
     }
     if (command === "mv") {
       for (const target of targets.slice(0, -1)) {
-        const verdict = pathVerdict(workspace, cwd, target, "Mover");
+        const verdict = pathVerdict(workspace, cwd, target, "verbMove");
         if (verdict) return verdict;
       }
     }
@@ -1642,7 +1630,7 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
   }
   if (command === "sed" && args.some((arg) => /^-[a-zA-Z]*i/.test(arg) || arg.startsWith("--in-place"))) {
     for (const target of args.filter((arg) => !arg.startsWith("-")).slice(1)) {
-      const verdict = pathVerdict(workspace, cwd, target, "Editar");
+      const verdict = pathVerdict(workspace, cwd, target, "verbEdit");
       if (verdict) return verdict;
     }
     return { level: "dev" };
@@ -1673,7 +1661,7 @@ function inspect(segment: Segment, tokens: string[], cwd: string, workspace: Wor
     const path = resolve(cwd, command);
     if (inWorkspace(workspace, resolveReal(path).real) && !protectedPath(path))
       return { level: "unknown", key: relative(workspace.path, path) };
-    return hard(`Rodar ${shownPath(workspace, path)}?`, "Programa fora da tarefa.");
+    return hard(policyText("run", { line: shownPath(workspace, path) }), policyText("outsideProgram"));
   }
   return { level: "unknown", key: [command, args.find((arg) => !arg.startsWith("-"))].filter(Boolean).join(" ") };
 }
@@ -1714,7 +1702,7 @@ function argsGate(workspace: WorkspaceState, cwd: string, args: string[]): Gate 
 }
 
 function humanGate(command: string, reason: string): Gate {
-  return { kind: "human", prompt: `Rodar ${short(command, 160)}?`, reason, hard: true };
+  return { kind: "human", prompt: policyText("run", { line: short(command, 160) }), reason, hard: true };
 }
 
 const obfuscationDeny: Gate = {
@@ -1749,15 +1737,15 @@ function exportAssignments(tokens: string[]) {
 export function gateCommand(command: string, workspace: WorkspaceState, depth = 0): Gate {
   const trimmed = command.trim();
   if (!trimmed) return { kind: "allow" };
-  if (depth > 6) return humanGate(trimmed, "Comando aninhado demais para conferir.");
+  if (depth > 6) return humanGate(trimmed, policyText("tooNested"));
   let segments: Segment[];
   try {
     segments = parseShell(trimmed);
   } catch (error) {
     return {
       kind: "human",
-      prompt: `Não consegui entender este comando com segurança. Posso rodar? ${short(trimmed, 160)}`,
-      reason: `Comando que não deu para analisar (${error instanceof Error ? error.message : "erro"}).`,
+      prompt: policyText("unparsed", { command: short(trimmed, 160) }),
+      reason: policyText("unparsedReason", { reason: error instanceof Error ? error.message : policyText("error") }),
       hard: true,
     };
   }
@@ -1773,14 +1761,14 @@ export function gateCommand(command: string, workspace: WorkspaceState, depth = 
   let readOnlyCwd = false;
   let previousReadOnly = false;
   for (const segment of segments) {
-    if (segment.opaque) return humanGate(trimmed, "Não dá para saber o que vai rodar.");
+    if (segment.opaque) return humanGate(trimmed, policyText("dynamicCommandReason"));
     const unwrapped = unwrap(segment.words);
     const tokens = unwrapped.tokens;
     if ([...unwrapped.assignments, ...exportAssignments(tokens)].some((item) => dangerousAssignment.test(item)))
-      return humanGate(trimmed, "Variável de ambiente que muda o que o git ou o shell executam.");
+      return humanGate(trimmed, policyText("envReason"));
     for (const redirect of segment.redirects) {
       if (redirect.op.includes(">")) {
-        const verdict = pathVerdict(workspace, cwd, redirect.target, "Escrever em");
+        const verdict = pathVerdict(workspace, cwd, redirect.target, "verbWrite");
         if (verdict && "kind" in verdict) return verdict as Gate;
       } else if (redirect.op !== "<<<") {
         const path = argPath(redirect.target);
@@ -1809,7 +1797,7 @@ export function gateCommand(command: string, workspace: WorkspaceState, depth = 
     }
     if (tokens[0] === "cd" || tokens[0] === "pushd") {
       const target = tokens.slice(1).find((arg) => !/^-[LPe@]+$/.test(arg)) ?? home;
-      if (target.includes("$SUB") || target.startsWith("$")) return humanGate(trimmed, "Pasta montada na hora.");
+      if (target.includes("$SUB") || target.startsWith("$")) return humanGate(trimmed, policyText("dynamicFolder"));
       if (target === "-") {
         [cwd, previous] = [previous, cwd];
         [readOnlyCwd, previousReadOnly] = [previousReadOnly, readOnlyCwd];

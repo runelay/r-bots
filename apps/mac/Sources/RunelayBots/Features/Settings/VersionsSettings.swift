@@ -137,14 +137,14 @@ final class VersionsStore {
                     serverPhase = .succeeded(update.to ?? info.current)
                     return
                 } else if update.failed {
-                    serverPhase = .failed(update.message ?? "A atualização não deu certo.")
+                    serverPhase = .failed(update.message ?? tr("A atualização não deu certo."))
                     return
                 }
             } catch {
                 serverPhase = .restarting
             }
         }
-        serverPhase = .failed("O servidor não voltou em 4 minutos. Veja rbots status no servidor.")
+        serverPhase = .failed(tr("O servidor não voltou em 4 minutos. Veja rbots status no servidor."))
     }
 
     func update(_ cli: CliVersion, model: AppModel) async {
@@ -193,7 +193,8 @@ struct VersionsSettings: View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             if store.serverState == .unavailable && store.cliState == .unavailable {
                 EmptyStateView(
-                    systemImage: "arrow.down.circle", title: "Este servidor ainda não mostra versões", description: "Depois de atualizar o servidor, as versões e as atualizações aparecem aqui.")
+                    systemImage: "arrow.down.circle", title: tr("Este servidor ainda não mostra versões"),
+                    description: tr("Depois de atualizar o servidor, as versões e as atualizações aparecem aqui."))
             } else {
                 serverSection
                 cliSection
@@ -225,7 +226,7 @@ struct VersionsSettings: View {
             EmptyView()
         case .failed(let message):
             SettingsGroup(caption: "r/bots") {
-                SettingsRow(title: "Não deu para ver a versão", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: message) {
+                SettingsRow(title: tr("Não deu para ver a versão"), icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: message) {
                     EmptyView()
                 }
             }
@@ -244,13 +245,13 @@ struct VersionsSettings: View {
         case .unavailable:
             EmptyView()
         case .failed(let message):
-            SettingsGroup(caption: "CLIs dos bots") {
-                SettingsRow(title: "Não deu para ver os CLIs", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: message) {
+            SettingsGroup(caption: tr("CLIs dos bots")) {
+                SettingsRow(title: tr("Não deu para ver os CLIs"), icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: message) {
                     EmptyView()
                 }
             }
         case .loaded:
-            SettingsGroup(caption: "CLIs dos bots") {
+            SettingsGroup(caption: tr("CLIs dos bots")) {
                 ForEach(store.clis) { cli in
                     CliVersionRow(cli: cli, store: store)
                 }
@@ -298,18 +299,18 @@ private struct ServerVersionGroup: View {
 
     var body: some View {
         SettingsGroup(caption: "r/bots") {
-            SettingsRow(title: "Servidor", icon: SettingsIcon("server.rack", SettingsTint.blue), detail: detail) {
+            SettingsRow(title: tr("Servidor"), icon: SettingsIcon("server.rack", SettingsTint.blue), detail: detail) {
                 HStack(spacing: Spacing.s) {
-                    SettingsValue(text: info.isDevelopment ? "Desenvolvimento" : info.current)
+                    SettingsValue(text: info.isDevelopment ? tr("Desenvolvimento") : info.current)
                     if info.updateAvailable, let latest = info.latest {
-                        SettingsPill(text: "\(latest) disponível", color: Theme.brandAccent)
+                        SettingsPill(text: tr("%@ disponível", latest), color: Theme.brandAccent)
                     } else if !info.isDevelopment, info.latest != nil {
-                        SettingsPill(text: "Em dia", color: Theme.success)
+                        SettingsPill(text: tr("Em dia"), color: Theme.success)
                     }
                 }
             }
             if info.updateAvailable, let latest = info.latest {
-                SettingsRow(title: "Novidades da \(latest)", icon: SettingsIcon("sparkles", SettingsTint.purple), detail: published) {
+                SettingsRow(title: tr("Novidades da %@", latest), icon: SettingsIcon("sparkles", SettingsTint.purple), detail: published) {
                     if let link = info.releaseLink {
                         Link(destination: link) {
                             Label("Ver notas", systemImage: "arrow.up.right")
@@ -324,7 +325,8 @@ private struct ServerVersionGroup: View {
             }
             if showsCommand {
                 SettingsRow(
-                    title: "Como atualizar", icon: SettingsIcon("terminal.fill", SettingsTint.slate), detail: "Rode no servidor. Ele guarda um backup antes e volta sozinho se a versão nova não subir."
+                    title: tr("Como atualizar"), icon: SettingsIcon("terminal.fill", SettingsTint.slate),
+                    detail: tr("Rode no servidor. Ele guarda um backup antes e volta sozinho se a versão nova não subir.")
                 ) {
                     commandChip
                 }
@@ -336,10 +338,10 @@ private struct ServerVersionGroup: View {
 
     @ViewBuilder
     private var updaterRow: some View {
-        let target = info.latest ?? "versão nova"
+        let target = info.latest ?? tr("versão nova")
         switch phase {
         case .requesting, .waiting, .restarting:
-            SettingsRow(title: "Atualizando para a \(target)", icon: SettingsIcon("arrow.down.circle.fill", SettingsTint.blue), detail: progressDetail) {
+            SettingsRow(title: tr("Atualizando para a %@", target), icon: SettingsIcon("arrow.down.circle.fill", SettingsTint.blue), detail: progressDetail) {
                 HStack(spacing: Spacing.s) {
                     ProgressView()
                         .controlSize(.small)
@@ -349,25 +351,25 @@ private struct ServerVersionGroup: View {
                 }
             }
         case .failed(let message):
-            SettingsRow(title: "A atualização não deu certo", icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: message) {
+            SettingsRow(title: tr("A atualização não deu certo"), icon: SettingsIcon("exclamationmark.triangle.fill", SettingsTint.amber), detail: message) {
                 if info.canUpdateFromApp {
-                    updateButton(title: "Tentar de novo")
+                    updateButton(title: tr("Tentar de novo"))
                 }
             }
         case .succeeded, nil:
             SettingsRow(
-                title: "Atualizar o servidor", icon: SettingsIcon("arrow.down.circle.fill", SettingsTint.blue), detail: "Guarda um backup antes e volta sozinho se a versão nova não subir."
+                title: tr("Atualizar o servidor"), icon: SettingsIcon("arrow.down.circle.fill", SettingsTint.blue), detail: tr("Guarda um backup antes e volta sozinho se a versão nova não subir.")
             ) {
-                updateButton(title: "Atualizar para \(target)")
+                updateButton(title: tr("Atualizar para %@", target))
             }
         }
     }
 
     private var progressDetail: String {
         switch phase {
-        case .restarting: "Reiniciando o servidor…"
+        case .restarting: tr("Reiniciando o servidor…")
         case .waiting(let step?): step
-        default: "Pedindo ao servidor…"
+        default: tr("Pedindo ao servidor…")
         }
     }
 
@@ -379,7 +381,7 @@ private struct ServerVersionGroup: View {
         }
         .buttonStyle(SettingsButtonStyle(kind: .primary))
         .glassPopup(isPresented: confirmTurns, edge: .trailing) {
-            GlassConfirm(title: turnsTitle, message: "Os turnos em andamento são interrompidos.", confirmTitle: "Atualizar") {
+            GlassConfirm(title: turnsTitle, message: tr("Os turnos em andamento são interrompidos."), confirmTitle: tr("Atualizar")) {
                 Task { await store.updateServer(model: model, force: true) }
             }
         }
@@ -387,24 +389,24 @@ private struct ServerVersionGroup: View {
 
     private var turnsTitle: String {
         let count = store.serverTurnsRunning ?? 1
-        return count == 1 ? "Há 1 turno rodando. Atualizar mesmo assim?" : "Há \(count) turnos rodando. Atualizar mesmo assim?"
+        return count == 1 ? tr("Há 1 turno rodando. Atualizar mesmo assim?") : tr("Há %lld turnos rodando. Atualizar mesmo assim?", count)
     }
 
     private var detail: String? {
         var parts: [String] = []
         if case .succeeded(let version) = phase, !info.updateAvailable {
-            parts.append("Atualizado para \(version)")
+            parts.append(tr("Atualizado para %@", version))
         } else if info.isDevelopment {
-            parts.append("Rodando direto do código")
+            parts.append(tr("Rodando direto do código"))
         } else if !info.updateAvailable, info.latest != nil {
-            parts.append("Está na versão mais recente")
+            parts.append(tr("Está na versão mais recente"))
         }
-        if info.isBeta { parts.append(parts.isEmpty ? "Canal beta" : "canal beta") }
+        if info.isBeta { parts.append(parts.isEmpty ? tr("Canal beta") : tr("canal beta")) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private var published: String? {
-        info.publishedDate.map { "Publicada em \($0.formatted(date: .long, time: .omitted))" }
+        info.publishedDate.map { tr("Publicada em %@", $0.formatted(Date.FormatStyle(date: .long, time: .omitted).locale(LanguageStore.shared.locale))) }
     }
 
     private var commandChip: some View {
@@ -514,8 +516,8 @@ private struct CliVersionRow: View {
     }
 
     private var origin: String {
-        guard cli.installed != nil else { return "Não encontrado neste servidor" }
-        return cli.isManaged ? "Atualizado pelo app" : "Veio com o servidor"
+        guard cli.installed != nil else { return tr("Não encontrado neste servidor") }
+        return cli.isManaged ? tr("Atualizado pelo app") : tr("Veio com o servidor")
     }
 
     private var trailing: some View {
@@ -551,7 +553,7 @@ private struct CliVersionRow: View {
                     .buttonStyle(SettingsButtonStyle(kind: .plain))
                     .help("Voltar para a \(previous)")
                     .glassPopup(isPresented: $confirmRollback, edge: .trailing) {
-                        GlassConfirm(title: "Voltar o \(cli.displayName) para a \(previous)?", message: "O próximo pedido dos bots já usa essa versão.", confirmTitle: "Voltar") {
+                        GlassConfirm(title: tr("Voltar o %@ para a %@?", cli.displayName, previous), message: tr("O próximo pedido dos bots já usa essa versão."), confirmTitle: tr("Voltar")) {
                             Task { await store.rollback(cli, model: model) }
                         }
                     }

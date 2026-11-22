@@ -94,7 +94,7 @@ final class AppModel {
                 searchResults = .loaded(found)
             } catch {
                 guard !Task.isCancelled else { return }
-                searchResults = .failed("A busca não respondeu agora.")
+                searchResults = .failed(tr("A busca não respondeu agora."))
             }
         }
     }
@@ -107,6 +107,7 @@ final class AppModel {
 
     func start() async {
         startStatusStream()
+        Task { await LanguageStore.shared.sync() }
         async let loadedMeta = client.meta()
         await loadBots()
         await loadSections()
@@ -387,9 +388,9 @@ final class AppModel {
             case .reply(let text, _, _):
                 LocalNotifier.post(title: current.name, body: String(text.prefix(180)), botID: current.id)
             case .approval(_, let prompt):
-                LocalNotifier.post(title: "\(current.name) precisa de você", body: prompt, botID: current.id)
+                LocalNotifier.post(title: tr("%@ precisa de você", current.name), body: prompt, botID: current.id)
             case .question(_, let title, _):
-                LocalNotifier.post(title: "\(current.name) perguntou", body: title, botID: current.id)
+                LocalNotifier.post(title: tr("%@ perguntou", current.name), body: title, botID: current.id)
             case .failed(let text):
                 LocalNotifier.post(title: current.name, body: text, botID: current.id)
             case .ciFailed:
@@ -582,6 +583,10 @@ final class AppModel {
                 scheduleRefresh()
                 notify(botID: id, from: previous, to: status)
             }
+        case "preferences":
+            if let preferences = value["preferences"] {
+                LanguageStore.shared.apply(preferences)
+            }
         case "settings":
             let areas = value["areas"]?.arrayValue?.compactMap(\.stringValue) ?? []
             if areas.contains(where: { ["bots", "conversations"].contains($0) }) {
@@ -599,11 +604,11 @@ final class AppModel {
         guard let bot = bot(id: botID) else { return }
         guard !stores.contains(where: { openSessions.contains($0.key) && $0.value.bot.id == botID }) else { return }
         if status == .awaitingApproval {
-            LocalNotifier.post(title: "\(bot.name) precisa de você", body: "Tem um pedido esperando sua resposta.", botID: botID)
+            LocalNotifier.post(title: tr("%@ precisa de você", bot.name), body: tr("Tem um pedido esperando sua resposta."), botID: botID)
         } else if previous == .working, status == .idle {
             Task {
                 await refresh()
-                let text = self.bot(id: botID).flatMap { activity(for: $0)?.text } ?? "Terminou o que você pediu."
+                let text = self.bot(id: botID).flatMap { activity(for: $0)?.text } ?? tr("Terminou o que você pediu.")
                 LocalNotifier.post(title: bot.name, body: String(text.prefix(180)), botID: botID)
             }
         }

@@ -85,7 +85,7 @@ struct ServerSwitcher: View {
                 Task { await environments.refresh() }
             }
         )
-        .accessibilityLabel("Servidor \(active.name), \(model.statusStreamLive ? "conectado" : "sem conexão")")
+        .accessibilityLabel("Servidor \(active.name), \(model.statusStreamLive ? tr("conectado") : tr("sem conexão"))")
         .id(session.serverRevision)
         .task(id: PollKey(server: session.serverRevision, active: scenePhase == .active)) {
             guard scenePhase == .active else { return }

@@ -2,6 +2,7 @@ import { ValidationError } from "../../../shared/errors";
 import { findAccount } from "../../accounts/services/accounts.service";
 import { getBot, memoryOf } from "../../bots/services/bots.service";
 import { queueCapture } from "../../memory/services/capture-jobs.service";
+import { conversationsText } from "../constants/conversations-messages.constants";
 import {
   deleteReactions,
   findMessageEvent,
@@ -52,13 +53,13 @@ export function normalizeEmoji(raw: unknown) {
     !pictographic.test(value) ||
     [...segmenter.segment(value)].length !== 1
   )
-    throw new ValidationError("Use um emoji só.", "emoji");
+    throw new ValidationError(conversationsText("oneEmoji"), "emoji");
   return value;
 }
 
 export function normalizeTarget(raw: unknown) {
   const value = typeof raw === "string" ? raw.trim() : "";
-  if (!value || value.length > 200) throw new ValidationError("target inválido.", "target");
+  if (!value || value.length > 200) throw new ValidationError(conversationsText("targetInvalid"), "target");
   return value;
 }
 
@@ -135,7 +136,7 @@ export async function addReaction(
   input: { target: string; emoji: string; author: ReactionAuthor },
 ) {
   const target = await resolveTarget(session, input.target);
-  if (!target) throw new ReactionTargetMissing("Mensagem não encontrada.");
+  if (!target) throw new ReactionTargetMissing(conversationsText("messageNotFound"));
   if (input.author.kind === "bot") {
     const previous = await deleteReactions({
       sessionId: session.meta.sessionId,

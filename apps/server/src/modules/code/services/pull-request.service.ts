@@ -3,6 +3,7 @@ import { env } from "../../../config/env";
 import { allStoredSessions, getStoredSession, type StoredSession } from "../../conversations/services/sessions.service";
 import { isBusy } from "../../engine/services/engine.service";
 import { appWatching } from "../../status/services/viewers.service";
+import { codeText } from "../constants/code-messages.constants";
 import { touchWorktree } from "../repositories/code.repository";
 import { stopDevServers } from "./dev-server.service";
 import { type CodeSignal, onCodeSignal } from "./live-diff.service";
@@ -606,15 +607,14 @@ export async function handleCodeSignal(signal: CodeSignal) {
 
 async function isClean(workspace: WorkspaceState) {
   const dirty = (await git(workspace.path, ["status", "--porcelain"])).stdout.trim();
-  if (dirty)
-    return { clean: false, reason: "Tem mudança não commitada na worktree. Commite ou descarte antes de fechar." };
+  if (dirty) return { clean: false, reason: codeText("uncommitted") };
   const upstream = await hasUpstream(workspace);
   if (upstream) {
     const ahead = (await git(workspace.path, ["rev-list", "--count", "@{u}..HEAD"])).stdout.trim();
     if (ahead && ahead !== "0")
       return {
         clean: false,
-        reason: `Tem ${ahead} commit${ahead === "1" ? "" : "s"} que não ${ahead === "1" ? "foi" : "foram"} para o GitHub.`,
+        reason: ahead === "1" ? codeText("unpushedOne") : codeText("unpushedMany", { count: ahead }),
       };
   }
   return { clean: true, reason: "" };
@@ -622,15 +622,15 @@ async function isClean(workspace: WorkspaceState) {
 
 export async function finishWorkspace(session: StoredSession, by: "user" | "auto", target?: WorkspaceState | null) {
   const workspace = target ?? activeWorkspace(session);
-  if (!workspace) throw new CodeError("Esta conversa não tem repositório aberto.", 404);
-  if (isBusy(session.meta.sessionId)) throw new CodeError("O bot ainda está trabalhando.", 409);
+  if (!workspace) throw new CodeError(codeText("repoNotOpen"), 404);
+  if (isBusy(session.meta.sessionId)) throw new CodeError(codeText("busy"), 409);
   const check = await isClean(workspace);
   if (!check.clean) throw new CodeError(check.reason, 409);
   await stopDevServers(workspace);
   const removed = await git(workspace.repo, ["worktree", "remove", workspace.path], 120_000);
   if (removed.code !== 0)
     throw new CodeError(
-      `Não consegui remover a worktree: ${(removed.stderr || removed.stdout).trim().slice(0, 300)}`,
+      codeText("removeFailed", { reason: (removed.stderr || removed.stdout).trim().slice(0, 300) }),
       500,
     );
   const primary = activeWorkspace(session) === workspace;
@@ -646,11 +646,14 @@ export async function finishWorkspace(session: StoredSession, by: "user" | "auto
 
 export async function reopenPr(session: StoredSession, target?: WorkspaceState | null) {
   const workspace = target ?? activeWorkspace(session);
-  if (!workspace?.pr) throw new CodeError("Esta conversa não tem PR.", 404);
-  if (workspace.pr.status !== "closed") throw new CodeError("O PR não está fechado.", 409);
+  if (!workspace?.pr) throw new CodeError(codeText("noPr"), 404);
+  if (workspace.pr.status !== "closed") throw new CodeError(codeText("prNotClosed"), 409);
   const result = await gh(workspace.path, ["pr", "reopen", String(workspace.pr.number)], 60_000);
   if (result.code !== 0)
-    throw new CodeError(`Não consegui reabrir o PR: ${(result.stderr || result.stdout).trim().slice(0, 300)}`, 500);
+    throw new CodeError(
+      codeText("reopenFailed", { reason: (result.stderr || result.stdout).trim().slice(0, 300) }),
+      500,
+    );
   nextCheck.set(watchKey(session, workspace), Date.now());
   return refreshPr(session, true, workspace);
 }

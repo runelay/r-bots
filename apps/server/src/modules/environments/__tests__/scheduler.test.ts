@@ -13,7 +13,7 @@ import {
 } from "../../../../test/runner-helpers";
 import { clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
 import { updatePreferences } from "../../settings/services/preferences.service";
-import { hostFallbackNotice, macOfflineMessage } from "../constants/environments.constants";
+import { environmentsText } from "../constants/environments-messages.constants";
 import {
   boxSpecFor,
   hostBoxSpec,
@@ -109,11 +109,11 @@ describe("decidePlacement", () => {
     });
     expect(decidePlacement({ ...docker, environments, hosts, environment: "mac" })).toEqual({
       kind: "offline",
-      message: macOfflineMessage,
+      message: environmentsText("macOffline"),
     });
     expect(decidePlacement({ ...docker, environments, environment: "mac" })).toEqual({
       kind: "offline",
-      message: macOfflineMessage,
+      message: environmentsText("macOffline"),
     });
     const mac = { key: "mac-1:runner", online: true, canRun: true };
     expect(decidePlacement({ ...docker, environments, hosts: { ...hosts, mac }, environment: "mac" })).toEqual({
@@ -141,10 +141,10 @@ describe("place", () => {
 
   test("runs on the server's own host runner and says so when it falls back to the container", () => {
     env.BOTS_HOST_RUNNER = "on";
-    expect(place(input)).toEqual({ kind: "local", notice: hostFallbackNotice });
+    expect(place(input)).toEqual({ kind: "local", notice: environmentsText("hostFallback") });
     const mac = fakeRunner(runnerDevice("mac-1", 5));
     mac.say({ type: "hello", version: "9", capabilities: ["computer", "host"] });
-    expect(place(input)).toEqual({ kind: "local", notice: hostFallbackNotice });
+    expect(place(input)).toEqual({ kind: "local", notice: environmentsText("hostFallback") });
     const host = fakeRunner(runnerDevice("host-1"));
     host.say(hostHello());
     expect(place(input)).toEqual({ kind: "remote", environmentId: "host-1", host: true });
@@ -152,7 +152,7 @@ describe("place", () => {
 
   test("runs on the Mac runner when the owner picked Este Mac", async () => {
     await updatePreferences({ environment: "mac" });
-    expect(place(input)).toEqual({ kind: "offline", message: macOfflineMessage });
+    expect(place(input)).toEqual({ kind: "offline", message: environmentsText("macOffline") });
     const runner = fakeRunner(runnerDevice("mac-1:runner", 5, { deviceId: "mac-1" }));
     runner.say(hostHello({ environment: "mac" }));
     expect(place(input)).toEqual({ kind: "remote", environmentId: "mac-1:runner", host: true, environment: "mac" });

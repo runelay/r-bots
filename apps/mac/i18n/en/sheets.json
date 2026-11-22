@@ -1,0 +1,14 @@
+{
+  "Aba %@": "Tab %@",
+  "Fixar a primeira linha": "Freeze the first row",
+  "Negrito": "Bold",
+  "Não consegui abrir a planilha.": "Couldn't open the sheet.",
+  "Não consegui carregar a planilha.": "Couldn't load the sheet.",
+  "Não consegui salvar a célula": "Couldn't save the cell",
+  "O bot acabou de editar": "The bot just edited this",
+  "Planilha": "Sheet",
+  "Salvando…": "Saving…",
+  "Salvo": "Saved",
+  "Soltar a primeira linha": "Unfreeze the first row",
+  "Valor ou fórmula, como =SOMA(B2:B9)": "Value or formula, like =SUM(B2:B9)"
+}

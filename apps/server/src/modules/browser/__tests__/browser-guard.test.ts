@@ -4,6 +4,7 @@ import { fakeAgentBrowser } from "../../../../test/browser-helpers";
 import { resetData } from "../../../../test/helpers";
 import { env } from "../../../config/env";
 import { getDb, tables } from "../../../db";
+import { withLanguage } from "../../../shared/i18n";
 import * as devServers from "../../code/services/dev-server.service";
 import { browserOpen } from "../services/browser.service";
 import {
@@ -62,6 +63,10 @@ describe("assertBrowsable", () => {
     expect(await refusal("view-source:https://x.com")).toBe("O navegador do bot só abre endereços http ou https.");
     expect(await refusal("chrome://settings")).toBe("O navegador do bot só abre endereços http ou https.");
     expect(await refusal("não é url")).toBe("Endereço inválido.");
+    expect(await withLanguage("en", () => refusal("file:///etc/passwd"))).toBe(
+      "The bot's browser only opens http or https addresses.",
+    );
+    expect(await withLanguage("en", () => refusal("não é url"))).toBe("Invalid address.");
   });
 
   test("blocks loopback, private ranges, metadata and the tailnet", async () => {

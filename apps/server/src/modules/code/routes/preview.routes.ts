@@ -3,6 +3,7 @@ import { type Req, type Res, requestContext, sendJson } from "../../../shared/ht
 import { type Socket, type SocketHandler, socketOpen } from "../../../shared/ws";
 import { previewCookieName } from "../../auth/services/auth.middleware";
 import { effectiveHost } from "../../auth/services/origins.service";
+import { previewText } from "../constants/preview-messages.constants";
 import { findPreviewByToken, previewTarget } from "../services/dev-server.service";
 
 export const previewSessionMs = 2 * 60 * 60_000;
@@ -158,12 +159,12 @@ function proxy(req: Req, res: Res, port: number, path: string) {
     .then((answer) => res.respond(filterResponse(answer, req.raw.headers.get("accept-encoding"))))
     .catch((error: Error) => {
       console.error("preview proxy failed", error);
-      if (!res.headersSent) sendJson(res, 502, { ok: false, error: "O servidor de desenvolvimento não respondeu." });
+      if (!res.headersSent) sendJson(res, 502, { ok: false, error: previewText("noAnswer") });
     });
 }
 
 function denied(res: Res) {
-  sendJson(res, 403, { ok: false, error: "Prévia indisponível: o servidor parou ou o link venceu." });
+  sendJson(res, 403, { ok: false, error: previewText("unavailable") });
   return true;
 }
 

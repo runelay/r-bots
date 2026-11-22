@@ -39,12 +39,12 @@ struct CallScreen: View {
     private var status: String {
         if let failure = call.failure { return failure }
         switch call.phase {
-        case .idle: return "Chamada encerrada"
-        case .connecting: return "Conectando…"
-        case .listening: return call.isMuted ? "Microfone desligado" : "Ouvindo"
-        case .userSpeaking: return "Ouvindo você"
-        case .thinking: return "Pensando…"
-        case .botSpeaking: return "Falando"
+        case .idle: return tr("Chamada encerrada")
+        case .connecting: return tr("Conectando…")
+        case .listening: return call.isMuted ? tr("Microfone desligado") : tr("Ouvindo")
+        case .userSpeaking: return tr("Ouvindo você")
+        case .thinking: return tr("Pensando…")
+        case .botSpeaking: return tr("Falando")
         }
     }
 

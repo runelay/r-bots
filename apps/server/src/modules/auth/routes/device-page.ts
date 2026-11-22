@@ -1,4 +1,160 @@
+import type { Language } from "../../../shared/i18n";
+
 export const appCallbackUrl = "runelaybots://device-approved";
+
+const pageText = {
+  "pt-BR": {
+    title: "Entrar · r/bots",
+    checkingTitle: "Conferindo o código",
+    checkingLede: "Só um instante.",
+    loading: "Carregando",
+    setupTitle: "Criar a conta do dono",
+    setupLede: "Use o código do arquivo setup.token, que fica na pasta de dados do servidor.",
+    setupToken: "Código de primeiro acesso",
+    name: "Nome",
+    email: "E-mail",
+    password: "Senha",
+    createAccount: "Criar conta",
+    loginTitle: "Entrar no r/bots",
+    loginLede: "Para liberar o app no seu Mac.",
+    touchId: "Entrar com Touch ID",
+    or: "OU",
+    noPasskey: "Este navegador não oferece Touch ID nem chave de acesso. Entre com o e-mail e a senha.",
+    emailPlaceholder: "voce@empresa.com",
+    passwordPlaceholder: "Sua senha",
+    passwordSignIn: "Entrar com senha",
+    approveTitle: "Liberar o app",
+    approveLede: "Confira se o código é o mesmo que aparece no app.",
+    code: "Código",
+    warning: "Só libere se foi você que pediu agora, no seu Mac. Se alguém te mandou este link, recuse.",
+    who: "Quem pediu",
+    address: "Endereço",
+    when: "Quando",
+    allow: "Liberar",
+    deny: "Recusar",
+    enroll: "Ativar Touch ID neste Mac",
+    enrolled: "Touch ID ativado. Da próxima vez é só encostar o dedo.",
+    invalidCredentials: "E-mail ou senha incorretos.",
+    invalidCode: "Esse código não existe. Peça um novo pelo app.",
+    expiredCode: "Esse código venceu. Peça um novo pelo app.",
+    processedCode: "Esse pedido já foi respondido. Peça um novo pelo app.",
+    tooMany: "Muitas tentativas. Espere um minuto e tente de novo.",
+    unclaimed: "Não deu para conferir o código agora. Recarregue a página em alguns minutos.",
+    passkeyNotFound: "Esse Touch ID não está ligado a uma conta. Entre com a senha.",
+    passkeyFailed: "Não deu para confirmar o Touch ID. Tente de novo.",
+    failed: "Não deu certo. Tente de novo.",
+    approvedTitle: "Esse acesso já foi liberado",
+    approvedText: "Pode voltar ao app.",
+    deniedTitle: "Esse acesso foi recusado",
+    deniedText: "Para tentar de novo, peça um novo código pelo app.",
+    expiredTitle: "Esse código venceu",
+    expiredText: "Os códigos valem por 10 minutos. Volte ao app e clique em Entrar com Touch ID de novo.",
+    missingTitle: "Esse código não existe",
+    missingText: "Confira se você abriu o link pelo app ou peça um novo código.",
+    openFromAppTitle: "Abra este link pelo app",
+    openFromAppText: "Este endereço só funciona a partir do botão Entrar no r/bots.",
+    signupDisabled: "Essa conta ainda não tem acesso. Peça um convite.",
+    socialFailed: "Não deu para entrar com essa conta.",
+    unknown: "desconhecido",
+    hidePassword: "Esconder a senha",
+    showPassword: "Mostrar a senha",
+    allowedTitle: "Pronto, pode voltar ao app",
+    allowedText: "O r/bots já está liberado neste Mac. Você pode fechar esta aba.",
+    refusedTitle: "Acesso recusado",
+    refusedText: "O app não foi liberado. Se foi engano, peça um novo código pelo app.",
+  },
+  en: {
+    title: "Sign in · r/bots",
+    checkingTitle: "Checking the code",
+    checkingLede: "Just a moment.",
+    loading: "Loading",
+    setupTitle: "Create the owner account",
+    setupLede: "Use the code from the setup.token file in the server's data folder.",
+    setupToken: "First-access code",
+    name: "Name",
+    email: "Email",
+    password: "Password",
+    createAccount: "Create account",
+    loginTitle: "Sign in to r/bots",
+    loginLede: "To allow the app on your Mac.",
+    touchId: "Sign in with Touch ID",
+    or: "OR",
+    noPasskey: "This browser does not offer Touch ID or passkeys. Sign in with your email and password.",
+    emailPlaceholder: "you@company.com",
+    passwordPlaceholder: "Your password",
+    passwordSignIn: "Sign in with password",
+    approveTitle: "Allow the app",
+    approveLede: "Make sure the code matches the one shown in the app.",
+    code: "Code",
+    warning: "Only allow it if you just asked for it on your Mac. If someone sent you this link, deny it.",
+    who: "Requested by",
+    address: "Address",
+    when: "When",
+    allow: "Allow",
+    deny: "Deny",
+    enroll: "Turn on Touch ID on this Mac",
+    enrolled: "Touch ID is on. Next time, just touch the sensor.",
+    invalidCredentials: "Incorrect email or password.",
+    invalidCode: "This code does not exist. Request a new one from the app.",
+    expiredCode: "This code has expired. Request a new one from the app.",
+    processedCode: "This request was already answered. Request a new one from the app.",
+    tooMany: "Too many attempts. Wait a minute and try again.",
+    unclaimed: "Could not check the code right now. Reload the page in a few minutes.",
+    passkeyNotFound: "This Touch ID is not linked to an account. Sign in with your password.",
+    passkeyFailed: "Could not confirm Touch ID. Try again.",
+    failed: "That did not work. Try again.",
+    approvedTitle: "This access was already allowed",
+    approvedText: "You can go back to the app.",
+    deniedTitle: "This access was denied",
+    deniedText: "To try again, request a new code from the app.",
+    expiredTitle: "This code has expired",
+    expiredText: "Codes are valid for 10 minutes. Go back to the app and click Sign in with Touch ID again.",
+    missingTitle: "This code does not exist",
+    missingText: "Make sure you opened the link from the app, or request a new code.",
+    openFromAppTitle: "Open this link from the app",
+    openFromAppText: "This address only works from the Sign in button in r/bots.",
+    signupDisabled: "This account has no access yet. Ask for an invite.",
+    socialFailed: "Could not sign in with this account.",
+    unknown: "unknown",
+    hidePassword: "Hide password",
+    showPassword: "Show password",
+    allowedTitle: "Done, you can go back to the app",
+    allowedText: "r/bots is now allowed on this Mac. You can close this tab.",
+    refusedTitle: "Access denied",
+    refusedText: "The app was not allowed. If this was a mistake, request a new code from the app.",
+  },
+} satisfies Record<Language, Record<string, string>>;
+
+const scriptKeys = [
+  "invalidCredentials",
+  "invalidCode",
+  "expiredCode",
+  "processedCode",
+  "tooMany",
+  "unclaimed",
+  "passkeyNotFound",
+  "passkeyFailed",
+  "failed",
+  "approvedTitle",
+  "approvedText",
+  "deniedTitle",
+  "deniedText",
+  "expiredTitle",
+  "expiredText",
+  "missingTitle",
+  "missingText",
+  "openFromAppTitle",
+  "openFromAppText",
+  "signupDisabled",
+  "socialFailed",
+  "unknown",
+  "hidePassword",
+  "showPassword",
+  "allowedTitle",
+  "allowedText",
+  "refusedTitle",
+  "refusedText",
+] as const;
 
 const appIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
@@ -124,7 +280,9 @@ footer{font-size:12px;color:var(--faint)}
 @media (prefers-reduced-motion:reduce){.view{animation:none}.btn{transition:none}.btn:active:not(:disabled){transform:none}}
 `;
 
-const script = (basePath: string) => `
+const script = (basePath: string, language: Language) => `
+const text = ${JSON.stringify(Object.fromEntries(scriptKeys.map((key) => [key, pageText[language][key]])))};
+const locale = ${JSON.stringify(language)};
 const base = ${JSON.stringify(basePath)};
 const callback = ${JSON.stringify(appCallbackUrl)};
 const params = new URLSearchParams(location.search);
@@ -136,18 +294,18 @@ const webauthn = !!(window.PublicKeyCredential && PublicKeyCredential.parseReque
 const $ = (id) => document.getElementById(id);
 const views = ["loading", "setup", "login", "approve", "result"];
 const messages = {
-  "Invalid email or password": "E-mail ou senha incorretos.",
-  "Invalid password": "E-mail ou senha incorretos.",
-  "User not found": "E-mail ou senha incorretos.",
-  "Invalid user code": "Esse código não existe. Peça um novo pelo app.",
-  "User code has expired": "Esse código venceu. Peça um novo pelo app.",
-  "Device code already processed": "Esse pedido já foi respondido. Peça um novo pelo app.",
-  "Too many requests. Please try again later.": "Muitas tentativas. Espere um minuto e tente de novo.",
-  "Device code has not been claimed by a verifying session; call \`GET /device\` with the \`user_code\` while signed in before approving or denying": "Não deu para conferir o código agora. Recarregue a página em alguns minutos.",
-  "Passkey not found": "Esse Touch ID não está ligado a uma conta. Entre com a senha.",
-  "Authentication failed": "Não deu para confirmar o Touch ID. Tente de novo.",
+  "Invalid email or password": text.invalidCredentials,
+  "Invalid password": text.invalidCredentials,
+  "User not found": text.invalidCredentials,
+  "Invalid user code": text.invalidCode,
+  "User code has expired": text.expiredCode,
+  "Device code already processed": text.processedCode,
+  "Too many requests. Please try again later.": text.tooMany,
+  "Device code has not been claimed by a verifying session; call \`GET /device\` with the \`user_code\` while signed in before approving or denying": text.unclaimed,
+  "Passkey not found": text.passkeyNotFound,
+  "Authentication failed": text.passkeyFailed,
 };
-const translate = (message) => messages[message] || message || "Não deu certo. Tente de novo.";
+const translate = (message) => messages[message] || message || text.failed;
 function show(id) {
   for (const view of views) $(view).hidden = view !== id;
   if (id !== "result") $("mark").removeAttribute("data-badge");
@@ -212,12 +370,12 @@ async function hasPasskey() {
 async function check() {
   try {
     const body = await call("/device?user_code=" + encodeURIComponent(userCode), { method: "GET" });
-    if (body && body.status === "approved") return result("ok", "Esse acesso já foi liberado", "Pode voltar ao app.");
-    if (body && body.status === "denied") return result("no", "Esse acesso foi recusado", "Para tentar de novo, peça um novo código pelo app.");
+    if (body && body.status === "approved") return result("ok", text.approvedTitle, text.approvedText);
+    if (body && body.status === "denied") return result("no", text.deniedTitle, text.deniedText);
     return true;
   } catch (error) {
-    if (error.code === "expired_token") return result("late", "Esse código venceu", "Os códigos valem por 10 minutos. Volte ao app e clique em Entrar com Touch ID de novo.");
-    if (error.status === 400) return result("no", "Esse código não existe", "Confira se você abriu o link pelo app ou peça um novo código.");
+    if (error.code === "expired_token") return result("late", text.expiredTitle, text.expiredText);
+    if (error.status === 400) return result("no", text.missingTitle, text.missingText);
     return true;
   }
 }
@@ -240,21 +398,21 @@ async function requestInfo() {
   }
 }
 async function enter() {
-  if (!userCode) return result("no", "Abra este link pelo app", "Este endereço só funciona a partir do botão Entrar no r/bots.");
+  if (!userCode) return result("no", text.openFromAppTitle, text.openFromAppText);
   const signedIn = await session();
   if ((await check()) !== true) return;
   if (!signedIn && (await needsOwner())) return show("setup");
   if (!signedIn) {
     show("login");
-    if (socialError) return fail(socialError === "signup_disabled" ? "Essa conta ainda não tem acesso. Peça um convite." : "Não deu para entrar com essa conta.");
+    if (socialError) return fail(socialError === "signup_disabled" ? text.signupDisabled : text.socialFailed);
     if (provider) await social(provider);
     return;
   }
   $("code").textContent = userCode;
   const info = await requestInfo();
-  $("info-client").textContent = info && info.clientName ? info.clientName : "desconhecido";
-  $("info-ip").textContent = info && info.ip ? info.ip : "desconhecido";
-  $("info-time").textContent = info && info.requestedAt ? new Date(info.requestedAt).toLocaleString("pt-BR") : "desconhecido";
+  $("info-client").textContent = info && info.clientName ? info.clientName : text.unknown;
+  $("info-ip").textContent = info && info.ip ? info.ip : text.unknown;
+  $("info-time").textContent = info && info.requestedAt ? new Date(info.requestedAt).toLocaleString(locale) : text.unknown;
   $("enroll").hidden = !webauthn || (await hasPasskey());
   show("approve");
 }
@@ -274,7 +432,7 @@ if (!webauthn) {
 $("reveal").addEventListener("click", () => {
   const visible = $("reveal").getAttribute("aria-pressed") !== "true";
   $("reveal").setAttribute("aria-pressed", String(visible));
-  $("reveal").setAttribute("aria-label", visible ? "Esconder a senha" : "Mostrar a senha");
+  $("reveal").setAttribute("aria-label", visible ? text.hidePassword : text.showPassword);
   $("secret").type = visible ? "text" : "password";
 });
 for (const id of ["email", "secret"]) $(id).addEventListener("input", () => { markInvalid(false); fail(""); });
@@ -321,7 +479,7 @@ $("setup-form").addEventListener("submit", (event) => {
         body: JSON.stringify({ name: $("setup-name").value.trim(), email, password }),
       });
       const body = await response.json().catch(() => null);
-      if (!response.ok) return fail((body && body.error) || "Não deu certo. Tente de novo.");
+      if (!response.ok) return fail((body && body.error) || text.failed);
       await call("/sign-in/email", { method: "POST", body: JSON.stringify({ email, password }) });
       $("setup-secret").value = "";
       $("setup-token").value = "";
@@ -350,7 +508,7 @@ $("allow").addEventListener("click", () => {
   busy($("allow"), async () => {
     try {
       await call("/device/approve", { method: "POST", body: JSON.stringify({ userCode }) });
-      result("ok", "Pronto, pode voltar ao app", "O r/bots já está liberado neste Mac. Você pode fechar esta aba.");
+      result("ok", text.allowedTitle, text.allowedText);
       location.href = callback;
     } catch (error) {
       fail(error.message);
@@ -362,7 +520,7 @@ $("deny").addEventListener("click", () => {
   busy($("deny"), async () => {
     try {
       await call("/device/deny", { method: "POST", body: JSON.stringify({ userCode }) });
-      result("no", "Acesso recusado", "O app não foi liberado. Se foi engano, peça um novo código pelo app.");
+      result("no", text.refusedTitle, text.refusedText);
     } catch (error) {
       fail(error.message);
     }
@@ -371,9 +529,10 @@ $("deny").addEventListener("click", () => {
 enter();
 `;
 
-export function devicePage(basePath: string, nonce: string) {
+export function devicePage(basePath: string, nonce: string, language: Language = "pt-BR") {
+  const c = pageText[language];
   return `<!doctype html>
-<html lang="pt-BR">
+<html lang="${language}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -381,7 +540,7 @@ export function devicePage(basePath: string, nonce: string) {
 <meta name="color-scheme" content="light dark" />
 <meta name="theme-color" content="#F6F7F7" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#0E0E0F" media="(prefers-color-scheme: dark)" />
-<title>Entrar · r/bots</title>
+<title>${c.title}</title>
 <link rel="icon" type="image/svg+xml" href="${favicon}" />
 <link rel="apple-touch-icon" href="${favicon}" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -393,48 +552,48 @@ export function devicePage(basePath: string, nonce: string) {
 <main aria-live="polite">
 <div class="mark" id="mark">${appIcon}<span class="badge badge-ok">${icons.check}</span><span class="badge badge-no">${icons.close}</span><span class="badge badge-late">${icons.clock}</span></div>
 <section id="loading" class="view" aria-busy="true">
-<header><h1 tabindex="-1">Conferindo o código</h1><p class="lede">Só um instante.</p></header>
-<span class="spinner" role="status" aria-label="Carregando"></span>
+<header><h1 tabindex="-1">${c.checkingTitle}</h1><p class="lede">${c.checkingLede}</p></header>
+<span class="spinner" role="status" aria-label="${c.loading}"></span>
 </section>
 <section id="setup" class="view" hidden>
-<header><h1 tabindex="-1">Criar a conta do dono</h1><p class="lede">Use o código do arquivo setup.token, que fica na pasta de dados do servidor.</p></header>
+<header><h1 tabindex="-1">${c.setupTitle}</h1><p class="lede">${c.setupLede}</p></header>
 <form id="setup-form" novalidate>
-<div class="field"><label for="setup-token">Código de primeiro acesso</label><div class="control">${icons.lock}<input id="setup-token" type="password" autocomplete="off" spellcheck="false" required aria-describedby="error" /></div></div>
-<div class="field"><label for="setup-name">Nome</label><div class="control"><input id="setup-name" type="text" autocomplete="name" required aria-describedby="error" /></div></div>
-<div class="field"><label for="setup-email">E-mail</label><div class="control">${icons.mail}<input id="setup-email" type="email" inputmode="email" autocomplete="username email" autocapitalize="off" spellcheck="false" required aria-describedby="error" /></div></div>
-<div class="field"><label for="setup-secret">Senha</label><div class="control">${icons.lock}<input id="setup-secret" type="password" autocomplete="new-password" minlength="8" required aria-describedby="error" /></div></div>
-<button class="btn primary" id="setup-submit" type="submit"><span class="label">Criar conta</span></button>
+<div class="field"><label for="setup-token">${c.setupToken}</label><div class="control">${icons.lock}<input id="setup-token" type="password" autocomplete="off" spellcheck="false" required aria-describedby="error" /></div></div>
+<div class="field"><label for="setup-name">${c.name}</label><div class="control"><input id="setup-name" type="text" autocomplete="name" required aria-describedby="error" /></div></div>
+<div class="field"><label for="setup-email">${c.email}</label><div class="control">${icons.mail}<input id="setup-email" type="email" inputmode="email" autocomplete="username email" autocapitalize="off" spellcheck="false" required aria-describedby="error" /></div></div>
+<div class="field"><label for="setup-secret">${c.password}</label><div class="control">${icons.lock}<input id="setup-secret" type="password" autocomplete="new-password" minlength="8" required aria-describedby="error" /></div></div>
+<button class="btn primary" id="setup-submit" type="submit"><span class="label">${c.createAccount}</span></button>
 </form>
 </section>
 <section id="login" class="view" hidden>
-<header><h1 tabindex="-1">Entrar no r/bots</h1><p class="lede">Para liberar o app no seu Mac.</p></header>
+<header><h1 tabindex="-1">${c.loginTitle}</h1><p class="lede">${c.loginLede}</p></header>
 <div id="passkey-area">
-<button class="btn primary" id="passkey" type="button">${icons.touch}<span class="label">Entrar com Touch ID</span></button>
-<div class="divider" role="separator">OU</div>
+<button class="btn primary" id="passkey" type="button">${icons.touch}<span class="label">${c.touchId}</span></button>
+<div class="divider" role="separator">${c.or}</div>
 </div>
-<p class="note" id="no-passkey" hidden>${icons.touch}<span>Este navegador não oferece Touch ID nem chave de acesso. Entre com o e-mail e a senha.</span></p>
+<p class="note" id="no-passkey" hidden>${icons.touch}<span>${c.noPasskey}</span></p>
 <form id="password" novalidate>
 <div class="field">
-<label for="email">E-mail</label>
-<div class="control" id="email-control">${icons.mail}<input id="email" name="email" type="email" inputmode="email" autocomplete="username email webauthn" autocapitalize="off" spellcheck="false" placeholder="voce@empresa.com" required aria-describedby="error" /></div>
+<label for="email">${c.email}</label>
+<div class="control" id="email-control">${icons.mail}<input id="email" name="email" type="email" inputmode="email" autocomplete="username email webauthn" autocapitalize="off" spellcheck="false" placeholder="${c.emailPlaceholder}" required aria-describedby="error" /></div>
 </div>
 <div class="field">
-<label for="secret">Senha</label>
-<div class="control" id="secret-control">${icons.lock}<input id="secret" name="password" type="password" autocomplete="current-password" placeholder="Sua senha" required aria-describedby="error" /><button class="reveal" id="reveal" type="button" aria-pressed="false" aria-label="Mostrar a senha" aria-controls="secret">${icons.eye}${icons.eyeOff}</button></div>
+<label for="secret">${c.password}</label>
+<div class="control" id="secret-control">${icons.lock}<input id="secret" name="password" type="password" autocomplete="current-password" placeholder="${c.passwordPlaceholder}" required aria-describedby="error" /><button class="reveal" id="reveal" type="button" aria-pressed="false" aria-label="${c.showPassword}" aria-controls="secret">${icons.eye}${icons.eyeOff}</button></div>
 </div>
-<button class="btn secondary" id="submit" type="submit"><span class="label">Entrar com senha</span></button>
+<button class="btn secondary" id="submit" type="submit"><span class="label">${c.passwordSignIn}</span></button>
 </form>
 </section>
 <section id="approve" class="view" hidden>
-<header><h1 tabindex="-1">Liberar o app</h1><p class="lede">Confira se o código é o mesmo que aparece no app.</p></header>
-<div class="code" id="code" aria-label="Código"></div>
-<p class="note" id="request-warning">${icons.lock}<span>Só libere se foi você que pediu agora, no seu Mac. Se alguém te mandou este link, recuse.</span></p>
-<dl class="info" id="request-info"><dt>Quem pediu</dt><dd id="info-client"></dd><dt>Endereço</dt><dd id="info-ip"></dd><dt>Quando</dt><dd id="info-time"></dd></dl>
+<header><h1 tabindex="-1">${c.approveTitle}</h1><p class="lede">${c.approveLede}</p></header>
+<div class="code" id="code" aria-label="${c.code}"></div>
+<p class="note" id="request-warning">${icons.lock}<span>${c.warning}</span></p>
+<dl class="info" id="request-info"><dt>${c.who}</dt><dd id="info-client"></dd><dt>${c.address}</dt><dd id="info-ip"></dd><dt>${c.when}</dt><dd id="info-time"></dd></dl>
 <div class="stack">
-<button class="btn primary" id="allow" type="button"><span class="label">Liberar</span></button>
-<button class="btn secondary" id="deny" type="button"><span class="label">Recusar</span></button>
-<button class="btn quiet" id="enroll" type="button" hidden>${icons.touch}<span class="label">Ativar Touch ID neste Mac</span></button>
-<p class="lede center" id="enrolled" hidden>Touch ID ativado. Da próxima vez é só encostar o dedo.</p>
+<button class="btn primary" id="allow" type="button"><span class="label">${c.allow}</span></button>
+<button class="btn secondary" id="deny" type="button"><span class="label">${c.deny}</span></button>
+<button class="btn quiet" id="enroll" type="button" hidden>${icons.touch}<span class="label">${c.enroll}</span></button>
+<p class="lede center" id="enrolled" hidden>${c.enrolled}</p>
 </div>
 </section>
 <section id="result" class="view" hidden>
@@ -443,7 +602,7 @@ export function devicePage(basePath: string, nonce: string) {
 <p class="error" id="error" role="alert"></p>
 </main>
 <footer>r/bots</footer>
-<script nonce="${nonce}">${script(basePath)}</script>
+<script nonce="${nonce}">${script(basePath, language)}</script>
 </body>
 </html>`;
 }

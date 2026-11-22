@@ -1,0 +1,38 @@
+import { defineMessages } from "../../../shared/i18n";
+
+export const computerText = defineMessages({
+  "pt-BR": {
+    appNoAnswer: "O app r/bots não respondeu: {reason}",
+    macOffline: "Mac desconectado: abra o app r/bots nele.",
+    alwaysHuman: "{name} sempre passa por uma pessoa.",
+    nestedShell: "Comando que roda outro shell por dentro sempre passa por uma pessoa.",
+    forceDelete: "Apagar pasta ou forçar apagamento sempre passa por uma pessoa.",
+    gitPush: "git push sempre passa por uma pessoa.",
+    upload: "Enviar dados para a internet sempre passa por uma pessoa.",
+    appleScript: "AppleScript que roda comando, envia, apaga ou compra sempre passa por uma pessoa.",
+    defaults: "Mudar preferência do macOS sempre passa por uma pessoa.",
+    unparsed: "Não deu para ler o comando: sempre passa por uma pessoa.",
+    sensitiveTyping: "Digitar cartão ou documento sempre passa por uma pessoa.",
+    payment: "Página de pagamento sempre passa por uma pessoa.",
+    doShell: "AppleScript com do shell script roda comando no Mac: sempre passa por uma pessoa.",
+    appleScriptSend: "AppleScript que envia, apaga ou compra sempre passa por uma pessoa.",
+    bigTrash: "Mandar mais de 10 itens para a lixeira sempre passa por uma pessoa.",
+  },
+  en: {
+    appNoAnswer: "The r/bots app did not respond: {reason}",
+    macOffline: "Mac disconnected: open the r/bots app on it.",
+    alwaysHuman: "{name} always goes through a person.",
+    nestedShell: "A command that runs another shell inside it always goes through a person.",
+    forceDelete: "Deleting a folder or forcing a delete always goes through a person.",
+    gitPush: "git push always goes through a person.",
+    upload: "Sending data to the internet always goes through a person.",
+    appleScript: "AppleScript that runs a command, sends, deletes or buys always goes through a person.",
+    defaults: "Changing a macOS preference always goes through a person.",
+    unparsed: "Couldn't read the command: it always goes through a person.",
+    sensitiveTyping: "Typing a card or ID number always goes through a person.",
+    payment: "A payment page always goes through a person.",
+    doShell: "AppleScript with do shell script runs a command on the Mac: it always goes through a person.",
+    appleScriptSend: "AppleScript that sends, deletes or buys always goes through a person.",
+    bigTrash: "Moving more than 10 items to the Trash always goes through a person.",
+  },
+});

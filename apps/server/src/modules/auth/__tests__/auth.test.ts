@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { freshDb } from "../../../../test/db-helpers";
 import { buildRequestContext, setRequestContext } from "../../../shared/http";
+import { withLanguage } from "../../../shared/i18n";
 import { type AuthModule, createAuthModule, isPublicRoute } from "..";
 import { safeEqual, signSessionCookie } from "../services/accounts-access.service";
 import { resolveAuthSecret } from "../services/auth-secret.service";
@@ -287,6 +288,28 @@ describe("sessions", () => {
     expect(html).toContain('rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,');
     expect(html).toContain('autocomplete="current-password"');
     expect(html).not.toMatch(/\son[a-z]+="/);
+    expect(html).toContain('<html lang="pt-BR">');
+    expect(html).toContain('"failed":"Não deu certo. Tente de novo."');
+  });
+
+  test("device page follows the browser language or the lang parameter", async () => {
+    const english = await (await call("/device?user_code=ABCD", { headers: { "accept-language": "en-US,en" } })).text();
+    expect(english).toContain('<html lang="en">');
+    expect(english).toContain("<title>Sign in · r/bots</title>");
+    expect(english).toContain("Sign in with Touch ID");
+    expect(english).toContain('"failed":"That did not work. Try again."');
+    expect(english).toContain('const locale = "en";');
+    const forced = await (
+      await call("/device?user_code=ABCD&lang=pt-BR", { headers: { "accept-language": "en" } })
+    ).text();
+    expect(forced).toContain("<title>Entrar · r/bots</title>");
+    const param = await (await call("/device?user_code=ABCD&lang=en")).text();
+    expect(param).toContain("Allow the app");
+  });
+
+  test("auth errors follow the request language", async () => {
+    const response = await withLanguage("en", () => call("/auth/me"));
+    expect(await response.json()).toMatchObject({ error: "Sign in again to continue.", code: "unauthorized" });
   });
 });
 

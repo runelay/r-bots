@@ -26,7 +26,7 @@ struct RunProjectPopover: View {
 
             if !store.profiles.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.xxs) {
-                    caption("Perfis")
+                    caption(tr("Perfis"))
                     ForEach(store.profiles) { profile in
                         ProfileRow(profile: profile) {
                             run(profile: profile.id)
@@ -47,17 +47,17 @@ struct RunProjectPopover: View {
                     .foregroundStyle(Theme.textTertiary)
             } else {
                 VStack(alignment: .leading, spacing: Spacing.s) {
-                    caption("Repositório e worktree")
+                    caption(tr("Repositório e worktree"))
                     HStack(spacing: Spacing.s) {
                         GlassSelect(
                             options: projects.map { GlassSelectOption($0.name, value: $0.path, systemImage: "folder") },
                             selection: $projectPath,
-                            help: "Repositório",
+                            help: tr("Repositório"),
                             maxWidth: 150
                         )
                         if let project, project.worktrees.count > 1 {
                             GlassSelect(
-                                options: project.worktrees.map { GlassSelectOption($0.branch ?? "sem branch", value: $0.path, systemImage: $0.main ? "house" : "arrow.triangle.branch") },
+                                options: project.worktrees.map { GlassSelectOption($0.branch ?? tr("sem branch"), value: $0.path, systemImage: $0.main ? "house" : "arrow.triangle.branch") },
                                 selection: $worktreePath,
                                 help: "Worktree",
                                 maxWidth: 170
@@ -123,7 +123,7 @@ struct RunProjectPopover: View {
 
     private var scriptList: some View {
         VStack(alignment: .leading, spacing: Spacing.xxs) {
-            caption("Script")
+            caption(tr("Script"))
             if let scripts {
                 if scripts.scripts.isEmpty {
                     Text("Sem scripts no package.json desta pasta.")

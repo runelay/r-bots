@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { makeBot } from "../../../../test/engine-helpers";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
 import { ValidationError } from "../../../shared/errors";
+import { withLanguage } from "../../../shared/i18n";
 import { getBot, updateSidebar } from "../../bots/services/bots.service";
 import { loadSectionRows, saveSectionRow } from "../repositories/sections.repository";
 import {
@@ -55,6 +56,9 @@ describe("sections service", () => {
     await expect(createSection({ name: "x".repeat(41) })).rejects.toThrow("no máximo 40 caracteres");
     for (const order of [-1, 1.5, "2", 10_001])
       await expect(createSection({ name: "Ok", order })).rejects.toThrow("order precisa ser um inteiro");
+    await expect(withLanguage("en", () => createSection({ name: "   " }))).rejects.toThrow(
+      "The section name can't be empty.",
+    );
   });
 
   test("updates name and order, rejecting unknown fields", async () => {

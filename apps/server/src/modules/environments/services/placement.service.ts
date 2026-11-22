@@ -1,5 +1,6 @@
 import type { Placement } from "@runelay-bots/protocol";
-import { boxesCapability, macOfflineMessage } from "../constants/environments.constants";
+import { boxesCapability } from "../constants/environments.constants";
+import { environmentsText } from "../constants/environments-messages.constants";
 import type { PlacementContext, RunnerEnvironment } from "../types/environments.types";
 
 const local: Placement = { kind: "local" };
@@ -28,7 +29,7 @@ export function decidePlacement({
   if (environment === "mac")
     return chosen?.canRun && chosen.key
       ? { kind: "remote", environmentId: chosen.key, host: true, environment }
-      : { kind: "offline", message: macOfflineMessage };
+      : { kind: "offline", message: environmentsText("macOffline") };
   if (chosen?.canRun && chosen.key) return { kind: "remote", environmentId: chosen.key, host: true };
   if (sandbox === "off") return local;
   const eligible = environments.filter(

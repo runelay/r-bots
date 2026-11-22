@@ -1,7 +1,7 @@
 import type { NativeToolHooks, ProviderEvent, SyncResult, TurnRequest } from "@runelay-bots/protocol";
 import { runRemoteTurn } from "../../accounts/services/mac-runner.service";
 import { beginMacTurn, finishMacTurn, type MacSyncPlan, prepareMacSync } from "../../code/services/mac-sync.service";
-import { macOfflineMessage } from "../constants/environments.constants";
+import { environmentsText } from "../constants/environments-messages.constants";
 import { hostBoxSpec } from "./box-spec.service";
 import { onHost } from "./host-turns.service";
 
@@ -14,7 +14,7 @@ async function planFor(cwd: string | null): Promise<MacSyncPlan> {
   try {
     return await prepareMacSync(cwd);
   } catch (error) {
-    return { kind: "refused", message: `Não consegui preparar o código para o Mac: ${errorText(error)}` };
+    return { kind: "refused", message: environmentsText("macPrepareFailed", { reason: errorText(error) }) };
   }
 }
 
@@ -56,7 +56,7 @@ export async function runOnMac(
     signal,
     emit,
   );
-  if (outcome === "refused") emit({ type: "done", ok: false, message: macOfflineMessage });
+  if (outcome === "refused") emit({ type: "done", ok: false, message: environmentsText("macOffline") });
   if (!sync) return;
   await finishMacTurn(sync.cwd, result).catch((error) =>
     console.warn(`${new Date().toISOString()} mac sync ${request.turnId}: ${errorText(error)}`),

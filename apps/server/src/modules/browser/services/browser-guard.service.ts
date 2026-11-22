@@ -1,6 +1,7 @@
 import { env } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
 import { resolvePublic } from "../../../shared/net-guard";
+import { browserText } from "../constants/browser-messages.constants";
 import { liveWorkspaceIds } from "../repositories/workspaces.repository";
 import { type EgressProxy, loopbackName, startEgressProxy } from "./egress-proxy.service";
 
@@ -22,10 +23,9 @@ export async function assertBrowsable(botId: string, raw: string) {
   try {
     url = loopbackName(new URL(raw));
   } catch {
-    throw new ValidationError("Endereço inválido.", "url");
+    throw new ValidationError(browserText("urlInvalid"), "url");
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:")
-    throw new ValidationError("O navegador do bot só abre endereços http ou https.", "url");
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new ValidationError(browserText("httpOnly"), "url");
   const port = portOf(url);
   await resolvePublic(url, { allowLoopbackPorts: (await devPortAllowed(botId, port)) ? [port] : [] });
 }

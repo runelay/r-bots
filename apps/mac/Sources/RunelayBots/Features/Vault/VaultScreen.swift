@@ -270,15 +270,15 @@ private struct VaultRow: View {
     }
 
     private var metaLine: String {
-        if secret.isExpired { return "Vencido" }
+        if secret.isExpired { return tr("Vencido") }
         let site =
             secret.policy.domains.first.map { first in
                 secret.policy.domains.count > 1 ? "\(first) +\(secret.policy.domains.count - 1)" : first
-            } ?? "Qualquer site"
+            } ?? tr("Qualquer site")
         if let date = secret.lastUsedAt {
-            return "\(site) · \(VaultText.relative(date))\(botName.map { " por \($0)" } ?? "")"
+            return botName.map { tr("%1$@ · %2$@ por %3$@", site, VaultText.relative(date), $0) } ?? "\(site) · \(VaultText.relative(date))"
         }
-        return "\(site) · nunca usado"
+        return tr("%@ · nunca usado", site)
     }
 }
 
@@ -458,7 +458,7 @@ private struct VaultEditor: View {
                             copyReference(secret)
                         } label: {
                             HStack(spacing: Spacing.xs) {
-                                Text(notice == "Copiado" ? "Copiado" : secret.reference)
+                                Text(notice == "Copiado" ? tr("Copiado") : secret.reference)
                                     .font(TypeScale.monoInline)
                                     .contentTransition(.opacity)
                                 Image(systemName: notice == "Copiado" ? "checkmark" : "doc.on.doc")
@@ -521,16 +521,16 @@ private struct VaultEditor: View {
     }
 
     private func moreMenu(_ secret: VaultSecret) -> some View {
-        GlassMenuIconButton(systemImage: "ellipsis", help: "Mais ações", iconSize: 13, size: 32, weight: .medium, edge: .trailing) {
+        GlassMenuIconButton(systemImage: "ellipsis", help: tr("Mais ações"), iconSize: 13, size: 32, weight: .medium, edge: .trailing) {
             [
-                GlassMenuItem("Trocar valor", systemImage: "arrow.triangle.2.circlepath", isEnabled: !busy && secret.onMac) {
+                GlassMenuItem(tr("Trocar valor"), systemImage: "arrow.triangle.2.circlepath", isEnabled: !busy && secret.onMac) {
                     rotating.toggle()
                     newValue = ""
                 },
-                GlassMenuItem("Copiar referência", systemImage: "doc.on.doc") {
+                GlassMenuItem(tr("Copiar referência"), systemImage: "doc.on.doc") {
                     copyReference(secret)
                 },
-                GlassMenuItem("Apagar", systemImage: "trash", destructive: true, isEnabled: !busy) {
+                GlassMenuItem(tr("Apagar"), systemImage: "trash", destructive: true, isEnabled: !busy) {
                     confirmDelete = true
                 },
             ]
@@ -554,23 +554,23 @@ private struct VaultEditor: View {
     private var fields: some View {
         VStack(alignment: .leading, spacing: Spacing.l) {
             if isNew {
-                ScreenSection(title: "Segredo") {
-                    VaultSettingRow(title: "Nome", help: "Os bots usam como segredo:nome. Letras minúsculas e hífen.") {
+                ScreenSection(title: tr("Segredo")) {
+                    VaultSettingRow(title: tr("Nome"), help: tr("Os bots usam como segredo:nome. Letras minúsculas e hífen.")) {
                         plainField(TextField("", text: $name, prompt: Text("github-token").foregroundStyle(Theme.textTertiary)))
                     }
-                    VaultSettingRow(title: "Valor") {
+                    VaultSettingRow(title: tr("Valor")) {
                         plainField(SecureField("", text: $value, prompt: Text("Cole ou digite aqui").foregroundStyle(Theme.textTertiary)), mono: true)
                     }
                 }
             }
-            ScreenSection(title: "Onde pode ser usado") {
-                VaultSettingRow(title: "Para que serve") {
+            ScreenSection(title: tr("Onde pode ser usado")) {
+                VaultSettingRow(title: tr("Para que serve")) {
                     plainField(TextField("", text: $descriptionText, prompt: Text("Login do GitHub no navegador").foregroundStyle(Theme.textTertiary)))
                 }
-                VaultSettingRow(title: "Sites", help: "Vazio vale para qualquer site. *.dominio libera os subdomínios.") {
+                VaultSettingRow(title: tr("Sites"), help: tr("Vazio vale para qualquer site. *.dominio libera os subdomínios.")) {
                     plainField(TextField("", text: $domainsText, prompt: Text("Qualquer site").foregroundStyle(Theme.textTertiary), axis: .vertical).lineLimit(1...6))
                 }
-                VaultSettingRow(title: "Bots") {
+                VaultSettingRow(title: tr("Bots")) {
                     VStack(alignment: .leading, spacing: Spacing.s) {
                         Toggle("Todos os bots", isOn: $allBots)
                             .toggleStyle(.switch)
@@ -590,8 +590,8 @@ private struct VaultEditor: View {
                     }
                 }
             }
-            ScreenSection(title: "Proteção") {
-                VaultSettingRow(title: "Touch ID") {
+            ScreenSection(title: tr("Proteção")) {
+                VaultSettingRow(title: tr("Touch ID")) {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Picker("", selection: $touch) {
                             ForEach(VaultTouchPolicy.allCases) { item in
@@ -607,7 +607,7 @@ private struct VaultEditor: View {
                             .contentTransition(.opacity)
                     }
                 }
-                VaultSettingRow(title: "Validade") {
+                VaultSettingRow(title: tr("Validade")) {
                     HStack(spacing: Spacing.m) {
                         Toggle(hasExpiry ? "Vence em" : "Não vence", isOn: $hasExpiry)
                             .toggleStyle(.switch)
@@ -622,7 +622,7 @@ private struct VaultEditor: View {
                     }
                     .frame(height: 32)
                 }
-                VaultSettingRow(title: "Mac fechado") {
+                VaultSettingRow(title: tr("Mac fechado")) {
                     VStack(alignment: .leading, spacing: Spacing.xs) {
                         Toggle("Usar mesmo com o Mac fechado", isOn: $keepOnServer)
                             .toggleStyle(.switch)
@@ -650,7 +650,7 @@ private struct VaultEditor: View {
                 Spacer(minLength: 0)
                 Button("Cancelar", action: onCancel)
                     .buttonStyle(.brandSecondary)
-                saveButton(title: "Criar")
+                saveButton(title: tr("Criar"))
                     .disabled(busy || name.isEmpty || value.isEmpty)
             }
         } else if isDirty {
@@ -662,12 +662,12 @@ private struct VaultEditor: View {
                 Button("Descartar") { resetFields() }
                     .buttonStyle(.brandSecondary)
                     .disabled(busy)
-                saveButton(title: "Salvar")
+                saveButton(title: tr("Salvar"))
                     .disabled(busy)
             }
             .transition(.opacity.combined(with: .offset(y: 4)))
         } else if let notice, notice != "Copiado" {
-            Label(notice, systemImage: "checkmark.circle.fill")
+            Label(tr(notice), systemImage: "checkmark.circle.fill")
                 .font(TypeScale.caption)
                 .foregroundStyle(Theme.success)
                 .transition(.opacity)
@@ -687,7 +687,7 @@ private struct VaultEditor: View {
     }
 
     private var historySection: some View {
-        ScreenSection(title: "Histórico") {
+        ScreenSection(title: tr("Histórico")) {
             if history.isEmpty {
                 Text("Nenhum uso ainda.")
                     .font(TypeScale.caption)
@@ -772,7 +772,7 @@ private struct VaultEditor: View {
             do {
                 try await work()
             } catch {
-                self.error = (error as? VaultFailure)?.message ?? "Não deu certo. Tente de novo."
+                self.error = (error as? VaultFailure)?.message ?? tr("Não deu certo. Tente de novo.")
             }
             busy = false
         }

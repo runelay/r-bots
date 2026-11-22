@@ -6,6 +6,7 @@ import { principalOf } from "../../auth/gate";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { answer, answerQuestion, cancel, deliver } from "../../engine/services/engine.service";
 import { isQuestionAnswer } from "../../questions/services/questions.service";
+import { conversationsText } from "../constants/conversations-messages.constants";
 import { lineOf } from "../repositories/sessions.repository";
 import {
   addReaction,
@@ -88,7 +89,7 @@ async function handleSessionPost(req: Req, res: Res, bot: BotDefinition, session
       return sendJson(res, 409, {
         ok: false,
         code: "interaction_not_pending",
-        error: "Essa aprovação ou pergunta não está mais pendente.",
+        error: conversationsText("notPending"),
       });
     }
   }
@@ -156,7 +157,7 @@ async function handleEvents(res: Res, url: URL, session: StoredSession) {
   const beforeParam = url.searchParams.get("before");
   const beforeRaw = beforeParam === null || beforeParam === "" ? total : Number(beforeParam);
   if (!Number.isFinite(beforeRaw) || beforeRaw < 0)
-    return sendJson(res, 400, { ok: false, error: "before inválido.", field: "before" });
+    return sendJson(res, 400, { ok: false, error: conversationsText("beforeInvalid"), field: "before" });
   const end = Math.min(total, Math.floor(beforeRaw));
   const start = Math.max(0, end - limit);
   const events: Record<string, unknown>[] = [];

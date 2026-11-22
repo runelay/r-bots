@@ -1,0 +1,8 @@
+"NSMicrophoneUsageDescription" = "O r/bots usa o microfone para você falar com os bots em vez de digitar.";
+"NSSpeechRecognitionUsageDescription" = "O r/bots transcreve sua fala no próprio Mac para escrever a mensagem para os bots.";
+"NSAppleEventsUsageDescription" = "O r/bots controla a música do Spotify que está tocando. Os bots com acesso ao seu Mac usam AppleScript para agir no Finder, Safari, Mail e outros apps, sempre com a sua aprovação.";
+"NSDesktopFolderUsageDescription" = "Os bots com acesso ao seu Mac listam e organizam arquivos da Mesa quando você libera essa pasta.";
+"NSDocumentsFolderUsageDescription" = "Os bots com acesso ao seu Mac listam e organizam arquivos de Documentos quando você libera essa pasta.";
+"NSDownloadsFolderUsageDescription" = "Os bots com acesso ao seu Mac listam e organizam arquivos de Downloads quando você libera essa pasta.";
+"NSRemovableVolumesUsageDescription" = "Os bots com acesso ao seu Mac podem ler arquivos em discos externos que estejam nas pastas liberadas.";
+"NSScreenCaptureUsageDescription" = "Os bots com acesso ao seu Mac tiram print e gravam a tela para ver o que estão fazendo.";

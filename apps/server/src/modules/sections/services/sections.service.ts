@@ -1,5 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { ValidationError } from "../../../shared/errors";
+import { commonText } from "../../../shared/messages";
+import { sectionsText } from "../constants/sections-messages.constants";
 import { loadSectionRows, saveSectionRow } from "../repositories/sections.repository";
 
 export interface Section {
@@ -35,21 +37,21 @@ export function sectionExists(id: string) {
 }
 
 function validName(value: unknown) {
-  if (typeof value !== "string" || !value.trim())
-    throw new ValidationError("O nome da seção não pode ficar vazio.", "name");
-  if (value.trim().length > 40) throw new ValidationError("O nome da seção pode ter no máximo 40 caracteres.", "name");
+  if (typeof value !== "string" || !value.trim()) throw new ValidationError(sectionsText("nameEmpty"), "name");
+  if (value.trim().length > 40) throw new ValidationError(sectionsText("nameTooLong"), "name");
   return value.trim();
 }
 
 function validOrder(value: unknown) {
   if (typeof value !== "number" || !Number.isInteger(value) || value < 0 || value > 10_000) {
-    throw new ValidationError("order precisa ser um inteiro entre 0 e 10000.", "order");
+    throw new ValidationError(sectionsText("orderInvalid"), "order");
   }
   return value;
 }
 
 function body(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("Corpo inválido.", "body");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   return value as Record<string, unknown>;
 }
 
@@ -73,7 +75,7 @@ export async function updateSection(id: string, input: unknown) {
   if (!section) return null;
   const raw = body(input);
   for (const key of Object.keys(raw)) {
-    if (!["name", "order"].includes(key)) throw new ValidationError(`Campo desconhecido: ${key}.`, key);
+    if (!["name", "order"].includes(key)) throw new ValidationError(commonText("unknownField", { key }), key);
   }
   if (raw.name !== undefined) section.name = validName(raw.name);
   if (raw.order !== undefined) section.order = validOrder(raw.order);

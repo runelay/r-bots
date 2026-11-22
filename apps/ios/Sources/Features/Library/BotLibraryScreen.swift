@@ -11,9 +11,9 @@ enum LibraryTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .artifacts: "Artefatos"
-        case .notes: "Notas"
-        case .sheets: "Planilhas"
+        case .artifacts: tr("Artefatos")
+        case .notes: tr("Notas")
+        case .sheets: tr("Planilhas")
         case .agenda: "Agenda"
         }
     }
@@ -75,7 +75,7 @@ struct BotLibraryScreen: View {
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
-                Text(item["title"]?.stringValue ?? "Sem título")
+                Text(item["title"]?.stringValue ?? tr("Sem título"))
                     .font(BrandFonts.sans(15, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(1)
@@ -96,10 +96,10 @@ struct BotLibraryScreen: View {
         case .notes:
             return item["excerpt"]?.stringValue ?? ""
         case .sheets:
-            return RelativeText.date(item["updatedAt"]?.stringValue).map { "Atualizada \($0)" } ?? ""
+            return RelativeText.date(item["updatedAt"]?.stringValue).map { tr("Atualizada %@", $0) } ?? ""
         case .agenda:
             let start = item["start"]?.stringValue.flatMap(ISODate.parse)
-            return start?.formatted(date: .abbreviated, time: .shortened) ?? (item["start"]?.stringValue ?? "")
+            return start?.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, locale: LanguageStore.shared.locale)) ?? (item["start"]?.stringValue ?? "")
         }
     }
 
@@ -108,7 +108,7 @@ struct BotLibraryScreen: View {
         switch tab {
         case .artifacts:
             ArtifactViewer(
-                title: item["title"]?.stringValue ?? "Artefato",
+                title: item["title"]?.stringValue ?? tr("Artefato"),
                 path: item["url"]?.stringValue ?? "/bots/\(bot.id)/artifacts/\(item["id"]?.stringValue ?? "")/v/\(item["version"]?.intValue ?? 1).html"
             )
         case .notes:
@@ -153,12 +153,12 @@ struct BotLibraryScreen: View {
 enum ArtifactKindText {
     static func label(_ kind: String?) -> String {
         switch kind {
-        case "slides": "Apresentação"
+        case "slides": tr("Apresentação")
         case "dashboard": "Dashboard"
         case "canvas": "Canvas"
-        case "note": "Nota"
-        case "sheet": "Planilha"
-        default: "Página"
+        case "note": tr("Nota")
+        case "sheet": tr("Planilha")
+        default: tr("Página")
         }
     }
 }
@@ -309,7 +309,7 @@ struct AgendaEventDetail: View {
                 Text(event["title"]?.stringValue ?? "")
                     .font(BrandFonts.sans(20, weight: .semibold))
                 if let start = event["start"]?.stringValue.flatMap(ISODate.parse) {
-                    LabeledContent("Início", value: start.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent("Horário", value: start.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened, locale: LanguageStore.shared.locale)))
                 }
                 if let location = event["location"]?.stringValue, !location.isEmpty {
                     LabeledContent("Local", value: location)

@@ -67,12 +67,12 @@ struct LinearScreen: View {
     private var content: some View {
         switch store.phase {
         case .failed(let message) where store.cards.isEmpty:
-            let notConnected = message.localizedCaseInsensitiveContains("conect")
+            let notConnected = message.localizedCaseInsensitiveContains("conect") || message.localizedCaseInsensitiveContains("connect")
             BoardInlineNotice(
                 systemImage: notConnected ? "circle.dashed" : "exclamationmark.icloud",
-                title: notConnected ? "O Linear não está conectado" : "Não deu para falar com o Linear",
+                title: notConnected ? tr("O Linear não está conectado") : tr("Não deu para falar com o Linear"),
                 message: message,
-                actionTitle: notConnected ? "Abrir Conectores" : "Tentar de novo"
+                actionTitle: notConnected ? tr("Abrir Conectores") : tr("Tentar de novo")
             ) {
                 if notConnected {
                     model.section = .connectors
@@ -90,8 +90,8 @@ struct LinearScreen: View {
             if store.cards.isEmpty {
                 BoardInlineNotice(
                     systemImage: store.query.isEmpty ? "tray" : "magnifyingglass",
-                    title: store.query.isEmpty ? "Nenhuma issue aqui" : "Nada encontrado",
-                    message: store.query.isEmpty ? "Essa visão está vazia. Escolha outra no topo." : "Tente outras palavras."
+                    title: store.query.isEmpty ? tr("Nenhuma issue aqui") : tr("Nada encontrado"),
+                    message: store.query.isEmpty ? tr("Essa visão está vazia. Escolha outra no topo.") : tr("Tente outras palavras.")
                 )
             } else {
                 LinearBoardView()
@@ -137,23 +137,23 @@ private struct LinearHeader: View {
                     .fixedSize()
             }
             Spacer(minLength: Spacing.m)
-            BoardSearchField(text: $searchText, prompt: store.searchable ? "Buscar issues" : "Busca fora de visão salva", isEnabled: store.searchable)
+            BoardSearchField(text: $searchText, prompt: store.searchable ? tr("Buscar issues") : tr("Busca fora de visão salva"), isEnabled: store.searchable)
                 .frame(maxWidth: 220)
             if store.nextCursor != nil {
                 Button {
                     Task { await store.loadMore() }
                 } label: {
-                    BoardQuietFace(title: "Carregar mais", systemImage: "arrow.down", isBusy: store.loadingMore)
+                    BoardQuietFace(title: tr("Carregar mais"), systemImage: "arrow.down", isBusy: store.loadingMore)
                 }
                 .buttonStyle(PressableButtonStyle())
             }
             ReviewButton(view: store.viewID, project: store.activeProject) { store.show($0) }
             if let url = store.currentView?.url {
-                BoardIconButton(systemImage: "arrow.up.right.square", help: "Abrir no Linear") {
+                BoardIconButton(systemImage: "arrow.up.right.square", help: tr("Abrir no Linear")) {
                     BoardLinks.open(url)
                 }
             }
-            BoardIconButton(systemImage: "arrow.clockwise", help: "Atualizar (⌘R)", spinning: store.refreshing) {
+            BoardIconButton(systemImage: "arrow.clockwise", help: tr("Atualizar (⌘R)"), spinning: store.refreshing) {
                 Task {
                     await store.loadCatalogs()
                     await store.load(refresh: true)
@@ -166,9 +166,9 @@ private struct LinearHeader: View {
     }
 
     private var viewPicker: some View {
-        GlassMenuButton(help: "Escolher a visão", minWidth: 280, items: { viewItems }) { isOpen in
+        GlassMenuButton(help: tr("Escolher a visão"), minWidth: 280, items: { viewItems }) { isOpen in
             BoardQuietFace(
-                title: store.currentView?.name ?? "Visão",
+                title: store.currentView?.name ?? tr("Visão"),
                 leading: store.currentView.map { AnyView(LinearViewIcon(view: $0, size: 16)) },
                 isActive: isOpen,
                 showsChevron: true
@@ -178,9 +178,9 @@ private struct LinearHeader: View {
 
     private var projectPicker: some View {
         let selected = store.projects.first { $0.id == store.projectFilter }
-        return GlassMenuButton(help: "Filtrar por projeto", minWidth: 260, items: { projectItems }) { isOpen in
+        return GlassMenuButton(help: tr("Filtrar por projeto"), minWidth: 260, items: { projectItems }) { isOpen in
             BoardQuietFace(
-                title: selected?.name ?? "Projeto",
+                title: selected?.name ?? tr("Projeto"),
                 systemImage: "square.grid.2x2",
                 leading: selected.map { AnyView(LinearEntityIcon(icon: $0.icon, color: $0.color, name: $0.name, size: 14)) },
                 isActive: isOpen || selected != nil,
@@ -191,9 +191,9 @@ private struct LinearHeader: View {
 
     private var labelPicker: some View {
         let selected = store.labelFilter
-        return GlassMenuButton(help: "Filtrar por etiqueta", minWidth: 220, items: { labelItems }) { isOpen in
+        return GlassMenuButton(help: tr("Filtrar por etiqueta"), minWidth: 220, items: { labelItems }) { isOpen in
             BoardQuietFace(
-                title: selected ?? "Etiqueta",
+                title: selected ?? tr("Etiqueta"),
                 systemImage: "tag",
                 leading: selected.map { AnyView(Circle().fill(store.labelColor($0) ?? Theme.textTertiary).frame(width: 8, height: 8)) },
                 isActive: isOpen || selected != nil,
@@ -204,8 +204,8 @@ private struct LinearHeader: View {
 
     private var countText: String {
         let count = store.cards.count
-        let base = count == 1 ? "1 issue" : "\(count) issues"
-        return store.nextCursor == nil ? base : "\(base) carregadas"
+        if store.nextCursor == nil { return count == 1 ? tr("1 issue") : tr("%lld issues", count) }
+        return count == 1 ? tr("1 issue carregada") : tr("%lld issues carregadas", count)
     }
 
     private var viewItems: [GlassMenuItem] {
@@ -231,7 +231,7 @@ private struct LinearHeader: View {
     }
 
     private var projectItems: [GlassMenuItem] {
-        [GlassMenuItem("Todos os projetos", id: "all", isOn: store.projectFilter == nil) { store.setProjectFilter(nil) }]
+        [GlassMenuItem(tr("Todos os projetos"), id: "all", isOn: store.projectFilter == nil) { store.setProjectFilter(nil) }]
             + store.projects.enumerated().map { index, project in
                 GlassMenuItem(
                     project.name,
@@ -247,7 +247,7 @@ private struct LinearHeader: View {
     }
 
     private var labelItems: [GlassMenuItem] {
-        [GlassMenuItem("Todas as etiquetas", id: "all", isOn: store.labelFilter == nil) { store.setLabelFilter(nil) }]
+        [GlassMenuItem(tr("Todas as etiquetas"), id: "all", isOn: store.labelFilter == nil) { store.setLabelFilter(nil) }]
             + store.labels.enumerated().map { index, label in
                 GlassMenuItem(
                     label.name,
@@ -452,7 +452,7 @@ private struct LinearCardView: View {
             if let branch = card.branch {
                 Button("Copiar a branch") {
                     store.copy(branch)
-                    store.show(.success("Branch copiada"))
+                    store.show(.success(tr("Branch copiada")))
                 }
             }
             Button("Abrir no Linear") { BoardLinks.open(card.url) }

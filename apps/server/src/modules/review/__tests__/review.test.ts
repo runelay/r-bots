@@ -7,6 +7,7 @@ import * as settings from "../../../db/settings";
 import { readSetting } from "../../../db/settings";
 import { settings as settingsTable } from "../../../db/tables";
 import { resetClock } from "../../../shared/clock";
+import { withLanguage } from "../../../shared/i18n";
 import {
   type BotDefinition,
   getBot,
@@ -153,6 +154,20 @@ describe("review presets", () => {
       [{ name: "x", prompt: "y", scope: "custom", days: 0 }, "O período vai de 1 a 90 dias."],
     ];
     for (const [value, message] of fails) expect(() => presetOf(value, 1)).toThrow(message);
+  });
+
+  test("speaks English when the request does", () => {
+    const [daily] = withLanguage("en", () => builtInPresets());
+    expect(daily.name).toBe("Today's daily");
+    expect(withLanguage("en", () => composeMessage(daily, period, ["x".repeat(20_000)]))).toContain(
+      `${"x".repeat(14_000)}\n…(cut)`,
+    );
+    expect(() => withLanguage("en", () => presetOf({ name: " ", prompt: "y", scope: "today" }, 0))).toThrow(
+      "Fill in the name.",
+    );
+    expect(() =>
+      withLanguage("en", () => presetOf({ name: "x", prompt: "y".repeat(4001), scope: "today" }, 0)),
+    ).toThrow("the prompt can have up to 4000 characters.");
   });
 
   test("composes a compact message and cuts long context", () => {
@@ -403,6 +418,12 @@ describe("review routes", () => {
     expect((await run({ presetId: "daily", botId: 3 })).body.error).toBe("Valor inválido.");
     expect((await run({ presetId: "nope" })).body.error).toBe("Preset não encontrado.");
     expect((await run({ presetId: "daily" })).body.error).toBe("Crie um bot para rodar o review.");
+    const english = await request<{ error: string }>("/review/run", {
+      method: "POST",
+      headers: { "accept-language": "en" },
+      body: {},
+    });
+    expect(english.body.error).toBe("Pick the preset.");
   });
 
   test("runs a preset on the chosen bot with Linear and GitHub context", async () => {

@@ -205,28 +205,28 @@ enum GHFilter: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .mine: "Meus"
-        case .review: "Para revisar"
-        case .mentions: "Menções"
-        case .merged: "Mergeados"
+        case .mine: tr("Meus")
+        case .review: tr("Para revisar")
+        case .mentions: tr("Menções")
+        case .merged: tr("Mergeados")
         }
     }
 
     var emptyTitle: String {
         switch self {
-        case .mine: "Nenhum PR seu aberto"
-        case .review: "Nada esperando sua revisão"
-        case .mentions: "Ninguém te chamou"
-        case .merged: "Nada mergeado nesta semana"
+        case .mine: tr("Nenhum PR seu aberto")
+        case .review: tr("Nada esperando sua revisão")
+        case .mentions: tr("Ninguém te chamou")
+        case .merged: tr("Nada mergeado nesta semana")
         }
     }
 
     var emptyMessage: String {
         switch self {
-        case .mine: "Quando você abrir um PR, ele aparece aqui."
-        case .review: "Os PRs em que pedirem sua revisão aparecem aqui."
-        case .mentions: "PRs em que você foi marcado ou comentou aparecem aqui."
-        case .merged: "Os PRs que você mergear nos últimos 7 dias aparecem aqui."
+        case .mine: tr("Quando você abrir um PR, ele aparece aqui.")
+        case .review: tr("Os PRs em que pedirem sua revisão aparecem aqui.")
+        case .mentions: tr("PRs em que você foi marcado ou comentou aparecem aqui.")
+        case .merged: tr("Os PRs que você mergear nos últimos 7 dias aparecem aqui.")
         }
     }
 }
@@ -238,17 +238,17 @@ enum GHMergeMethod: String, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .squash: "Squash e merge"
-        case .merge: "Merge commit"
-        case .rebase: "Rebase e merge"
+        case .squash: tr("Squash e merge")
+        case .merge: tr("Merge commit")
+        case .rebase: tr("Rebase e merge")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .squash: "Junta os commits em um só"
-        case .merge: "Mantém todos os commits"
-        case .rebase: "Reaplica os commits na base"
+        case .squash: tr("Junta os commits em um só")
+        case .merge: tr("Mantém todos os commits")
+        case .rebase: tr("Reaplica os commits na base")
         }
     }
 }
@@ -269,10 +269,10 @@ enum GHStyle {
     }
 
     static func stateTitle(_ pull: GHPull) -> String {
-        if pull.state == "merged" { return "Mergeado" }
-        if pull.state == "closed" { return "Fechado" }
-        if pull.draft { return "Rascunho" }
-        return "Aberto"
+        if pull.state == "merged" { return tr("Mergeado") }
+        if pull.state == "closed" { return tr("Fechado") }
+        if pull.draft { return tr("Rascunho") }
+        return tr("Aberto")
     }
 
     static func ciColor(_ ci: String) -> Color {
@@ -286,18 +286,18 @@ enum GHStyle {
 
     static func ciTitle(_ ci: String) -> String {
         switch ci {
-        case "success": "CI passou"
-        case "failure": "CI falhou"
-        case "pending": "CI rodando"
-        default: "Sem CI"
+        case "success": tr("CI passou")
+        case "failure": tr("CI falhou")
+        case "pending": tr("CI rodando")
+        default: tr("Sem CI")
         }
     }
 
     static func reviewTitle(_ review: String?) -> String? {
         switch review {
-        case "approved": "Aprovado"
-        case "changes_requested": "Pediram mudanças"
-        case "review_required": "Falta revisão"
+        case "approved": tr("Aprovado")
+        case "changes_requested": tr("Pediram mudanças")
+        case "review_required": tr("Falta revisão")
         default: nil
         }
     }
@@ -339,10 +339,10 @@ enum GHStyle {
 
     static func reviewStateTitle(_ state: String) -> String {
         switch state {
-        case "approved": "aprovou"
-        case "changes_requested": "pediu mudanças"
-        case "dismissed": "teve a revisão descartada"
-        default: "comentou"
+        case "approved": tr("aprovou")
+        case "changes_requested": tr("pediu mudanças")
+        case "dismissed": tr("teve a revisão descartada")
+        default: tr("comentou")
         }
     }
 

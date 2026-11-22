@@ -1,6 +1,7 @@
-import type { Req, Res } from "../../../shared/http";
+import { httpText, type Req, type Res } from "../../../shared/http";
 import { macRunnerAuthorized } from "../../accounts/services/mac-runner.service";
 import { principalOf } from "../../auth/gate";
+import { vaultText } from "../constants/vault-messages.constants";
 import {
   audit,
   deleteSecret,
@@ -35,7 +36,7 @@ async function readJsonBody(req: Req) {
   try {
     return (text ? JSON.parse(text) : {}) as Record<string, unknown>;
   } catch {
-    throw new VaultError("bad_json", "JSON inválido.");
+    throw new VaultError("bad_json", vaultText("badJson"));
   } finally {
     for (const chunk of chunks) chunk.fill(0);
   }
@@ -49,12 +50,12 @@ export async function handleVaultRoute(req: Req, res: Res, url: URL, method: str
   await ensureVaultLoaded();
   if (parts[1] === "exec" && parts.length === 3 && method === "POST") {
     if (req.headers["x-forwarded-for"] || req.headers["tailscale-user-login"])
-      return json(res, 404, { ok: false, error: "Rota não encontrada." });
+      return json(res, 404, { ok: false, error: httpText("notFound") });
     const grant = takeExecTicket(parts[2]);
-    if (!grant) return json(res, 410, { ok: false, error: "Esse tíquete já foi usado ou venceu." });
+    if (!grant) return json(res, 410, { ok: false, error: vaultText("ticketUsed") });
     return json(res, 200, grant);
   }
-  if (!macRunnerAuthorized(req)) return json(res, 401, { ok: false, error: "O cofre só responde ao app r/bots." });
+  if (!macRunnerAuthorized(req)) return json(res, 401, { ok: false, error: vaultText("appOnly") });
   try {
     if (parts.length === 2 && parts[1] === "secrets" && method === "GET") {
       return json(res, 200, { secrets: listSecretMeta().map(publicMeta), serverStorage: serverStorageAvailable() });
@@ -64,13 +65,13 @@ export async function handleVaultRoute(req: Req, res: Res, url: URL, method: str
       return json(res, 200, await readAudit(url.searchParams.get("name"), limit));
     }
     if (parts.length === 2 && parts[1] === "audit" && method === "POST") {
-      if (!principalOf(req.raw)?.device)
-        return json(res, 403, { ok: false, error: "Só o app do Mac registrado pode gravar no histórico do cofre." });
+      if (!principalOf(req.raw)?.device) return json(res, 403, { ok: false, error: vaultText("macOnly") });
       const body = await readJsonBody(req);
       const name = String(body.name ?? "");
-      if (!secretNamePattern.test(name)) throw new VaultError("bad_name", "Nome inválido.");
+      if (!secretNamePattern.test(name)) throw new VaultError("bad_name", vaultText("nameInvalid"));
       const outcome = String(body.outcome ?? "");
-      if (!["used", "denied", "revealed"].includes(outcome)) throw new VaultError("bad_outcome", "outcome inválido.");
+      if (!["used", "denied", "revealed"].includes(outcome))
+        throw new VaultError("bad_outcome", vaultText("outcomeInvalid"));
       await audit({
         name,
         outcome,
@@ -93,20 +94,19 @@ export async function handleVaultRoute(req: Req, res: Res, url: URL, method: str
       return json(
         res,
         existed ? 200 : 404,
-        existed ? { ok: true, name } : { ok: false, error: "Esse segredo não existe no cofre." },
+        existed ? { ok: true, name } : { ok: false, error: vaultText("secretMissing") },
       );
     }
     if (parts[1] === "secrets" && parts.length === 4 && parts[3] === "server-copy" && method === "PUT") {
       const body = await readJsonBody(req);
       const value = typeof body.value === "string" ? body.value : "";
       body.value = null;
-      if (!value || value.length > 16_384)
-        throw new VaultError("bad_value", "Valor vazio ou grande demais (máximo 16 KB).");
+      if (!value || value.length > 16_384) throw new VaultError("bad_value", vaultText("valueSize"));
       return json(res, 200, publicMeta(await setServerCopy(name, value)));
     }
     if (parts[1] === "secrets" && parts.length === 4 && parts[3] === "server-copy" && method === "DELETE")
       return json(res, 200, publicMeta(await setServerCopy(name, null)));
-    return json(res, 404, { ok: false, error: "Rota não encontrada." });
+    return json(res, 404, { ok: false, error: httpText("notFound") });
   } catch (error) {
     if (error instanceof VaultError)
       return json(res, error.code === "not_found" ? 404 : 400, { ok: false, code: error.code, error: error.message });

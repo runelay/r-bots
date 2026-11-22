@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import type { ProviderEvent } from "@runelay-bots/protocol";
 import { type Provider, providerLabels } from "@runelay-bots/protocol";
+import { currentLanguage } from "../../../shared/i18n";
+import { accountsText } from "../constants/accounts-messages.constants";
 
 const limitPattern =
   /spend(?:ing)? limit|usage limit|rate[ _-]?limit|limit reached|limit exceeded|hit your (?:[\w']+ ){0,3}limit|quota|too many requests|\b429\b|credit balance is too low|out of credits|resets? (?:at |in )?\d/i;
@@ -136,14 +138,15 @@ export function clearLimit(accountId: string) {
 }
 
 export function formatReset(at: Date, now = new Date()) {
-  const time = new Intl.DateTimeFormat("pt-BR", { timeZone: displayZone, hour: "2-digit", minute: "2-digit" }).format(
+  const locale = currentLanguage() === "en" ? "en-US" : "pt-BR";
+  const time = new Intl.DateTimeFormat(locale, { timeZone: displayZone, hour: "2-digit", minute: "2-digit" }).format(
     at,
   );
   const day = (value: Date) =>
-    new Intl.DateTimeFormat("pt-BR", { timeZone: displayZone, day: "2-digit", month: "2-digit" }).format(value);
-  if (day(at) === day(now)) return `às ${time}`;
-  if (day(at) === day(new Date(now.getTime() + 86_400_000))) return `amanhã às ${time}`;
-  return `dia ${day(at)} às ${time}`;
+    new Intl.DateTimeFormat(locale, { timeZone: displayZone, day: "2-digit", month: "2-digit" }).format(value);
+  if (day(at) === day(now)) return accountsText("resetToday", { time });
+  if (day(at) === day(new Date(now.getTime() + 86_400_000))) return accountsText("resetTomorrow", { time });
+  return accountsText("resetDay", { day: day(at), time });
 }
 
 export function providerName(provider: Provider) {

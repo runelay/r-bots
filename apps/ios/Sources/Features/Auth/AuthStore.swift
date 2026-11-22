@@ -58,6 +58,7 @@ enum AuthStore {
     }
 
     static func authorize(_ request: inout URLRequest) {
+        request.setAppLanguage()
         guard request.value(forHTTPHeaderField: "Authorization") == nil,
             let url = request.url,
             let target = origin(of: url),

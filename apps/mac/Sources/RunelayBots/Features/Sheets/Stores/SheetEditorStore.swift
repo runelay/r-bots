@@ -70,10 +70,10 @@ final class SheetEditorStore {
 
     var statusText: String {
         if let failed { return failed }
-        if pendingWrites > 0 { return "Salvando…" }
-        if let remoteEditedAt, Date().timeIntervalSince(remoteEditedAt) < 60 { return "O bot acabou de editar" }
-        guard let tab, let sheet else { return "Planilha" }
-        return sheet.tabs.count > 1 ? "Aba \(tab.name)" : "Salvo"
+        if pendingWrites > 0 { return tr("Salvando…") }
+        if let remoteEditedAt, Date().timeIntervalSince(remoteEditedAt) < 60 { return tr("O bot acabou de editar") }
+        guard let tab, let sheet else { return tr("Planilha") }
+        return sheet.tabs.count > 1 ? tr("Aba %@", tab.name) : tr("Salvo")
     }
 
     func load() async {
@@ -90,7 +90,7 @@ final class SheetEditorStore {
             syncFormula()
         } catch {
             BlocksLog.failure("sheet load", error)
-            failed = "Não consegui abrir a planilha."
+            failed = tr("Não consegui abrir a planilha.")
         }
     }
 
@@ -105,7 +105,7 @@ final class SheetEditorStore {
 
     func addTab() {
         guard let sheet else { return }
-        let name = "Aba \(sheet.tabs.count + 1)"
+        let name = tr("Aba %lld", sheet.tabs.count + 1)
         Task {
             if let tab = try? await client.addTab(botID: botID, sheetID: sheetID, name: name) {
                 self.sheet?.tabs.append(tab)
@@ -430,7 +430,7 @@ final class SheetEditorStore {
                 await load()
             } catch {
                 for position in positions { pending.remove(position) }
-                failed = "Não consegui salvar a célula"
+                failed = tr("Não consegui salvar a célula")
                 gridRevision += 1
             }
         }
@@ -534,7 +534,7 @@ final class SheetEditorStore {
                 result = try await client.sheetRange(botID: botID, sheetID: sheetID, tabID: tabID, range: range)
             } catch {
                 BlocksLog.failure("sheet range \(range)", error)
-                failed = "Não consegui carregar a planilha."
+                failed = tr("Não consegui carregar a planilha.")
                 continue
             }
             guard tabID == self.tabID else { continue }

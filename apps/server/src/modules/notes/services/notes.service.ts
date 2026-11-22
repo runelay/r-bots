@@ -30,6 +30,7 @@ import {
   shouldMerge,
   staleCheck,
 } from "../../blocks/services/blocks.shared";
+import { notesText } from "../constants/notes-messages.constants";
 import { noteMatches, noteSearchQuery, searchNoteRows } from "../repositories/notes-search.repository";
 
 type NoteRow = typeof notes.$inferSelect;
@@ -56,7 +57,7 @@ function cleanTitle(value: unknown) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 200);
-  if (!title) throw new BlockError("Título é obrigatório.");
+  if (!title) throw new BlockError(notesText("titleRequired"));
   return title;
 }
 
@@ -130,7 +131,7 @@ export async function requireNote(botId: string, noteId: string) {
     .from(notes)
     .where(and(liveNotes(botId), eq(notes.id, noteId)))
     .limit(1);
-  if (!row) throw new BlockError("Nota não encontrada.", 404);
+  if (!row) throw new BlockError(notesText("notFound"), 404);
   return row;
 }
 
@@ -279,7 +280,7 @@ export async function searchNotes(botId: string, query: Record<string, unknown>)
 
 export async function resolveNote(botId: string, title: string, folder?: string) {
   const row = await findByTitle(botId, cleanTitle(title), folder === undefined ? undefined : cleanFolder(folder));
-  if (!row) throw new BlockError("Nota não encontrada.", 404);
+  if (!row) throw new BlockError(notesText("notFound"), 404);
   return noteOf(botId, row);
 }
 
@@ -329,7 +330,7 @@ async function assertUnique(botId: string, title: string, folder: string, except
       ),
     )
     .limit(1);
-  if (clash) throw new BlockError("Já existe uma nota com esse título nessa pasta.", 409, "exists", { id: clash.id });
+  if (clash) throw new BlockError(notesText("titleTaken"), 409, "exists", { id: clash.id });
 }
 
 export interface NoteWrite {
@@ -446,7 +447,7 @@ export async function writeNote(
   body: Record<string, unknown>,
   author: BlockAuthor,
 ): Promise<NoteWrite> {
-  if (typeof body.content !== "string") throw new BlockError("content é obrigatório.");
+  if (typeof body.content !== "string") throw new BlockError(notesText("contentRequired"));
   return writeTransaction(async () =>
     saveContent(
       botId,
@@ -466,7 +467,7 @@ export function applyOps(markdown: string, ops: NotePatchOp[]) {
       const old = String(op.old ?? "");
       if (!old) throw new BlockError(`${where}: "old" vazio.`);
       const first = text.indexOf(old);
-      if (first < 0) throw new BlockError(`${where}: o trecho não foi encontrado.`);
+      if (first < 0) throw new BlockError(notesText("snippetMissing", { where }));
       if (text.indexOf(old, first + 1) >= 0) throw new BlockError(`${where}: o trecho aparece mais de uma vez.`);
       text = text.slice(0, first) + String(op.new ?? "") + text.slice(first + old.length);
     } else if (op.op === "append") {
@@ -481,7 +482,7 @@ export function applyOps(markdown: string, ops: NotePatchOp[]) {
       const at = lines.findIndex(
         (line) => /^#{1,6}\s/.test(line) && normalizeTitle(line.replace(/^#+\s*/, "")) === wanted,
       );
-      if (at < 0) throw new BlockError(`${where}: o título "${op.heading}" não foi encontrado.`);
+      if (at < 0) throw new BlockError(notesText("headingMissing", { where, heading: op.heading }));
       const level = lines[at].match(/^#+/)?.[0].length ?? 1;
       let end = at + 1;
       while (end < lines.length) {
@@ -497,17 +498,17 @@ export function applyOps(markdown: string, ops: NotePatchOp[]) {
       const line = Number(op.line);
       const current = lines[line];
       if (current === undefined || !/^\s*[-*+]\s+\[[ xX]\]/.test(current))
-        throw new BlockError(`${where}: a linha ${line} não é uma tarefa.`);
+        throw new BlockError(notesText("notTask", { where, line }));
       lines[line] = current.replace(/\[[ xX]\]/, op.done ? "[x]" : "[ ]");
       text = lines.join("\n");
-    } else throw new BlockError(`${where}: operação desconhecida.`);
+    } else throw new BlockError(notesText("unknownOp", { where }));
   }
   return text;
 }
 
 export async function patchNote(botId: string, noteId: string, body: Record<string, unknown>, author: BlockAuthor) {
   const ops = body.ops;
-  if (!Array.isArray(ops) || !ops.length) throw new BlockError("ops é obrigatório.");
+  if (!Array.isArray(ops) || !ops.length) throw new BlockError(notesText("opsRequired"));
   return writeTransaction(async () => {
     const current = await requireNote(botId, noteId);
     const markdown = applyOps(current.markdown, ops as NotePatchOp[]);

@@ -8,6 +8,7 @@ import {
   recordThreadMessage,
 } from "../../conversations/services/threads.service";
 import { botStatus } from "../../engine/services/engine.service";
+import { botsText } from "../constants/bots-messages.constants";
 import {
   type BotDefinition,
   connectorsOf,
@@ -57,7 +58,7 @@ export async function postGreeting(bot: BotDefinition) {
   const thread = await ensureThread(bot.id);
   const session = getStoredSession(thread.sessionId);
   if (!session) return;
-  const value = `Oi! Eu sou ${bot.name} e acabei de chegar no time. O que você quer que eu faça?`;
+  const value = botsText("greeting", { name: bot.name });
   session.log.emit({
     type: "content.completed",
     data: { kind: "text", partId: "greeting.0", phase: "reply", runId: "greeting", value, greeting: true },

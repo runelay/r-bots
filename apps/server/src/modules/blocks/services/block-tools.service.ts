@@ -41,6 +41,7 @@ import {
 } from "../../sheets/services/sheets.service";
 import { exportsTmpDir } from "../../uploads/services/send-file.service";
 import { importBotFile, publicUpload } from "../../uploads/services/uploads.service";
+import { blocksText } from "../constants/blocks-messages.constants";
 import { BlockError } from "./blocks.shared";
 
 const quoted = (value: unknown) => `“${String(value ?? "").trim() || "sem título"}”`;
@@ -98,7 +99,7 @@ export function blockTools(botId: string): BotTool[] {
         limit: z.number().int().min(1).max(200).optional(),
       },
       approval: null,
-      label: () => "Listou as notas",
+      label: () => blocksText("listNotes"),
       run: async (input) => await listNotes(botId, input),
     },
     {
@@ -106,7 +107,8 @@ export function blockTools(botId: string): BotTool[] {
       description: "Mostra um nível da árvore de pastas das notas (subpastas e notas da pasta).",
       shape: { folder: z.string().max(300).optional() },
       approval: null,
-      label: (input) => (input.folder ? `Abriu a pasta ${quoted(input.folder)}` : "Abriu as pastas das notas"),
+      label: (input) =>
+        input.folder ? blocksText("openFolder", { name: quoted(input.folder) }) : blocksText("openFolders"),
       run: async (input) => await noteTree(botId, input),
     },
     {
@@ -114,7 +116,8 @@ export function blockTools(botId: string): BotTool[] {
       description: "Lê uma nota inteira por id ou por título, com links [[...]] resolvidos e contagem de backlinks.",
       shape: { id: z.string().max(60).optional(), title: z.string().max(200).optional() },
       approval: null,
-      label: async (input) => `Leu a nota ${quoted(input.title ?? (await titleOfNote(botId, input.id)))}`,
+      label: async (input) =>
+        blocksText("readNote", { name: quoted(input.title ?? (await titleOfNote(botId, input.id))) }),
       run: async (input) => {
         if (input.id) return await readNoteForBot(botId, String(input.id));
         if (!input.title) throw new BlockError("Passe id ou title.");
@@ -130,7 +133,7 @@ export function blockTools(botId: string): BotTool[] {
         limit: z.number().int().min(1).max(200).optional(),
       },
       approval: null,
-      label: (input) => `Buscou ${quoted(input.q)} nas notas`,
+      label: (input) => blocksText("searchNotes", { query: quoted(input.q) }),
       run: async (input) => await searchNotes(botId, input),
     },
     {
@@ -145,7 +148,7 @@ export function blockTools(botId: string): BotTool[] {
         baseVersion: z.number().int().optional(),
       },
       approval: null,
-      label: (input) => `${input.id ? "Editou" : "Criou"} a nota ${quoted(input.title)}`,
+      label: (input) => blocksText(input.id ? "editNote" : "createNote", { name: quoted(input.title) }),
       run: async (input) => {
         if (!input.id) {
           const { note, event } = await createNote(botId, input, "bot");
@@ -168,7 +171,7 @@ export function blockTools(botId: string): BotTool[] {
         baseVersion: z.number().int().optional(),
       },
       approval: null,
-      label: async (input) => `Editou a nota ${quoted(await titleOfNote(botId, input.id))}`,
+      label: async (input) => blocksText("editNote", { name: quoted(await titleOfNote(botId, input.id)) }),
       run: async (input) => {
         const { note, event } = await patchNote(botId, String(input.id), input, "bot");
         return { ...note, blockEvent: event };
@@ -185,8 +188,8 @@ export function blockTools(botId: string): BotTool[] {
       approval: null,
       label: async (input) =>
         input.title
-          ? `Renomeou a nota para ${quoted(input.title)}`
-          : `Moveu a nota ${quoted(await titleOfNote(botId, input.id))}`,
+          ? blocksText("renameNote", { name: quoted(input.title) })
+          : blocksText("moveNote", { name: quoted(await titleOfNote(botId, input.id)) }),
       run: async (input) => {
         const { note, relinked, event } = await moveNote(botId, String(input.id), input, "bot");
         return { note, relinked, blockEvent: event };
@@ -197,7 +200,7 @@ export function blockTools(botId: string): BotTool[] {
       description: "Manda a nota para a lixeira (dá para recuperar).",
       shape: { id: z.string().min(1).max(60) },
       approval: null,
-      label: async (input) => `Apagou a nota ${quoted(await titleOfNote(botId, input.id))}`,
+      label: async (input) => blocksText("deleteNote", { name: quoted(await titleOfNote(botId, input.id)) }),
       run: async (input) => ({ ok: true, blockEvent: await deleteNote(botId, String(input.id), "bot") }),
     },
     {
@@ -209,7 +212,7 @@ export function blockTools(botId: string): BotTool[] {
         limit: z.number().int().min(1).max(200).optional(),
       },
       approval: null,
-      label: () => "Listou as planilhas",
+      label: () => blocksText("listSheets"),
       run: async (input) => await listSheets(botId, input),
     },
     {
@@ -222,7 +225,7 @@ export function blockTools(botId: string): BotTool[] {
         cells: cellsShape.optional(),
       },
       approval: null,
-      label: (input) => `Criou a planilha ${quoted(input.title)}`,
+      label: (input) => blocksText("createSheet", { name: quoted(input.title) }),
       run: async (input) => {
         const { sheet, event } = await createSheet(botId, input, "bot");
         return { ...sheet, blockEvent: event };
@@ -234,7 +237,7 @@ export function blockTools(botId: string): BotTool[] {
         "Lê um intervalo (ex.: A1:F40) de uma aba com os valores já calculados. Sem tabId lê a primeira aba.",
       shape: { id: z.string().min(1).max(60), tabId: z.string().max(60).optional(), range: z.string().min(2).max(30) },
       approval: null,
-      label: async (input) => `Leu a planilha ${quoted(await titleOfSheet(botId, input.id))}`,
+      label: async (input) => blocksText("readSheet", { name: quoted(await titleOfSheet(botId, input.id)) }),
       run: async (input) => {
         const range = await readRange(botId, String(input.id), input.tabId, input.range);
         await markSheetSeen(botId, String(input.id));
@@ -252,7 +255,7 @@ export function blockTools(botId: string): BotTool[] {
         baseVersion: z.number().int().optional(),
       },
       approval: null,
-      label: async (input) => `Editou a planilha ${quoted(await titleOfSheet(botId, input.id))}`,
+      label: async (input) => blocksText("editSheet", { name: quoted(await titleOfSheet(botId, input.id)) }),
       run: async (input) => {
         const { result, event } = await writeCells(botId, String(input.id), input.tabId, input, "bot");
         await markSheetSeen(botId, String(input.id));
@@ -270,7 +273,7 @@ export function blockTools(botId: string): BotTool[] {
         format: formatShape,
       },
       approval: null,
-      label: async (input) => `Formatou a planilha ${quoted(await titleOfSheet(botId, input.id))}`,
+      label: async (input) => blocksText("formatSheet", { name: quoted(await titleOfSheet(botId, input.id)) }),
       run: async (input) => {
         const { result, event } = await formatCells(botId, String(input.id), input.tabId, input, "bot");
         return { ...result, blockEvent: event };
@@ -292,7 +295,7 @@ export function blockTools(botId: string): BotTool[] {
         count: z.number().int().min(1).max(10_000).optional(),
       },
       approval: null,
-      label: async (input) => `Editou a planilha ${quoted(await titleOfSheet(botId, input.id))}`,
+      label: async (input) => blocksText("editSheet", { name: quoted(await titleOfSheet(botId, input.id)) }),
       run: async (input) => {
         const { sheet, event } = await sheetTabTool(botId, input);
         return { ...sheet, blockEvent: event };
@@ -303,7 +306,7 @@ export function blockTools(botId: string): BotTool[] {
       description: "Lista as contas do Google Calendar ligadas na runelay, com calendários e status.",
       shape: {},
       approval: null,
-      label: () => "Viu as contas da agenda",
+      label: () => blocksText("agendaAccounts"),
       run: async () => listAccounts(),
     },
     {
@@ -320,10 +323,10 @@ export function blockTools(botId: string): BotTool[] {
       approval: null,
       label: (input) =>
         input.silent === true
-          ? "Conferiu a agenda"
+          ? blocksText("agendaChecked")
           : Date.parse(String(input.end)) - Date.parse(String(input.start)) <= 26 * 3_600_000
-            ? "Mostrou a agenda do dia"
-            : "Mostrou a agenda",
+            ? blocksText("agendaDay")
+            : blocksText("agendaShown"),
       run: async (input) => {
         if (input.silent === true) return listEvents(input);
         const { list, blockEvent } = await listEventsBlock(botId, input);
@@ -348,14 +351,14 @@ export function blockTools(botId: string): BotTool[] {
       approval: async (input) => {
         const outside = await externalAttendeesCached(input);
         return outside.length
-          ? `Posso marcar ${quoted(input.title)} e mandar convite por e-mail para ${outside.join(", ")}?`
+          ? blocksText("invitePrompt", { name: quoted(input.title), emails: outside.join(", ") })
           : null;
       },
       details: async (input) => ({
-        target: { label: String(input.title ?? "evento"), role: "agenda" },
-        reason: `Convite por e-mail para ${(await needsApproval(input)).join(", ")}`,
+        target: { label: String(input.title ?? blocksText("event")), role: "agenda" },
+        reason: blocksText("inviteReason", { emails: (await needsApproval(input)).join(", ") }),
       }),
-      label: (input) => `Marcou ${quoted(input.title)} na agenda`,
+      label: (input) => blocksText("scheduled", { name: quoted(input.title) }),
       run: async (input) => {
         const { event, blockEvent } = await createEvent(botId, input, "bot");
         return { ...event, blockEvent };
@@ -375,7 +378,8 @@ export function blockTools(botId: string): BotTool[] {
         description: z.string().max(8000).nullable().optional(),
       },
       approval: null,
-      label: (input) => (input.title ? `Mudou ${quoted(input.title)} na agenda` : "Mudou um evento da agenda"),
+      label: (input) =>
+        input.title ? blocksText("eventChanged", { name: quoted(input.title) }) : blocksText("anEventChanged"),
       run: async (input) => {
         const { event, blockEvent } = await updateEvent(botId, String(input.eventId), input, "bot");
         return { ...event, blockEvent };
@@ -386,7 +390,7 @@ export function blockTools(botId: string): BotTool[] {
       description: "Apaga um evento da agenda (eventId de agenda_list). Só apague quando a pessoa pedir.",
       shape: { eventId: z.string().min(1).max(600) },
       approval: null,
-      label: () => "Tirou um evento da agenda",
+      label: () => blocksText("eventRemoved"),
       run: async (input) => ({ ok: true, blockEvent: await deleteEvent(botId, String(input.eventId), "bot") }),
     },
     {
@@ -402,7 +406,12 @@ export function blockTools(botId: string): BotTool[] {
       },
       approval: null,
       label: async (input) =>
-        `Exportou ${input.kind === "sheet" ? "a planilha" : "a nota"} ${quoted(input.kind === "sheet" ? await titleOfSheet(botId, input.id) : await titleOfNote(botId, input.id))} em ${String(input.format).toUpperCase()}`,
+        blocksText(input.kind === "sheet" ? "exportedSheet" : "exportedNote", {
+          name: quoted(
+            input.kind === "sheet" ? await titleOfSheet(botId, input.id) : await titleOfNote(botId, input.id),
+          ),
+          format: String(input.format).toUpperCase(),
+        }),
       run: async (input) => {
         const job = await createExport(botId, input);
         if (job.status !== "ready") throw new BlockError(job.error ?? "A exportação falhou.");

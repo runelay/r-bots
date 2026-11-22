@@ -317,6 +317,16 @@ describe("integrations", () => {
     const empty = await request<{ field: string }>("/integrations/jev", { method: "PUT", body: { key: "short" } });
     expect(empty.status).toBe(400);
     expect(empty.body.field).toBe("key");
+    const english = await request<{ error: string }>("/integrations/jev", {
+      method: "PUT",
+      headers: { "accept-language": "en" },
+      body: { key: "short" },
+    });
+    expect(english.body.error).toBe("Paste the whole key.");
+    const listed = await request<{ integrations: Array<{ id: string; unlocks: string }> }>("/integrations", {
+      headers: { "accept-language": "en" },
+    });
+    expect(listed.body.integrations.find((item) => item.id === "jev")?.unlocks).toBe("Automatic approvals");
     const array = await request("/integrations/jev", { method: "PUT", body: [] });
     expect(array.status).toBe(400);
     const broken = await request("/integrations/jev", { method: "PUT", body: "{" });

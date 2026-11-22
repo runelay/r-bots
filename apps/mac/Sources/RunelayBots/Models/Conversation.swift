@@ -10,10 +10,10 @@ enum PermissionMode: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .readonly: "Somente leitura"
-        case .edit: "Editar"
-        case .standard: "Padrão"
-        case .full: "Acesso total"
+        case .readonly: tr("Somente leitura")
+        case .edit: tr("Editar")
+        case .standard: tr("Padrão")
+        case .full: tr("Acesso total")
         }
     }
 
@@ -28,10 +28,10 @@ enum PermissionMode: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var detail: String {
         switch self {
-        case .readonly: "Lê, busca e roda comandos de leitura. Não edita, não faz commit e não escreve em conectores."
-        case .edit: "Edita os arquivos direto. Comandos, commit, push e escrita em conectores pedem sua confirmação."
-        case .standard: "Faz o trabalho sozinho e só pede para o que é arriscado: push forçado, deploy, produção e mensagem para fora."
-        case .full: "Nada pede confirmação. Só continua proibido o que fere as suas regras fixas."
+        case .readonly: tr("Lê, busca e roda comandos de leitura. Não edita, não faz commit e não escreve em conectores.")
+        case .edit: tr("Edita os arquivos direto. Comandos, commit, push e escrita em conectores pedem sua confirmação.")
+        case .standard: tr("Faz o trabalho sozinho e só pede para o que é arriscado: push forçado, deploy, produção e mensagem para fora.")
+        case .full: tr("Nada pede confirmação. Só continua proibido o que fere as suas regras fixas.")
         }
     }
 
@@ -80,7 +80,7 @@ struct BotConversation: Identifiable, Hashable, Sendable {
         guard let sessionId = json["sessionId"]?.stringValue, let botId = json["botId"]?.stringValue else { return nil }
         self.sessionId = sessionId
         self.botId = botId
-        title = json["title"]?.stringValue ?? "Nova conversa"
+        title = json["title"]?.stringValue ?? tr("Nova conversa")
         isMain = json["main"]?.boolValue ?? false
         createdAt = json["createdAt"]?.stringValue ?? ""
         updatedAt = json["updatedAt"]?.stringValue

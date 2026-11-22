@@ -14,8 +14,8 @@ struct ReviewPreset: Codable, Hashable, Identifiable, Sendable {
     static func draft() -> ReviewPreset {
         ReviewPreset(
             id: "p\(Int(Date().timeIntervalSince1970) % 1_000_000)",
-            name: "Novo review",
-            prompt: "Faça um resumo simples do período, juntando o que foi feito e o que está em andamento.",
+            name: tr("Novo review"),
+            prompt: tr("Faça um resumo simples do período, juntando o que foi feito e o que está em andamento."),
             scope: "today",
             days: 1,
             linear: true,
@@ -26,15 +26,15 @@ struct ReviewPreset: Codable, Hashable, Identifiable, Sendable {
 
     var scopeTitle: String {
         switch scope {
-        case "today": "Hoje"
-        case "week": "Semana"
-        default: days == 1 ? "Último dia" : "Últimos \(days) dias"
+        case "today": tr("Hoje")
+        case "week": tr("Semana")
+        default: days == 1 ? tr("Último dia") : tr("Últimos %lld dias", days)
         }
     }
 
     var sourcesTitle: String {
         switch (linear, github) {
-        case (true, true): "Linear e GitHub"
+        case (true, true): tr("Linear e GitHub")
         case (true, false): "Linear"
         default: "GitHub"
         }
@@ -115,7 +115,7 @@ final class ReviewStore {
     }
 
     func save(_ next: [ReviewPreset]) async -> String? {
-        guard let client else { return "Sem conexão com o servidor." }
+        guard let client else { return tr("Sem conexão com o servidor.") }
         let previous = presets
         presets = next
         saving = true

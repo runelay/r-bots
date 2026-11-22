@@ -1,4 +1,5 @@
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
+import { commonText } from "../../../shared/messages";
 import { handleBotArtifacts } from "../../artifacts/routes/artifacts.routes";
 import { blockRoots, handleBotBlocks } from "../../blocks/routes/blocks.routes";
 import { handleBotBrowser } from "../../browser/routes/browser.routes";
@@ -53,14 +54,14 @@ async function handleBotList(req: Req, res: Res, url: URL, method: string) {
       return validationResponse(res, error);
     }
   }
-  return sendJson(res, 405, { ok: false, error: "Método não permitido." });
+  return sendJson(res, 405, { ok: false, error: commonText("methodNotAllowed") });
 }
 
 export async function handleBots(req: Req, res: Res, url: URL, method: string, parts: string[]) {
   if (parts.length === 1) return handleBotList(req, res, url, method);
 
   const bot = getBot(parts[1] ?? "");
-  if (!bot) return sendJson(res, 404, { ok: false, error: "Bot não encontrada." });
+  if (!bot) return sendJson(res, 404, { ok: false, error: commonText("botNotFound") });
   const rest = parts.slice(2);
   const tail = rest.join("/");
 
@@ -72,7 +73,7 @@ export async function handleBots(req: Req, res: Res, url: URL, method: string, p
   if (tail === "" && method === "PATCH") {
     try {
       const updated = await updateBot(bot.id, await readBody(req));
-      if (!updated) return sendJson(res, 404, { ok: false, error: "Bot não encontrada." });
+      if (!updated) return sendJson(res, 404, { ok: false, error: commonText("botNotFound") });
       return sendJson(res, 200, await publicBot(updated));
     } catch (error) {
       return validationResponse(res, error);
@@ -82,13 +83,13 @@ export async function handleBots(req: Req, res: Res, url: URL, method: string, p
     await readBody(req).catch(() => undefined);
     if (tail === "delete") stopDesktop(bot.id);
     const updated = await setDeleted(bot.id, tail === "delete");
-    if (!updated) return sendJson(res, 404, { ok: false, error: "Bot não encontrada." });
+    if (!updated) return sendJson(res, 404, { ok: false, error: commonText("botNotFound") });
     return sendJson(res, 200, await publicBot(updated));
   }
   if (tail === "sidebar" && method === "PATCH") {
     try {
       const updated = await updateSidebar(bot.id, await readBody(req), sectionExists);
-      if (!updated) return sendJson(res, 404, { ok: false, error: "Bot não encontrada." });
+      if (!updated) return sendJson(res, 404, { ok: false, error: commonText("botNotFound") });
       return sendJson(res, 200, await publicBot(updated));
     } catch (error) {
       return validationResponse(res, error);
@@ -96,7 +97,7 @@ export async function handleBots(req: Req, res: Res, url: URL, method: string, p
   }
   if ((tail === "archive" || tail === "unarchive") && method === "POST") {
     const updated = await setArchived(bot.id, tail === "archive");
-    if (!updated) return sendJson(res, 404, { ok: false, error: "Bot não encontrada." });
+    if (!updated) return sendJson(res, 404, { ok: false, error: commonText("botNotFound") });
     return sendJson(res, 200, await publicBot(updated));
   }
   if (rest[0] === "thread") return handleBotThread(req, res, method, bot, tail);

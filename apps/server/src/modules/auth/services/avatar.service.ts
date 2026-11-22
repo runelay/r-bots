@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { ValidationError } from "../../../shared/errors";
 import type { BlobStore } from "../../storage/services/blob-store";
+import { authText } from "../constants/auth-messages.constants";
 import type { Auth } from "./auth.service";
 
 export const avatarMaxBytes = 2 * 1024 * 1024;
@@ -39,7 +40,7 @@ export function createAvatarService(auth: Auth, blobs: () => BlobStore) {
   async function findUser(userId: string) {
     const context = await auth.$context;
     const found = await context.internalAdapter.findUserById(userId);
-    if (!found) throw new AvatarNotFoundError("Conta não encontrada.");
+    if (!found) throw new AvatarNotFoundError(authText("accountNotFound"));
     return { context, found };
   }
 
@@ -57,10 +58,10 @@ export function createAvatarService(auth: Auth, blobs: () => BlobStore) {
   async function save(userId: string, mime: string, bytes: Uint8Array) {
     const type = mime.split(";")[0]?.trim().toLowerCase() ?? "";
     const format = formats[type];
-    if (!format) throw new ValidationError("Envie uma imagem PNG, JPEG ou WebP.", "image");
-    if (bytes.byteLength === 0) throw new ValidationError("A imagem veio vazia.", "image");
-    if (bytes.byteLength > avatarMaxBytes) throw new ValidationError("A imagem passa de 2 MB.", "image");
-    if (!format.magic(bytes)) throw new ValidationError("O arquivo não é a imagem que diz ser.", "image");
+    if (!format) throw new ValidationError(authText("imageFormat"), "image");
+    if (bytes.byteLength === 0) throw new ValidationError(authText("imageEmpty"), "image");
+    if (bytes.byteLength > avatarMaxBytes) throw new ValidationError(authText("imageTooLarge"), "image");
+    if (!format.magic(bytes)) throw new ValidationError(authText("imageMismatch"), "image");
     const { context, found } = await findUser(userId);
     const file = `${Date.now().toString(36)}-${randomUUID().slice(0, 8)}.${format.ext}`;
     await blobs().put(blobKey(userId, file), bytes, { mime: type });

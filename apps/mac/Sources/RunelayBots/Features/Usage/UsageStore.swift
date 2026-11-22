@@ -63,7 +63,7 @@ final class UsageStore {
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(status) else {
-            throw BotsClient.ClientError.http(status, status == 404 ? "O servidor ainda não tem a tela de uso. Atualize o servidor." : nil)
+            throw BotsClient.ClientError.http(status, status == 404 ? tr("O servidor ainda não tem a tela de uso. Atualize o servidor.") : nil)
         }
         return try JSONDecoder().decode(T.self, from: data)
     }
@@ -89,7 +89,7 @@ final class UsageStore {
             limitsLoaded = true
             checkWarnings()
         } catch {
-            limitsError = "Não consegui ler os limites agora."
+            limitsError = tr("Não consegui ler os limites agora.")
             limitsLoaded = true
         }
     }
@@ -114,7 +114,7 @@ final class UsageStore {
             summaryError = nil
         } catch {
             guard !Task.isCancelled else { return }
-            summaryError = "Não consegui somar o uso agora."
+            summaryError = tr("Não consegui somar o uso agora.")
         }
     }
 
@@ -152,23 +152,23 @@ final class UsageStore {
     static func ring(for account: UsageLimitAccount, badge: String?) -> UsageRingState {
         var lines = [account.label]
         guard account.ok else {
-            lines.append(account.error ?? "Sem dados desta conta.")
+            lines.append(account.error ?? tr("Sem dados desta conta."))
             return UsageRingState(id: account.id, provider: account.provider, session: nil, long: nil, tooltip: lines.joined(separator: "\n"), badge: badge, dimmed: true)
         }
         let session = account.windows.filter { $0.kind == "session" }.min { $0.remainingPercent < $1.remainingPercent }
         let long = account.windows.filter(\.isLongWindow).min { $0.remainingPercent < $1.remainingPercent }
         if let session {
-            lines.append(phrase("Sessão", session))
+            lines.append(phrase(tr("Sessão"), session))
         }
         if let long {
-            lines.append(phrase(long.kind == "monthly" ? "Mensal" : "Semanal", long))
+            lines.append(phrase(long.kind == "monthly" ? tr("Mensal") : tr("Semanal"), long))
         }
         let exhausted = account.windows.contains { $0.kind != "weekly_model" && $0.remainingPercent < 1 }
         if exhausted, let target = account.failover.first {
             let names = Set(account.failover.map(\.botName)).count
-            lines.append("Acabou: \(names == 1 ? account.failover[0].botName + " está indo" : "\(names) bots estão indo") para \(target.toLabel).")
+            lines.append(names == 1 ? tr("Acabou: %1$@ está indo para %2$@.", account.failover[0].botName, target.toLabel) : tr("Acabou: %1$lld bots estão indo para %2$@.", names, target.toLabel))
         } else if exhausted {
-            lines.append("Acabou, e nenhum bot tem para onde trocar.")
+            lines.append(tr("Acabou, e nenhum bot tem para onde trocar."))
         }
         return UsageRingState(id: account.id, provider: account.provider, session: session?.remainingPercent, long: long?.remainingPercent, tooltip: lines.joined(separator: "\n"), badge: badge)
     }
@@ -180,18 +180,18 @@ final class UsageStore {
         let long = Self.lowest(list, where: { $0.isLongWindow })
         var parts = [UsageFormat.providerName(provider)]
         if let session {
-            parts.append(Self.phrase("sessão", session))
+            parts.append(Self.phrase(tr("sessão"), session))
         }
         if let long {
-            parts.append(Self.phrase(long.kind == "monthly" ? "mensal" : "semanal", long))
+            parts.append(Self.phrase(long.kind == "monthly" ? tr("mensal") : tr("semanal"), long))
         }
         return UsageRingState(id: provider, provider: provider, session: session?.remainingPercent, long: long?.remainingPercent, tooltip: parts.joined(separator: " · "))
     }
 
     private static func phrase(_ name: String, _ window: UsageLimitWindow) -> String {
-        var text = "\(name) \(UsageFormat.percent(window.remainingPercent)) restante"
+        var text = tr("%1$@ %2$@ restante", name, UsageFormat.percent(window.remainingPercent))
         if let until = UsageFormat.until(window.resetDate) {
-            text += ", volta em \(until)"
+            text += tr(", volta em %@", until)
         }
         return text
     }
@@ -246,19 +246,18 @@ final class UsageStore {
         guard let first = account.failover.first else { return nil }
         let targets = Set(account.failover.map(\.toLabel))
         let names = account.failover.map(\.botName)
-        let who = names.count == 1 ? names[0] : names.count == 2 ? "\(names[0]) e \(names[1])" : "\(names[0]) e mais \(names.count - 1)"
-        let destination = targets.count == 1 ? first.toLabel : "a conta reserva"
-        let verb = names.count == 1 ? "vai" : "vão"
-        return "\(who) \(verb) trocar para \(destination)."
+        let who = names.count == 1 ? names[0] : names.count == 2 ? tr("%1$@ e %2$@", names[0], names[1]) : tr("%1$@ e mais %2$lld", names[0], names.count - 1)
+        let destination = targets.count == 1 ? first.toLabel : tr("a conta reserva")
+        return names.count == 1 ? tr("%1$@ vai trocar para %2$@.", who, destination) : tr("%1$@ vão trocar para %2$@.", who, destination)
     }
 
     private func postWarning(account: UsageLimitAccount, window: UsageLimitWindow, key: String) {
         guard Notifier.shared.isAvailable else { return }
         let content = UNMutableNotificationContent()
-        content.title = "\(account.label) quase no limite"
-        var body = "\(window.label): \(UsageFormat.percent(window.remainingPercent)) restante"
+        content.title = tr("%@ quase no limite", account.label)
+        var body = tr("%1$@: %2$@ restante", window.label, UsageFormat.percent(window.remainingPercent))
         if let until = UsageFormat.until(window.resetDate) {
-            body += ", volta em \(until)"
+            body += tr(", volta em %@", until)
         }
         body += "."
         if let line = Self.failoverLine(account) {

@@ -356,12 +356,12 @@ enum LocalUsageLimits {
     private static func claudeLimits() async -> JSONValue {
         let label = claudeIdentity()
         guard let oauth = await claudeCredentials(), let token = oauth["accessToken"] as? String, !token.isEmpty else {
-            return failure("Não achei o login do Claude Code neste Mac.", label: label)
+            return failure(tr("Não achei o login do Claude Code neste Mac."), label: label)
         }
         if let expires = (oauth["expiresAt"] as? NSNumber)?.doubleValue, expires < Date().timeIntervalSince1970 * 1000 {
-            return failure("O login do Claude Code no Mac expirou. Ele renova quando o Claude rodar de novo.", label: label)
+            return failure(tr("O login do Claude Code no Mac expirou. Ele renova quando o Claude rodar de novo."), label: label)
         }
-        guard let url = URL(string: "https://api.anthropic.com/api/oauth/usage") else { return failure("Endereço inválido.") }
+        guard let url = URL(string: "https://api.anthropic.com/api/oauth/usage") else { return failure(tr("Endereço inválido.")) }
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -372,24 +372,24 @@ enum LocalUsageLimits {
             let (data, response) = try await URLSession.shared.data(for: request)
             let status = (response as? HTTPURLResponse)?.statusCode ?? 0
             guard (200..<300).contains(status), let raw = try? JSONDecoder().decode(JSONValue.self, from: data) else {
-                return failure("A Anthropic respondeu \(status) ao ler os limites do Mac.", label: label)
+                return failure(tr("A Anthropic respondeu %lld ao ler os limites do Mac.", status), label: label)
             }
             var object: [String: JSONValue] = ["ok": .bool(true), "raw": raw]
             if let label { object["label"] = .string(label) }
             if let plan = oauth["subscriptionType"] as? String { object["plan"] = .string(plan) }
             return .object(object)
         } catch {
-            return failure("Não deu para falar com a Anthropic: \(error.localizedDescription)", label: label)
+            return failure(tr("Não deu para falar com a Anthropic: %@", error.localizedDescription), label: label)
         }
     }
 
     private static func codexLimits() async -> JSONValue {
-        guard let bin = LocalCLI.find(["codex"]) else { return failure("Codex CLI não está instalado no Mac.") }
+        guard let bin = LocalCLI.find(["codex"]) else { return failure(tr("Codex CLI não está instalado no Mac.")) }
         do {
             let raw = try await CodexRateLimitReader(bin: bin).read()
             return .object(["ok": .bool(true), "raw": raw, "label": .string("Mac")])
         } catch {
-            return failure("Não deu para ler os limites do Codex no Mac: \(error.localizedDescription)")
+            return failure(tr("Não deu para ler os limites do Codex no Mac: %@", error.localizedDescription))
         }
     }
 }
@@ -442,7 +442,7 @@ final class CodexRateLimitReader: @unchecked Sendable {
         process.standardInput = input
         process.standardError = FileHandle.nullDevice
         process.terminationHandler = { [weak self] _ in
-            self?.finish(.failure(CodexReadError(message: "o Codex fechou sem responder")))
+            self?.finish(.failure(CodexReadError(message: tr("o Codex fechou sem responder"))))
         }
         output.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let chunk = handle.availableData
@@ -460,7 +460,7 @@ final class CodexRateLimitReader: @unchecked Sendable {
             return
         }
         DispatchQueue.global().asyncAfter(deadline: .now() + 20) { [weak self] in
-            self?.finish(.failure(CodexReadError(message: "o Codex não respondeu a tempo")))
+            self?.finish(.failure(CodexReadError(message: tr("o Codex não respondeu a tempo"))))
         }
         write(
             [

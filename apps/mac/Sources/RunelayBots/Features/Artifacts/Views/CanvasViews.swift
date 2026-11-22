@@ -778,9 +778,9 @@ struct CanvasSaveBadge: View {
     private var text: String {
         switch state {
         case .idle: ""
-        case .pending, .saving: "Salvando…"
-        case .saved: "Salvo"
-        case .failed: "Sem conexão, tentando de novo"
+        case .pending, .saving: tr("Salvando…")
+        case .saved: tr("Salvo")
+        case .failed: tr("Sem conexão, tentando de novo")
         }
     }
 }
@@ -793,7 +793,7 @@ struct CanvasToolbar: View {
         let hasEdges = !editor.targetEdges.isEmpty
         HStack(spacing: Spacing.xxs) {
             GlassMenuButton(
-                help: "Forma",
+                help: tr("Forma"),
                 items: {
                     CanvasShapeKind.allCases.map { kind in
                         GlassMenuItem(kind.label, systemImage: kind.symbol, isOn: editor.selectionShape == kind.rawValue) {
@@ -809,9 +809,9 @@ struct CanvasToolbar: View {
             .clickable()
 
             GlassMenuButton(
-                help: "Cor",
+                help: tr("Cor"),
                 items: {
-                    [GlassMenuItem("Cor da forma", systemImage: "circle.dashed") { editor.setColor(nil) }]
+                    [GlassMenuItem(tr("Cor da forma"), systemImage: "circle.dashed") { editor.setColor(nil) }]
                         + (["neutral"] + CanvasPalette.colors).map { name in
                             GlassMenuItem(CanvasPalette.label(name), id: name, leading: AnyView(Image(nsImage: Self.swatch(name)))) {
                                 editor.setColor(name)
@@ -825,7 +825,7 @@ struct CanvasToolbar: View {
             .opacity(hasNodes ? 1 : 0.4)
             .clickable()
 
-            CanvasToolButton(systemImage: editor.edgesDashed == true ? "line.diagonal" : "ellipsis", help: editor.edgesDashed == true ? "Linha contínua" : "Linha tracejada") {
+            CanvasToolButton(systemImage: editor.edgesDashed == true ? "line.diagonal" : "ellipsis", help: editor.edgesDashed == true ? tr("Linha contínua") : tr("Linha tracejada")) {
                 editor.setEdgeStyle(dashed: editor.edgesDashed != true)
             }
             .disabled(!hasEdges)
@@ -859,7 +859,7 @@ struct CanvasToolbar: View {
 
             separator
 
-            CanvasToolButton(systemImage: "minus", help: "Diminuir zoom (⌘−)") {
+            CanvasToolButton(systemImage: "minus", help: tr("Diminuir zoom (⌘−)")) {
                 editor.zoomStep(-1)
             }
             Button {
@@ -874,7 +874,7 @@ struct CanvasToolbar: View {
             .buttonStyle(PressableButtonStyle())
             .clickable()
             .help("Ajustar à tela (⌘0)")
-            CanvasToolButton(systemImage: "plus", help: "Aumentar zoom (⌘+)") {
+            CanvasToolButton(systemImage: "plus", help: tr("Aumentar zoom (⌘+)")) {
                 editor.zoomStep(1)
             }
         }

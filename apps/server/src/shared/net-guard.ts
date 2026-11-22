@@ -3,6 +3,36 @@ import http from "node:http";
 import https from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
 import { ValidationError } from "./errors";
+import { defineMessages } from "./i18n";
+
+const netText = defineMessages({
+  "pt-BR": {
+    httpOnly: "Só endereços http ou https são permitidos.",
+    credentials: "O endereço não pode ter usuário ou senha embutidos.",
+    internalAddress: "O endereço {host} é interno e não é permitido.",
+    notPublic: "O site {host} não é um endereço público.",
+    empty: "(vazio)",
+    internalNetwork: "O site {host} é de uma rede interna e não é permitido.",
+    notFound: "Não consegui encontrar o site {host}.",
+    pointsInternal: "O site {host} aponta para um endereço interno ({address}) e não é permitido.",
+    invalid: "Endereço inválido.",
+    tooLarge: "A resposta passou do limite de {max} bytes.",
+    timeout: "A chamada demorou demais ou foi cancelada.",
+  },
+  en: {
+    httpOnly: "Only http or https addresses are allowed.",
+    credentials: "The address can't carry a user name or password.",
+    internalAddress: "The address {host} is internal and not allowed.",
+    notPublic: "The site {host} is not a public address.",
+    empty: "(empty)",
+    internalNetwork: "The site {host} is on an internal network and not allowed.",
+    notFound: "Couldn't find the site {host}.",
+    pointsInternal: "The site {host} points to an internal address ({address}) and is not allowed.",
+    invalid: "Invalid address.",
+    tooLarge: "The response went over the {max} byte limit.",
+    timeout: "The call took too long or was canceled.",
+  },
+});
 
 const blockedV4 = new BlockList();
 for (const [network, prefix] of [
@@ -106,8 +136,8 @@ export interface ResolvedAddress {
 }
 
 export async function resolvePublic(url: URL, opts: { allowLoopbackPorts?: number[] } = {}): Promise<ResolvedAddress> {
-  if (url.protocol !== "http:" && url.protocol !== "https:") denied("Só endereços http ou https são permitidos.");
-  if (url.username || url.password) denied("O endereço não pode ter usuário ou senha embutidos.");
+  if (url.protocol !== "http:" && url.protocol !== "https:") denied(netText("httpOnly"));
+  if (url.username || url.password) denied(netText("credentials"));
   const host = url.hostname
     .toLowerCase()
     .replace(/^\[|\]$/g, "")
@@ -116,21 +146,20 @@ export async function resolvePublic(url: URL, opts: { allowLoopbackPorts?: numbe
   const loopback = (address: string) => loopbackAllowed && (address === "127.0.0.1" || address === "::1");
   const literal = isIP(host);
   if (literal) {
-    if (!isPublicAddress(host) && !loopback(host)) denied(`O endereço ${host} é interno e não é permitido.`);
+    if (!isPublicAddress(host) && !loopback(host)) denied(netText("internalAddress", { host }));
     return { address: host, family: literal === 6 ? 6 : 4 };
   }
-  if (!host.includes(".")) denied(`O site ${host || "(vazio)"} não é um endereço público.`);
-  if (blockedSuffixes.some((suffix) => host.endsWith(suffix)))
-    denied(`O site ${host} é de uma rede interna e não é permitido.`);
+  if (!host.includes(".")) denied(netText("notPublic", { host: host || netText("empty") }));
+  if (blockedSuffixes.some((suffix) => host.endsWith(suffix))) denied(netText("internalNetwork", { host }));
   let answers: { address: string; family: number }[];
   try {
     answers = await dns.lookup(host, { all: true, verbatim: true });
   } catch {
-    denied(`Não consegui encontrar o site ${host}.`);
+    denied(netText("notFound", { host }));
   }
-  if (answers.length === 0) denied(`Não consegui encontrar o site ${host}.`);
+  if (answers.length === 0) denied(netText("notFound", { host }));
   const internal = answers.find((answer) => !isPublicAddress(answer.address) && !loopback(answer.address));
-  if (internal) denied(`O site ${host} aponta para um endereço interno (${internal.address}) e não é permitido.`);
+  if (internal) denied(netText("pointsInternal", { host, address: internal.address }));
   const first = answers[0];
   return { address: first.address, family: first.family === 6 ? 6 : 4 };
 }
@@ -150,7 +179,7 @@ export async function guardedFetch(target: URL | string, init: GuardedInit = {})
   try {
     url = typeof target === "string" ? new URL(target) : target;
   } catch {
-    denied("Endereço inválido.");
+    denied(netText("invalid"));
   }
   const pinned = await resolvePublic(url, { allowLoopbackPorts: init.allowLoopbackPorts });
   const maxBytes = init.maxBytes ?? 10 * 1024 * 1024;
@@ -184,7 +213,7 @@ export async function guardedFetch(target: URL | string, init: GuardedInit = {})
         response.on("data", (chunk: Buffer) => {
           size += chunk.length;
           if (size > maxBytes) {
-            reject(new Error(`A resposta passou do limite de ${maxBytes} bytes.`));
+            reject(new Error(netText("tooLarge", { max: maxBytes })));
             response.destroy();
             request.destroy();
             return;
@@ -214,7 +243,7 @@ export async function guardedFetch(target: URL | string, init: GuardedInit = {})
         });
       },
     );
-    const abort = () => request.destroy(new Error("A chamada demorou demais ou foi cancelada."));
+    const abort = () => request.destroy(new Error(netText("timeout")));
     if (signal.aborted) abort();
     else signal.addEventListener("abort", abort, { once: true });
     request.on("error", reject);

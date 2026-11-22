@@ -1,6 +1,7 @@
 import { notFound, type Req, type Res, readBody, sendJson } from "../../../shared/http";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { isBusy, isRunning } from "../../engine/services/engine.service";
+import { conversationsText } from "../constants/conversations-messages.constants";
 import { sessionReactions } from "../services/reactions.service";
 import {
   ensureThread,
@@ -34,7 +35,7 @@ export async function handleBotThread(req: Req, res: Res, method: string, bot: B
       return sendJson(res, 409, {
         ok: false,
         code: "turn_running",
-        error: "O bot ainda está respondendo. Pare a resposta antes de limpar a conversa.",
+        error: conversationsText("stillAnswering"),
       });
     }
     if (tail === "thread/reset") {
@@ -43,10 +44,10 @@ export async function handleBotThread(req: Req, res: Res, method: string, bot: B
     }
     const archiveId = body?.archiveId;
     if (typeof archiveId !== "string" || !/^tha_[0-9A-Z]{26}$/.test(archiveId)) {
-      return sendJson(res, 400, { ok: false, error: "archiveId inválido.", field: "archiveId" });
+      return sendJson(res, 400, { ok: false, error: conversationsText("archiveIdInvalid"), field: "archiveId" });
     }
     const restored = await restoreThread(bot.id, archiveId);
-    if (!restored) return sendJson(res, 404, { ok: false, error: "Essa conversa arquivada não existe mais." });
+    if (!restored) return sendJson(res, 404, { ok: false, error: conversationsText("archiveGone") });
     return sendJson(res, 200, { ...(await threadView(bot)), archiveId: restored.replacedArchiveId });
   }
   if (tail === "thread/read" && method === "POST") {

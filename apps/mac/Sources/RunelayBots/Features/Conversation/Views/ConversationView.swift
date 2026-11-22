@@ -346,7 +346,7 @@ struct JumpToBottomButton: View {
         .clickable()
         .onHover { hovering = $0 }
         .keyboardShortcut(.downArrow, modifiers: .command)
-        .help(count > 0 ? "\(count) nova\(count == 1 ? "" : "s") · ir para o fim (⌘↓)" : "Ir para o fim (⌘↓)")
+        .help(count == 1 ? "1 nova · ir para o fim (⌘↓)" : count > 1 ? "\(count) novas · ir para o fim (⌘↓)" : "Ir para o fim (⌘↓)")
         .accessibilityLabel(count > 0 ? "Ir para o fim, \(count) mensagens novas" : "Ir para o fim")
         .springAnimation(value: count)
     }
@@ -393,9 +393,9 @@ struct RouteCaption: View {
     let tooltip: String?
 
     init(name: String, confidence: Double?) {
-        text = "Jev escolheu \(name)"
+        text = tr("Jev escolheu %@", name)
         symbol = "arrow.triangle.branch"
-        tooltip = confidence.map { "Confiança \(Int(($0 * 100).rounded()))%" } ?? "Escolhido pelo Jev"
+        tooltip = confidence.map { tr("Confiança %lld%%", Int(($0 * 100).rounded())) } ?? tr("Escolhido pelo Jev")
     }
 
     init(text: String, symbol: String, tooltip: String?) {
@@ -623,7 +623,7 @@ struct TranscriptRow: View, Equatable {
             RouteCaption(name: model.bot(id: botID)?.name ?? botID, confidence: confidence)
         case .handoff(let from, let to, let note):
             RouteCaption(
-                text: "\(model.bot(id: from)?.name ?? from) passou para \(model.bot(id: to)?.name ?? to)",
+                text: tr("%1$@ passou para %2$@", model.bot(id: from)?.name ?? from, model.bot(id: to)?.name ?? to),
                 symbol: "arrow.right.circle",
                 tooltip: note
             )

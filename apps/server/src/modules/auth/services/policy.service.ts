@@ -1,3 +1,4 @@
+import { authText } from "../constants/auth-messages.constants";
 import type { Principal } from "./auth.middleware";
 import { ownerRole } from "./auth.service";
 
@@ -81,8 +82,7 @@ export function authorize(
 }
 
 export function forbiddenResponse(decision: Exclude<Decision, "allow">) {
-  const error =
-    decision === "owner" ? "Só o dono da conta pode fazer isso." : "O token interno não tem acesso a esta rota.";
+  const error = decision === "owner" ? authText("ownerOnly") : authText("internalDenied");
   return Response.json(
     { ok: false, error, code: "forbidden" },
     { status: 403, headers: { "cache-control": "no-store" } },

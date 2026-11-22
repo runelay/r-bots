@@ -35,7 +35,7 @@ final class AudioRecorder {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
             try session.setActive(true)
-            let file = url.appendingPathComponent("Mensagem de áudio.m4a")
+            let file = url.appendingPathComponent(tr("Mensagem de áudio") + ".m4a")
             let settings: [String: Any] = [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 44_100,
@@ -50,7 +50,7 @@ final class AudioRecorder {
             phase = .recording
             meter()
         } catch {
-            phase = .failed("Não deu para gravar agora.")
+            phase = .failed(tr("Não deu para gravar agora."))
         }
     }
 

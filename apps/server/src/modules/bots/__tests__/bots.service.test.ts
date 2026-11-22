@@ -5,6 +5,7 @@ import { model as defaultClaudeModel } from "../../../config/env";
 import { getDb } from "../../../db";
 import { bots as botsTable } from "../../../db/tables";
 import { ValidationError } from "../../../shared/errors";
+import { withLanguage } from "../../../shared/i18n";
 import { botFromRow, botToRow, deleteBotRow, loadBotRows, saveBotRow } from "../repositories/bots.repository";
 import {
   type BotDefinition,
@@ -237,6 +238,23 @@ describe("createBot", () => {
       [{ name, permission: "root" }, "permission"],
     ];
     for (const [body, field] of cases) expect({ body, ...(await fieldOf(createBot(body))) }).toMatchObject({ field });
+  });
+
+  test("answers validation errors in the request language", async () => {
+    const name = uniqueName();
+    const message = (body: unknown) => createBot(body).catch((error: Error) => error.message);
+    expect(await message({ name: "  " })).toBe("O nome não pode ficar vazio.");
+    expect(await withLanguage("en", () => message({ name: "  " }))).toBe("The name can't be empty.");
+    expect(await withLanguage("en", () => message({ name, accent: "gold" }))).toStartWith("Invalid color. Use one of:");
+    expect(await withLanguage("en", () => message({ name, memory: { recall: "x" } }))).toBe(
+      "memory.recall must be true or false.",
+    );
+    expect(await withLanguage("en", () => message({ name, decisions: { mode: 1 } }))).toBe(
+      "Unknown field: decisions.mode.",
+    );
+    expect(await withLanguage("en", () => message({ name: "x".repeat(41) }))).toBe(
+      "The name can have at most 40 characters.",
+    );
   });
 });
 

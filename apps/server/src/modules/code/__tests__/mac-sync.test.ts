@@ -5,16 +5,15 @@ import { join } from "node:path";
 import { codeProcesses, gitArgs, gitSync, makeRepo } from "../../../../test/code-helpers";
 import { resetData } from "../../../../test/helpers";
 import { dropAllRunners, fakeRunner, hostHello, runnerDevice } from "../../../../test/runner-helpers";
+import { codeText } from "../constants/code-messages.constants";
 import {
   applyPendingSync,
   applySync,
   beginMacTurn,
   cleanSyncAfterDeliver,
-  detachedMessage,
   dropSyncRef,
   finishMacTurn,
   githubRepoOf,
-  noGithubMessage,
   prepareMacSync,
   resetMacSync,
   snapshotCommit,
@@ -86,10 +85,10 @@ describe("Mac workspace sync", () => {
     const plain = mkdtempSync(join(tmpdir(), "rb-plain-"));
     expect(await prepareMacSync(plain)).toEqual({ kind: "plain" });
     const local = await makeRepo("local-only", { origin: true });
-    expect(await prepareMacSync(local.path)).toEqual({ kind: "refused", message: noGithubMessage });
+    expect(await prepareMacSync(local.path)).toEqual({ kind: "refused", message: codeText("macNoGithub") });
     const repo = await githubRepo("detached");
     gitSync(repo.path, ["checkout", "-q", "--detach"]);
-    expect(await prepareMacSync(repo.path)).toEqual({ kind: "refused", message: detachedMessage });
+    expect(await prepareMacSync(repo.path)).toEqual({ kind: "refused", message: codeText("macDetached") });
     gitSync(repo.path, ["checkout", "-q", "feat/x"]);
     failing = "push";
     expect(await prepareMacSync(repo.path)).toEqual({

@@ -207,13 +207,13 @@ struct BoardInlineImage: View {
                 .buttonStyle(PressableButtonStyle())
                 .onHover { hovering = $0 }
                 .springAnimation(value: hovering)
-                .help(alt.isEmpty ? "Abrir a imagem" : alt)
+                .help(alt.isEmpty ? tr("Abrir a imagem") : alt)
                 .transition(.opacity)
             } else if failed {
                 Button {
                     BoardLinks.open(source)
                 } label: {
-                    Label(alt.isEmpty ? "Abrir a imagem" : alt, systemImage: "photo")
+                    Label(alt.isEmpty ? tr("Abrir a imagem") : alt, systemImage: "photo")
                         .font(TypeScale.captionStrong)
                         .foregroundStyle(Theme.textSecondary)
                         .padding(.horizontal, Spacing.m)

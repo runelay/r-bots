@@ -1,0 +1,36 @@
+import { defineMessages } from "../../../shared/i18n";
+
+export const uploadsText = defineMessages({
+  "pt-BR": {
+    file: "arquivo",
+    sendPrompt: "Posso enviar {name} ({path}) na conversa?",
+    sendReason: "Enviar arquivo de fora da pasta de saída do bot sempre passa por uma pessoa, em qualquer modo.",
+    send: "Enviar {name}",
+    readAttachment: "Ler o anexo",
+    image: "imagem",
+    cutout: "Recortar o fundo de {name}",
+    readAudio: "Ler o áudio de {duration}",
+    readVideo: "Ler o vídeo de {duration}",
+    read: "Ler {name}",
+    quota: "O espaço de anexos deste bot acabou. Apague anexos antigos ou peça para aumentar a cota.",
+    storeFailed: "Não consegui guardar o arquivo agora. Tente de novo.",
+    empty: "O arquivo está vazio.",
+    notFound: "Anexo não encontrado.",
+  },
+  en: {
+    file: "file",
+    sendPrompt: "Can I send {name} ({path}) in the conversation?",
+    sendReason: "Sending a file from outside the bot's outbox always goes through a person, in any mode.",
+    send: "Send {name}",
+    readAttachment: "Read the attachment",
+    image: "image",
+    cutout: "Remove the background of {name}",
+    readAudio: "Read the {duration} audio",
+    readVideo: "Read the {duration} video",
+    read: "Read {name}",
+    quota: "This bot's attachment space ran out. Delete old attachments or ask for a bigger quota.",
+    storeFailed: "Couldn't store the file right now. Try again.",
+    empty: "The file is empty.",
+    notFound: "Attachment not found.",
+  },
+});

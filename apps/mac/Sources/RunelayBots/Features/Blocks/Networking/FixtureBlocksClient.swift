@@ -226,7 +226,7 @@ actor FixtureBlocksClient: BlocksClient {
 
     func note(botID: String, id: String) async throws -> Note {
         seed()
-        guard let note = notesByID[id] else { throw BlocksError.message("Nota não encontrada.") }
+        guard let note = notesByID[id] else { throw BlocksError.message(tr("Nota não encontrada.")) }
         return note
     }
 
@@ -249,7 +249,7 @@ actor FixtureBlocksClient: BlocksClient {
     func createNote(botID: String, title: String, folder: String, content: String) async throws -> Note {
         seed()
         if notesByID.values.contains(where: { $0.title == title && $0.folder == folder }) {
-            throw BlocksError.message("Já existe uma nota com esse título nessa pasta.")
+            throw BlocksError.message(tr("Já existe uma nota com esse título nessa pasta."))
         }
         let id = "note_\(UUID().uuidString.prefix(8))"
         let note = makeNote(id: id, title: title, folder: folder, content: content.isEmpty ? "# \(title)\n\n" : content, version: 1, updatedAt: BlockDates.string(Date()), author: .user)
@@ -260,7 +260,7 @@ actor FixtureBlocksClient: BlocksClient {
 
     func writeNote(botID: String, id: String, content: String, title: String?, baseVersion: Int?) async throws -> Note {
         seed()
-        guard let current = notesByID[id] else { throw BlocksError.message("Nota não encontrada.") }
+        guard let current = notesByID[id] else { throw BlocksError.message(tr("Nota não encontrada.")) }
         if let baseVersion, baseVersion < current.version, current.updatedBy == .bot { throw BlocksError.stale(current.version) }
         let version = current.updatedBy == .user ? current.version : current.version + 1
         let note = makeNote(id: id, title: title ?? current.title, folder: current.folder, content: content, version: version, updatedAt: BlockDates.string(Date()), author: .user)
@@ -271,11 +271,11 @@ actor FixtureBlocksClient: BlocksClient {
 
     func patchNote(botID: String, id: String, ops: [NotePatchOp], baseVersion: Int?) async throws -> Note {
         seed()
-        guard var content = notesByID[id]?.content else { throw BlocksError.message("Nota não encontrada.") }
+        guard var content = notesByID[id]?.content else { throw BlocksError.message(tr("Nota não encontrada.")) }
         for op in ops {
             switch op {
             case .replace(let old, let new):
-                guard let range = content.range(of: old) else { throw BlocksError.message("Trecho não encontrado.") }
+                guard let range = content.range(of: old) else { throw BlocksError.message(tr("Trecho não encontrado.")) }
                 content.replaceSubrange(range, with: new)
             case .append(let text):
                 content += text
@@ -310,13 +310,13 @@ actor FixtureBlocksClient: BlocksClient {
 
     func sheet(botID: String, id: String) async throws -> Sheet {
         seed()
-        guard let sheet = sheetsByID[id] else { throw BlocksError.message("Planilha não encontrada.") }
+        guard let sheet = sheetsByID[id] else { throw BlocksError.message(tr("Planilha não encontrada.")) }
         return sheet
     }
 
     func sheetRange(botID: String, sheetID: String, tabID: String, range: String) async throws -> SheetRangeResult {
         seed()
-        guard let bounds = SheetAddress.parseRange(range) else { throw BlocksError.message("Intervalo inválido.") }
+        guard let bounds = SheetAddress.parseRange(range) else { throw BlocksError.message(tr("Intervalo inválido.")) }
         let cells = (cellsBySheetTab["\(sheetID)#\(tabID)"] ?? [:]).values.filter { bounds.rows.contains($0.r) && bounds.cols.contains($0.c) }
         return SheetRangeResult(tabId: tabID, range: range, version: sheetsByID[sheetID]?.version ?? 1, cells: Array(cells))
     }
@@ -363,7 +363,7 @@ actor FixtureBlocksClient: BlocksClient {
 
     func updateTab(botID: String, sheetID: String, tabID: String, patch: SheetTabPatch) async throws -> SheetTab {
         seed()
-        guard var sheet = sheetsByID[sheetID], let index = sheet.tabs.firstIndex(where: { $0.id == tabID }) else { throw BlocksError.message("Aba não encontrada.") }
+        guard var sheet = sheetsByID[sheetID], let index = sheet.tabs.firstIndex(where: { $0.id == tabID }) else { throw BlocksError.message(tr("Aba não encontrada.")) }
         if let name = patch.name { sheet.tabs[index].name = name }
         if let rows = patch.frozenRows { sheet.tabs[index].frozenRows = rows }
         if let cols = patch.frozenCols { sheet.tabs[index].frozenCols = cols }
@@ -374,7 +374,7 @@ actor FixtureBlocksClient: BlocksClient {
 
     func addTab(botID: String, sheetID: String, name: String) async throws -> SheetTab {
         seed()
-        guard var sheet = sheetsByID[sheetID] else { throw BlocksError.message("Planilha não encontrada.") }
+        guard var sheet = sheetsByID[sheetID] else { throw BlocksError.message(tr("Planilha não encontrada.")) }
         let tab = SheetTab(id: "tab_\(UUID().uuidString.prefix(6))", name: name, index: sheet.tabs.count, rowCount: 0, colCount: 0, frozenRows: 0, frozenCols: 0, colWidths: [:])
         sheet.tabs.append(tab)
         sheetsByID[sheetID] = sheet
@@ -416,20 +416,20 @@ actor FixtureBlocksClient: BlocksClient {
         let title: String
         switch (kind, format) {
         case (.note, .md):
-            guard let note = notesByID[id] else { throw BlocksError.message("Nota não encontrada.") }
+            guard let note = notesByID[id] else { throw BlocksError.message(tr("Nota não encontrada.")) }
             data = Data(note.content.utf8)
             title = note.title
         case (.note, .docx), (.note, .pdf):
-            guard let note = notesByID[id] else { throw BlocksError.message("Nota não encontrada.") }
+            guard let note = notesByID[id] else { throw BlocksError.message(tr("Nota não encontrada.")) }
             data = try await MainActor.run { try Self.richDocument(note.content, pdf: format == .pdf) }
             title = note.title
         case (.sheet, .csv):
-            guard let sheet = sheetsByID[id] else { throw BlocksError.message("Planilha não encontrada.") }
+            guard let sheet = sheetsByID[id] else { throw BlocksError.message(tr("Planilha não encontrada.")) }
             let tab = tabID ?? sheet.tabs.first?.id ?? ""
             data = Data(csv(cellsBySheetTab["\(id)#\(tab)"] ?? [:]).utf8)
             title = sheet.title
         default:
-            throw BlocksError.message("Esse formato chega junto com o servidor dos blocos.")
+            throw BlocksError.message(tr("Esse formato chega junto com o servidor dos blocos."))
         }
         let job = ExportJob(
             id: "exp_\(UUID().uuidString.prefix(8))", kind: kind.rawValue, sourceId: id, format: format, status: "ready", fileName: "\(title).\(format.rawValue)", size: data.count, url: "fixture",
@@ -439,12 +439,12 @@ actor FixtureBlocksClient: BlocksClient {
     }
 
     func exportJob(botID: String, id: String) async throws -> ExportJob {
-        guard let job = exports[id]?.0 else { throw BlocksError.message("Exportação não encontrada.") }
+        guard let job = exports[id]?.0 else { throw BlocksError.message(tr("Exportação não encontrada.")) }
         return job
     }
 
     func download(botID: String, job: ExportJob) async throws -> DownloadedFile {
-        guard let data = exports[job.id]?.1 else { throw BlocksError.message("Exportação não encontrada.") }
+        guard let data = exports[job.id]?.1 else { throw BlocksError.message(tr("Exportação não encontrada.")) }
         return DownloadedFile(data: data, fileName: job.fileName)
     }
 
@@ -560,7 +560,7 @@ actor FixtureBlocksClient: BlocksClient {
                 } else {
                     map[address]?.v = .string("#VALUE!")
                     map[address]?.t = "e"
-                    map[address]?.error = "Fórmula que o modo de demonstração não sabe calcular."
+                    map[address]?.error = tr("Fórmula que o modo de demonstração não sabe calcular.")
                 }
             }
         }

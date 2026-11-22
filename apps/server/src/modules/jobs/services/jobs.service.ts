@@ -3,6 +3,7 @@ import { DelayedError, type Job, type JobType, Queue, QueueEvents, Unrecoverable
 import { RedisClient } from "bun";
 import { type RedisSettings, redisSettings } from "../../../config/redis";
 import { ValidationError } from "../../../shared/errors";
+import { jobsText } from "../constants/jobs-messages.constants";
 import type {
   EnqueueOptions,
   JobContext,
@@ -75,7 +76,7 @@ export function defineJob<T>(type: string, definition: JobDefinition<T>) {
 
 function definitionOf(type: string) {
   const entry = registry.get(type);
-  if (!entry) throw new ValidationError(`Tipo de job desconhecido: ${type}.`, "type");
+  if (!entry) throw new ValidationError(jobsText("unknownType", { type }), "type");
   return entry;
 }
 
@@ -84,7 +85,7 @@ export function jobsActive() {
 }
 
 function requireRuntime() {
-  if (!runtime) throw new Error("A fila não está ligada.");
+  if (!runtime) throw new Error(jobsText("queueOff"));
   return runtime;
 }
 
@@ -368,7 +369,7 @@ export async function cancelJob(id: string) {
 export async function retryJob(id: string) {
   const found = await findJob(id);
   if (!found) return null;
-  if (found.status !== "failed") throw new ValidationError("Só um job falho pode ser tentado de novo.", "id");
+  if (found.status !== "failed") throw new ValidationError(jobsText("retryFailedOnly"), "id");
   await found.job.retry("failed", { resetAttemptsMade: true });
   return getJobView(id);
 }

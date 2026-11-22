@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { setLanguagePreference } from "../../../shared/i18n";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { type PublicDevServer, ServerRunning } from "../../code/services/dev-server.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
@@ -96,6 +97,22 @@ describe("server_start", () => {
     expect(events.find((event) => event.type === "call.settled")?.data).toMatchObject({
       outcome: "completed",
       output: { id: "dev_live", port: 4300 },
+    });
+  });
+
+  test("labels the call in the saved language", async () => {
+    const live = running();
+    spies.push(spyOn(servers, "startProjectServer").mockRejectedValue(new ServerRunning(live, [])));
+    const portuguese = harness();
+    await portuguese.call("server_start", { project: "web", script: "dev" });
+    expect(portuguese.events.find((event) => event.type === "call.requested")?.data).toMatchObject({
+      capability: { label: "Rodar web dev" },
+    });
+    setLanguagePreference("en");
+    const english = harness();
+    await english.call("server_start", { project: "web", script: "dev" });
+    expect(english.events.find((event) => event.type === "call.requested")?.data).toMatchObject({
+      capability: { label: "Run web dev" },
     });
   });
 });

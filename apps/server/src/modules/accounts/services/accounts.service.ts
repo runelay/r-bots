@@ -13,6 +13,7 @@ import {
 import { probe, runTurn } from "@runelay-bots/providers";
 import { dataDir, env } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
+import { commonText } from "../../../shared/messages";
 import { applyPendingSync } from "../../code/services/mac-sync.service";
 import {
   boxSpecFor,
@@ -24,6 +25,7 @@ import {
 import { onHost } from "../../environments/services/host-turns.service";
 import { runOnMac } from "../../environments/services/mac-turns.service";
 import { place } from "../../environments/services/scheduler.service";
+import { accountsText } from "../constants/accounts-messages.constants";
 import {
   type AccountDir,
   type AccountSettings,
@@ -300,21 +302,22 @@ async function changeSettings(change: (settings: AccountSettings) => void) {
 }
 
 export async function updateAccount(id: string, body: unknown) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new ValidationError("Corpo inválido.", "body");
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   const raw = body as Record<string, unknown>;
   for (const key of Object.keys(raw))
-    if (key !== "name" && key !== "isDefault") throw new ValidationError(`Campo desconhecido: ${key}.`, key);
+    if (key !== "name" && key !== "isDefault") throw new ValidationError(commonText("unknownField", { key }), key);
   const account = (await listAccounts()).find((item) => item.id === id);
   if (!account) return null;
   if (raw.name !== undefined && raw.name !== null && typeof raw.name !== "string")
-    throw new ValidationError("O nome precisa ser texto.", "name");
+    throw new ValidationError(accountsText("nameText"), "name");
   const name = typeof raw.name === "string" ? raw.name.trim() : raw.name;
   if (typeof name === "string" && name.length > maxName)
-    throw new ValidationError(`O nome pode ter até ${maxName} caracteres.`, "name");
+    throw new ValidationError(accountsText("nameTooLong", { max: maxName }), "name");
   if (raw.isDefault !== undefined && raw.isDefault !== true)
-    throw new ValidationError("Para trocar a padrão, marque outra conta como padrão.", "isDefault");
+    throw new ValidationError(accountsText("defaultSwitch"), "isDefault");
   if (raw.isDefault === true && !(dirProviders as readonly string[]).includes(account.provider))
-    throw new ValidationError("Só contas do Claude e do Codex têm padrão.", "isDefault");
+    throw new ValidationError(accountsText("defaultProviders"), "isDefault");
   return changeSettings((settings) => {
     if (name !== undefined) {
       if (name) settings.names[id] = name;
@@ -326,12 +329,11 @@ export async function updateAccount(id: string, body: unknown) {
 
 export async function addAccountDir(body: unknown) {
   const raw = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
-  if (typeof raw.path !== "string" || !raw.path.trim())
-    throw new ValidationError("Informe o diretório da conta, por exemplo ~/.claude-3.", "path");
+  if (typeof raw.path !== "string" || !raw.path.trim()) throw new ValidationError(accountsText("dirMissing"), "path");
   const dir = expandPath(raw.path);
-  if (!dir) throw new ValidationError("Use um caminho absoluto ou que comece com ~/.", "path");
+  if (!dir) throw new ValidationError(accountsText("dirAbsolute"), "path");
   const provider = await detectProvider(dir);
-  if (!provider) throw new ValidationError("Não achei login do Claude Code nem do Codex nesse diretório.", "path");
+  if (!provider) throw new ValidationError(accountsText("dirNoLogin"), "path");
   const settings = await readAccountSettings();
   const stored = displayPath(dir);
   const accounts = settings.dirs.includes(stored)
@@ -345,11 +347,7 @@ export async function addAccountDir(body: unknown) {
 export async function removeAccountDir(id: string) {
   const account = (await listAccounts()).find((item) => item.id === id);
   if (!account) return null;
-  if (!account.added)
-    throw new ValidationError(
-      "Essa conta foi achada sozinha na pasta pessoal. Para tirar, faça logout dela no terminal.",
-      "id",
-    );
+  if (!account.added) throw new ValidationError(accountsText("dirAuto"), "id");
   return changeSettings((settings) => {
     settings.dirs = settings.dirs.filter((item) => {
       const dir = expandPath(item);
@@ -362,7 +360,7 @@ export async function removeAccountDir(id: string) {
 
 export async function loginGuide(provider: string): Promise<LoginGuide> {
   if (provider !== "claude" && provider !== "codex")
-    throw new ValidationError("Use provider=claude ou provider=codex.", "provider");
+    throw new ValidationError(accountsText("providerInvalid"), "provider");
   const base = provider === "claude" ? ".claude" : ".codex";
   const names = new Set(await readdir(homeDir()).catch(() => [] as string[]));
   let index = 2;
@@ -378,10 +376,6 @@ export async function loginGuide(provider: string): Promise<LoginGuide> {
     provider,
     dir,
     command,
-    steps: [
-      `Abra um terminal no servidor onde o r/bots roda, com o mesmo usuário dele.`,
-      `Rode o comando abaixo e entre com a outra conta do ${title} no navegador.`,
-      `O diretório fica dentro da sua pasta pessoal, então o servidor já enxerga. Volte aqui e toque em Procurar de novo.`,
-    ],
+    steps: [accountsText("stepTerminal"), accountsText("stepRun", { title }), accountsText("stepBack")],
   };
 }

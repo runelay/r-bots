@@ -1,12 +1,13 @@
 import { type Res, runelayFailure, sendJson } from "../../../shared/http";
 import { RunelayApiError, runelayEnabled } from "../../connectors/services/runelay.service";
+import { conversationsText } from "../../conversations/constants/conversations-messages.constants";
 import { listSkills } from "../services/skills.service";
 
 export async function handleSkills(res: Res, url: URL) {
   if (!runelayEnabled())
     return sendJson(res, 503, {
       ok: false,
-      error: "runelay não está configurado no servidor.",
+      error: conversationsText("runelayMissing"),
       code: "not_configured",
     });
   try {

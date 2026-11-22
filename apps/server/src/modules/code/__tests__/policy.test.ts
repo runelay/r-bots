@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { env, dataDir as serverDataDir } from "../../../config/env";
+import { withLanguage } from "../../../shared/i18n";
 import {
   commandIsReadOnly,
   decodeAnsiC,
@@ -278,6 +279,8 @@ describe("gateCommand", () => {
     expect(human("git push origin :old").reason).toBe("Push forçado sempre passa por você.");
     expect(human("git push origin HEAD:main").prompt).toBe("Push direto na main?");
     expect(human("git push", onMain).prompt).toBe("Push direto na main?");
+    expect(withLanguage("en", () => human("git push origin HEAD:main").prompt)).toBe("Push straight to main?");
+    expect(withLanguage("en", () => human("git push --force").reason)).toBe("A force push always goes through you.");
     expect(human("git merge feat", onMain).prompt).toBe("Rodar git merge direto na main?");
     expect(kind("git merge main")).toBe("allow");
     expect(denied("git config user.name x")).toContain("git config");

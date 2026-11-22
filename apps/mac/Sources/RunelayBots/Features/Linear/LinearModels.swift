@@ -209,11 +209,11 @@ enum LNStyle {
 
     static func priorityTitle(_ priority: Int) -> String {
         switch priority {
-        case 1: "Urgente"
-        case 2: "Alta"
-        case 3: "Média"
-        case 4: "Baixa"
-        default: "Sem prioridade"
+        case 1: tr("Urgente")
+        case 2: tr("Alta")
+        case 3: tr("Média")
+        case 4: tr("Baixa")
+        default: tr("Sem prioridade")
         }
     }
 }

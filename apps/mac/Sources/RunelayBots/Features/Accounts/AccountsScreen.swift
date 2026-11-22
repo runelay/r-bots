@@ -25,7 +25,7 @@ struct AIAccountsSettings: View {
                 }
             }
         case .unsupported:
-            placeholderList(note: "O servidor ainda não lista as contas. Estas são as que o runelay procura nele.")
+            placeholderList(note: tr("O servidor ainda não lista as contas. Estas são as que o runelay procura nele."))
         case .failed(let message):
             VStack(alignment: .leading, spacing: Spacing.m) {
                 FieldError(message: message)
@@ -48,7 +48,7 @@ struct AIAccountsSettings: View {
             Text(note)
                 .font(TypeScale.rowSubtitle)
                 .foregroundStyle(Theme.textSecondary)
-            ScreenSection(title: "Contas suportadas") {
+            ScreenSection(title: tr("Contas suportadas")) {
                 ForEach(KnownProvider.all) { provider in
                     AccountRowLayout(provider: provider.id, title: provider.label, subtitle: provider.detail) {
                         EmptyView()
@@ -146,12 +146,12 @@ struct AccountsListSection: View {
     private var caption: String? {
         let ready = shown.filter(\.isReady).count
         guard !shown.isEmpty else { return nil }
-        if ready == shown.count { return ready == 1 ? "1 pronta" : "\(ready) prontas" }
-        return "\(ready) de \(shown.count) prontas"
+        if ready == shown.count { return ready == 1 ? tr("1 pronta") : tr("%lld prontas", ready) }
+        return tr("%1$lld de %2$lld prontas", ready, shown.count)
     }
 
     var body: some View {
-        ScreenSection(title: "Contas do servidor", caption: caption) {
+        ScreenSection(title: tr("Contas do servidor"), caption: caption) {
             ForEach(shown) { account in
                 AccountRow(account: account, showsDefault: shown.filter { $0.provider == account.provider }.count > 1)
                     .transition(.opacity)
@@ -189,8 +189,8 @@ private struct MissingToolsRow: View {
 
     private var text: String {
         let names = accounts.map(\.name)
-        let list = names.count > 1 ? names.dropLast().joined(separator: ", ") + " e " + (names.last ?? "") : names.first ?? ""
-        return "\(list) \(names.count > 1 ? "não estão instalados" : "não está instalado") no servidor."
+        guard names.count > 1, let last = names.last else { return tr("%@ não está instalado no servidor.", names.first ?? "") }
+        return tr("%1$@ e %2$@ não estão instalados no servidor.", names.dropLast().joined(separator: ", "), last)
     }
 }
 
@@ -230,7 +230,7 @@ private struct AccountRow: View {
                     .accessibilityLabel("Pronta")
             }
             if showsDefault, account.isDefault {
-                RoleTag(text: "Padrão")
+                RoleTag(text: tr("Padrão"))
                     .fixedSize()
                     .help("Bots novos usam esta conta.")
             }
@@ -244,7 +244,7 @@ private struct AccountRow: View {
                         .foregroundStyle(statusColor)
                 }
                 if account.hasLogin {
-                    GlassMenuButton(edge: .trailing, help: "Ações da conta", items: { actions }) { isOpen in
+                    GlassMenuButton(edge: .trailing, help: tr("Ações da conta"), items: { actions }) { isOpen in
                         BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen)
                     }
                     .fixedSize()
@@ -266,7 +266,7 @@ private struct AccountRow: View {
 
     private var actions: [GlassMenuItem] {
         var items = [
-            GlassMenuItem("Renomear", systemImage: "pencil") {
+            GlassMenuItem(tr("Renomear"), systemImage: "pencil") {
                 draft = account.name == account.autoName ? "" : account.name
                 editing = true
                 focused = true
@@ -274,19 +274,19 @@ private struct AccountRow: View {
         ]
         if account.name != account.autoName {
             items.append(
-                GlassMenuItem("Voltar para \(account.autoName)", systemImage: "arrow.uturn.backward") {
+                GlassMenuItem(tr("Voltar para %@", account.autoName), systemImage: "arrow.uturn.backward") {
                     model.renameAccount(account, to: nil)
                 })
         }
         if !account.isDefault {
             items.append(
-                GlassMenuItem("Usar como padrão", systemImage: "checkmark.circle", startsSection: true) {
+                GlassMenuItem(tr("Usar como padrão"), systemImage: "checkmark.circle", startsSection: true) {
                     model.makeDefaultAccount(account)
                 })
         }
         if account.added {
             items.append(
-                GlassMenuItem("Tirar da lista", systemImage: "minus.circle", destructive: true, startsSection: true) {
+                GlassMenuItem(tr("Tirar da lista"), systemImage: "minus.circle", destructive: true, startsSection: true) {
                     model.removeAccount(account)
                 })
         }
@@ -329,7 +329,7 @@ struct AddAccountSection: View {
     @State private var copied = false
 
     var body: some View {
-        ScreenSection(title: "Adicionar conta", caption: "Outra assinatura do Claude ou do Codex no servidor") {
+        ScreenSection(title: tr("Adicionar conta"), caption: tr("Outra assinatura do Claude ou do Codex no servidor")) {
             VStack(alignment: .leading, spacing: Spacing.m) {
                 HStack(spacing: Spacing.m) {
                     Text("Cada conta mora numa pasta própria no servidor. Faça o login numa pasta nova e ela aparece aqui sozinha.")
@@ -502,8 +502,8 @@ extension AIAccount {
     var friendlyDetail: String? {
         guard let detail, !detail.isEmpty else { return nil }
         let lowered = detail.lowercased()
-        if lowered.contains("logged in using chatgpt") { return "Assinatura do ChatGPT" }
-        if lowered.contains("api key") { return "Chave de API" }
+        if lowered.contains("logged in using chatgpt") { return tr("Assinatura do ChatGPT") }
+        if lowered.contains("api key") { return tr("Chave de API") }
         if lowered.contains("not installed") || lowered.contains("não instalada") { return nil }
         return detail.replacingOccurrences(of: " · team", with: " · Team")
     }
@@ -514,12 +514,14 @@ struct KnownProvider: Identifiable {
     let label: String
     let detail: String
 
-    static let all = [
-        KnownProvider(id: "claude", label: "Claude", detail: "Claude Code com a sua assinatura."),
-        KnownProvider(id: "codex", label: "ChatGPT · Codex", detail: "Codex CLI com a assinatura do ChatGPT."),
-        KnownProvider(id: "grok", label: "Grok", detail: "Grok CLI."),
-        KnownProvider(id: "cursor", label: "Cursor", detail: "cursor-agent com a assinatura do Cursor."),
-    ]
+    static var all: [KnownProvider] {
+        [
+            KnownProvider(id: "claude", label: "Claude", detail: tr("Claude Code com a sua assinatura.")),
+            KnownProvider(id: "codex", label: "ChatGPT · Codex", detail: tr("Codex CLI com a assinatura do ChatGPT.")),
+            KnownProvider(id: "grok", label: "Grok", detail: "Grok CLI."),
+            KnownProvider(id: "cursor", label: "Cursor", detail: tr("cursor-agent com a assinatura do Cursor.")),
+        ]
+    }
 }
 
 struct PillLabel: View {

@@ -130,9 +130,10 @@ struct SettingsScreen: View {
             }
         }
         .environment(model)
+        .appLanguage()
     }
 
-    private func link(_ title: String, _ symbol: String, _ color: Color, _ route: SettingsRoute) -> some View {
+    private func link(_ title: LocalizedStringKey, _ symbol: String, _ color: Color, _ route: SettingsRoute) -> some View {
         NavigationLink(value: route) {
             HStack(spacing: Spacing.m) {
                 SettingsTile(symbol: symbol, color: color, size: 29)

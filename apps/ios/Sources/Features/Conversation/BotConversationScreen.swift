@@ -166,12 +166,12 @@ struct BotConversationScreen: View {
     private var subtitle: (text: String, color: Color)? {
         if let active {
             switch active.botStatus {
-            case .working: return ("Trabalhando…", Theme.brandText)
-            case .awaitingApproval: return ("Precisa de você", Theme.attention)
+            case .working: return (tr("Trabalhando…"), Theme.brandText)
+            case .awaitingApproval: return (tr("Precisa de você"), Theme.attention)
             default: break
             }
         }
-        if isDraft { return ("Nova conversa", Theme.textTertiary) }
+        if isDraft { return (tr("Nova conversa"), Theme.textTertiary) }
         if let conversation, !conversation.isMain { return (conversation.title, Theme.textTertiary) }
         return nil
     }
@@ -262,7 +262,7 @@ struct ConversationRow: View {
                 .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: Spacing.s) {
-                    Text(conversation.isMain ? "Conversa principal" : conversation.title)
+                    Text(conversation.isMain ? tr("Conversa principal") : conversation.title)
                         .font(BrandFonts.sans(15, weight: .medium))
                         .foregroundStyle(Theme.textPrimary)
                         .lineLimit(1)
@@ -281,7 +281,7 @@ struct ConversationRow: View {
                         case .awaitingApproval:
                             Text("Precisa de você").foregroundStyle(Theme.attention)
                         default:
-                            Text(conversation.lastMessage?.text.replacingOccurrences(of: "\n", with: " ") ?? "Sem mensagens")
+                            Text(conversation.lastMessage?.text.replacingOccurrences(of: "\n", with: " ") ?? tr("Sem mensagens"))
                                 .foregroundStyle(Theme.textSecondary)
                         }
                     }

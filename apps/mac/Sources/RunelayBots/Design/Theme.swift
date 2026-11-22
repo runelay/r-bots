@@ -111,20 +111,20 @@ enum Theme {
 
     static func accentName(_ name: String) -> String {
         switch name.lowercased() {
-        case "electric", "blue": "Azul"
-        case "green": "Verde"
-        case "teal", "cyan": "Ciano"
-        case "violet", "purple": "Violeta"
-        case "pink": "Rosa"
-        case "indigo": "Índigo"
-        case "sky", "light": "Azul claro"
-        case "royal": "Azul royal"
-        case "white": "Branco"
-        case "grey", "gray": "Cinza"
-        case "red": "Vermelho"
-        case "orange": "Laranja"
-        case "amber": "Âmbar"
-        case "yellow": "Amarelo"
+        case "electric", "blue": tr("Azul")
+        case "green": tr("Verde")
+        case "teal", "cyan": tr("Ciano")
+        case "violet", "purple": tr("Violeta")
+        case "pink": tr("Rosa")
+        case "indigo": tr("Índigo")
+        case "sky", "light": tr("Azul claro")
+        case "royal": tr("Azul royal")
+        case "white": tr("Branco")
+        case "grey", "gray": tr("Cinza")
+        case "red": tr("Vermelho")
+        case "orange": tr("Laranja")
+        case "amber": tr("Âmbar")
+        case "yellow": tr("Amarelo")
         default: name
         }
     }

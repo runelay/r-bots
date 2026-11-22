@@ -1,7 +1,7 @@
 import type { Server } from "bun";
 import { handleAccountRoutes, handleAccounts, handleAccountsRefresh } from "./modules/accounts/routes/accounts.routes";
 import { isRunnerUpgrade, runnerSocket, runnerUpgradeData } from "./modules/accounts/services/mac-runner.service";
-import { gate, isLocalExec, principalOf, requestAllowed } from "./modules/auth/gate";
+import { authActive, gate, isLocalExec, principalOf, requestAllowed } from "./modules/auth/gate";
 import { unauthorized } from "./modules/auth/services/auth.middleware";
 import { avatarMaxBytes } from "./modules/auth/services/avatar.service";
 import { handleBots } from "./modules/bots/routes/bots.routes";
@@ -46,6 +46,7 @@ import { handleVoices } from "./modules/voice/routes/voice.routes";
 import { noteClientTimezone } from "./shared/clock";
 import {
   buildRequestContext,
+  httpText,
   internalError,
   notFound,
   Req,
@@ -54,6 +55,7 @@ import {
   setRequestContext,
   withSecurityHeaders,
 } from "./shared/http";
+import { backgroundLanguage, noteDeviceLanguage, parseLanguage, requestLanguage, withLanguage } from "./shared/i18n";
 import type { SocketData, SocketHandler } from "./shared/ws";
 
 type RouteHandler = (req: Req, res: Res, url: URL, method: string, parts: string[]) => unknown;
@@ -154,13 +156,12 @@ export function checkBody(request: Request, parts: string[]) {
   if (limit === null) return null;
   const declared = request.headers.get("content-length");
   if (declared === null) {
-    if (request.headers.has("transfer-encoding"))
-      return failure(411, "Envie o tamanho do corpo (Content-Length).", "length_required");
+    if (request.headers.has("transfer-encoding")) return failure(411, httpText("lengthRequired"), "length_required");
     return null;
   }
   const size = Number(declared);
-  if (!Number.isFinite(size) || size < 0) return failure(400, "Content-Length inválido.", "bad_request");
-  if (size > limit) return failure(413, "O corpo da requisição passa do limite desta rota.", "too_large");
+  if (!Number.isFinite(size) || size < 0) return failure(400, httpText("invalidLength"), "bad_request");
+  if (size > limit) return failure(413, httpText("tooLarge"), "too_large");
   return null;
 }
 
@@ -227,21 +228,38 @@ async function upgrade(request: Request, server: Server<SocketData>) {
   return accept({ kind: "live", botId });
 }
 
-export async function serve(request: Request, server: Server<SocketData>) {
+function noteLanguageOf(request: Request) {
+  const principal = principalOf(request);
+  if (principal ? principal.method !== "internal" : !authActive())
+    noteDeviceLanguage(parseLanguage(request.headers.get("accept-language")));
+}
+
+function languageOf(request: Request) {
+  return new URL(request.url).pathname.startsWith("/mcp") ? backgroundLanguage() : requestLanguage(request.headers);
+}
+
+export function serve(request: Request, server: Server<SocketData>) {
+  return withLanguage(languageOf(request), () => serveRequest(request, server));
+}
+
+async function serveRequest(request: Request, server: Server<SocketData>) {
   const peer = server.requestIP(request)?.address ?? "";
   const context = buildRequestContext(request, peer, Number(server.port));
-  if (!context) return withSecurityHeaders(failure(400, "Caminho inválido.", "bad_path"), "/");
+  if (!context) return withSecurityHeaders(failure(400, httpText("invalidPath"), "bad_path"), "/");
   setRequestContext(request, context);
   const preview = isPreviewTraffic(request, apiRoots);
   const finish = (response: Response | undefined) =>
     response && !preview ? withSecurityHeaders(response, context.pathname) : response;
-  if (onPreviewHost(request) && !preview) return finish(failure(404, "Rota não encontrada.", "not_found"));
+  if (onPreviewHost(request) && !preview) return finish(failure(404, httpText("notFound"), "not_found"));
   const tooLarge = preview ? null : checkBody(request, context.parts);
   if (tooLarge) return finish(tooLarge);
   const blocked = await gate(request, { bypass: () => preview });
   if (blocked) return finish(blocked);
   if (principalOf(request) || preview || context.parts[0] === "mcp" || isLocalExec(request)) server.timeout(request, 0);
-  if (!preview) noteClientTimezone(request.headers.get("x-timezone"));
+  if (!preview) {
+    noteClientTimezone(request.headers.get("x-timezone"));
+    noteLanguageOf(request);
+  }
   if (request.headers.get("upgrade")?.toLowerCase() === "websocket") return finish(await upgrade(request, server));
   return finish(await run(request, route));
 }

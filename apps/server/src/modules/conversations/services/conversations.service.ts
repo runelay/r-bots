@@ -1,5 +1,6 @@
 import { model } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
+import { commonText } from "../../../shared/messages";
 import {
   effectivePermission,
   isPermissionMode,
@@ -8,6 +9,7 @@ import {
 import { getBot, isActive, permissionOfBot } from "../../bots/services/bots.service";
 import { activeWorkspace } from "../../code/services/workspace.service";
 import { conversationStatus, isBusy } from "../../engine/services/engine.service";
+import { conversationsText } from "../constants/conversations-messages.constants";
 import {
   allStoredSessions,
   type ConversationInfo,
@@ -59,7 +61,7 @@ export async function publicConversation(session: StoredSession) {
   return {
     sessionId: meta.sessionId,
     botId: meta.botId,
-    title: isMain ? await mainTitle(session) : meta.title || "Nova conversa",
+    title: isMain ? await mainTitle(session) : meta.title || conversationsText("newConversation"),
     titleSource: details.titleSource,
     main: isMain,
     createdAt: meta.startedAt,
@@ -104,7 +106,7 @@ async function mainTitle(session: StoredSession) {
   if (details.titleSource === "user" && session.meta.title) return session.meta.title;
   if (!placeholderTitles.has(session.meta.title)) return session.meta.title;
   const text = await firstUserText(session);
-  if (!text) return "Nova conversa";
+  if (!text) return conversationsText("newConversation");
   session.meta.title = autoTitle(text);
   details.titleSource = "auto";
   void session.save();
@@ -173,7 +175,7 @@ export function autoTitle(text: string) {
     .trim();
   for (let index = 0; index < 3; index++) clean = clean.replace(fillers, "").replace(asks, "").trim();
   clean = clean.replace(/[?!.:;,]+$/, "").trim();
-  if (!clean) return "Nova conversa";
+  if (!clean) return conversationsText("newConversation");
   const max = 44;
   let title = clean;
   if (title.length > max) {
@@ -238,20 +240,21 @@ export function conversationOf(botId: string, sessionId: string) {
 }
 
 export async function updateConversation(session: StoredSession, body: unknown) {
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new ValidationError("Corpo inválido.", "body");
+  if (!body || typeof body !== "object" || Array.isArray(body))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   const raw = body as Record<string, unknown>;
   for (const key of Object.keys(raw))
-    if (!["title", "permission"].includes(key)) throw new ValidationError(`Campo desconhecido: ${key}.`, key);
+    if (!["title", "permission"].includes(key)) throw new ValidationError(commonText("unknownField", { key }), key);
   if (raw.title !== undefined) {
     if (typeof raw.title !== "string" || !raw.title.trim() || raw.title.trim().length > 80)
-      throw new ValidationError("O título precisa ter de 1 a 80 caracteres.", "title");
+      throw new ValidationError(conversationsText("titleLength"), "title");
     session.meta.title = raw.title.trim();
     info(session).titleSource = "user";
   }
   if (raw.permission !== undefined) {
     if (raw.permission === null) delete session.meta.permission;
     else if (isPermissionMode(raw.permission)) session.meta.permission = raw.permission;
-    else throw new ValidationError("Use readonly, edit, default ou full.", "permission");
+    else throw new ValidationError(conversationsText("permissionInvalid"), "permission");
   }
   await session.save();
   void notifyConversation(session.meta.sessionId);
@@ -270,9 +273,9 @@ export class ConversationError extends Error {
 
 export async function archiveConversation(session: StoredSession, archived: boolean) {
   if (session.meta.kind === "thread")
-    throw new ConversationError("A conversa principal não é arquivada. Use Limpar conversa.", 400, "main_conversation");
+    throw new ConversationError(conversationsText("mainNotArchived"), 400, "main_conversation");
   if (archived && isBusy(session.meta.sessionId))
-    throw new ConversationError("Essa conversa ainda está trabalhando. Pare antes de arquivar.", 409, "turn_running");
+    throw new ConversationError(conversationsText("busyArchive"), 409, "turn_running");
   info(session).archivedAt = archived ? new Date().toISOString() : null;
   await session.save();
   void notifyConversation(session.meta.sessionId);
@@ -295,10 +298,9 @@ export async function moveConversation(session: StoredSession, targetId: unknown
     throw new ConversationError("A conversa principal fica com o bot.", 400, "main_conversation");
   const target = typeof targetId === "string" ? getBot(targetId) : undefined;
   if (!target || !isActive(target))
-    throw new ConversationError("Esse bot não está disponível.", 400, "bot_unavailable");
+    throw new ConversationError(conversationsText("botUnavailable"), 400, "bot_unavailable");
   if (target.id === session.meta.botId) return session;
-  if (isBusy(session.meta.sessionId))
-    throw new ConversationError("Essa conversa ainda está trabalhando. Pare antes de mover.", 409, "turn_running");
+  if (isBusy(session.meta.sessionId)) throw new ConversationError(conversationsText("busyMove"), 409, "turn_running");
   const from = session.meta.botId;
   session.meta.botId = target.id;
   delete session.meta.providerSessions;

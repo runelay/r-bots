@@ -434,9 +434,9 @@ final class ConversationStore {
             case .user:
                 if let message = userMessages[entry.id] {
                     if message.fromBotID != nil {
-                        return ThreadActivity(text: "\(message.fromName ?? "Outro bot") pediu: \(message.text)", isUser: false, date: entryDates[entry.id])
+                        return ThreadActivity(text: tr("%1$@ pediu: %2$@", message.fromName ?? tr("Outro bot"), message.text), isUser: false, date: entryDates[entry.id])
                     }
-                    let shown = message.text.isEmpty ? (message.attachments.count == 1 ? "📎 \(message.attachments[0].name)" : "📎 \(message.attachments.count) anexos") : message.text
+                    let shown = message.text.isEmpty ? (message.attachments.count == 1 ? "📎 \(message.attachments[0].name)" : tr("📎 %lld anexos", message.attachments.count)) : message.text
                     return ThreadActivity(text: shown, isUser: true, date: entryDates[entry.id])
                 }
             case .text:
@@ -687,7 +687,7 @@ final class ConversationStore {
                 try await client.rate(botID: botID, callID: callID, rating: rating)
             } catch {
                 voiceRatings[callID] = previous
-                lastError = "Não consegui salvar a avaliação da chamada."
+                lastError = tr("Não consegui salvar a avaliação da chamada.")
             }
         }
     }
@@ -819,7 +819,7 @@ final class ConversationStore {
                 let notice = FriendlyError.notice(
                     code: data["error"]?["code"]?.stringValue,
                     message: Self.errorText(data),
-                    fallback: "Algo deu errado neste turno."
+                    fallback: tr("Algo deu errado neste turno.")
                 )
                 onNotify?(.failed(notice.text))
             }
@@ -832,11 +832,11 @@ final class ConversationStore {
                 var notice = FriendlyError.notice(
                     code: data["error"]?["code"]?.stringValue,
                     message: Self.errorText(data),
-                    fallback: "Algo deu errado neste turno."
+                    fallback: tr("Algo deu errado neste turno.")
                 )
                 if let suggest = data["error"]?["suggest"], let account = suggest["account"]?.stringValue {
                     notice.action = FallbackOffer(
-                        label: "Continuar com \(suggest["label"]?.stringValue ?? ModelNames.providerName(account))",
+                        label: tr("Continuar com %@", suggest["label"]?.stringValue ?? ModelNames.providerName(account)),
                         account: account,
                         model: suggest["model"]?.stringValue
                     )
@@ -844,7 +844,7 @@ final class ConversationStore {
                 appendNotice(notice)
             case "cancelled":
                 phase = .idle
-                appendNotice(TranscriptNotice(text: "Turno interrompido.", detail: nil, tone: .info))
+                appendNotice(TranscriptNotice(text: tr("Turno interrompido."), detail: nil, tone: .info))
             default:
                 phase = .idle
             }
@@ -883,7 +883,7 @@ final class ConversationStore {
         case "account.failover", "account.restored", "context.handoff":
             if let to = data["to"]?.stringValue ?? data["account"]?.stringValue {
                 let handoff = ContextHandoff(
-                    reason: data["reason"]?.stringValue ?? "Contexto passado",
+                    reason: data["reason"]?.stringValue ?? tr("Contexto passado"),
                     fromAccount: data["from"]?.stringValue,
                     fromModel: data["fromModel"]?.stringValue,
                     toAccount: to,
@@ -918,7 +918,7 @@ final class ConversationStore {
                 let ref = ArtifactRef(
                     botID: data["botId"]?.stringValue ?? bot.id,
                     id: artifactID,
-                    title: data["title"]?.stringValue ?? "Artefato",
+                    title: data["title"]?.stringValue ?? tr("Artefato"),
                     kind: data["kind"]?.stringValue ?? "page",
                     version: data["version"]?.intValue ?? 1
                 )
@@ -936,7 +936,7 @@ final class ConversationStore {
                     TestStore.shared.apply(data)
                     let id = "test-\(runID)"
                     if !entries.contains(where: { $0.id == id }) {
-                        let ref = ArtifactRef(botID: bot.id, id: runID, title: data["title"]?.stringValue ?? "Teste", kind: TestStore.panelKind, version: 1)
+                        let ref = ArtifactRef(botID: bot.id, id: runID, title: data["title"]?.stringValue ?? tr("Teste"), kind: TestStore.panelKind, version: 1)
                         append(TranscriptEntry(id: id, kind: .artifact(ref)), date: currentLineDate)
                     }
                 }
@@ -946,7 +946,7 @@ final class ConversationStore {
                     let ref = ArtifactRef(
                         botID: data["botId"]?.stringValue ?? bot.id,
                         id: serverID,
-                        title: data["server"]?["name"]?.stringValue ?? "Servidor",
+                        title: data["server"]?["name"]?.stringValue ?? tr("Servidor"),
                         kind: ServerStore.panelKind,
                         version: 1
                     )
@@ -980,8 +980,8 @@ final class ConversationStore {
         case "bot.updated":
             let summary =
                 data["summary"]?.stringValue
-                ?? (data["fields"]?.arrayValue?.compactMap(\.stringValue).joined(separator: ", ")).map { "atualizou \($0)" }
-                ?? "atualizou a própria configuração"
+                ?? (data["fields"]?.arrayValue?.compactMap(\.stringValue).joined(separator: ", ")).map { tr("atualizou %@", $0) }
+                ?? tr("atualizou a própria configuração")
             append(TranscriptEntry(id: "update-\(fact.key)", kind: .update("\(bot.name): \(summary)")), date: currentLineDate)
             onBotUpdated?()
         case "settings.changed":
@@ -1003,7 +1003,7 @@ final class ConversationStore {
                     FriendlyError.notice(
                         code: data["error"]?["code"]?.stringValue,
                         message: Self.errorText(data),
-                        fallback: "A conversa terminou com erro."
+                        fallback: tr("A conversa terminou com erro.")
                     ))
             } else if phase != .failed {
                 phase = .idle
@@ -1064,7 +1064,7 @@ final class ConversationStore {
         reactionWrites[target] = left > 0 ? left : nil
         if let restore {
             reactions[target] = restore.isEmpty ? nil : restore
-            lastError = "Não deu para reagir agora. Tente de novo."
+            lastError = tr("Não deu para reagir agora. Tente de novo.")
             persistReactions()
         }
     }
@@ -1205,8 +1205,8 @@ final class ConversationStore {
         case "result":
             text = data["value"].map { $0.stringValue ?? ReadableResult.plainText($0) } ?? ""
         case "file":
-            let name = data["value"]?["name"]?.stringValue ?? data["name"]?.stringValue ?? "arquivo"
-            text = "Arquivo: \(name)"
+            let name = data["value"]?["name"]?.stringValue ?? data["name"]?.stringValue ?? tr("arquivo")
+            text = tr("Arquivo: %@", name)
         default:
             removeText(partID)
             return
@@ -1347,8 +1347,8 @@ final class ConversationStore {
         }
         if options.isEmpty, kind == "approval" {
             options = [
-                ApprovalOption(id: "approve", label: "Aprovar", isPrimary: true),
-                ApprovalOption(id: "deny", label: "Negar", isPrimary: false),
+                ApprovalOption(id: "approve", label: tr("Aprovar"), isPrimary: true),
+                ApprovalOption(id: "deny", label: tr("Negar"), isPrimary: false),
             ]
         }
 
@@ -1442,21 +1442,21 @@ final class ConversationStore {
             ?? data["answer"]?["optionId"]?.stringValue
             ?? data["decision"]?.stringValue
         if data["outcome"]?.stringValue == "withdrawn", data["reason"]?.stringValue == "message" {
-            approvals[id]?.resolution = .settled("Respondido por mensagem", .neutral)
+            approvals[id]?.resolution = .settled(tr("Respondido por mensagem"), .neutral)
             if phase == .awaitingInput, !approvals.values.contains(where: \.isOpen) {
                 phase = .working
             }
             return
         }
         if data["outcome"]?.stringValue == "withdrawn" || data["outcome"]?.stringValue == "interrupted" {
-            approvals[id]?.resolution = .settled("Cancelado", .neutral)
+            approvals[id]?.resolution = .settled(tr("Cancelado"), .neutral)
             return
         }
         if approval.isQuestion {
             approvals[id]?.resolution =
                 data["outcome"]?.stringValue == "declined"
-                ? .settled("Pulou · o bot decide", .neutral)
-                : .settled(data["summary"]?.stringValue ?? "Respondido", .approved)
+                ? .settled(tr("Pulou · o bot decide"), .neutral)
+                : .settled(data["summary"]?.stringValue ?? tr("Respondido"), .approved)
             return
         }
         if let optionID {
@@ -1477,15 +1477,15 @@ final class ConversationStore {
         }
         switch data["outcome"]?.stringValue ?? "" {
         case "accepted", "approved":
-            approvals[id]?.resolution = .settled("Aprovado", .approved)
+            approvals[id]?.resolution = .settled(tr("Aprovado"), .approved)
         case "declined", "denied", "rejected":
-            approvals[id]?.resolution = .settled("Negado", .denied)
+            approvals[id]?.resolution = .settled(tr("Negado"), .denied)
         case "expired":
-            approvals[id]?.resolution = .settled("Expirou", .neutral)
+            approvals[id]?.resolution = .settled(tr("Expirou"), .neutral)
         case "withdrawn", "interrupted", "abandoned":
-            approvals[id]?.resolution = .settled("Cancelado", .neutral)
+            approvals[id]?.resolution = .settled(tr("Cancelado"), .neutral)
         default:
-            approvals[id]?.resolution = .settled("Encerrado", .neutral)
+            approvals[id]?.resolution = .settled(tr("Encerrado"), .neutral)
         }
     }
 
@@ -1515,16 +1515,16 @@ final class ConversationStore {
         if kind == "approval", outcome == "auto_approved", let callID = data["callId"]?.stringValue {
             var parts: [String] = []
             if let confidence = data["confidence"]?.doubleValue {
-                parts.append("confiança \(Int((confidence * 100).rounded()))%")
+                parts.append(tr("confiança %lld%%", Int((confidence * 100).rounded())))
             }
             if let latency = data["latencyMs"]?.intValue, latency > 0 {
                 parts.append("\(latency) ms")
             }
-            toolCalls[callID]?.decisionNote = "aprovado pelo Jev"
+            toolCalls[callID]?.decisionNote = tr("aprovado pelo Jev")
             toolCalls[callID]?.decisionDetail = parts.isEmpty ? nil : parts.joined(separator: " · ")
         }
         if kind == "approval", outcome == "requested", let callID = data["callId"]?.stringValue {
-            let reason = (data["reason"]?.stringValue ?? "Você pediu.").trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            let reason = (data["reason"]?.stringValue ?? tr("Você pediu.")).trimmingCharacters(in: CharacterSet(charactersIn: "."))
             toolCalls[callID]?.decisionNote = reason.prefix(1).lowercased() + reason.dropFirst()
             toolCalls[callID]?.decisionDetail = nil
         }
@@ -1546,7 +1546,7 @@ final class ConversationStore {
             let key = turnID ?? "turn"
             guard progressStopShown.insert(key).inserted else { return }
             append(
-                TranscriptEntry(id: "progress-\(key)", kind: .update("Parei: não estava avançando")),
+                TranscriptEntry(id: "progress-\(key)", kind: .update(tr("Parei: não estava avançando"))),
                 date: currentLineDate
             )
         }
@@ -1567,7 +1567,7 @@ final class ConversationStore {
 
     private func closeOpenApprovals() {
         for (id, approval) in approvals where approval.isOpen {
-            approvals[id]?.resolution = .settled("Encerrado", .neutral)
+            approvals[id]?.resolution = .settled(tr("Encerrado"), .neutral)
         }
     }
 
@@ -1672,19 +1672,19 @@ final class ConversationStore {
 
     private static func localizedOption(_ id: String, label: String) -> String {
         switch label.lowercased() {
-        case "approve": "Aprovar"
-        case "deny": "Negar"
+        case "approve": tr("Aprovar")
+        case "deny": tr("Negar")
         default: label
         }
     }
 
     private static func defaultApprovalTitle(_ kind: String) -> String {
         switch kind {
-        case "approval": "Aprovação necessária"
-        case "question": "Pergunta"
-        case "sign-in": "Entrar para continuar"
-        case "budget": "Limite de uso atingido"
-        default: "Ação necessária"
+        case "approval": tr("Aprovação necessária")
+        case "question": tr("Pergunta")
+        case "sign-in": tr("Entrar para continuar")
+        case "budget": tr("Limite de uso atingido")
+        default: tr("Ação necessária")
         }
     }
 }
@@ -1701,14 +1701,16 @@ extension ConversationStore {
         let given = answers.filter { !$0.skipped && !$0.isEmpty }
         let pending =
             given.isEmpty
-            ? "Pulou · o bot decide"
-            : "Respondeu: "
-                + given.map { draft in
+            ? tr("Pulou · o bot decide")
+            : tr(
+                "Respondeu: %@",
+                given.map { draft in
                     let question = approval.questions.first { $0.id == draft.questionID }
                     let labels = draft.optionIDs.compactMap { optionID in question?.choices.first { $0.id == optionID }?.label }
                     let text = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
                     return (labels + (text.isEmpty ? [] : [text])).joined(separator: ", ")
                 }.joined(separator: " · ")
+            )
         let previousPhase = phase
         approvals[id]?.resolution = .answering(pending)
         if phase == .awaitingInput, !approvals.values.contains(where: \.isOpen) {
@@ -1800,31 +1802,31 @@ extension ConversationStore {
                 codeState = state
             }
         case "code.workspace":
-            let repo = data["repoName"]?.stringValue ?? data["repo"]?.stringValue ?? "repositório"
+            let repo = data["repoName"]?.stringValue ?? data["repo"]?.stringValue ?? tr("repositório")
             let branch = data["branch"]?.stringValue ?? ""
             switch data["action"]?.stringValue ?? "" {
             case "opened":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Abriu \(repo) na branch \(branch)", "arrow.triangle.branch")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Abriu %1$@ na branch %2$@", repo, branch), "arrow.triangle.branch")), date: currentLineDateValue)
             case "reopened":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Voltou a trabalhar em \(repo)", "arrow.triangle.branch")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Voltou a trabalhar em %@", repo), "arrow.triangle.branch")), date: currentLineDateValue)
             case "adopted":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Juntou \(repo) a esta conversa, na branch \(branch)", "square.stack.3d.up")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Juntou %1$@ a esta conversa, na branch %2$@", repo, branch), "square.stack.3d.up")), date: currentLineDateValue)
             case "closed":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Fechou \(repo). A branch \(branch) continua guardada", "folder")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Fechou %1$@. A branch %2$@ continua guardada", repo, branch), "folder")), date: currentLineDateValue)
             case "failed":
                 append(
-                    TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Não consegui abrir \(repo): \(data["error"]?.stringValue ?? "erro")", "exclamationmark.triangle")),
+                    TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Não consegui abrir %1$@: %2$@", repo, data["error"]?.stringValue ?? tr("erro")), "exclamationmark.triangle")),
                     date: currentLineDateValue)
             case "removed":
                 let number = data["pr"]?["number"]?.intValue
                 let status = data["pr"]?["status"]?.stringValue
                 let text: String
                 if let number, status == "merged" {
-                    text = "PR #\(number) mergeado · repositório fechado"
+                    text = tr("PR #%lld mergeado · repositório fechado", number)
                 } else if let number, status == "closed" {
-                    text = "PR #\(number) fechado · repositório fechado"
+                    text = tr("PR #%lld fechado · repositório fechado", number)
                 } else {
-                    text = "Repositório \(repo) fechado"
+                    text = tr("Repositório %@ fechado", repo)
                 }
                 append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(text, number != nil && status == "merged" ? "arrow.triangle.merge" : "folder")), date: currentLineDateValue)
             default:
@@ -1832,16 +1834,16 @@ extension ConversationStore {
             }
         case "code.branch":
             if let branch = data["to"]?.stringValue, !branch.isEmpty {
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Trocou para a branch \(branch)", "arrow.triangle.branch")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Trocou para a branch %@", branch), "arrow.triangle.branch")), date: currentLineDateValue)
             }
         case "code.install":
             switch data["status"]?.stringValue ?? "" {
             case "running":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Instalando as dependências em segundo plano", "shippingbox")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Instalando as dependências em segundo plano"), "shippingbox")), date: currentLineDateValue)
             case "done":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Dependências instaladas", "shippingbox")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Dependências instaladas"), "shippingbox")), date: currentLineDateValue)
             case "failed":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("A instalação das dependências falhou", "exclamationmark.triangle")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("A instalação das dependências falhou"), "exclamationmark.triangle")), date: currentLineDateValue)
             default:
                 break
             }
@@ -1849,18 +1851,20 @@ extension ConversationStore {
             let port = data["port"]?.intValue.map(String.init) ?? ""
             switch data["action"]?.stringValue ?? "" {
             case "started":
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("App no ar na porta \(port)", "play.circle")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("App no ar na porta %@", port), "play.circle")), date: currentLineDateValue)
             case "exited":
                 let reason = data["reason"]?.stringValue.map { ": \($0)" } ?? ""
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("O app da porta \(port) parou\(reason)", "stop.circle")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("O app da porta %1$@ parou%2$@", port, reason), "stop.circle")), date: currentLineDateValue)
             default:
                 break
             }
         case "code.delivered":
             if let url = data["prUrl"]?.stringValue, !url.isEmpty {
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("PR aberto: \(url)", "arrow.up.forward.circle")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("PR aberto: %@", url), "arrow.up.forward.circle")), date: currentLineDateValue)
             } else if let commit = data["commit"]?.stringValue {
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Commit \(commit) na branch \(data["branch"]?.stringValue ?? "")", "checkmark.circle")), date: currentLineDateValue)
+                append(
+                    TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Commit %1$@ na branch %2$@", commit, data["branch"]?.stringValue ?? ""), "checkmark.circle")),
+                    date: currentLineDateValue)
             }
         case "code.pr":
             if var state = codeState, let id = data["workspaceId"]?.stringValue, let pr = PullRequestInfo(data) {
@@ -1880,7 +1884,7 @@ extension ConversationStore {
             }
         case "code.reverted":
             if let path = data["path"]?.stringValue {
-                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine("Desfez \((path as NSString).lastPathComponent)", "arrow.uturn.backward")), date: currentLineDateValue)
+                append(TranscriptEntry(id: "code-\(fact.key)", kind: .codeLine(tr("Desfez %@", (path as NSString).lastPathComponent), "arrow.uturn.backward")), date: currentLineDateValue)
             }
         case "turn.reverted":
             let turns = data["turnIds"]?.arrayValue?.compactMap(\.stringValue) ?? []
@@ -1888,7 +1892,8 @@ extension ConversationStore {
             let files = data["files"]?.boolValue == true
             append(
                 TranscriptEntry(
-                    id: "code-\(fact.key)", kind: .codeLine(files ? "Conversa e arquivos voltaram para antes desse pedido" : "Conversa voltou para antes desse pedido", "arrow.uturn.backward.circle")),
+                    id: "code-\(fact.key)",
+                    kind: .codeLine(files ? tr("Conversa e arquivos voltaram para antes desse pedido") : tr("Conversa voltou para antes desse pedido"), "arrow.uturn.backward.circle")),
                 date: currentLineDateValue)
         default:
             break

@@ -200,6 +200,10 @@ describe("conversation search", () => {
     const long = await request<{ error: string }>(`${base()}/search?q=${"a".repeat(201)}`);
     expect(long.status).toBe(400);
     expect(long.body.error).toBe("A busca pode ter até 200 caracteres.");
+    const english = await request<{ error: string }>(`${base()}/search?q=${"a".repeat(201)}`, {
+      headers: { "accept-language": "en" },
+    });
+    expect(english.body.error).toBe("The search can have up to 200 characters.");
     const page = await request<{ hits: unknown[]; nextCursor: number | null }>(
       `${base()}/search?q=planejamento&limit=abc&cursor=abc`,
     );

@@ -3,6 +3,7 @@ import { fakeAgenda } from "../../../../test/agenda-helpers";
 import { factsOfType, makeBot } from "../../../../test/engine-helpers";
 import { request, startTestServer, type TestServer } from "../../../../test/helpers";
 import { Req, Res } from "../../../shared/http";
+import { resetLanguageState } from "../../../shared/i18n";
 import { encodeEventId } from "../../agenda/services/agenda.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import * as runelay from "../../connectors/services/runelay.service";
@@ -324,6 +325,10 @@ describe("agenda routes", () => {
     spies.push(spyOn(runelay, "listConnections").mockRejectedValueOnce(new Error("fetch failed")));
     const down = await request<Failure>(`${base}/agenda/accounts`);
     expect([down.status, down.body]).toEqual([502, { ok: false, error: "A agenda não respondeu: fetch failed" }]);
+    spies.push(spyOn(runelay, "listConnections").mockRejectedValueOnce(new Error("fetch failed")));
+    const english = await request<Failure>(`${base}/agenda/accounts`, { headers: { "accept-language": "en" } });
+    expect(english.body.error).toBe("The calendar did not respond: fetch failed");
+    resetLanguageState();
 
     spies.push(spyOn(runelay, "listConnections").mockRejectedValueOnce(new Error("disco cheio")));
     const logged = spyOn(console, "error").mockImplementation(() => undefined);
@@ -377,6 +382,9 @@ describe("exports routes", () => {
     expect(file.headers.get("content-length")).toBe(String(new TextEncoder().encode(file.text).length));
     const missing = await request<Failure>(`${base}/exports/exp_nope`);
     expect([missing.status, missing.body.error]).toEqual([404, "Exportação não encontrada."]);
+    const english = await request<Failure>(`${base}/exports/exp_nope`, { headers: { "accept-language": "en" } });
+    expect(english.body.error).toBe("Export not found.");
+    resetLanguageState();
   });
 
   test("unknown export routes", async () => {

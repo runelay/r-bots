@@ -9,10 +9,10 @@ enum PullRequestStatus: String, Hashable, Sendable {
 
     var label: String {
         switch self {
-        case .open: "Aberto"
-        case .draft: "Rascunho"
-        case .merged: "Mergeado"
-        case .closed: "Fechado"
+        case .open: tr("Aberto")
+        case .draft: tr("Rascunho")
+        case .merged: tr("Mergeado")
+        case .closed: tr("Fechado")
         }
     }
 
@@ -52,10 +52,10 @@ enum CIStatus: String, Hashable, Sendable {
 
     var label: String {
         switch self {
-        case .none: "Sem CI"
-        case .pending: "CI rodando"
-        case .success: "CI passou"
-        case .failure: "CI falhou"
+        case .none: tr("Sem CI")
+        case .pending: tr("CI rodando")
+        case .success: tr("CI passou")
+        case .failure: tr("CI falhou")
         }
     }
 }
@@ -152,7 +152,7 @@ struct PullRequestInfo: Hashable, Sendable {
         additions = value["additions"]?.intValue ?? 0
         deletions = value["deletions"]?.intValue ?? 0
         files = value["files"]?.intValue ?? 0
-        let labels = [("code", "Código"), ("tests", "Testes"), ("generated", "Gerado"), ("docs", "Docs")]
+        let labels = [("code", tr("Código")), ("tests", tr("Testes")), ("generated", tr("Gerado")), ("docs", tr("Docs"))]
         categories = labels.compactMap { key, label in
             guard let item = value["categories"]?[key], let files = item["files"]?.intValue, files > 0 else { return nil }
             return PullRequestCategory(id: key, label: label, files: files, added: item["added"]?.intValue ?? 0, removed: item["removed"]?.intValue ?? 0)
@@ -169,9 +169,9 @@ struct PullRequestInfo: Hashable, Sendable {
 
     var reviewLabel: (text: String, symbol: String, color: Color)? {
         switch review {
-        case "approved": ("Aprovado", "checkmark.seal.fill", Theme.success)
-        case "changes_requested": ("Mudanças pedidas", "exclamationmark.bubble.fill", Theme.danger)
-        case "review_required": ("Aguardando review", "eye", Theme.textTertiary)
+        case "approved": (tr("Aprovado"), "checkmark.seal.fill", Theme.success)
+        case "changes_requested": (tr("Mudanças pedidas"), "exclamationmark.bubble.fill", Theme.danger)
+        case "review_required": (tr("Aguardando review"), "eye", Theme.textTertiary)
         default: nil
         }
     }
@@ -222,17 +222,17 @@ struct PullRequestEvent: Hashable, Sendable {
     }
 
     var fixRequest: String {
-        var text = "O CI do PR #\(number) falhou em \(check ?? "um check"). Corrige."
+        var text = tr("O CI do PR #%lld falhou em %@. Corrige.", number, check ?? tr("um check"))
         if let log, !log.isEmpty {
-            text += "\n\nLog resumido:\n```\n\(log)\n```"
+            text += "\n\n" + tr("Log resumido:") + "\n```\n\(log)\n```"
         }
         return text
     }
 
     var reviewRequest: String {
-        var text = "O review do PR #\(number) pediu mudanças. Corrige."
-        if let log, !log.isEmpty { text += "\n\nResumo: \(log)" }
-        if !comments.isEmpty { text += "\n\nComentários:\n" + comments.map { "- \($0)" }.joined(separator: "\n") }
+        var text = tr("O review do PR #%lld pediu mudanças. Corrige.", number)
+        if let log, !log.isEmpty { text += "\n\n" + tr("Resumo: %@", log) }
+        if !comments.isEmpty { text += "\n\n" + tr("Comentários:") + "\n" + comments.map { "- \($0)" }.joined(separator: "\n") }
         return text
     }
 }

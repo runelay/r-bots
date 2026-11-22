@@ -167,6 +167,18 @@ describe("single bot", () => {
     }
   });
 
+  test("speaks English when the request asks for it", async () => {
+    const headers = { "accept-language": "en" };
+    const missing = await request<{ error: string }>("/bots/nobody-here", { headers });
+    expect(missing.body.error).toBe("Bot not found.");
+    const created = await request<PublicBot>("/bots", { method: "POST", headers, body: { name: "English Bot" } });
+    expect(created.body.thread.lastMessage?.text).toBe(
+      "Hi! I'm English Bot and I just joined the team. What do you want me to do?",
+    );
+    const meta = await request<{ capabilities: Array<{ id: string; label: string }> }>("/meta", { headers });
+    expect(meta.body.capabilities.find((item) => item.id === "computer")?.label).toBe("Your Mac");
+  });
+
   test("unknown bot and unknown route", async () => {
     const missing = await request<{ error: string }>("/bots/nobody-here");
     expect(missing.status).toBe(404);

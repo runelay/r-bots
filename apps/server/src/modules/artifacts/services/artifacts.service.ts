@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { BotTool } from "../../engine/services/bot-tools.service";
 import { blobText, putBlob } from "../../storage/services/storage.service";
+import { artifactsText } from "../constants/artifacts-messages.constants";
 import {
   artifactContentKey,
   hasArtifactVersion,
@@ -56,10 +57,10 @@ export const artifactCsp = [
   "sandbox allow-scripts allow-downloads",
 ].join("; ");
 
-const kindLabel: Record<ArtifactKind, string> = {
-  slides: "apresentação",
+const kindLabel: Record<ArtifactKind, "slides" | "dashboard" | "page" | "canvas"> = {
+  slides: "slides",
   dashboard: "dashboard",
-  page: "página",
+  page: "page",
   canvas: "canvas",
 };
 
@@ -208,7 +209,10 @@ export function artifactTools(botId: string): BotTool[] {
       },
       approval: null,
       label: (input) =>
-        `Criar ${kindLabel[(input.kind as ArtifactKind) ?? "page"] ?? "página"}: ${String(input.title ?? "")}`,
+        artifactsText("create", {
+          kind: artifactsText(kindLabel[(input.kind as ArtifactKind) ?? "page"] ?? "page"),
+          title: String(input.title ?? ""),
+        }),
       run: async (input) => {
         const meta = await createArtifact(
           botId,
@@ -240,7 +244,7 @@ export function artifactTools(botId: string): BotTool[] {
         title: z.string().min(1).max(120).optional(),
       },
       approval: null,
-      label: () => "Atualizar artefato",
+      label: () => artifactsText("update"),
       run: async (input) => {
         const meta = await updateArtifact(botId, String(input.id), {
           ...(typeof input.html === "string" ? { html: input.html } : {}),

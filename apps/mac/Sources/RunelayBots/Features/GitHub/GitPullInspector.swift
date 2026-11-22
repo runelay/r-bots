@@ -19,12 +19,12 @@ struct GitPullInspector: View {
     var body: some View {
         Group {
             if store.selectedKey == nil {
-                BoardInlineNotice(systemImage: "arrow.triangle.pull", title: "Escolha um PR", message: "A descrição, a conversa, os arquivos e os checks aparecem aqui.")
+                BoardInlineNotice(systemImage: "arrow.triangle.pull", title: tr("Escolha um PR"), message: tr("A descrição, a conversa, os arquivos e os checks aparecem aqui."))
             } else if let detail = store.detail, detail.pull.key == store.selectedKey {
                 loaded(detail)
                     .transition(.opacity)
             } else if case .failed(let message) = store.detailPhase {
-                BoardInlineNotice(systemImage: "exclamationmark.icloud", title: "Não deu para abrir o PR", message: message, actionTitle: "Tentar de novo") {
+                BoardInlineNotice(systemImage: "exclamationmark.icloud", title: tr("Não deu para abrir o PR"), message: message, actionTitle: tr("Tentar de novo")) {
                     Task { await store.reloadDetail(refresh: true) }
                 }
             } else {
@@ -66,11 +66,11 @@ struct GitPullInspector: View {
 
     private func title(for tab: GitInspectorTab, detail: GHPullDetail) -> String {
         switch tab {
-        case .description: return "Descrição"
+        case .description: return tr("Descrição")
         case .conversation:
             let count = detail.conversation.count + detail.reviews.filter { !$0.body.isEmpty || $0.state != "commented" }.count + detail.threads.count
-            return count > 0 ? "Conversa \(count)" : "Conversa"
-        case .files: return "Arquivos \(detail.fileCount)"
+            return count > 0 ? tr("Conversa %lld", count) : tr("Conversa")
+        case .files: return tr("Arquivos %lld", detail.fileCount)
         case .checks: return detail.checks.isEmpty ? "Checks" : "Checks \(detail.checks.count)"
         }
     }
@@ -110,10 +110,10 @@ private struct GitInspectorHeader: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
-                BoardIconButton(systemImage: "arrow.triangle.branch", help: "Copiar a branch") {
-                    store.copy(pull.head, notice: "Branch copiada")
+                BoardIconButton(systemImage: "arrow.triangle.branch", help: tr("Copiar a branch")) {
+                    store.copy(pull.head, notice: tr("Branch copiada"))
                 }
-                BoardIconButton(systemImage: "arrow.up.right.square", help: "Abrir no GitHub") {
+                BoardIconButton(systemImage: "arrow.up.right.square", help: tr("Abrir no GitHub")) {
                     BoardLinks.open(pull.url)
                 }
             }
@@ -174,11 +174,11 @@ private struct FlowChips: View {
             if pull.isOpen {
                 switch pull.mergeable {
                 case "conflicting":
-                    BoardChip(text: "Conflitos com \(pull.base)", systemImage: "exclamationmark.triangle", tint: Theme.danger, filled: true)
+                    BoardChip(text: tr("Conflitos com %@", pull.base), systemImage: "exclamationmark.triangle", tint: Theme.danger, filled: true)
                 case "mergeable" where detail.mergeState == "clean":
-                    BoardChip(text: "Pronto para mergear", systemImage: "checkmark", tint: Theme.success, filled: true)
+                    BoardChip(text: tr("Pronto para mergear"), systemImage: "checkmark", tint: Theme.success, filled: true)
                 case "mergeable" where detail.mergeState == "behind":
-                    BoardChip(text: "Atrás da base", systemImage: "arrow.down", tint: Theme.warning, filled: true)
+                    BoardChip(text: tr("Atrás da base"), systemImage: "arrow.down", tint: Theme.warning, filled: true)
                 default:
                     EmptyView()
                 }
@@ -192,8 +192,8 @@ private struct FlowChips: View {
     }
 
     private var checksText: String {
-        if detail.failedChecks > 0 { return "\(detail.failedChecks) check\(detail.failedChecks == 1 ? "" : "s") falhou" }
-        if detail.pendingChecks > 0 { return "\(detail.pendingChecks) rodando" }
+        if detail.failedChecks > 0 { return detail.failedChecks == 1 ? tr("1 check falhou") : tr("%lld checks falharam", detail.failedChecks) }
+        if detail.pendingChecks > 0 { return tr("%lld rodando", detail.pendingChecks) }
         return GHStyle.ciTitle(pull.ci)
     }
 }
@@ -220,7 +220,8 @@ private struct GitDescriptionTab: View {
             }
             if !detail.commits.isEmpty {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
-                    BoardCaption(text: detail.commitCount > detail.commits.count ? "ÚLTIMOS \(detail.commits.count) DE \(detail.commitCount) COMMITS" : "\(detail.commitCount) COMMITS")
+                    BoardCaption(
+                        text: detail.commitCount > detail.commits.count ? tr("ÚLTIMOS %lld DE %lld COMMITS", detail.commits.count, detail.commitCount) : tr("%lld COMMITS", detail.commitCount))
                     ForEach(detail.commits, id: \.oid) { commit in
                         HStack(spacing: Spacing.s) {
                             RemoteAvatar(url: commit.author.avatarUrl, name: commit.author.login, size: 16)
@@ -312,11 +313,11 @@ private struct GitConversationTab: View {
                         tint: review.state == "approved" ? Theme.success : review.state == "changes_requested" ? Theme.danger : nil
                     )
                 case .comment(let comment):
-                    GitCommentBubble(author: comment.author, action: "comentou", date: comment.createdAt, text: comment.body, tint: nil)
+                    GitCommentBubble(author: comment.author, action: tr("comentou"), date: comment.createdAt, text: comment.body, tint: nil)
                 }
             }
             if !detail.threads.isEmpty {
-                BoardCaption(text: "COMENTÁRIOS NO CÓDIGO")
+                BoardCaption(text: tr("COMENTÁRIOS NO CÓDIGO"))
                     .padding(.top, Spacing.xs)
                 ForEach(detail.threads) { thread in
                     GitThreadView(thread: thread)
@@ -380,9 +381,9 @@ private struct GitThreadView: View {
                     .truncationMode(.head)
                 Spacer(minLength: 0)
                 if thread.resolved {
-                    BoardChip(text: "Resolvido", systemImage: "checkmark", tint: Theme.success, filled: true)
+                    BoardChip(text: tr("Resolvido"), systemImage: "checkmark", tint: Theme.success, filled: true)
                 } else if thread.outdated {
-                    BoardChip(text: "Desatualizado", tint: Theme.textTertiary)
+                    BoardChip(text: tr("Desatualizado"), tint: Theme.textTertiary)
                 }
             }
             .foregroundStyle(Theme.textSecondary)
@@ -399,11 +400,11 @@ private struct GitThreadView: View {
                         .padding(Spacing.m)
                         .background(Theme.surface, in: RoundedRectangle(cornerRadius: Radius.medium, style: .continuous))
                     HStack(spacing: Spacing.s) {
-                        BoardActionButton(title: "Cancelar") {
+                        BoardActionButton(title: tr("Cancelar")) {
                             replying = false
                             draft = ""
                         }
-                        BoardActionButton(title: "Responder", prominent: true, isBusy: store.busy == "reply") {
+                        BoardActionButton(title: tr("Responder"), prominent: true, isBusy: store.busy == "reply") {
                             let text = draft
                             Task {
                                 await store.reply(threadID: thread.id, body: text)
@@ -520,7 +521,7 @@ private struct GitChecksTab: View {
                     .foregroundStyle(Theme.textTertiary)
             }
             if detail.failedChecks > 0, detail.pull.isOpen {
-                BoardActionButton(title: "Rodar as falhas de novo", systemImage: "arrow.clockwise", isBusy: store.busy == "rerun") {
+                BoardActionButton(title: tr("Rodar as falhas de novo"), systemImage: "arrow.clockwise", isBusy: store.busy == "rerun") {
                     Task { await store.rerunFailed() }
                 }
                 .disabled(store.busy != nil)
@@ -597,38 +598,38 @@ private struct GitActionBar: View {
     var body: some View {
         HStack(spacing: Spacing.s) {
             if !detail.viewerIsAuthor {
-                BoardActionButton(title: "Aprovar", systemImage: "checkmark", isBusy: store.busy == "review") {
+                BoardActionButton(title: tr("Aprovar"), systemImage: "checkmark", isBusy: store.busy == "review") {
                     approving = true
                 }
                 .glassPopup(isPresented: $approving) {
-                    GitComposer(title: "Aprovar #\(pull.number)", placeholder: "Comentário opcional", confirmTitle: "Aprovar", requiresText: false, tint: Theme.success) { text in
+                    GitComposer(title: tr("Aprovar #%lld", pull.number), placeholder: tr("Comentário opcional"), confirmTitle: tr("Aprovar"), requiresText: false, tint: Theme.success) { text in
                         Task { await store.review(event: "approve", body: text) }
                     }
                 }
-                BoardActionButton(title: "Pedir mudanças", systemImage: "exclamationmark.bubble") {
+                BoardActionButton(title: tr("Pedir mudanças"), systemImage: "exclamationmark.bubble") {
                     requesting = true
                 }
                 .glassPopup(isPresented: $requesting) {
-                    GitComposer(title: "Pedir mudanças", placeholder: "O que precisa mudar?", confirmTitle: "Enviar", requiresText: true, tint: Theme.danger) { text in
+                    GitComposer(title: tr("Pedir mudanças"), placeholder: tr("O que precisa mudar?"), confirmTitle: tr("Enviar"), requiresText: true, tint: Theme.danger) { text in
                         Task { await store.review(event: "request_changes", body: text) }
                     }
                 }
             }
-            BoardActionButton(title: "Comentar", systemImage: "bubble.left") {
+            BoardActionButton(title: tr("Comentar"), systemImage: "bubble.left") {
                 commenting = true
             }
             .glassPopup(isPresented: $commenting) {
-                GitComposer(title: "Comentar em #\(pull.number)", placeholder: "Escreva um comentário", confirmTitle: "Comentar", requiresText: true, tint: Theme.brandAccent) { text in
+                GitComposer(title: tr("Comentar em #%lld", pull.number), placeholder: tr("Escreva um comentário"), confirmTitle: tr("Comentar"), requiresText: true, tint: Theme.brandAccent) { text in
                     Task { await store.comment(text) }
                 }
             }
             Spacer(minLength: Spacing.s)
             if pull.draft {
-                BoardActionButton(title: "Pronto para revisão", systemImage: "eye", prominent: true, isBusy: store.busy == "ready") {
+                BoardActionButton(title: tr("Pronto para revisão"), systemImage: "eye", prominent: true, isBusy: store.busy == "ready") {
                     Task { await store.markReady() }
                 }
             } else {
-                BoardActionButton(title: "Mergear", systemImage: "arrow.triangle.merge", prominent: true, tint: Theme.merged, isBusy: store.busy == "merge") {
+                BoardActionButton(title: tr("Mergear"), systemImage: "arrow.triangle.merge", prominent: true, tint: Theme.merged, isBusy: store.busy == "merge") {
                     merging = true
                 }
                 .disabled(pull.mergeable == "conflicting" || detail.mergeMethods.isEmpty)
@@ -676,7 +677,7 @@ private struct GitComposer: View {
                     .font(TypeScale.caption)
                     .foregroundStyle(Theme.textTertiary)
                 Spacer(minLength: 0)
-                BoardActionButton(title: "Cancelar") { dismiss() }
+                BoardActionButton(title: tr("Cancelar")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 BoardActionButton(title: confirmTitle, prominent: true, tint: tint) {
                     let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -708,12 +709,12 @@ private struct GitMergePanel: View {
 
     private var warnings: [MergeWarning] {
         var list: [MergeWarning] = []
-        if detail.pull.ci == "failure" { list.append(MergeWarning(text: "Tem check falhando", color: Theme.danger)) }
-        if detail.pull.ci == "pending" { list.append(MergeWarning(text: "Ainda tem check rodando", color: Theme.warning)) }
-        if detail.pull.review == "changes_requested" { list.append(MergeWarning(text: "Pediram mudanças neste PR", color: Theme.danger)) }
-        if detail.pull.review == "review_required" { list.append(MergeWarning(text: "Ainda falta revisão", color: Theme.warning)) }
-        if detail.mergeState == "blocked" { list.append(MergeWarning(text: "A regra da branch pode bloquear o merge", color: Theme.warning)) }
-        if detail.mergeState == "behind" { list.append(MergeWarning(text: "A branch está atrás de \(detail.pull.base)", color: Theme.warning)) }
+        if detail.pull.ci == "failure" { list.append(MergeWarning(text: tr("Tem check falhando"), color: Theme.danger)) }
+        if detail.pull.ci == "pending" { list.append(MergeWarning(text: tr("Ainda tem check rodando"), color: Theme.warning)) }
+        if detail.pull.review == "changes_requested" { list.append(MergeWarning(text: tr("Pediram mudanças neste PR"), color: Theme.danger)) }
+        if detail.pull.review == "review_required" { list.append(MergeWarning(text: tr("Ainda falta revisão"), color: Theme.warning)) }
+        if detail.mergeState == "blocked" { list.append(MergeWarning(text: tr("A regra da branch pode bloquear o merge"), color: Theme.warning)) }
+        if detail.mergeState == "behind" { list.append(MergeWarning(text: tr("A branch está atrás de %@", detail.pull.base), color: Theme.warning)) }
         return list
     }
 
@@ -782,9 +783,9 @@ private struct GitMergePanel: View {
             }
             HStack(spacing: Spacing.s) {
                 Spacer(minLength: 0)
-                BoardActionButton(title: "Cancelar") { dismiss() }
+                BoardActionButton(title: tr("Cancelar")) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                BoardActionButton(title: "Confirmar merge", systemImage: "arrow.triangle.merge", prominent: true, tint: Theme.merged) {
+                BoardActionButton(title: tr("Confirmar merge"), systemImage: "arrow.triangle.merge", prominent: true, tint: Theme.merged) {
                     let chosen = method
                     let delete = deleteBranch && !detail.crossRepository && !detail.deleteBranchOnMerge
                     dismiss()

@@ -106,17 +106,17 @@ struct EntryView: View {
         case .notice(let notice):
             NoticeLine(notice: notice)
         case .schedule(let name):
-            SystemLine(symbol: "clock", text: "Rotina: \(name)")
+            SystemLine(symbol: "clock", text: tr("Rotina: %@", name))
         case .update(let text):
             SystemLine(symbol: "info.circle", text: text)
         case .route(let text, _):
             SystemLine(symbol: "arrow.triangle.branch", text: text)
         case .handoff(let from, let to, _):
-            SystemLine(symbol: "arrow.right", text: "\(from) passou para \(to)")
+            SystemLine(symbol: "arrow.right", text: tr("%@ passou para %@", from, to))
         case .memory(let titles):
-            SystemLine(symbol: "brain", text: titles.count == 1 ? "Guardou na memória: \(titles[0])" : "Guardou \(titles.count) memórias")
+            SystemLine(symbol: "brain", text: titles.count == 1 ? tr("Guardou na memória: %@", titles[0]) : tr("Guardou %lld memórias", titles.count))
         case .voiceCall(_, let seconds):
-            SystemLine(symbol: "phone", text: "Chamada de voz · \(Self.duration(seconds))")
+            SystemLine(symbol: "phone", text: tr("Chamada de voz · %@", Self.duration(seconds)))
         case .artifact(let ref):
             ArtifactLine(ref: ref)
         case .file(let ref):
@@ -126,7 +126,7 @@ struct EntryView: View {
                 Spacer(minLength: 0)
             }
         case .contextHandoff(let handoff):
-            SystemLine(symbol: "arrow.left.arrow.right", text: "Continuou em \(handoff.toModel ?? handoff.toAccount)")
+            SystemLine(symbol: "arrow.left.arrow.right", text: tr("Continuou em %@", handoff.toModel ?? handoff.toAccount))
         case .settingsChange(let id):
             if let change = store.settingsChanges[id] {
                 SystemLine(symbol: "slider.horizontal.3", text: change.text)
@@ -325,7 +325,7 @@ struct DelegatedRequest: View {
                 if let from {
                     BotAvatar(bot: from, mood: .idle, size: 16)
                 }
-                Text("\(from?.name ?? message.fromName ?? "Outro bot") pediu")
+                Text("\(from?.name ?? message.fromName ?? tr("Outro bot")) pediu")
             }
             .font(TypeScale.caption)
             .foregroundStyle(Theme.textTertiary)
@@ -427,7 +427,7 @@ struct ToolGroupRow: View {
     }
 
     private var title: String {
-        let noun = Set(calls.map(\.groupNoun)).count == 1 ? calls[0].groupNoun : "ações"
+        let noun = Set(calls.map(\.groupNoun)).count == 1 ? calls[0].groupNoun : tr("ações")
         let base = "\(calls.count) \(noun)"
         if let via { return "\(via.name) · \(base)" }
         return base
@@ -539,12 +539,12 @@ struct DelegateLine: View {
 
     private func text(_ name: String) -> String {
         switch state {
-        case .completed: "\(name) respondeu"
-        case .starting, .working: "\(name) está trabalhando…"
-        case .queued: "\(name) vai pegar isso depois da tarefa atual"
-        case .awaiting: "\(name) precisa de você"
-        case .failed: "\(name) não terminou"
-        case .cancelled: "Pedido para \(name) cancelado"
+        case .completed: tr("%@ respondeu", name)
+        case .starting, .working: tr("%@ está trabalhando…", name)
+        case .queued: tr("%@ vai pegar isso depois da tarefa atual", name)
+        case .awaiting: tr("%@ precisa de você", name)
+        case .failed: tr("%@ não terminou", name)
+        case .cancelled: tr("Pedido para %@ cancelado", name)
         }
     }
 }
@@ -557,7 +557,7 @@ struct ThinkingRow: View {
     var body: some View {
         HStack(spacing: Spacing.s) {
             BotAvatar(bot: bot, mood: mood, size: 24)
-            Text(queuePosition.map { "Na fila (\($0)º)" } ?? (mood == .waiting ? "Esperando você" : "Pensando…"))
+            Text(queuePosition.map { tr("Na fila (%lldº)", $0) } ?? (mood == .waiting ? tr("Esperando você") : tr("Pensando…")))
                 .font(TypeScale.caption)
                 .foregroundStyle(Theme.textTertiary)
         }

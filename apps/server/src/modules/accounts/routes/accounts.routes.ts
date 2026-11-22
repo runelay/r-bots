@@ -1,5 +1,6 @@
 import { notFound, type Req, type Res, readBody, sendJson, validationResponse } from "../../../shared/http";
 import { emitSettingsChange } from "../../settings/services/settings-events.service";
+import { accountsText } from "../constants/accounts-messages.constants";
 import {
   addAccountDir,
   listAccounts,
@@ -35,7 +36,7 @@ export async function handleAccountRoutes(req: Req, res: Res, url: URL, method: 
     if (parts.length === 2 && (method === "PATCH" || method === "DELETE")) {
       const result =
         method === "PATCH" ? await updateAccount(parts[1], await readBody(req)) : await removeAccountDir(parts[1]);
-      if (!result) return sendJson(res, 404, { ok: false, error: "Essa conta não existe." });
+      if (!result) return sendJson(res, 404, { ok: false, error: accountsText("accountMissing") });
       return changed(res, result);
     }
     return notFound(res);

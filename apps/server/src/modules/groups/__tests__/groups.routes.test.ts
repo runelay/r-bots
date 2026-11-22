@@ -3,6 +3,7 @@ import { makeBot } from "../../../../test/engine-helpers";
 import { request, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
 import { getDb } from "../../../db";
 import { groupMembers, groups } from "../../../db/tables";
+import { withLanguage } from "../../../shared/i18n";
 import { setDeleted } from "../../bots/services/bots.service";
 import { loadGroupRows, saveGroupRow } from "../repositories/groups.repository";
 import * as groupsService from "../services/groups.service";
@@ -139,6 +140,11 @@ describe("groups routes", () => {
     const missing = await request<{ error: string }>("/groups/grp_nothing");
     expect(missing.status).toBe(404);
     expect(missing.body.error).toBe("Grupo não encontrado.");
+    const english = await request<{ error: string }>("/groups/grp_nothing", { headers: { "accept-language": "en" } });
+    expect(english.body.error).toBe("Group not found.");
+    await expect(withLanguage("en", () => createGroup({ name: "x", members: [] }))).rejects.toThrow(
+      "A group needs at least two bots.",
+    );
 
     const group = await createGroup({ name: "Erros", members: await twoBots() });
     const unknown = await request(`/groups/${group.id}/whatever`);

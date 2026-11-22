@@ -99,10 +99,10 @@ final class BotActivityCenter {
         }
         answering[sessionID] = nil
         if serverStatus == .awaitingApproval {
-            return .init(phase: .approval, headline: "Tem um pedido esperando sua resposta.", startedAt: startedAt)
+            return .init(phase: .approval, headline: tr("Tem um pedido esperando sua resposta."), startedAt: startedAt)
         }
         let running = store.orderedToolCalls.last { $0.status == .running || $0.status == .requested }
-        let headline = running.map { ActionPhrase(call: $0).plain } ?? "Pensando…"
+        let headline = running.map { ActionPhrase(call: $0).plain } ?? tr("Pensando…")
         return .init(phase: .working, headline: Self.clip(headline), startedAt: startedAt)
     }
 
@@ -151,7 +151,8 @@ final class BotActivityCenter {
             botName: bot.name,
             accent: bot.accent,
             sessionID: sessionID,
-            basePath: bot.sessionBasePath
+            basePath: bot.sessionBasePath,
+            language: LanguageStore.shared.code
         )
         do {
             activities[sessionID] = try Activity.request(attributes: attributes, content: ActivityContent(state: state, staleDate: nil))
@@ -169,7 +170,7 @@ final class BotActivityCenter {
         let reply = store?.preview.map { Self.clip($0, 120) }
         let state = BotActivityAttributes.ContentState(
             phase: failed ? .failed : .done,
-            headline: failed ? (store?.lastError ?? "O turno falhou.") : (reply ?? "Terminou o que você pediu."),
+            headline: failed ? (store?.lastError ?? tr("O turno falhou.")) : (reply ?? tr("Terminou o que você pediu.")),
             startedAt: previous?.startedAt ?? .now
         )
         await Self.end(activity.id, ActivityContent(state: state, staleDate: nil), dismiss: dismiss)
@@ -178,10 +179,10 @@ final class BotActivityCenter {
     private func answer(_ answer: BotActivityAnswer) async {
         let label =
             states[answer.sessionID]?.choices.first { $0.id == answer.optionID }?.label ?? answer.optionID
-        answering[answer.sessionID] = (answer.interactionID, "Enviando: \(label)…")
+        answering[answer.sessionID] = (answer.interactionID, tr("Enviando: %@…", label))
         if let activity = activity(for: answer.sessionID) {
             var state = states[answer.sessionID] ?? activity.content.state
-            state.answering = "Enviando: \(label)…"
+            state.answering = tr("Enviando: %@…", label)
             states[answer.sessionID] = state
             await Self.update(activity.id, ActivityContent(state: state, staleDate: nil))
         }
@@ -205,7 +206,7 @@ final class BotActivityCenter {
             if let activity = activity(for: answer.sessionID) {
                 let state = BotActivityAttributes.ContentState(
                     phase: .working,
-                    headline: "Respondido: \(label)",
+                    headline: tr("Respondido: %@", label),
                     startedAt: states[answer.sessionID]?.startedAt ?? activity.content.state.startedAt
                 )
                 states[answer.sessionID] = state
@@ -216,7 +217,7 @@ final class BotActivityCenter {
             if let activity = activity(for: answer.sessionID) {
                 var state = states[answer.sessionID] ?? activity.content.state
                 state.answering = nil
-                state.headline = "Não consegui enviar. Toque para abrir."
+                state.headline = tr("Não consegui enviar. Toque para abrir.")
                 states[answer.sessionID] = state
                 await Self.update(activity.id, ActivityContent(state: state, staleDate: nil))
             }

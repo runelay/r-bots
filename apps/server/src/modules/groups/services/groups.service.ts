@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { ValidationError } from "../../../shared/errors";
+import { commonText } from "../../../shared/messages";
 import { getBot, isActive } from "../../bots/services/bots.service";
+import { groupsText } from "../constants/groups-messages.constants";
 import { loadGroupRows, saveGroupRow } from "../repositories/groups.repository";
 
 export interface Group {
@@ -39,26 +41,26 @@ export function activeMembers(group: Group) {
 }
 
 function validName(value: unknown) {
-  if (typeof value !== "string" || !value.trim())
-    throw new ValidationError("O nome do grupo não pode ficar vazio.", "name");
-  if (value.trim().length > 40) throw new ValidationError("O nome do grupo pode ter no máximo 40 caracteres.", "name");
+  if (typeof value !== "string" || !value.trim()) throw new ValidationError(groupsText("nameEmpty"), "name");
+  if (value.trim().length > 40) throw new ValidationError(groupsText("nameTooLong"), "name");
   return value.trim();
 }
 
 function validMembers(value: unknown) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string"))
-    throw new ValidationError("members precisa ser uma lista de ids de bots.", "members");
+    throw new ValidationError(groupsText("membersList"), "members");
   const members = [...new Set(value as string[])];
-  if (members.length < 2) throw new ValidationError("Um grupo precisa de pelo menos dois bots.", "members");
-  if (members.length > 8) throw new ValidationError("Um grupo pode ter no máximo 8 bots.", "members");
+  if (members.length < 2) throw new ValidationError(groupsText("membersMin"), "members");
+  if (members.length > 8) throw new ValidationError(groupsText("membersMax"), "members");
   for (const id of members) {
-    if (!isActive(getBot(id))) throw new ValidationError(`Não existe bot ativo com id "${id}".`, "members");
+    if (!isActive(getBot(id))) throw new ValidationError(groupsText("memberMissing", { id }), "members");
   }
   return members;
 }
 
 function body(value: unknown) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new ValidationError("Corpo inválido.", "body");
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new ValidationError(commonText("bodyInvalid"), "body");
   return value as Record<string, unknown>;
 }
 
@@ -83,7 +85,7 @@ export async function updateGroup(id: string, input: unknown) {
   if (!group) return null;
   const raw = body(input);
   for (const key of Object.keys(raw)) {
-    if (!["name", "members"].includes(key)) throw new ValidationError(`Campo desconhecido: ${key}.`, key);
+    if (!["name", "members"].includes(key)) throw new ValidationError(commonText("unknownField", { key }), key);
   }
   if (raw.name !== undefined) group.name = validName(raw.name);
   if (raw.members !== undefined) group.members = validMembers(raw.members);

@@ -25,16 +25,16 @@ struct PathSandbox: Sendable {
 
     static func expand(_ raw: String) throws -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw ToolFailure.badArgs("Caminho vazio.") }
+        guard !trimmed.isEmpty else { throw ToolFailure.badArgs(tr("Caminho vazio.")) }
         guard !trimmed.split(separator: "/").contains("..") else {
-            throw ToolFailure(403, code: "path_forbidden", "Caminho com \"..\" não é aceito.")
+            throw ToolFailure(403, code: "path_forbidden", tr("Caminho com \"..\" não é aceito."))
         }
         let home = FileManager.default.homeDirectoryForCurrentUser.path(percentEncoded: false)
         let homeTrimmed = home.hasSuffix("/") ? String(home.dropLast()) : home
         if trimmed == "~" { return homeTrimmed }
         if trimmed.hasPrefix("~/") { return homeTrimmed + "/" + trimmed.dropFirst(2) }
         guard trimmed.hasPrefix("/") else {
-            throw ToolFailure.badArgs("Use caminho absoluto ou começando com ~/ (recebi \"\(raw)\").")
+            throw ToolFailure.badArgs(tr("Use caminho absoluto ou começando com ~/ (recebi \"%@\").", raw))
         }
         return trimmed
     }
@@ -56,7 +56,7 @@ struct PathSandbox: Sendable {
         }
         let path = resolved.path(percentEncoded: false)
         guard roots.contains(where: { path == $0 || path.hasPrefix($0 + "/") }) else {
-            throw ToolFailure(403, code: "path_forbidden", "\(raw) está fora das pastas permitidas: \(labels.joined(separator: ", ")).")
+            throw ToolFailure(403, code: "path_forbidden", tr("%1$@ está fora das pastas permitidas: %2$@.", raw, labels.joined(separator: ", ")))
         }
         return resolved
     }
@@ -75,9 +75,9 @@ enum FileTools {
         let url = try sandbox.resolve(call.requiredString("path"))
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory) else {
-            throw ToolFailure(404, code: "not_found", "\(call.string("path") ?? "") não existe.")
+            throw ToolFailure(404, code: "not_found", tr("%@ não existe.", call.string("path") ?? ""))
         }
-        guard isDirectory.boolValue else { throw ToolFailure.badArgs("\(url.path(percentEncoded: false)) não é uma pasta.") }
+        guard isDirectory.boolValue else { throw ToolFailure.badArgs(tr("%@ não é uma pasta.", url.path(percentEncoded: false))) }
         let keys: [URLResourceKey] = [.isDirectoryKey, .isSymbolicLinkKey, .fileSizeKey, .contentModificationDateKey, .isHiddenKey]
         let contents: [URL]
         do {
@@ -112,12 +112,12 @@ enum FileTools {
         let path = url.path(percentEncoded: false)
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) else {
-            throw ToolFailure(404, code: "not_found", "\(path) não existe.")
+            throw ToolFailure(404, code: "not_found", tr("%@ não existe.", path))
         }
-        guard !isDirectory.boolValue else { throw ToolFailure.badArgs("\(path) é uma pasta. Use files_list.") }
+        guard !isDirectory.boolValue else { throw ToolFailure.badArgs(tr("%@ é uma pasta. Use files_list.", path)) }
         let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int) ?? 0
         guard size <= readLimit else {
-            throw ToolFailure(413, code: "too_large", "O arquivo tem \(size / 1024) KB. Só leio arquivos de texto até \(readLimit / 1024) KB.")
+            throw ToolFailure(413, code: "too_large", tr("O arquivo tem %1$lld KB. Só leio arquivos de texto até %2$lld KB.", size / 1024, readLimit / 1024))
         }
         let data: Data
         do {
@@ -126,7 +126,7 @@ enum FileTools {
             throw permissionAware(error, path: url)
         }
         guard let text = String(data: data, encoding: .utf8) else {
-            throw ToolFailure(415, code: "binary_file", "\(url.lastPathComponent) não é um arquivo de texto.")
+            throw ToolFailure(415, code: "binary_file", tr("%@ não é um arquivo de texto.", url.lastPathComponent))
         }
         return .object(["path": .string(path), "size": .int(data.count), "content": .string(text)])
     }
@@ -136,13 +136,13 @@ enum FileTools {
         let source = try sandbox.resolve(call.requiredString("from"))
         var destination = try sandbox.resolve(call.requiredString("to"))
         try requireExists(source)
-        guard !sandbox.isRoot(source) else { throw ToolFailure(403, code: "path_forbidden", "Não movo uma pasta permitida inteira.") }
+        guard !sandbox.isRoot(source) else { throw ToolFailure(403, code: "path_forbidden", tr("Não movo uma pasta permitida inteira.")) }
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false), isDirectory: &isDirectory), isDirectory.boolValue {
             destination.append(path: source.lastPathComponent)
         }
         guard !FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) else {
-            throw ToolFailure(409, code: "already_exists", "Já existe \(destination.path(percentEncoded: false)).")
+            throw ToolFailure(409, code: "already_exists", tr("Já existe %@.", destination.path(percentEncoded: false)))
         }
         do {
             try FileManager.default.moveItem(at: source, to: destination)
@@ -156,12 +156,12 @@ enum FileTools {
         let sandbox = PathSandbox(allowedRoots: call.allowedRoots)
         let source = try sandbox.resolve(call.requiredString("path"))
         let name = try call.requiredString("name")
-        guard !name.contains("/"), name != ".", name != ".." else { throw ToolFailure.badArgs("O novo nome não pode ter \"/\" nem ser \"..\".") }
+        guard !name.contains("/"), name != ".", name != ".." else { throw ToolFailure.badArgs(tr("O novo nome não pode ter \"/\" nem ser \"..\".")) }
         try requireExists(source)
-        guard !sandbox.isRoot(source) else { throw ToolFailure(403, code: "path_forbidden", "Não renomeio uma pasta permitida.") }
+        guard !sandbox.isRoot(source) else { throw ToolFailure(403, code: "path_forbidden", tr("Não renomeio uma pasta permitida.")) }
         let destination = source.deletingLastPathComponent().appending(path: name)
         guard !FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) else {
-            throw ToolFailure(409, code: "already_exists", "Já existe \(name) nessa pasta.")
+            throw ToolFailure(409, code: "already_exists", tr("Já existe %@ nessa pasta.", name))
         }
         do {
             try FileManager.default.moveItem(at: source, to: destination)
@@ -185,11 +185,11 @@ enum FileTools {
     static func trash(_ call: ExecutorCall) throws -> JSONValue {
         let sandbox = PathSandbox(allowedRoots: call.allowedRoots)
         let raw = call.strings("paths")
-        guard !raw.isEmpty else { throw ToolFailure.badArgs("Falta a lista \"paths\".") }
+        guard !raw.isEmpty else { throw ToolFailure.badArgs(tr("Falta a lista \"paths\".")) }
         let urls = try raw.map { try sandbox.resolve($0) }
         for url in urls {
             try requireExists(url)
-            guard !sandbox.isRoot(url) else { throw ToolFailure(403, code: "path_forbidden", "Não mando uma pasta permitida inteira para a Lixeira.") }
+            guard !sandbox.isRoot(url) else { throw ToolFailure(403, code: "path_forbidden", tr("Não mando uma pasta permitida inteira para a Lixeira.")) }
         }
         var trashed: [JSONValue] = []
         for url in urls {
@@ -211,10 +211,10 @@ enum FileTools {
     static func write(_ call: ExecutorCall) throws -> JSONValue {
         let sandbox = PathSandbox(allowedRoots: call.allowedRoots)
         let url = try sandbox.resolve(call.requiredString("path"))
-        guard let content = call.rawString("content") else { throw ToolFailure.badArgs("Falta o campo \"content\".") }
+        guard let content = call.rawString("content") else { throw ToolFailure.badArgs(tr("Falta o campo \"content\".")) }
         var isDirectory: ObjCBool = false
         if FileManager.default.fileExists(atPath: url.path(percentEncoded: false), isDirectory: &isDirectory), isDirectory.boolValue {
-            throw ToolFailure.badArgs("\(url.path(percentEncoded: false)) é uma pasta.")
+            throw ToolFailure.badArgs(tr("%@ é uma pasta.", url.path(percentEncoded: false)))
         }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -227,7 +227,7 @@ enum FileTools {
 
     private static func requireExists(_ url: URL) throws {
         guard FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) else {
-            throw ToolFailure(404, code: "not_found", "\(url.path(percentEncoded: false)) não existe.")
+            throw ToolFailure(404, code: "not_found", tr("%@ não existe.", url.path(percentEncoded: false)))
         }
     }
 
@@ -235,7 +235,8 @@ enum FileTools {
         let nsError = error as NSError
         if nsError.domain == NSCocoaErrorDomain, [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(nsError.code) {
             return ToolFailure(
-                403, code: "permission_denied", "O macOS não deixou o r/bots acessar \(path.path(percentEncoded: false)). Libere em Ajustes do Sistema → Privacidade e Segurança → Arquivos e Pastas.")
+                403, code: "permission_denied",
+                tr("O macOS não deixou o r/bots acessar %@. Libere em Ajustes do Sistema → Privacidade e Segurança → Arquivos e Pastas.", path.path(percentEncoded: false)))
         }
         return ToolFailure(500, code: "file_error", nsError.localizedDescription)
     }
@@ -250,7 +251,7 @@ final class ShellRunner {
     func run(_ call: ExecutorCall) async throws -> JSONValue {
         let command = try call.requiredString("cmd")
         if command.range(of: #"(^|[\s;&|(])sudo\b"#, options: .regularExpression) != nil {
-            throw ToolFailure(403, code: "forbidden", "Não rodo sudo.")
+            throw ToolFailure(403, code: "forbidden", tr("Não rodo sudo."))
         }
         let sandbox = PathSandbox(allowedRoots: call.allowedRoots)
         let cwd = try sandbox.resolve(call.string("cwd") ?? "~/runelay-bots-workspace")
@@ -259,7 +260,7 @@ final class ShellRunner {
         }
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: cwd.path(percentEncoded: false), isDirectory: &isDirectory), isDirectory.boolValue else {
-            throw ToolFailure(404, code: "not_found", "A pasta \(cwd.path(percentEncoded: false)) não existe.")
+            throw ToolFailure(404, code: "not_found", tr("A pasta %@ não existe.", cwd.path(percentEncoded: false)))
         }
         let temp = FileManager.default.temporaryDirectory.appending(path: "runelay-shell-\(UUID().uuidString)", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
@@ -286,7 +287,7 @@ final class ShellRunner {
         do {
             try process.run()
         } catch {
-            throw ToolFailure(500, code: "shell_failed", "Não deu para rodar o comando: \(error.localizedDescription)")
+            throw ToolFailure(500, code: "shell_failed", tr("Não deu para rodar o comando: %@", error.localizedDescription))
         }
         let id = ObjectIdentifier(process)
         running[id] = process

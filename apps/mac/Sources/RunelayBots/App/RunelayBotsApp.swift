@@ -33,6 +33,7 @@ struct RunelayBotsApp: App {
         WindowGroup("r/bots") {
             RootView()
                 .environment(model)
+                .appLanguage()
                 .id(ObjectIdentifier(model))
                 .frame(minWidth: 820, minHeight: 620)
                 .onAppear {
@@ -52,6 +53,7 @@ struct RunelayBotsApp: App {
         WindowGroup("Conversa", for: String.self) { $botID in
             BotWindowView(botID: botID)
                 .environment(model)
+                .appLanguage()
         }
         .defaultSize(width: 720, height: 780)
     }
@@ -87,7 +89,7 @@ struct ServerProfileCommands: Commands {
     private let profiles = ServerProfiles.shared
 
     var body: some Commands {
-        CommandMenu("Servidor") {
+        CommandMenu(tr("Servidor")) {
             ForEach(Array(profiles.profiles.enumerated()), id: \.element.id) { index, profile in
                 Toggle(
                     profile.name,
@@ -99,7 +101,7 @@ struct ServerProfileCommands: Commands {
                 .keyboardShortcut(index < 9 ? KeyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.control, .command]) : nil)
             }
             Divider()
-            Button("Gerenciar servidores…") {
+            Button(tr("Gerenciar servidores…")) {
                 model.openSettings(.server)
             }
         }
@@ -127,8 +129,8 @@ struct BotWindowView: View {
             } else {
                 PanelEmptyState(
                     systemImage: "bubble.left.and.bubble.right",
-                    title: "Conversa indisponível",
-                    message: "Esse bot não está mais na lista."
+                    title: tr("Conversa indisponível"),
+                    message: tr("Esse bot não está mais na lista.")
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -145,7 +147,7 @@ struct BotWindowView: View {
                 model.detachWindow(botID: botID)
             }
         }
-        .navigationTitle(botID.flatMap { model.bot(id: $0)?.name } ?? "Conversa")
+        .navigationTitle(botID.flatMap { model.bot(id: $0)?.name } ?? tr("Conversa"))
     }
 }
 
@@ -169,49 +171,49 @@ struct AppCommands: Commands {
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("Nova conversa") {
+            Button(tr("Nova conversa")) {
                 model.newConversation()
             }
             .keyboardShortcut("n", modifiers: .command)
             .disabled(model.selectedBot.map { $0.isGroup || $0.isPending } ?? true)
-            Button("Trocar permissão da conversa") {
+            Button(tr("Trocar permissão da conversa")) {
                 model.cycleSelectedPermission()
             }
             .keyboardShortcut("p", modifiers: [.command, .shift])
             .disabled(model.selectedBot.map { $0.isGroup || $0.isPending } ?? true)
-            Button("Novo bot") {
+            Button(tr("Novo bot")) {
                 model.openEditor(for: nil)
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
-            Button("Bots arquivados") {
+            Button(tr("Bots arquivados")) {
                 model.openSettings(.bots)
             }
             Divider()
-            Button("Nova aba") {
+            Button(tr("Nova aba")) {
                 model.openTabPicker()
             }
             .keyboardShortcut("t", modifiers: .command)
-            Button("Fechar aba") {
+            Button(tr("Fechar aba")) {
                 closeTabOrWindow()
             }
             .keyboardShortcut("w", modifiers: .command)
-            Button("Reabrir aba fechada") {
+            Button(tr("Reabrir aba fechada")) {
                 model.reopenClosedTab()
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
         }
-        CommandMenu("Abas") {
-            Button("Próxima aba") {
+        CommandMenu(tr("Abas")) {
+            Button(tr("Próxima aba")) {
                 model.cycleTab(by: 1)
             }
             .keyboardShortcut("}", modifiers: .command)
-            Button("Aba anterior") {
+            Button(tr("Aba anterior")) {
                 model.cycleTab(by: -1)
             }
             .keyboardShortcut("{", modifiers: .command)
             Divider()
             ForEach(1..<10, id: \.self) { number in
-                Button(number == 9 ? "Última aba" : "Aba \(number)") {
+                Button(number == 9 ? tr("Última aba") : tr("Aba %lld", number)) {
                     model.selectTab(at: number == 9 ? Int.max : number - 1)
                 }
                 .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
@@ -219,27 +221,27 @@ struct AppCommands: Commands {
             }
         }
         CommandGroup(replacing: .appSettings) {
-            Button("Ajustes…") {
+            Button(tr("Ajustes…")) {
                 model.openSettings()
             }
             .keyboardShortcut(",", modifiers: .command)
-            Button("Configurar de novo…") {
+            Button(tr("Configurar de novo…")) {
                 model.closeSettings()
                 OnboardingStore.shared.restart()
             }
             .disabled(AuthSession.shared.user == nil)
         }
         CommandGroup(after: .sidebar) {
-            Button(sidebarCollapsed ? "Mostrar conversas" : "Ocultar conversas") {
+            Button(sidebarCollapsed ? tr("Mostrar conversas") : tr("Ocultar conversas")) {
                 sidebarCollapsed.toggle()
             }
             .keyboardShortcut("s", modifiers: [.control, .command])
-            Button(model.inspectorPresented ? "Ocultar inspetor" : "Mostrar inspetor") {
+            Button(model.inspectorPresented ? tr("Ocultar inspetor") : tr("Mostrar inspetor")) {
                 model.toggleInspector()
             }
             .keyboardShortcut("i", modifiers: [.command, .option])
             Divider()
-            Button("Conversas") {
+            Button(tr("Conversas")) {
                 model.go(to: .conversations)
             }
             .keyboardShortcut("1", modifiers: [.command, .option])
@@ -253,7 +255,7 @@ struct AppCommands: Commands {
             .keyboardShortcut("3", modifiers: [.command, .option])
         }
         CommandGroup(after: .pasteboard) {
-            Button("Limpar conversa") {
+            Button(tr("Limpar conversa")) {
                 model.clearSelectedConversation()
             }
             .keyboardShortcut("k", modifiers: .command)

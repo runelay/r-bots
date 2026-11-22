@@ -97,6 +97,7 @@ Contrato verificado entre o servidor do r/bots (gateway em `127.0.0.1:2000`, exp
 | v59 | reações com emoji: tabela `message_reactions`, `POST/DELETE <base>/session/:id/reactions`, `reactions` no `events` e no `GET /bots/:id/thread`, eventos `reaction.added`/`reaction.removed`, ferramentas `react`/`unreact`, sinal no próximo turno e na captura de memória | [conversations](conversations.md) |
 | v60 | atualizar o servidor pelo app: `POST /server/update`, `update` no `GET /server/version`, vigia do host (`rbots update-agent`, `rbots-update.path`) | [usage-status-limits](usage-status-limits.md) |
 | v61 | Este Mac: `environment` em `/preferences`, `GET /environments` com VPS e Este Mac, runner do app com `x-rbots-role: runner`, `sync` no `turn.start`/`turn.end` e `workspace.sync` | [bots](bots.md) |
+| v62 | idioma: `language` (`system`/`pt-BR`/`en`) em `/preferences` e `preferences_set`, `Accept-Language` em toda requisição, erros e página `/device` no idioma pedido (`?lang=`), opções de card e instrução de idioma no system prompt pelo idioma guardado | [bots](bots.md) |
 
 ## Contrato
 

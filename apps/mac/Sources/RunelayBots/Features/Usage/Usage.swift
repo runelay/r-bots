@@ -118,9 +118,9 @@ enum UsageRange: String, CaseIterable, Identifiable, Sendable {
     var title: String {
         switch self {
         case .day: "24 h"
-        case .week: "7 dias"
-        case .month: "30 dias"
-        case .quarter: "90 dias"
+        case .week: tr("7 dias")
+        case .month: tr("30 dias")
+        case .quarter: tr("90 dias")
         }
     }
 }
@@ -134,9 +134,9 @@ enum UsageTab: String, CaseIterable, Identifiable, Sendable {
 
     var title: String {
         switch self {
-        case .limits: "Limites"
+        case .limits: tr("Limites")
         case .tokens: "Tokens"
-        case .cost: "Custo"
+        case .cost: tr("Custo")
         }
     }
 }
@@ -188,18 +188,18 @@ enum UsageFormat {
     static func tokens(_ value: Double) -> String {
         let absolute = abs(value)
         let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = LanguageStore.shared.locale
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 1
         formatter.minimumFractionDigits = 0
         if absolute >= 1_000_000_000 {
-            return (formatter.string(from: NSNumber(value: value / 1_000_000_000)) ?? "") + " bi"
+            return tr("%@ bi", formatter.string(from: NSNumber(value: value / 1_000_000_000)) ?? "")
         }
         if absolute >= 1_000_000 {
-            return (formatter.string(from: NSNumber(value: value / 1_000_000)) ?? "") + " mi"
+            return tr("%@ mi", formatter.string(from: NSNumber(value: value / 1_000_000)) ?? "")
         }
         if absolute >= 1000 {
-            return (formatter.string(from: NSNumber(value: value / 1000)) ?? "") + " mil"
+            return tr("%@ mil", formatter.string(from: NSNumber(value: value / 1000)) ?? "")
         }
         formatter.maximumFractionDigits = 0
         return formatter.string(from: NSNumber(value: value)) ?? "\(Int(value))"
@@ -207,17 +207,17 @@ enum UsageFormat {
 
     static func usd(_ value: Double) -> String {
         let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = LanguageStore.shared.locale
         formatter.numberStyle = .decimal
         formatter.minimumFractionDigits = 2
         formatter.maximumFractionDigits = 2
-        return "US$ " + (formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value))
+        return tr("US$ %@", formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value))
     }
 
     static func dayLabel(_ text: String) -> String {
         guard let date = day(text) else { return text }
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "pt_BR")
+        formatter.locale = LanguageStore.shared.locale
         formatter.timeZone = TimeZone(identifier: "America/Sao_Paulo")
         formatter.dateFormat = "d MMM"
         return formatter.string(from: date)

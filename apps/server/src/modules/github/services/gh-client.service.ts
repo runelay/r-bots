@@ -1,6 +1,7 @@
 import { tmpdir } from "node:os";
 import { childEnv, run } from "@runelay-bots/providers/proc";
 import { env } from "../../../config/env";
+import { githubText } from "../constants/github-messages.constants";
 
 export interface GhOutput {
   code: number;
@@ -36,13 +37,12 @@ export function setGhRunner(next: GhRunner | null) {
 function failureOf(output: GhOutput) {
   const text = `${output.stderr}\n${output.stdout}`.trim();
   if (/auth login|not logged|authentication|HTTP 401|Bad credentials/i.test(text))
-    return new GitHubError(503, "O GitHub não está conectado no servidor. Rode gh auth login no servidor.");
-  if (/HTTP 404|Could not resolve/i.test(text)) return new GitHubError(404, "Não achei isso no GitHub.");
-  if (/HTTP 403|Resource not accessible|must have/i.test(text))
-    return new GitHubError(403, "O GitHub recusou: sua conta não tem permissão para isso.");
+    return new GitHubError(503, githubText("notConnected"));
+  if (/HTTP 404|Could not resolve/i.test(text)) return new GitHubError(404, githubText("notFound"));
+  if (/HTTP 403|Resource not accessible|must have/i.test(text)) return new GitHubError(403, githubText("forbidden"));
   if (/ENOENT|not found: gh|executable file not found/i.test(text))
-    return new GitHubError(503, "O gh não está instalado no servidor.");
-  const message = text.split("\n").find((line) => line.trim()) ?? "O GitHub não respondeu.";
+    return new GitHubError(503, githubText("ghMissing"));
+  const message = text.split("\n").find((line) => line.trim()) ?? githubText("noAnswer");
   return new GitHubError(502, message.replace(/^gh: /, "").slice(0, 300));
 }
 
@@ -63,7 +63,7 @@ export async function graphql<T>(query: string, variables: Record<string, unknow
     const message = parsed.errors.map((item) => item.message ?? "").join(" ");
     if (parsed.errors.some((item) => item.type === "NOT_FOUND")) throw new GitHubError(404, message.slice(0, 300));
     if (parsed.errors.some((item) => item.type === "FORBIDDEN")) throw new GitHubError(403, message.slice(0, 300));
-    throw new GitHubError(422, message.slice(0, 300) || "O GitHub recusou a consulta.");
+    throw new GitHubError(422, message.slice(0, 300) || githubText("queryRefused"));
   }
   if (output.code !== 0 || !parsed?.data) throw failureOf(output);
   return parsed.data;
@@ -95,7 +95,7 @@ export function isGitHubAsset(raw: string) {
 }
 
 export async function fetchGitHubAsset(raw: string) {
-  if (!isGitHubAsset(raw)) throw new GitHubError(400, "Endereço de imagem inválido.");
+  if (!isGitHubAsset(raw)) throw new GitHubError(400, githubText("imageUrl"));
   const token = await runner(["auth", "token"]);
   const secret = token.code === 0 ? token.stdout.trim() : "";
   let target = raw;
@@ -113,12 +113,12 @@ export async function fetchGitHubAsset(raw: string) {
     }
     const type = reply.headers.get("content-type") ?? "";
     if (!reply.ok || !/^(image|video)\//.test(type))
-      throw new GitHubError(reply.status === 404 ? 404 : 502, "O GitHub não entregou essa imagem.");
+      throw new GitHubError(reply.status === 404 ? 404 : 502, githubText("imageMissing"));
     const length = Number(reply.headers.get("content-length") ?? 0);
-    if (length > assetMaxBytes) throw new GitHubError(413, "Imagem grande demais.");
+    if (length > assetMaxBytes) throw new GitHubError(413, githubText("imageTooLarge"));
     const data = await reply.arrayBuffer();
-    if (data.byteLength > assetMaxBytes) throw new GitHubError(413, "Imagem grande demais.");
+    if (data.byteLength > assetMaxBytes) throw new GitHubError(413, githubText("imageTooLarge"));
     return { data, type };
   }
-  throw new GitHubError(502, "O GitHub não entregou essa imagem.");
+  throw new GitHubError(502, githubText("imageMissing"));
 }

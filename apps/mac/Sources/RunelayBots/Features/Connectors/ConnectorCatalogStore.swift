@@ -212,9 +212,9 @@ final class ConnectorCatalogStore {
                     awaitingBrowser = true
                     NSWorkspace.shared.open(url)
                 } else if item.auth == "api_key", result.status != "ok" {
-                    model.showNotice(result.error ?? "O \(item.name) não aceitou o token.")
+                    model.showNotice(result.error ?? tr("O %@ não aceitou o token.", item.name))
                 } else {
-                    model.showNotice("\(item.name) instalado.")
+                    model.showNotice(tr("%@ instalado.", item.name))
                 }
             } catch {
                 state = snapshot
@@ -236,7 +236,7 @@ final class ConnectorCatalogStore {
                     awaitingBrowser = true
                     NSWorkspace.shared.open(url)
                 } else {
-                    model.showNotice("\(item.name) já está conectado.")
+                    model.showNotice(tr("%@ já está conectado.", item.name))
                 }
             } catch {
                 model.showNotice(ErrorMessage.describe(error))
@@ -253,7 +253,7 @@ final class ConnectorCatalogStore {
         Task {
             do {
                 try await model.client.removeConnector(sourceName: item.connectionName)
-                model.showNotice("\(item.name) removido.")
+                model.showNotice(tr("%@ removido.", item.name))
             } catch {
                 state = snapshot
                 model.showNotice(ErrorMessage.describe(error))
@@ -265,10 +265,10 @@ final class ConnectorCatalogStore {
 
     func addMenuItems(model: AppModel) -> [GlassMenuItem] {
         [
-            GlassMenuItem("Conexão personalizada", systemImage: "powerplug") {
+            GlassMenuItem(tr("Conexão personalizada"), systemImage: "powerplug") {
                 Self.openDashboard()
             },
-            GlassMenuItem("Importar de outro cliente", systemImage: "square.and.arrow.down") {
+            GlassMenuItem(tr("Importar de outro cliente"), systemImage: "square.and.arrow.down") {
                 Self.openDashboard()
             },
         ]
@@ -277,18 +277,18 @@ final class ConnectorCatalogStore {
     func optionItems(for id: String, model: AppModel) -> [GlassMenuItem] {
         guard let item = item(id: id) else { return [] }
         var items = [
-            GlassMenuItem("Abrir", systemImage: "arrow.up.forward.square") { [weak self] in
+            GlassMenuItem(tr("Abrir"), systemImage: "arrow.up.forward.square") { [weak self] in
                 self?.detail = item.connectionName
             }
         ]
         if item.auth == "oauth" {
             items.append(
-                GlassMenuItem("Reconectar", systemImage: "arrow.clockwise") { [weak self] in
+                GlassMenuItem(tr("Reconectar"), systemImage: "arrow.clockwise") { [weak self] in
                     self?.reconnect(item, model: model)
                 })
         }
         items.append(
-            GlassMenuItem("Remover", systemImage: "trash", destructive: true) { [weak self] in
+            GlassMenuItem(tr("Remover"), systemImage: "trash", destructive: true) { [weak self] in
                 self?.pendingRemoval = item
             })
         return items

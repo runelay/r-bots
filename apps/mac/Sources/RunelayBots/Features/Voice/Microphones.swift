@@ -70,7 +70,7 @@ enum Microphones {
         if let found = all().first(where: { $0.uid == uid }) {
             return .device(found)
         }
-        return .missing(UserDefaults.standard.string(forKey: MicrophonePreferenceKeys.name) ?? "microfone escolhido")
+        return .missing(UserDefaults.standard.string(forKey: MicrophonePreferenceKeys.name) ?? tr("microfone escolhido"))
     }
 
     static func takeMissing() -> String? {
@@ -82,12 +82,12 @@ enum Microphones {
     static func activeName() -> String {
         switch selection() {
         case .device(let microphone): microphone.name
-        default: systemDefault()?.name ?? "microfone padrão"
+        default: systemDefault()?.name ?? tr("microfone padrão")
         }
     }
 
     static func lostNotice(_ name: String) -> String {
-        "O \(name) não está mais conectado. Voltei para o padrão do sistema."
+        tr("O %@ não está mais conectado. Voltei para o padrão do sistema.", name)
     }
 
     static func chosen() -> Microphone? {

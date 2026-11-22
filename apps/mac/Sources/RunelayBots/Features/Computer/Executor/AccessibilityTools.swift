@@ -104,14 +104,14 @@ final class AccessibilityTools {
             result["focusedElementId"] = .string(identifier(for: focused, store: store))
         }
         if windows.isEmpty {
-            result["note"] = .string("O app não tem janela aberta ou não expõe acessibilidade.")
+            result["note"] = .string(tr("O app não tem janela aberta ou não expõe acessibilidade."))
         }
         return .object(result)
     }
 
     func element(_ id: String, session: String) throws -> AXUIElement {
         guard let element = sessions[session]?.byID[id] else {
-            throw ToolFailure(404, code: "element_not_found", "O elemento \(id) não existe nesta sessão. Rode computer_ui_tree de novo.")
+            throw ToolFailure(404, code: "element_not_found", tr("O elemento %@ não existe nesta sessão. Rode computer_ui_tree de novo.", id))
         }
         return element
     }
@@ -153,7 +153,7 @@ final class AccessibilityTools {
     func resolveApp(_ query: String?) throws -> NSRunningApplication {
         guard let query, !query.isEmpty else {
             guard let app = NSWorkspace.shared.frontmostApplication else {
-                throw ToolFailure(404, code: "app_not_found", "Nenhum app em primeiro plano.")
+                throw ToolFailure(404, code: "app_not_found", tr("Nenhum app em primeiro plano."))
             }
             return app
         }
@@ -165,7 +165,7 @@ final class AccessibilityTools {
         if let partial = running.first(where: { ($0.localizedName?.lowercased().contains(lowered) ?? false) }) {
             return partial
         }
-        throw ToolFailure(404, code: "app_not_found", "O app \"\(query)\" não está aberto.")
+        throw ToolFailure(404, code: "app_not_found", tr("O app \"%@\" não está aberto.", query))
     }
 
     private func elements(for session: String) -> SessionElements {

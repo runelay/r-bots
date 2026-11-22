@@ -139,7 +139,7 @@ struct IslandPromptCard: View {
                 Button("Agora não") { answer("deny") }
                     .buttonStyle(SmallPillButtonStyle(kind: .neutral))
                 if let always = approval.options.first(where: { $0.id == "approve_always" }) {
-                    Button(approval.grant == nil ? always.label : "Sempre neste repo") { answer("approve_always") }
+                    Button(approval.grant == nil ? always.label : tr("Sempre neste repo")) { answer("approve_always") }
                         .buttonStyle(SmallPillButtonStyle(kind: .neutral))
                 }
                 Button("Permitir") { answer("approve") }
@@ -220,19 +220,19 @@ struct ApprovalHeadline {
 
         var title: String {
             switch self {
-            case .outbound: "Quer mandar algo para fora"
-            case .deploy: "Quer fazer deploy"
-            case .database: "Quer mexer no banco de produção"
-            case .production: "Quer mexer em produção"
-            case .command: "Quer rodar um comando"
+            case .outbound: tr("Quer mandar algo para fora")
+            case .deploy: tr("Quer fazer deploy")
+            case .database: tr("Quer mexer no banco de produção")
+            case .production: tr("Quer mexer em produção")
+            case .command: tr("Quer rodar um comando")
             }
         }
 
         var reason: String? {
             switch self {
-            case .outbound: "Isso fala com gente de fora ou mexe com dinheiro, então preciso do seu ok."
-            case .deploy: "Isso coloca algo no ar, então preciso do seu ok."
-            case .database, .production: "Isso mexe em produção, então preciso do seu ok."
+            case .outbound: tr("Isso fala com gente de fora ou mexe com dinheiro, então preciso do seu ok.")
+            case .deploy: tr("Isso coloca algo no ar, então preciso do seu ok.")
+            case .database, .production: tr("Isso mexe em produção, então preciso do seu ok.")
             case .command: nil
             }
         }
@@ -250,7 +250,7 @@ struct ApprovalHeadline {
         let label = call?.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         detail = category != nil && !label.isEmpty && label.count <= Self.detailLimit ? label : nil
         if let reason = approval.reason, reason.localizedCaseInsensitiveContains("lista dura") {
-            self.reason = category?.reason ?? "Precisa do seu ok antes de seguir."
+            self.reason = category?.reason ?? tr("Precisa do seu ok antes de seguir.")
         } else {
             reason = approval.reason
         }
@@ -259,18 +259,18 @@ struct ApprovalHeadline {
     private static func category(approval: Approval, call: ToolCall?) -> Category? {
         let text = "\(approval.prompt) \(approval.reason ?? "")".lowercased()
         let isCommand = call.map { $0.name == "Bash" || $0.name == "shell_run" } ?? false
-        let guarded = text.contains("lista dura") || text.contains("produção") || text.contains("deploy") || text.contains("seu ok")
+        let guarded = ["lista dura", "produção", "deploy", "seu ok", "hard list", "production", "your ok"].contains(where: text.contains)
         guard isCommand || guarded else { return nil }
-        if text.contains("mandar para") || text.contains("mensagem para fora") || text.contains("dinheiro") || text.contains("gente de fora") {
+        if ["mandar para", "mensagem para fora", "dinheiro", "gente de fora", "outbound", "money", "send to"].contains(where: text.contains) {
             return .outbound
         }
-        if ["deploy", "merge", "workflow", "release", "publica", "infraestrutura", "no ar"].contains(where: text.contains) {
+        if ["deploy", "merge", "workflow", "release", "publica", "infraestrutura", "no ar", "publish", "infrastructure"].contains(where: text.contains) {
             return .deploy
         }
-        if ["banco", "sql", "d1 ", "supabase"].contains(where: text.contains) {
+        if ["banco", "sql", "d1 ", "supabase", "database"].contains(where: text.contains) {
             return .database
         }
-        if text.contains("produção") {
+        if text.contains("produção") || text.contains("production") {
             return .production
         }
         return isCommand ? .command : nil
@@ -371,6 +371,6 @@ private struct IslandChoiceRow: View {
             }
         )
         .springAnimation(value: isHovering)
-        .accessibilityLabel(recommended ? "\(label), recomendado" : label)
+        .accessibilityLabel(recommended ? tr("%@, recomendado", label) : label)
     }
 }

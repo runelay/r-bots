@@ -58,19 +58,19 @@ struct WebPagePanel: View {
                 .truncationMode(.tail)
                 .help(title)
             Spacer(minLength: Spacing.m)
-            BlockHeaderButton(systemImage: "safari", help: "Abrir no navegador") {
+            BlockHeaderButton(systemImage: "safari", help: tr("Abrir no navegador")) {
                 if let pageURL {
                     NSWorkspace.shared.open(pageURL)
                 }
             }
             BlockHeaderButton(
                 systemImage: presentation.fullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                help: presentation.fullScreen ? "Voltar ao painel  ⇧⌘F" : "Tela cheia  ⇧⌘F",
+                help: presentation.fullScreen ? tr("Voltar ao painel  ⇧⌘F") : tr("Tela cheia  ⇧⌘F"),
                 isActive: presentation.fullScreen
             ) {
                 presentation.toggleFullScreen()
             }
-            BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
+            BlockHeaderButton(systemImage: "xmark", help: tr("Fechar")) {
                 presentation.close()
             }
         }
@@ -90,9 +90,9 @@ struct WebPageAddressBar: View {
 
     var body: some View {
         HStack(spacing: Spacing.xxs) {
-            navButton("chevron.left", help: "Voltar", enabled: navigator.canGoBack) { navigator.goBack() }
-            navButton("chevron.right", help: "Avançar", enabled: navigator.canGoForward) { navigator.goForward() }
-            BlockHeaderButton(systemImage: "arrow.clockwise", help: "Recarregar  ⌘R", tipEdge: .leading) {
+            navButton("chevron.left", help: tr("Voltar"), enabled: navigator.canGoBack) { navigator.goBack() }
+            navButton("chevron.right", help: tr("Avançar"), enabled: navigator.canGoForward) { navigator.goForward() }
+            BlockHeaderButton(systemImage: "arrow.clockwise", help: tr("Recarregar  ⌘R"), tipEdge: .leading) {
                 navigator.reload()
             }
             field
@@ -132,7 +132,7 @@ struct WebPageAddressBar: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(PressableButtonStyle())
-            .blockTooltip("Copiar endereço", edge: .trailing)
+            .blockTooltip(tr("Copiar endereço"), edge: .trailing)
             .accessibilityLabel("Copiar endereço")
         }
         .padding(.leading, Spacing.m)

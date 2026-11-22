@@ -42,7 +42,7 @@ struct ServerPanel: View {
                         .allowsHitTesting(!showsPreview)
                         .accessibilityHidden(showsPreview)
                 } else {
-                    PanelEmptyState(systemImage: "stop.circle", title: "Servidor encerrado", message: "Ele foi parado ou saiu da lista.")
+                    PanelEmptyState(systemImage: "stop.circle", title: tr("Servidor encerrado"), message: tr("Ele foi parado ou saiu da lista."))
                         .frame(maxHeight: .infinity)
                 }
             }
@@ -79,24 +79,24 @@ struct ServerPanel: View {
                     .layoutPriority(2)
             }
             if let server, server.status == .running, !server.isMobile {
-                BlockHeaderButton(systemImage: "safari", help: "Abrir no navegador") {
+                BlockHeaderButton(systemImage: "safari", help: tr("Abrir no navegador")) {
                     store.openInBrowser(server, location: navigator.url.map { PreviewAddress.location(of: $0) })
                 }
             }
             BlockHeaderButton(
                 systemImage: presentation.fullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                help: presentation.fullScreen ? "Voltar ao painel  ⇧⌘F" : "Tela cheia  ⇧⌘F",
+                help: presentation.fullScreen ? tr("Voltar ao painel  ⇧⌘F") : tr("Tela cheia  ⇧⌘F"),
                 isActive: presentation.fullScreen
             ) {
                 presentation.toggleFullScreen()
             }
             if let server {
-                GlassMenuButton(edge: .trailing, help: "Mais", items: { menuItems(server) }) { isOpen in
+                GlassMenuButton(edge: .trailing, help: tr("Mais"), items: { menuItems(server) }) { isOpen in
                     BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen)
                 }
                 .fixedSize()
             }
-            BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
+            BlockHeaderButton(systemImage: "xmark", help: tr("Fechar")) {
                 presentation.close()
             }
             .layoutPriority(2)
@@ -110,7 +110,7 @@ struct ServerPanel: View {
         var items: [GlassMenuItem] = []
         if server.status == .running, !server.isMobile {
             items.append(
-                GlassMenuItem("Recarregar a prévia", systemImage: "arrow.clockwise.circle") {
+                GlassMenuItem(tr("Recarregar a prévia"), systemImage: "arrow.clockwise.circle") {
                     reloadToken += 1
                     store.panelTabs[ref.id] = .preview
                 })
@@ -162,8 +162,8 @@ struct ServerPanel: View {
         } else {
             PanelEmptyState(
                 systemImage: server.status == .exited ? "exclamationmark.triangle" : "stop.circle",
-                title: server.status == .exited ? "O servidor caiu" : "Servidor parado",
-                message: "Veja os logs ou rode de novo pelo menu."
+                title: server.status == .exited ? tr("O servidor caiu") : tr("Servidor parado"),
+                message: tr("Veja os logs ou rode de novo pelo menu.")
             )
             .frame(maxHeight: .infinity)
         }
@@ -178,7 +178,7 @@ struct ServerLogView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Spacing.s) {
             HStack(spacing: Spacing.s) {
-                BlockSearchField(text: $store.query, prompt: "Buscar no log")
+                BlockSearchField(text: $store.query, prompt: tr("Buscar no log"))
                 Button {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(store.plainText, forType: .string)

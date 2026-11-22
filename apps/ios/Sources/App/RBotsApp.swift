@@ -54,6 +54,7 @@ struct RootView: View {
         }
         .environment(model)
         .environment(\.appReduceMotion, reduceMotion)
+        .appLanguage()
         .tint(Theme.brandAccent)
         .preferredColorScheme(AppearancePreference(rawValue: appearance)?.colorScheme)
         .animation(Motion.animation(reduceMotion: reduceMotion), value: stage)

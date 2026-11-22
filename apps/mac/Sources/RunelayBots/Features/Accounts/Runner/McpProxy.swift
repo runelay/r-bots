@@ -75,7 +75,7 @@ final class McpProxy: @unchecked Sendable {
                 return
             }
             if error != nil || complete || data.count > Self.maxBody {
-                self.respond(connection, .failure(400, "Pedido inválido."))
+                self.respond(connection, .failure(400, tr("Pedido inválido.")))
                 return
             }
             self.read(connection, buffer: data)

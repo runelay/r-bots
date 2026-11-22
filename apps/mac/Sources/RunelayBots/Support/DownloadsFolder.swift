@@ -39,6 +39,6 @@ enum DownloadsFolder {
             .components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>\n\r\t"))
             .joined(separator: "-")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return cleaned.isEmpty ? "arquivo" : String(cleaned.prefix(140))
+        return cleaned.isEmpty ? tr("arquivo") : String(cleaned.prefix(140))
     }
 }

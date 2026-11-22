@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, type Mock
 import { factsOfType, makeBot } from "../../../../test/engine-helpers";
 import { request, resetData, startTestServer, type TestServer } from "../../../../test/helpers";
 import { must } from "../../../../test/must";
+import { withLanguage } from "../../../shared/i18n";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import * as canvas from "../../canvas/services/canvas.service";
 import { getStoredSession } from "../../conversations/services/sessions.service";
@@ -156,6 +157,7 @@ describe("artifacts service", () => {
     expect(create.label({ kind: "slides", title: "Q3" })).toBe("Criar apresentação: Q3");
     expect(create.label({})).toBe("Criar página: ");
     expect(create.label({ kind: "weird" })).toBe("Criar página: ");
+    expect(withLanguage("en", () => create.label({ kind: "slides", title: "Q3" }))).toBe("Create presentation: Q3");
     expect(update.label({})).toBe("Atualizar artefato");
     const signal = new AbortController().signal;
     const created = (await create.run({ title: " Q3 ", kind: "dashboard", html: page("<b>1</b>") }, signal)) as {
@@ -224,6 +226,10 @@ describe("artifacts routes", () => {
     const missing = await request<{ error: string }>(`/bots/${bot.id}/artifacts/art_nothing00`);
     expect(missing.status).toBe(404);
     expect(missing.body.error).toBe("Artefato não encontrado.");
+    const english = await request<{ error: string }>(`/bots/${bot.id}/artifacts/art_nothing00`, {
+      headers: { "accept-language": "en" },
+    });
+    expect(english.body.error).toBe("Artifact not found.");
     const otherMethod = await request(`/bots/${bot.id}/artifacts/${meta.id}`, { method: "DELETE" });
     expect(otherMethod.status).toBe(404);
   });

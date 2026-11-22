@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { requestContext } from "../../../shared/http";
+import { authText } from "../constants/auth-messages.constants";
 import { type Auth, apiKeyPrefix, authBasePath, devicePagePath, memberRole, sessionMaxAgeMs } from "./auth.service";
 
 export interface Principal {
@@ -37,7 +38,7 @@ export function isPublicRoute(method: string, pathname: string) {
   return false;
 }
 
-export function unauthorized(message = "Entre de novo para continuar.") {
+export function unauthorized(message = authText("signInAgain")) {
   return Response.json(
     { ok: false, error: message, code: "unauthorized" },
     { status: 401, headers: { "www-authenticate": 'Bearer realm="runelay-bots"', "cache-control": "no-store" } },
@@ -144,8 +145,9 @@ export function createAuthenticator(auth: Auth, options: AuthenticatorOptions) {
     if (!token && carriesPreviewCookie(request.headers)) return unauthorized();
     if (!token && (isUpgrade(request) || !safeMethods.has(request.method))) {
       const origin = request.headers.get("origin");
-      if (origin && !options.trusts(origin, request)) return forbidden("Origem não permitida.");
-      if (!origin && isUpgrade(request) && request.headers.has("cookie")) return forbidden("Origem não permitida.");
+      if (origin && !options.trusts(origin, request)) return forbidden(authText("originNotAllowed"));
+      if (!origin && isUpgrade(request) && request.headers.has("cookie"))
+        return forbidden(authText("originNotAllowed"));
     }
     const principal = await fromSession(request);
     return principal ? { kind: "principal", principal } : unauthorized();

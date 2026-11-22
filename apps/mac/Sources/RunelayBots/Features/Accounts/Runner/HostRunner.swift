@@ -15,21 +15,21 @@ enum HostRunnerState: Equatable, Sendable {
 
     var label: String {
         switch self {
-        case .off: "Desligado"
-        case .starting: "Conectando…"
-        case .connected: "Conectado"
-        case .disconnected: "Desconectado"
-        case .needsClaude: "Falta login no claude"
-        case .signedOut: "Entre na sua conta"
-        case .unavailable: "Este build não traz o runner"
+        case .off: tr("Desligado")
+        case .starting: tr("Conectando…")
+        case .connected: tr("Conectado")
+        case .disconnected: tr("Desconectado")
+        case .needsClaude: tr("Falta login no claude")
+        case .signedOut: tr("Entre na sua conta")
+        case .unavailable: tr("Este build não traz o runner")
         }
     }
 
     var hint: String? {
         switch self {
-        case .needsClaude: "Rode claude no Terminal e faça login."
-        case .signedOut: "Conecte este Mac em Ajustes › Dispositivos."
-        case .unavailable: "Instale o app pelo make-app.sh."
+        case .needsClaude: tr("Rode claude no Terminal e faça login.")
+        case .signedOut: tr("Conecte este Mac em Ajustes › Dispositivos.")
+        case .unavailable: tr("Instale o app pelo make-app.sh.")
         default: nil
         }
     }

@@ -2,7 +2,7 @@ import type { Placement, PlacementInput } from "@runelay-bots/protocol";
 import { env } from "../../../config/env";
 import { environmentStates, runnerEnvironments } from "../../accounts/services/mac-runner.service";
 import { currentEnvironment } from "../../settings/services/preferences.service";
-import { hostFallbackNotice } from "../constants/environments.constants";
+import { environmentsText } from "../constants/environments-messages.constants";
 import { decidePlacement } from "./placement.service";
 
 export function place({ codeCwd, botId }: PlacementInput): Placement {
@@ -16,6 +16,7 @@ export function place({ codeCwd, botId }: PlacementInput): Placement {
   });
   if (sandbox === "docker" && placement.kind === "local")
     console.warn(`${new Date().toISOString()} sandbox: no box runner for bot ${botId}, running local`);
-  if (placement.kind === "local" && env.BOTS_HOST_RUNNER === "on") return { ...placement, notice: hostFallbackNotice };
+  if (placement.kind === "local" && env.BOTS_HOST_RUNNER === "on")
+    return { ...placement, notice: environmentsText("hostFallback") };
   return placement;
 }

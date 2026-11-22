@@ -42,7 +42,7 @@ struct ServerProfileSwitcher: View {
         .help("Trocar de servidor (⌃⌘1…9)")
         .accessibilityLabel("Servidor")
         .accessibilityValue(profiles.active.name)
-        .glassMenu(isPresented: $open, title: "Servidores", minWidth: 280) {
+        .glassMenu(isPresented: $open, title: tr("Servidores"), minWidth: 280) {
             items
         }
         .task(id: PollKey(server: profiles.active.id, active: scenePhase == .active)) {
@@ -95,16 +95,16 @@ struct ServerProfileSwitcher: View {
 
     private func subtitle(for environment: RunEnvironment) -> String {
         if environment.isMac {
-            if environment.online { return "Conectado · \(DeviceIdentity.name)" }
+            if environment.online { return tr("Conectado · %@", DeviceIdentity.name) }
             let runner = HostRunner.shared
-            guard runner.enabled else { return "Desconectado · ligue em Ajustes › Bots" }
+            guard runner.enabled else { return tr("Desconectado · ligue em Ajustes › Bots") }
             switch runner.state {
-            case .needsClaude, .signedOut, .unavailable: return "Desconectado · \(runner.state.label)"
+            case .needsClaude, .signedOut, .unavailable: return tr("Desconectado · %@", runner.state.label)
             case .starting: return runner.state.label
-            default: return "Desconectado"
+            default: return tr("Desconectado")
             }
         }
-        return "\(environment.online ? "Conectado" : "Desconectado") · \(profiles.active.host)"
+        return environment.online ? tr("Conectado · %@", profiles.active.host) : tr("Desconectado · %@", profiles.active.host)
     }
 
     private var items: [GlassMenuItem] {
@@ -131,7 +131,7 @@ struct ServerProfileSwitcher: View {
         }
         list.append(contentsOf: environmentItems)
         list.append(
-            GlassMenuItem("Gerenciar servidores…", id: "manage", systemImage: "slider.horizontal.3", startsSection: true) {
+            GlassMenuItem(tr("Gerenciar servidores…"), id: "manage", systemImage: "slider.horizontal.3", startsSection: true) {
                 model.openSettings(.server)
             })
         return list

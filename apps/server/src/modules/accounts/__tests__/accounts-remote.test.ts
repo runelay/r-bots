@@ -4,7 +4,7 @@ import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/
 import { fakeProviders } from "../../../../test/helpers";
 import { boxHello, dropAllRunners, fakeRunner, hostHello, runnerDevice } from "../../../../test/runner-helpers";
 import { env, hostDataDir } from "../../../config/env";
-import { hostFallbackNotice } from "../../environments/constants/environments.constants";
+import { environmentsText } from "../../environments/constants/environments-messages.constants";
 import { workDirOf } from "../../environments/services/box-spec.service";
 import { accountDir, accountPath, botIdOf, refreshAccounts, runOnAccount } from "../services/accounts.service";
 
@@ -166,7 +166,7 @@ describe("runOnAccount placement", () => {
     env.BOTS_HOST_RUNNER = "on";
     const events: ProviderEvent[] = [];
     await runOnAccount(account, turnRequest("n1"), new AbortController().signal, (e) => events.push(e), hooks);
-    expect(events[0]).toEqual({ type: "text", part: "environment-notice", text: hostFallbackNotice });
+    expect(events[0]).toEqual({ type: "text", part: "environment-notice", text: environmentsText("hostFallback") });
     expect(fakeProviders.turns.map(({ request }) => request.turnId)).toEqual(["n1"]);
   });
 });

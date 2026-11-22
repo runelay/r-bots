@@ -9,6 +9,7 @@ import { resetData } from "../../../../test/helpers";
 import { connectFakeRunner } from "../../../../test/media-helpers";
 import { getDb } from "../../../db";
 import { vaultAudit, vaultSecrets } from "../../../db/tables";
+import { withLanguage } from "../../../shared/i18n";
 import { forgetSecretValue, redactText } from "../../../shared/redact";
 import * as macRunner from "../../accounts/services/mac-runner.service";
 import * as repository from "../repositories/vault.repository";
@@ -163,6 +164,9 @@ describe("hosts and domains", () => {
         "docs.example.org/path",
       ]),
     ).toEqual(["github.com", "*.example.org", "docs.example.org"]);
+    expect(() =>
+      withLanguage("en", () => normalizeDomains(Array.from({ length: 31 }, (_, i) => `s${i}.example.org`))),
+    ).toThrow("Use at most 30 sites per secret.");
     expect(() => normalizeDomains("github.com")).toThrow("domains precisa ser uma lista");
     expect(() => normalizeDomains(["http://[bad"])).toThrow("não é um site válido");
     expect(() => normalizeDomains(["bad domain"])).toThrow("não é um site válido");

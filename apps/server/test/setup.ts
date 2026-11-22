@@ -72,6 +72,7 @@ process.env.TEST_DATABASE_TEMPLATE = template;
 useDb(await openDatabase({ migrate: false, settings: settingsFor(mainDatabase) }));
 const { forgetSecretValue } = await import("../src/shared/redact");
 const { clearConnectionsCache } = await import("../src/modules/connectors/services/runelay.service");
+const { resetLanguageState } = await import("../src/shared/i18n");
 forgetSecretValue("database");
 
 const realFetch = globalThis.fetch;
@@ -98,6 +99,7 @@ mock.module("@runelay-bots/providers", () => ({
 }));
 
 afterEach(() => {
+  resetLanguageState();
   forgetSecretValue("database");
   restoreProcessFakes();
   fakeProviders.reset();

@@ -177,10 +177,10 @@ final class BlockCenter {
 
     func title(for route: BlockRoute) -> String {
         switch route {
-        case .files: "Arquivos do bot"
-        case .agenda: "Agenda"
-        case .note(let botID, let id): titles[key(botID, id)] ?? noteEditor?.note?.title ?? "Nota"
-        case .sheet(let botID, let id): titles[key(botID, id)] ?? sheetEditor?.sheet?.title ?? "Planilha"
+        case .files: tr("Arquivos do bot")
+        case .agenda: tr("Agenda")
+        case .note(let botID, let id): titles[key(botID, id)] ?? noteEditor?.note?.title ?? tr("Nota")
+        case .sheet(let botID, let id): titles[key(botID, id)] ?? sheetEditor?.sheet?.title ?? tr("Planilha")
         }
     }
 
@@ -207,7 +207,7 @@ final class BlockCenter {
             return
         }
         exporting = true
-        flash("Preparando o arquivo…", sticky: true)
+        flash(tr("Preparando o arquivo…"), sticky: true)
         Task {
             defer { exporting = false }
             do {
@@ -220,16 +220,16 @@ final class BlockCenter {
                 }
                 guard job.status == "ready" else {
                     BlocksLog.logger.error("export \(job.id, privacy: .public) ended as \(job.status, privacy: .public)")
-                    flash("Não consegui gerar o arquivo")
+                    flash(tr("Não consegui gerar o arquivo"))
                     return
                 }
                 let file = try await client.download(botID: route.botID, job: job)
                 let url = try DownloadsFolder.save(file.data, as: file.fileName)
                 DownloadsFolder.reveal(url)
-                flash("Salvo em Downloads")
+                flash(tr("Salvo em Downloads"))
             } catch {
                 BlocksLog.failure("export \(format.rawValue)", error)
-                flash("Não consegui baixar o arquivo")
+                flash(tr("Não consegui baixar o arquivo"))
             }
         }
     }
@@ -298,9 +298,9 @@ final class BlockFilesStore {
 
         var title: String {
             switch self {
-            case .notes: "Notas"
-            case .sheets: "Planilhas"
-            case .agenda: "Agenda"
+            case .notes: tr("Notas")
+            case .sheets: tr("Planilhas")
+            case .agenda: tr("Agenda")
             }
         }
     }
@@ -372,14 +372,14 @@ final class BlockFilesStore {
     }
 
     func createNote() async {
-        if let note = try? await client.createNote(botID: botID, title: Self.untitled(existing: notes.map(\.title), base: "Nota sem título"), folder: "", content: "") {
+        if let note = try? await client.createNote(botID: botID, title: Self.untitled(existing: notes.map(\.title), base: tr("Nota sem título")), folder: "", content: "") {
             BlockCenter.shared.noteTitleChanged(botID: botID, id: note.id, title: note.title)
             BlockCenter.shared.navigate(to: .note(botID: botID, id: note.id))
         }
     }
 
     func createSheet() async {
-        if let sheet = try? await client.createSheet(botID: botID, title: Self.untitled(existing: sheets.map(\.title), base: "Planilha sem título")) {
+        if let sheet = try? await client.createSheet(botID: botID, title: Self.untitled(existing: sheets.map(\.title), base: tr("Planilha sem título"))) {
             BlockCenter.shared.noteTitleChanged(botID: botID, id: sheet.id, title: sheet.title)
             BlockCenter.shared.navigate(to: .sheet(botID: botID, id: sheet.id))
         }

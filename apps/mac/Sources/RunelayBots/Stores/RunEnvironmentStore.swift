@@ -60,7 +60,7 @@ final class RunEnvironmentStore {
                 guard pending == id, url == server else { return }
                 pending = nil
                 snapshot?.selected = previous
-                flash("Não deu para trocar para \(target.label). Tente de novo.")
+                flash(tr("Não deu para trocar para %@. Tente de novo.", target.label))
             }
             await refresh()
         }

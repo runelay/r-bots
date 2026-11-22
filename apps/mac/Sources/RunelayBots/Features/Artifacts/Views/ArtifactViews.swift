@@ -212,7 +212,7 @@ struct ArtifactPanelHeader: View {
             if ref.kind != "canvas" {
                 exportMenu
                     .padding(.trailing, Spacing.xs)
-                BlockHeaderButton(systemImage: "play.rectangle", help: ref.kind == "slides" ? "Apresentar  ⌥⌘P" : "Ver em tela cheia  ⌥⌘P") {
+                BlockHeaderButton(systemImage: "play.rectangle", help: ref.kind == "slides" ? tr("Apresentar  ⌥⌘P") : tr("Ver em tela cheia  ⌥⌘P")) {
                     center.togglePresenting()
                 }
                 .background {
@@ -227,13 +227,13 @@ struct ArtifactPanelHeader: View {
             }
             BlockHeaderButton(
                 systemImage: presentation.fullScreen ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
-                help: presentation.fullScreen ? "Voltar ao painel  ⇧⌘F" : "Tela cheia  ⇧⌘F",
+                help: presentation.fullScreen ? tr("Voltar ao painel  ⇧⌘F") : tr("Tela cheia  ⇧⌘F"),
                 isActive: presentation.fullScreen
             ) {
                 presentation.toggleFullScreen()
             }
             moreMenu
-            BlockHeaderButton(systemImage: "xmark", help: "Fechar") {
+            BlockHeaderButton(systemImage: "xmark", help: tr("Fechar")) {
                 presentation.close()
             }
         }
@@ -244,13 +244,13 @@ struct ArtifactPanelHeader: View {
 
     private var versionMenu: some View {
         GlassSelect(
-            options: center.versions.reversed().map { GlassSelectOption("Versão \($0.n)", value: $0.n) },
+            options: center.versions.reversed().map { GlassSelectOption(tr("Versão %lld", $0.n), value: $0.n) },
             selection: Binding(
                 get: { center.selectedVersion },
                 set: { center.select(version: $0) }
             ),
             title: "v\(center.selectedVersion)",
-            help: "Escolher versão",
+            help: tr("Escolher versão"),
             edge: .leading,
             minWidth: 160
         )
@@ -259,13 +259,13 @@ struct ArtifactPanelHeader: View {
 
     private var exportMenu: some View {
         GlassMenuButton(
-            edge: .trailing, help: "Exportar",
+            edge: .trailing, help: tr("Exportar"),
             items: {
                 [
                     GlassMenuItem("PDF", systemImage: "arrow.down.doc") {
                         Task { await center.exportPDF() }
                     },
-                    GlassMenuItem("Abrir no navegador", systemImage: "safari") {
+                    GlassMenuItem(tr("Abrir no navegador"), systemImage: "safari") {
                         Task { await center.openInBrowser() }
                     },
                 ]
@@ -291,31 +291,31 @@ struct ArtifactPanelHeader: View {
         }
         .fixedSize()
         .disabled(center.busy != nil)
-        .blockTooltip("Baixar como arquivo")
+        .blockTooltip(tr("Baixar como arquivo"))
     }
 
     private var moreMenu: some View {
-        GlassMenuButton(edge: .trailing, help: "Mais", items: { moreItems }) { isOpen in
+        GlassMenuButton(edge: .trailing, help: tr("Mais"), items: { moreItems }) { isOpen in
             BlockHeaderIcon(systemImage: "ellipsis", isActive: isOpen)
         }
         .fixedSize()
-        .blockTooltip("Mais")
+        .blockTooltip(tr("Mais"))
     }
 
     private var moreItems: [GlassMenuItem] {
         var items: [GlassMenuItem] = []
         if ref.kind == "canvas" {
             items += [
-                GlassMenuItem("Exportar PNG", systemImage: "photo") { center.exportCanvas(pdf: false) },
-                GlassMenuItem("Exportar PDF", systemImage: "doc.richtext") { center.exportCanvas(pdf: true) },
-                GlassMenuItem("Copiar como Mermaid", systemImage: "chevron.left.forwardslash.chevron.right") { center.copyMermaid() },
+                GlassMenuItem(tr("Exportar PNG"), systemImage: "photo") { center.exportCanvas(pdf: false) },
+                GlassMenuItem(tr("Exportar PDF"), systemImage: "doc.richtext") { center.exportCanvas(pdf: true) },
+                GlassMenuItem(tr("Copiar como Mermaid"), systemImage: "chevron.left.forwardslash.chevron.right") { center.copyMermaid() },
             ]
         }
-        items.append(GlassMenuItem("Copiar link desta versão", systemImage: "link", startsSection: !items.isEmpty) { center.copyLink() })
+        items.append(GlassMenuItem(tr("Copiar link desta versão"), systemImage: "link", startsSection: !items.isEmpty) { center.copyLink() })
         if let botID = center.current?.botID {
             let client = model.client
             items.append(
-                GlassMenuItem("Todos os arquivos", systemImage: "square.stack") {
+                GlassMenuItem(tr("Todos os arquivos"), systemImage: "square.stack") {
                     ArtifactCenter.shared.openFiles(botID: botID, client: client)
                 })
         }
@@ -332,7 +332,7 @@ struct LibrarySection: View {
     var body: some View {
         let items = center.libraries[bot.id] ?? []
         VStack(alignment: .leading, spacing: Spacing.s) {
-            SectionCaption(title: "Artefatos")
+            SectionCaption(title: tr("Artefatos"))
             if items.isEmpty {
                 Text("Quando \(bot.name) montar uma apresentação, um dashboard, uma página ou um canvas, ele aparece aqui.")
                     .font(TypeScale.rowSubtitle)
@@ -394,6 +394,6 @@ struct LibraryRow: View {
     private var subtitle: String {
         let base = ArtifactKindInfo.subtitle(kind: item.kind, version: item.version)
         guard let date = item.updatedDate else { return base }
-        return "\(base) · \(date.formatted(.dateTime.day().month(.abbreviated).hour().minute()))"
+        return "\(base) · \(date.formatted(.dateTime.day().month(.abbreviated).hour().minute().locale(LanguageStore.shared.locale)))"
     }
 }

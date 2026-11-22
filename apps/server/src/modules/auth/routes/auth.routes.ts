@@ -1,6 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { ValidationError } from "../../../shared/errors";
 import { requestContext } from "../../../shared/http";
+import { requestLanguage } from "../../../shared/i18n";
+import { authText } from "../constants/auth-messages.constants";
 import {
   type AccessService,
   InviteInvalidError,
@@ -38,7 +40,7 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: { "cache-control": "no-store" } });
 }
 
-function tooMany(retryAfter: number, code = "rate_limited", error = "Muitas tentativas. Espere um minuto.") {
+function tooMany(retryAfter: number, code = "rate_limited", error = authText("tooMany")) {
   return Response.json(
     { ok: false, error, code },
     { status: 429, headers: { "retry-after": String(retryAfter), "cache-control": "no-store" } },
@@ -65,7 +67,7 @@ function isBlockedAuthPath(path: string) {
   return blockedAuthPaths.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 
-function devicePageResponse() {
+function devicePageResponse(request: Request) {
   const nonce = randomBytes(16).toString("base64");
   const csp = [
     "default-src 'none'",
@@ -78,15 +80,18 @@ function devicePageResponse() {
     "form-action 'self'",
     "base-uri 'none'",
   ].join("; ");
-  return new Response(devicePage(authBasePath, nonce), {
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-      "x-frame-options": "DENY",
-      "content-security-policy": csp,
-      "set-cookie": `${previewCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+  return new Response(
+    devicePage(authBasePath, nonce, requestLanguage(request.headers, new URL(request.url).searchParams.get("lang"))),
+    {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+        "x-frame-options": "DENY",
+        "content-security-policy": csp,
+        "set-cookie": `${previewCookieName}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`,
+      },
     },
-  });
+  );
 }
 
 async function readJson(request: Request) {
@@ -95,7 +100,7 @@ async function readJson(request: Request) {
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    throw new ValidationError("JSON inválido.", "body");
+    throw new ValidationError(authText("invalidJson"), "body");
   }
 }
 
@@ -109,7 +114,7 @@ function failure(error: unknown) {
     return json({ ok: false, error: error.message, code: "invite_invalid" }, 400);
   const status = (error as { statusCode?: number }).statusCode;
   if (typeof status === "number" && status >= 400 && status < 500)
-    return json({ ok: false, error: (error as Error).message || "Pedido inválido." }, status);
+    return json({ ok: false, error: (error as Error).message || authText("badRequest") }, status);
   throw error;
 }
 
@@ -118,10 +123,10 @@ async function avatar(avatars: AvatarService, request: Request, principal: Princ
   if (request.method !== "PUT" && request.method !== "POST") return null;
   const declared = Number(request.headers.get("content-length") ?? "");
   if (Number.isFinite(declared) && declared > avatarMaxBytes)
-    return json({ ok: false, error: "A imagem passa de 2 MB.", field: "image", code: "too_large" }, 413);
+    return json({ ok: false, error: authText("imageTooLarge"), field: "image", code: "too_large" }, 413);
   const bytes = new Uint8Array(await request.arrayBuffer());
   if (bytes.byteLength > avatarMaxBytes)
-    return json({ ok: false, error: "A imagem passa de 2 MB.", field: "image", code: "too_large" }, 413);
+    return json({ ok: false, error: authText("imageTooLarge"), field: "image", code: "too_large" }, 413);
   return json({
     ok: true,
     ...(await avatars.save(principal.userId, request.headers.get("content-type") ?? "", bytes)),
@@ -131,7 +136,7 @@ async function avatar(avatars: AvatarService, request: Request, principal: Princ
 async function serveAvatar(avatars: AvatarService, path: string) {
   const [userId = "", file = ""] = path.slice(avatarBasePath.length + 1).split("/");
   const found = await avatars.read(userId, file);
-  if (!found) return json({ ok: false, error: "Foto não encontrada.", code: "not_found" }, 404);
+  if (!found) return json({ ok: false, error: authText("photoNotFound"), code: "not_found" }, 404);
   return new Response(found.stream, {
     headers: {
       "content-type": found.mime,
@@ -157,8 +162,7 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
     const body = await jsonOf(request);
     const email = typeof body?.email === "string" ? body.email : "";
     const locked = email ? lockout.locked(email) : null;
-    if (locked)
-      return tooMany(locked.retryAfter, "account_locked", "Muitas tentativas erradas nesta conta. Espere um pouco.");
+    if (locked) return tooMany(locked.retryAfter, "account_locked", authText("accountLocked"));
     const response = await auth.handler(request);
     if (email && (response.status === 401 || response.status === 403)) lockout.failed(email);
     if (email && response.ok) lockout.succeeded(email);
@@ -176,7 +180,7 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
   }
 
   async function authHandler(request: Request, path: string) {
-    if (isBlockedAuthPath(path)) return json({ ok: false, error: "Rota não encontrada.", code: "not_found" }, 404);
+    if (isBlockedAuthPath(path)) return json({ ok: false, error: authText("notFound"), code: "not_found" }, 404);
     const auth = deps.authFor?.(request) ?? deps.auth;
     const forwarded = forAuthHandler(request);
     if (path === `${authBasePath}/sign-in/email` && request.method === "POST") return signInEmail(forwarded, auth);
@@ -212,7 +216,7 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
     const method = request.method;
     try {
       if (path === authBasePath || path.startsWith(`${authBasePath}/`)) return await authHandler(request, path);
-      if (path === devicePagePath && method === "GET") return devicePageResponse();
+      if (path === devicePagePath && method === "GET") return devicePageResponse(request);
       if (path === "/auth/setup" && method === "GET") {
         const needsOwner = await deps.access.needsOwner();
         return json({
@@ -242,17 +246,17 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
         return json({ ok: true, ...(await deps.access.acceptInvite(await readJson(request))) }, 201);
       }
       if (!path.startsWith("/auth/")) return null;
-      if (!principal) return json({ ok: false, error: "Entre de novo para continuar.", code: "unauthorized" }, 401);
+      if (!principal) return json({ ok: false, error: authText("signInAgain"), code: "unauthorized" }, 401);
       if (path === "/auth/me" && method === "GET") return await me(principal, request);
       if (path === "/auth/device/info" && method === "GET") {
         const code = new URL(request.url).searchParams.get("user_code") ?? "";
         const info = code ? deviceRequests.lookup(code) : null;
-        if (!info) return json({ ok: false, error: "Pedido não encontrado ou vencido.", code: "not_found" }, 404);
+        if (!info) return json({ ok: false, error: authText("deviceRequestNotFound"), code: "not_found" }, 404);
         return json({ ok: true, ...info });
       }
       if (path === "/auth/runner-key" && method === "POST") {
         if (principal.method !== "session")
-          return json({ ok: false, error: "Use a sessão do app para gerar a chave.", code: "forbidden" }, 403);
+          return json({ ok: false, error: authText("runnerKeySession"), code: "forbidden" }, 403);
         return json({ ok: true, ...(await deps.access.issueRunnerKey(request.headers, principal.userId)) }, 201);
       }
       if (deps.avatars && path === "/auth/me/avatar") return await avatar(deps.avatars, request, principal);
@@ -260,7 +264,7 @@ export function createAuthRoutes(deps: AuthRouteDeps) {
         return await serveAvatar(deps.avatars, path);
       if (path === "/auth/invites" || path.startsWith("/auth/invites/")) {
         if (principal.role !== ownerRole || principal.method === "internal")
-          return json({ ok: false, error: "Só o dono pode convidar.", code: "forbidden" }, 403);
+          return json({ ok: false, error: authText("inviteOwnerOnly"), code: "forbidden" }, 403);
         if (path === "/auth/invites" && method === "GET")
           return json({ ok: true, invites: await deps.access.listInvites() });
         if (path === "/auth/invites" && method === "POST")

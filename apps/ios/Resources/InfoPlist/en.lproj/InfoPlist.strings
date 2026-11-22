@@ -1,0 +1,4 @@
+"NSMicrophoneUsageDescription" = "r/bots uses the microphone to dictate messages, record audio and talk to your bots.";
+"NSSpeechRecognitionUsageDescription" = "r/bots transcribes your speech on device to write the message.";
+"NSCameraUsageDescription" = "r/bots uses the camera so you can send photos to your bots.";
+"NSFaceIDUsageDescription" = "r/bots uses Face ID to unlock the secrets in your vault.";

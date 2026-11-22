@@ -13,6 +13,7 @@ import {
   toolContext,
 } from "../../../../test/engine-helpers";
 import { resetData, startTestServer, type TestServer } from "../../../../test/helpers";
+import { resetLanguageState, setLanguagePreference } from "../../../shared/i18n";
 import * as accounts from "../../accounts/services/accounts.service";
 import { type BotDefinition, getBot, sidebarOf, updateBot } from "../../bots/services/bots.service";
 import { addAllowedRepo, allowedRepos, loadAllowedRepos, removeAllowedRepo } from "../../code/services/repos.service";
@@ -194,7 +195,12 @@ describe("settings_get", () => {
     expect(state.repos).toEqual([{ name: expect.any(String), path: repoRoot }]);
     expect(state.connectors).toEqual([{ name: "linear_server", label: "Linear", status: "ok" }]);
     expect(state.serverProfiles[0]).toMatchObject({ name: "Web", script: "dev" });
-    expect(state.preferences).toMatchObject({ microphone: "padrão do sistema", microphones: ["MacBook Air", "USB"] });
+    expect(state.preferences).toMatchObject({
+      microphone: "padrão do sistema",
+      microphones: ["MacBook Air", "USB"],
+      language: "system",
+    });
+    expect(state.options.languages).toEqual(["system", "pt-BR", "en"]);
     expect(state.accounts.map((item) => item.id)).toEqual(["vps:claude", "claude-2:claude", "vps:codex"]);
     expect(state.options.permissionModes).toHaveLength(4);
     expect(settled.at(-1)).toBe(`settings_get → ajustes de ${bot.name}`);
@@ -446,6 +452,17 @@ describe("bot_archive and section_update", () => {
     expect((await lines())[0]).toMatchObject({ undo: [{ method: "POST", path: `/bots/${other.id}/unarchive` }] });
     expect((await call("bot_archive", { bot: "antigo", archived: false })).text).toBe("Restaurou Antigo.");
     expect(getBot(other.id)?.archivedAt).toBeNull();
+  });
+
+  test("labels calls and writes lines in the saved language", async () => {
+    await makeBot({ name: "Antigo" });
+    setLanguagePreference("en");
+    const { call } = await open();
+    expect((await call("bot_archive", { bot: "antigo" })).text).toBe("Archived Antigo.");
+    expect((await lines()).at(-1)).toMatchObject({ text: "Archived Antigo" });
+    const requested = (await factsOfType(session, "call.requested")).map((fact) => fact.data);
+    expect(requested.at(-1)).toMatchObject({ capability: { label: "Archive antigo" } });
+    expect((await call("section_update", { name: "Clients" })).text).toBe("Created the section Clients.");
   });
 
   test("creates and renames a section", async () => {
@@ -787,6 +804,23 @@ describe("usage, accounts, integrations, connectors and preferences", () => {
     expect((await call("preferences_set", { microphone: "Rode" })).text).toBe(
       'Não achei o microfone "Rode". Microfones do Mac: MacBook Air, Shure MV7.',
     );
-    expect((await call("preferences_set", {})).text).toBe("Diga o que mudar: notifications ou microphone.");
+    expect((await call("preferences_set", {})).text).toBe("Diga o que mudar: notifications, microphone ou language.");
+  });
+
+  test("preferences_set changes the language and writes the line in it", async () => {
+    const { call } = await open();
+    expect((await call("preferences_set", { language: "en" })).text).toBe("Idioma: inglês.");
+    expect((await readPreferences()).language).toBe("en");
+    expect((await lines()).at(-1)).toMatchObject({
+      target: { id: "preferences", name: "Preferências" },
+      undo: [{ method: "PATCH", path: "/preferences", body: { language: "system" } }],
+    });
+    expect((await call("preferences_set", { notifications: { failures: false }, language: "system" })).text).toBe(
+      "Turned off turns with errors · Language: system.",
+    );
+    expect((await lines()).at(-1)).toMatchObject({ target: { name: "Preferences" } });
+    expect((await call("settings_get", {})).text).toContain('"language":"system"');
+    await updatePreferences({ language: "system" });
+    resetLanguageState();
   });
 });

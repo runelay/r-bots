@@ -38,14 +38,14 @@ struct PullRequestEventLine: View {
                     .truncationMode(.tail)
                 if let url = event.logURL ?? (event.kind == .ciFailed ? nil : event.prURL) {
                     Text("·").foregroundStyle(Theme.textTertiary)
-                    InlineLink(title: event.kind == .ciFailed ? "Ver log ↗" : "Abrir ↗") {
+                    InlineLink(title: event.kind == .ciFailed ? tr("Ver log ↗") : tr("Abrir ↗")) {
                         NSWorkspace.shared.open(url)
                     }
                     .help(url.absoluteString)
                 }
                 if let request {
                     Text("·").foregroundStyle(Theme.textTertiary)
-                    InlineLink(title: asked ? "Pedido enviado" : "Pedir para corrigir", color: asked ? Theme.textTertiary : Theme.brandText) {
+                    InlineLink(title: asked ? tr("Pedido enviado") : tr("Pedir para corrigir"), color: asked ? Theme.textTertiary : Theme.brandText) {
                         guard !asked else { return }
                         asked = true
                         ask(request)
@@ -81,10 +81,10 @@ struct PullRequestEventLine: View {
 
     private var title: String {
         switch event.kind {
-        case .ciFailed: "CI falhou · \(event.check ?? "check")"
-        case .ciPassed: "CI passou ✓"
-        case .changesRequested: "Review pediu mudanças\(event.check.map { " · \($0)" } ?? "")"
-        case .approved: "Review aprovado ✓"
+        case .ciFailed: tr("CI falhou · %@", event.check ?? "check")
+        case .ciPassed: tr("CI passou ✓")
+        case .changesRequested: event.check.map { tr("Review pediu mudanças · %@", $0) } ?? tr("Review pediu mudanças")
+        case .approved: tr("Review aprovado ✓")
         }
     }
 
@@ -291,7 +291,7 @@ struct PullRequestCard: View {
     private var counts: some View {
         VStack(alignment: .leading, spacing: Spacing.xs) {
             HStack(spacing: Spacing.s) {
-                Text("\(pr.files) arquivo\(pr.files == 1 ? "" : "s")")
+                Text(pr.files == 1 ? "1 arquivo" : "\(pr.files) arquivos")
                     .font(TypeScale.captionStrong)
                     .foregroundStyle(Theme.textPrimary)
                 ChangeCount(added: pr.additions, removed: pr.deletions)
@@ -328,7 +328,7 @@ struct PullRequestCard: View {
     private var actions: some View {
         HStack(spacing: Spacing.m) {
             if let url = pr.url {
-                InlineLink(title: "Abrir no GitHub ↗") {
+                InlineLink(title: tr("Abrir no GitHub ↗")) {
                     NSWorkspace.shared.open(url)
                 }
                 .help(url.absoluteString)
@@ -337,12 +337,12 @@ struct PullRequestCard: View {
             if working {
                 ProgressView().controlSize(.mini)
             } else if pr.status == .closed {
-                InlineLink(title: "Reabrir") { reopen() }
+                InlineLink(title: tr("Reabrir")) { reopen() }
                     .help("Reabre o PR no GitHub")
-                InlineLink(title: "Fechar cópia", color: Theme.textSecondary) { closeRepository() }
+                InlineLink(title: tr("Fechar cópia"), color: Theme.textSecondary) { closeRepository() }
                     .help("Remove a worktree. A branch continua no GitHub")
             } else if pr.status == .merged {
-                InlineLink(title: "Fechar cópia", color: Theme.merged) { closeRepository() }
+                InlineLink(title: tr("Fechar cópia"), color: Theme.merged) { closeRepository() }
                     .help("Remove a worktree. A branch continua no GitHub")
             }
         }
@@ -350,14 +350,14 @@ struct PullRequestCard: View {
     }
 
     private func reopen() {
-        guard CodeActions.confirm("Reabrir o PR #\(pr.number)?", message: "O PR volta a ficar aberto no GitHub.", action: "Reabrir") else { return }
+        guard CodeActions.confirm(tr("Reabrir o PR #%lld?", pr.number), message: tr("O PR volta a ficar aberto no GitHub."), action: tr("Reabrir")) else { return }
         working = true
         problem = nil
         Task {
             do {
                 try await store.reopenPullRequest(workspaceID: workspaceID)
             } catch {
-                problem = "Não consegui reabrir o PR agora."
+                problem = tr("Não consegui reabrir o PR agora.")
             }
             working = false
         }
@@ -404,6 +404,6 @@ private struct CheckRow: View {
         .clickable()
         .disabled(check.url == nil)
         .onHover { hovering = $0 }
-        .help(check.url == nil ? check.name : "\(check.workflow.map { "\($0) · " } ?? "")\(check.name) · ver o log")
+        .help(check.url == nil ? check.name : tr("%@ · ver o log", (check.workflow.map { "\($0) · " } ?? "") + check.name))
     }
 }

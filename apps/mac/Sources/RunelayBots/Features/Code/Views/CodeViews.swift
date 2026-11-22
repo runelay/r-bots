@@ -31,12 +31,12 @@ enum CodeActions {
         alert.messageText = title
         alert.informativeText = message
         alert.addButton(withTitle: action)
-        alert.addButton(withTitle: "Cancelar")
+        alert.addButton(withTitle: tr("Cancelar"))
         return alert.runModal() == .alertFirstButtonReturn
     }
 
     static func rewind(store: ConversationStore, entryID: String) {
-        guard confirm("Desfazer este pedido?", message: "Os arquivos e a conversa voltam para antes dele. O que veio depois também sai.", action: "Desfazer") else { return }
+        guard confirm(tr("Desfazer este pedido?"), message: tr("Os arquivos e a conversa voltam para antes dele. O que veio depois também sai."), action: tr("Desfazer")) else { return }
         Task {
             do {
                 try await store.rewind(entryID: entryID)
@@ -159,7 +159,7 @@ struct CodeBulkLine: View {
                 .foregroundStyle(Theme.textSecondary)
             ChangeCount(added: bulk.added, removed: bulk.removed)
             if let botID = model.selectedBot?.id {
-                RoundIconButton(systemImage: "arrow.up.left.and.arrow.down.right", help: "Ver no visualizador de mudanças", size: 24) {
+                RoundIconButton(systemImage: "arrow.up.left.and.arrow.down.right", help: tr("Ver no visualizador de mudanças"), size: 24) {
                     model.activeSheet = .changes(botID)
                 }
             }
@@ -211,7 +211,7 @@ struct DiffCard: View, Equatable {
                 Spacer(minLength: Spacing.s)
                 ChangeCount(added: edit.added, removed: edit.removed)
                 if let botID = model.selectedBot?.id {
-                    RoundIconButton(systemImage: "arrow.up.left.and.arrow.down.right", help: "Ver no visualizador de mudanças", size: 24) {
+                    RoundIconButton(systemImage: "arrow.up.left.and.arrow.down.right", help: tr("Ver no visualizador de mudanças"), size: 24) {
                         model.codeFocusPath = edit.path
                         model.activeSheet = .changes(botID)
                     }
@@ -226,7 +226,7 @@ struct DiffCard: View, Equatable {
                     model.codeFocusPath = edit.path
                     model.activeSheet = .changes(botID)
                 } label: {
-                    Text("Ver tudo (\(limited.hidden) linha\(limited.hidden == 1 ? "" : "s") a mais)")
+                    Text(limited.hidden == 1 ? "Ver tudo (1 linha a mais)" : "Ver tudo (\(limited.hidden) linhas a mais)")
                         .font(TypeScale.captionStrong)
                         .foregroundStyle(Theme.brandText)
                         .frame(maxWidth: .infinity)
@@ -271,7 +271,7 @@ struct DiffBlocksView: View {
                     HunkCard(title: title, section: section, rows: rows, language: language)
                 case .gap(let id, let lines):
                     if openGaps.contains(id), let first = lines.first, let last = lines.last {
-                        HunkCard(title: "linhas \(first.newNumber ?? 0)–\(last.newNumber ?? 0)", section: nil, rows: lines.map(CodeRow.line), language: language)
+                        HunkCard(title: tr("linhas %lld–%lld", first.newNumber ?? 0, last.newNumber ?? 0), section: nil, rows: lines.map(CodeRow.line), language: language)
                             .transition(.opacity)
                     } else {
                         GapSeparator(count: lines.count) {
@@ -326,7 +326,7 @@ struct HunkCard: View {
                                 Button {
                                     openGaps.insert(id)
                                 } label: {
-                                    Text("⋯ \(lines.count) linha\(lines.count == 1 ? "" : "s") oculta\(lines.count == 1 ? "" : "s")")
+                                    Text(lines.count == 1 ? "⋯ 1 linha oculta" : "⋯ \(lines.count) linhas ocultas")
                                         .font(BrandFonts.sans(11))
                                         .foregroundStyle(Theme.textTertiary)
                                         .lineLimit(1)
@@ -368,7 +368,7 @@ struct GapSeparator: View {
         Button(action: open) {
             HStack(spacing: Spacing.s) {
                 Rectangle().fill(Theme.paneDivider).frame(height: 1)
-                Text("⋯ \(count) linha\(count == 1 ? "" : "s") oculta\(count == 1 ? "" : "s")")
+                Text(count == 1 ? "⋯ 1 linha oculta" : "⋯ \(count) linhas ocultas")
                     .font(BrandFonts.sans(11))
                     .foregroundStyle(hovering ? Theme.textSecondary : Theme.textTertiary)
                     .lineLimit(1)
@@ -519,7 +519,7 @@ struct RepoPickerView: View {
                     .font(TypeScale.sectionTitle)
                     .foregroundStyle(Theme.textPrimary)
                 Spacer(minLength: 0)
-                RoundIconButton(systemImage: "xmark", help: "Fechar (Esc)", size: 28) {
+                RoundIconButton(systemImage: "xmark", help: tr("Fechar (Esc)"), size: 28) {
                     model.dismissSheet()
                 }
             }

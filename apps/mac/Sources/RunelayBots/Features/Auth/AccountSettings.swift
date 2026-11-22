@@ -19,7 +19,7 @@ struct AccountSettings: View {
 
 struct AccountPhotoGroup: View {
     let hasPhoto: Bool
-    var caption: String? = "Foto"
+    var caption: String? = tr("Foto")
     @Environment(\.appReduceMotion) private var reduceMotion
     @State private var busy = false
     @State private var targeted = false
@@ -48,7 +48,7 @@ struct AccountPhotoGroup: View {
                     Text(hasPhoto ? "Sua foto" : "Adicione uma foto")
                         .font(TypeScale.rowTitle)
                         .foregroundStyle(Theme.textPrimary)
-                    Text(failure ?? "Escolha ou arraste uma imagem. Ela é recortada em quadrado.")
+                    Text(failure ?? tr("Escolha ou arraste uma imagem. Ela é recortada em quadrado."))
                         .font(TypeScale.caption)
                         .foregroundStyle(failure == nil ? Theme.textSecondary : Theme.danger)
                         .fixedSize(horizontal: false, vertical: true)
@@ -92,7 +92,7 @@ struct AccountPhotoGroup: View {
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.prompt = "Usar foto"
+        panel.prompt = tr("Usar foto")
         guard panel.runModal() == .OK, let url = panel.url, let image = NSImage(contentsOf: url) else { return }
         upload(image)
     }
@@ -100,7 +100,7 @@ struct AccountPhotoGroup: View {
     private func upload(_ image: NSImage) {
         guard !busy else { return }
         guard let data = AvatarImage.squareJPEG(from: image) else {
-            failure = "Não deu para ler essa imagem."
+            failure = tr("Não deu para ler essa imagem.")
             return
         }
         failure = nil
@@ -143,8 +143,8 @@ private struct ProfileGroup: View {
     private let session = AuthSession.shared
 
     var body: some View {
-        SettingsGroup(caption: "Conta") {
-            SettingsRow(title: user.name, detail: user.isOwner ? "\(user.email) · dona da conta" : user.email) {
+        SettingsGroup(caption: tr("Conta")) {
+            SettingsRow(title: user.name, detail: user.isOwner ? tr("%@ · dona da conta", user.email) : user.email) {
                 Button {
                     leaving = true
                     Task {
@@ -176,8 +176,8 @@ private struct SetupAgainGroup: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        SettingsGroup(caption: "Primeiros passos") {
-            SettingsRow(title: "Configurar de novo", detail: "Refaça o passo a passo: perfil, bot, contas de IA, integrações, conectores e Mac.") {
+        SettingsGroup(caption: tr("Primeiros passos")) {
+            SettingsRow(title: tr("Configurar de novo"), detail: tr("Refaça o passo a passo: perfil, bot, contas de IA, integrações, conectores e Mac.")) {
                 Button {
                     model.closeSettings()
                     OnboardingStore.shared.restart()
@@ -213,11 +213,11 @@ private struct PasswordGroup: View {
     }
 
     var body: some View {
-        SettingsDisclosure(title: "Trocar senha", icon: SettingsIcon("key.fill", SettingsTint.graphite), isOpen: $isOpen) {
+        SettingsDisclosure(title: tr("Trocar senha"), icon: SettingsIcon("key.fill", SettingsTint.graphite), isOpen: $isOpen) {
             VStack(alignment: .leading, spacing: Spacing.m) {
-                field("Senha atual", text: $current, content: .password)
-                field("Nova senha (8 caracteres ou mais)", text: $fresh, content: .newPassword)
-                field("Repita a nova senha", text: $confirm, content: .newPassword)
+                field(tr("Senha atual"), text: $current, content: .password)
+                field(tr("Nova senha (8 caracteres ou mais)"), text: $fresh, content: .newPassword)
+                field(tr("Repita a nova senha"), text: $confirm, content: .newPassword)
                 HStack(spacing: Spacing.s) {
                     if mismatch {
                         Text("As senhas novas não são iguais.")
@@ -283,7 +283,7 @@ private struct PasswordGroup: View {
                 current = ""
                 fresh = ""
                 confirm = ""
-                feedback = ("Senha trocada.", false)
+                feedback = (tr("Senha trocada."), false)
             } catch {
                 feedback = (error.localizedDescription, true)
             }

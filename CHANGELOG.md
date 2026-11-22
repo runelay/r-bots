@@ -6,6 +6,11 @@
 
 - The installer sets up the AppArmor profile for `bwrap` before it starts `rbots-runner.service`, so the runner hides the r/bots data from the first boot instead of after the next restart.
 
+### Server
+
+- The server speaks English too. Preferences have a `language` setting (`system`, `pt-BR` or `en`), and the server answers each request in the language of its `Accept-Language` header: common errors, sign-in errors and the `/device` sign-in page (which also takes `?lang=`). Approval card buttons follow the saved language, and bots reply in English or Portuguese when it is set.
+- Every error the apps show, tool call labels, approval prompts and reasons, settings change lines and turn failure messages now come in English too. The Mac and iPhone apps no longer read Portuguese words out of tool labels to spot delegations and plain shell commands.
+
 ## v0.1.18
 
 ### Install
