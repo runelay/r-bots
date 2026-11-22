@@ -597,5 +597,7 @@ describe("warmUsage", () => {
     jest.useRealTimers();
     for (let i = 0; i < 50 && calls.length === 0; i++) await Bun.sleep(1);
     expect(calls).toHaveLength(1);
+    expect((await service.usageSummary("30d", null, null)).totals.input).toBe(1);
+    await resetUsageTables();
   });
 });

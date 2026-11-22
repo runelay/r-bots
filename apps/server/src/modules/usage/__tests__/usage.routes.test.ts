@@ -83,6 +83,7 @@ describe("GET /usage/limits", () => {
 
 describe("GET /usage/summary", () => {
   test("passes range, provider and account through", async () => {
+    await resetUsageTables();
     jest.useFakeTimers();
     const at = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000 - 1800_000).toISOString();
     await writeFixture(
