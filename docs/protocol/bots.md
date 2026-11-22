@@ -238,3 +238,28 @@ Seção "Seus ajustes" no prompt de todo bot: pode se configurar e faz direto; c
 - "Sobe o modo desta conversa para Acesso total." → `interaction.opened` `kind:"approval"` "Posso subir o modo de permissão desta conversa de Padrão para Acesso total?", sem decisão do Jev (`outcome:"human"`, `model:null`). Negado → `call.settled outcome:"rejected"` e a conversa seguiu `effectivePermission:"default"`.
 - "Quero trocar a chave do Jev. Abre o formulário." → `integration_setup`, `interaction.opened` `kind:"integration"`, `display:"integration_form"`; respondido `deny` sem colar nada → "A pessoa preferiu não configurar agora."
 - "Remove a rotina… e arquiva o bot" → `remove_schedule` e `bot_archive`, `archivedAt` preenchido e a rotina fora do agendador.
+
+## v61 (22/11): Este Mac
+
+- `GET /preferences` e `PATCH /preferences` ganham `environment: "vps" | "mac"` (padrão `"vps"`). Valor fora disso → 400 com `field: "environment"`. A mudança sai na linha `preferences` do `/status/stream` e vale a partir do próximo turno.
+- `GET /environments` (dono) → `{ selected, environments: [{ id, label, online, canRun }] }`, sempre com VPS e Este Mac. A VPS está sempre `online`/`canRun` (sem runner de host, o turno roda no container do servidor). Este Mac fica `online` enquanto um runner conecta com `environment: "mac"` no `hello`. O corpo antigo (`{ok, environments: [runners]}`) saiu; o app não usava.
+- Runner do Mac: o app sobe `bun runner/main.js` com `RBOTS_PROVIDER=host`, `RBOTS_URL`, `RBOTS_DEVICE_TOKEN` (o token do dispositivo do app), `RBOTS_RUNNER_NAME`, `RBOTS_ENVIRONMENT=mac`, `RBOTS_WORKSPACES_DIR` e, se quiser, `RBOTS_CLAUDE_BIN`. Ele abre `/runner/connect` com o cabeçalho `x-rbots-role: runner`, então ganha a chave `<dispositivo>:runner` e não derruba a conexão do app. Revogar o dispositivo fecha as duas.
+- `turn.start` para o Mac leva `sync {repo, cloneUrl, name, branch, ref, commit, cwd}` quando o turno tem worktree; o `turn.end` volta com `sync {ref, commit}` ou `syncError`. Pedido `op: "workspace.sync" {turnId}` → `response {ok, result: {ref, commit}}`.
+- Mac escolhido e fora: o turno termina com "Este Mac está desconectado; abra o app no Mac ou troque para VPS." e não roda na VPS. Mac sem login no `claude`: "O Claude Code deste Mac não está logado. Abra o Terminal, rode `claude` uma vez e entre na sua conta; depois mande a mensagem de novo."
+
+### Verificado
+
+```
+GET /environments (runner do Mac fora)
+{"selected":"vps","environments":[{"id":"vps","label":"VPS","online":true,"canRun":true},{"id":"mac","label":"Este Mac","online":false,"canRun":false}]}
+PATCH /preferences {"environment":"lua"} -> 400
+{"ok":false,"error":"environment precisa ser vps ou mac.","field":"environment"}
+PATCH /preferences {"environment":"mac"} -> 200
+{"notifications":{"replies":true,"approvals":true,"routines":true,"failures":true},"microphone":null,"microphones":[],"environment":"mac","updatedAt":"2026-11-22T12:25:01.585Z"}
+GET /environments (runner no Mac conectado)
+{"selected":"mac","environments":[{"id":"vps","label":"VPS","online":true,"canRun":true},{"id":"mac","label":"Este Mac","online":true,"canRun":true}]}
+log do servidor: mac runner connected (c385f87d-…:runner)
+turno no Mac com claude instalado e sem login: turn.settled {"outcome":"failed","error":{"message":"O Claude Code deste Mac não está logado. Abra o Terminal, rode `claude` uma vez e entre na sua conta; depois mande a mensagem de novo."}}
+turno no Mac com Mac desligado: turn.settled {"outcome":"failed","error":{"message":"Este Mac está desconectado; abra o app no Mac ou troque para VPS."}}
+POST /bots/assistente/code/deliver {"action":"push",…} -> {"action":"push","commit":"82c6f68",…}; refs/rbots/sync/feat/mac-sync-check some do GitHub e do repositório local
+```

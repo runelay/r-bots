@@ -47,7 +47,7 @@ O mesmo `packages/runner`, com um provider `host` no lugar do Docker:
 
 - `exec` roda o `box-agent` direto, como o usuário do processo, com o `cwd` da worktree. Nada de `docker exec`, montagem, roots ou `specKey`.
 - Na VPS, sobe como serviço `systemd --user` (`rbots-runner.service`), instalado pelo `install.sh` e pelo `rbots update`. O container `runner` sai do compose.
-- No Mac, o app já conecta como runner (`mac-runner.service.ts`). Ele passa a anunciar `host` e atender `turn.start` quando houver checkout no Mac (Etapa 3).
+- No Mac, o app sobe o mesmo runner como processo filho (`RBOTS_ENVIRONMENT=mac`), com o token do dispositivo do app. Ver Etapa 3.
 - Os CLIs vêm do PATH do host (`claude`, `codex`), com reserva em `<dados>/clis`.
 
 ### D4. O que continua escondido
@@ -76,7 +76,13 @@ O resto do home fica à vista, incluindo `~/.ssh`, `~/.claude*` e `~/.codex`, co
 
 1. **VPS direto como padrão.** Runner de host, seletor no topo com VPS, `bwrap` sem troca de usuário, scope do systemd e aviso de ambiente fora do ar. A caixa continua no código, desligada (`BOTS_SANDBOX=off`). Release normal.
 2. **Remover a caixa** depois de alguns dias sem precisar dela: `docker.ts`, `box-spec.service.ts`, `rbbox-init`, `rb-sandbox-exec`, o usuário `runelaytool`, `BOTS_TOOL_SANDBOX`, as roots e o serviço `runner` do compose.
-3. **Mac como ambiente.** O runner do app Mac atende turnos e o seletor mostra Mac. O checkout no Mac sai da mesma branch por git. Nada de copiar arquivo com `sed`.
+3. **Este Mac.** O app do Mac vira executor; os dados continuam no servidor. Detalhes em "Etapa 3 · Este Mac".
+
+## Etapa 3 · Este Mac
+
+Não existe servidor nativo no Mac: bots, conversas e memória ficam no servidor da VPS, e o Mac só precisa do `claude` logado. Com "Rodar agentes neste Mac" ligado, o app sobe `bun runner/main.js` com `RBOTS_PROVIDER=host`, `RBOTS_ENVIRONMENT=mac` e o token do dispositivo do app; o runner conecta em `/runner/connect` com `x-rbots-role: runner` (chave `<dispositivo>:runner`, sem derrubar a conexão do app) e anuncia `host` com `environment: "mac"`. No menu do servidor o dono escolhe VPS ou Este Mac (`PATCH /preferences {environment}`, lista em `GET /environments`); vale a partir do próximo turno. Mac escolhido e fora do ar: o turno não roda e o chat diz "Este Mac está desconectado; abra o app no Mac ou troque para VPS.", sem cair para a VPS. No Mac não há scope do systemd nem `bwrap`, o turno roda com o `HOME` do usuário e o login do próprio `claude` (`RBOTS_CLAUDE_BIN`, o `PATH`, `~/.local/bin/claude` ou `~/.claude/local/claude`); a pasta de conta da VPS é ignorada e a sessão do Claude no Mac é separada da VPS (chave `#mac`).
+
+Regra da worktree: a worktree da tarefa vive na VPS e o GitHub é o único caminho entre as máquinas, sem commit novo na branch. Antes de um turno no Mac, o servidor tira um retrato do que está pendente (índice temporário com `git add -A`, `commit-tree` com pai no `HEAD`) e manda para a ref escondida `refs/rbots/sync/<branch>` no `origin` com `--no-verify`. O runner clona o repositório em `$RBOTS_WORKSPACES_DIR/<repo>` com as credenciais do Mac, busca a ref, cria ou reaproveita a worktree em `.worktrees/<repo>/<branch>` no pai do retrato e aplica os arquivos dele (inclusive os não rastreados e as remoções), deixando tudo como mudança pendente. Ao fim do turno (ou quando o servidor pede, antes de um `workspace_deliver` no meio do turno), o runner tira o retrato da worktree do Mac do mesmo jeito e empurra para a mesma ref; o servidor busca e aplica na worktree da VPS: se o `HEAD` do Mac descende do da VPS, a branch avança até ele, senão fica o da VPS; os arquivos ficam iguais aos do Mac. `workspace_deliver` roda sempre na VPS, depois de aplicar o último retrato, e depois de um push ou PR apaga a ref escondida no `origin` e no repositório local. Repositório sem remoto no GitHub ou worktree fora de uma branch não vai para o Mac: o turno para com o motivo. Caminhos nos hooks são traduzidos pelo runner (Mac ↔ VPS) para o portão do servidor continuar valendo.
 
 ## Tarefas da Etapa 1
 
