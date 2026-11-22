@@ -213,8 +213,8 @@ describe("settings_get", () => {
     });
     expect(state.bot.permission).not.toHaveProperty("effective");
     expect(state.connectors).toBeNull();
-    const missing = await call("settings_get", { bot: "zzz" });
-    expect(missing).toMatchObject({ isError: true, text: 'Não achei o bot "zzz".' });
+    const missing = await call("settings_get", { bot: "ninguém com esse nome" });
+    expect(missing).toMatchObject({ isError: true, text: 'Não achei o bot "ninguém com esse nome".' });
   });
 });
 
