@@ -120,24 +120,6 @@ struct BotsClient: Sendable {
         return try? JSONDecoder().decode(ServerMeta.self, from: result.0)
     }
 
-    func environments() async throws -> RunEnvironments? {
-        let (data, response) = try await perform(try request(path: "/environments"))
-        if response.statusCode == 404 {
-            return nil
-        }
-        try validate(response, data: data)
-        return try JSONDecoder().decode(RunEnvironments.self, from: data)
-    }
-
-    func selectEnvironment(_ id: String) async throws {
-        var urlRequest = try request(path: "/preferences")
-        urlRequest.httpMethod = "PATCH"
-        urlRequest.httpBody = try JSONEncoder().encode(JSONValue.object(["environment": .string(id)]))
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let (data, response) = try await perform(urlRequest)
-        try validate(response, data: data)
-    }
-
     func thread(botID: String) async -> BotThread? {
         guard let result = try? await perform(try request(path: "/bots/\(Self.escape(botID))/thread")),
             (200..<300).contains(result.1.statusCode)

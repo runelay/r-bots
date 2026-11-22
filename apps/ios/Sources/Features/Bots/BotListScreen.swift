@@ -16,18 +16,6 @@ struct BotListScreen: View {
             .safeAreaInset(edge: .bottom, alignment: .trailing) {
                 bottomControls
             }
-            .safeAreaInset(edge: .top) {
-                if let failure = RunEnvironmentStore.shared.failure {
-                    Text(failure)
-                        .font(TypeScale.caption)
-                        .foregroundStyle(Theme.danger)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, Spacing.l)
-                        .padding(.vertical, Spacing.xs)
-                        .transition(.opacity)
-                }
-            }
-            .springAnimation(value: RunEnvironmentStore.shared.failure)
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle("Bots")
             .navigationBarTitleDisplayMode(.inline)
