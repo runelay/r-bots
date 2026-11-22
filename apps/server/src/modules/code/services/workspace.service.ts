@@ -83,6 +83,8 @@ export const gitSafety: Array<[string, string]> = [
   ["diff.external", ""],
   ["protocol.ext.allow", "never"],
   ["core.pager", "cat"],
+  ["credential.helper", ""],
+  ["credential.https://github.com.helper", "!gh auth git-credential"],
 ];
 
 const diffLike = new Set(["diff", "show", "log"]);
