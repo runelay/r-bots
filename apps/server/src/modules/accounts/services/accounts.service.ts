@@ -13,7 +13,14 @@ import {
 import { probe, runTurn } from "@runelay-bots/providers";
 import { dataDir, env } from "../../../config/env";
 import { ValidationError } from "../../../shared/errors";
-import { boxSpecFor, hostPathOf, workDirOf } from "../../environments/services/box-spec.service";
+import {
+  boxSpecFor,
+  hostBoxSpec,
+  hostPathOf,
+  hostTurnOf,
+  workDirOf,
+} from "../../environments/services/box-spec.service";
+import { onHost } from "../../environments/services/host-turns.service";
 import { place } from "../../environments/services/scheduler.service";
 import {
   type AccountDir,
@@ -257,18 +264,23 @@ export async function runOnAccount(
   const turn = { ...request, configDir: accountDir(id) };
   const botId = botIdOf(request);
   const codeCwd = request.code ? hostPathOf(request.code.cwd) : null;
-  const placement = place({ botId, provider, codeCwd, memMb: env.BOX_MEM_MB });
+  const placement = await place({ botId, provider, codeCwd, memMb: env.BOX_MEM_MB });
+  if (placement.kind === "offline") return emit({ type: "done", ok: false, message: placement.message });
   if (placement.kind === "remote") {
     const mounted = accountPath(id);
     const remoteTurn = { ...turn, configDir: turn.configDir ?? mounted };
     mkdirSync(workDirOf(remoteTurn), { recursive: true });
-    const box = boxSpecFor({ request: remoteTurn, accountPath: mounted });
-    const outcome = await runRemoteTurn(placement.environmentId, { turn: remoteTurn, botId, box, hooks }, signal, emit);
+    const input = placement.host
+      ? { turn: hostTurnOf(remoteTurn), botId, box: hostBoxSpec(), hooks: hooks && onHost(hooks) }
+      : { turn: remoteTurn, botId, box: boxSpecFor({ request: remoteTurn, accountPath: mounted }), hooks };
+    const outcome = await runRemoteTurn(placement.environmentId, input, signal, emit);
     if (outcome === "ran") return;
     console.log(
       `${new Date().toISOString()} turn ${request.turnId} refused by ${placement.environmentId}, running local`,
     );
   }
+  if (placement.kind === "local" && placement.notice)
+    emit({ type: "text", part: "environment-notice", text: placement.notice });
   return runTurn(turn, dataDir, signal, emit, hooks, inbox);
 }
 

@@ -9,7 +9,7 @@ import {
 } from "@runelay-bots/protocol";
 import type { RunnerInfo } from "../types/environments.types";
 
-const runtimes: readonly BoxRuntime[] = ["runsc", "runc"];
+const runtimes: readonly BoxRuntime[] = ["runsc", "runc", "host"];
 const boxStates: readonly BoxState[] = ["running", "paused", "stopped"];
 
 export function recordOf(value: unknown): Record<string, unknown> | null {

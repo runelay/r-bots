@@ -2,9 +2,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { statSync } from "node:fs";
 import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
 import { fakeProviders } from "../../../../test/helpers";
-import { boxHello, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
-import { env } from "../../../config/env";
+import { boxHello, dropAllRunners, fakeRunner, hostHello, runnerDevice } from "../../../../test/runner-helpers";
+import { env, hostDataDir } from "../../../config/env";
+import { macOfflineMessage, vpsFallbackNotice } from "../../environments/constants/environments.constants";
 import { workDirOf } from "../../environments/services/box-spec.service";
+import { updatePreferences } from "../../settings/services/preferences.service";
 import { accountDir, accountPath, botIdOf, refreshAccounts, runOnAccount } from "../services/accounts.service";
 
 const account = { id: "vps:claude", provider: "claude" as const };
@@ -25,10 +27,12 @@ function turnRequest(turnId: string): TurnRequest {
   };
 }
 
-afterEach(() => {
+afterEach(async () => {
   dropAllRunners();
   fakeProviders.reset();
   env.BOTS_SANDBOX = "off";
+  env.BOTS_HOST_RUNNER = "off";
+  await updatePreferences({ environment: "vps" });
 });
 
 describe("runOnAccount placement", () => {
@@ -115,5 +119,64 @@ describe("runOnAccount placement", () => {
     runner.say({ type: "response", id: "r2", ok: false, error: "box.capacity" });
     await finished;
     expect(fakeProviders.turns.map(({ request, hooks: passed }) => [request.turnId, passed])).toEqual([["r2", hooks]]);
+  });
+
+  test("runs on the host runner with host paths, no mounts and host hooks", async () => {
+    const runner = fakeRunner(runnerDevice("host-1"));
+    runner.say(hostHello());
+    const seen: string[] = [];
+    const finished = runOnAccount(
+      account,
+      { ...turnRequest("h1"), code: { cwd: "/srv/repo" } },
+      new AbortController().signal,
+      () => {},
+      {
+        before: async (tool) => {
+          seen.push(tool);
+          return { allow: true };
+        },
+        after: async () => {},
+      },
+    );
+    const start = await runner.next("request");
+    expect(start).toMatchObject({
+      op: "turn.start",
+      hooks: true,
+      request: { turnId: "h1", code: { cwd: "/srv/repo" }, mcp: { url: "/mcp/bot-r/s1" } },
+      box: { memMb: env.BOX_MEM_MB, cpus: env.BOX_CPUS, mounts: [] },
+    });
+    expect(JSON.stringify(start)).not.toContain(`"/data/`);
+    expect(hostDataDir).toBeString();
+    runner.say({
+      type: "hook.request",
+      id: "hk1",
+      turnId: "h1",
+      phase: "before",
+      tool: "Bash",
+      input: { command: "ls" },
+      toolUseId: "u1",
+    });
+    expect(await runner.next("hook.response")).toMatchObject({ id: "hk1", gate: { allow: true } });
+    runner.say({ type: "turn.event", id: "h1", event: { type: "done", ok: true } });
+    runner.say({ type: "turn.end", id: "h1" });
+    await finished;
+    expect(seen).toEqual(["Bash"]);
+    expect(fakeProviders.turns).toEqual([]);
+  });
+
+  test("never falls back when the Mac is the chosen environment and it is offline", async () => {
+    await updatePreferences({ environment: "mac" });
+    const events: ProviderEvent[] = [];
+    await runOnAccount(account, turnRequest("m1"), new AbortController().signal, (e) => events.push(e), hooks);
+    expect(events).toEqual([{ type: "done", ok: false, message: macOfflineMessage }]);
+    expect(fakeProviders.turns).toEqual([]);
+  });
+
+  test("says in the chat when the VPS runner is down and the turn runs in the server", async () => {
+    env.BOTS_HOST_RUNNER = "on";
+    const events: ProviderEvent[] = [];
+    await runOnAccount(account, turnRequest("n1"), new AbortController().signal, (e) => events.push(e), hooks);
+    expect(events[0]).toEqual({ type: "text", part: "environment-notice", text: vpsFallbackNotice });
+    expect(fakeProviders.turns.map(({ request }) => request.turnId)).toEqual(["n1"]);
   });
 });

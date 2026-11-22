@@ -46,7 +46,7 @@ async function writeToken(path: string, token: string) {
 }
 
 export async function ensureLocalRunnerToken(): Promise<LocalRunnerOutcome> {
-  if (env.BOTS_SANDBOX !== "docker") return "off";
+  if (env.BOTS_SANDBOX !== "docker" && env.BOTS_HOST_RUNNER !== "on") return "off";
   const module = currentAuthModule();
   if (!module) return "no-auth";
   const owner = await module.access.findOwner();

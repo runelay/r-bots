@@ -1,16 +1,17 @@
 import { randomUUID } from "node:crypto";
-import type {
-  AccountProbe,
-  BoxSpec,
-  BoxStatus,
-  EnvironmentCapacity,
-  HookRequestFrame,
-  HookResponseFrame,
-  NativeToolGate,
-  NativeToolHooks,
-  ProviderEvent,
-  RemoteTurnStart,
-  TurnRequest,
+import {
+  type AccountProbe,
+  type BoxSpec,
+  type BoxStatus,
+  type EnvironmentCapacity,
+  type HookRequestFrame,
+  type HookResponseFrame,
+  hostCapability,
+  type NativeToolGate,
+  type NativeToolHooks,
+  type ProviderEvent,
+  type RemoteTurnStart,
+  type TurnRequest,
 } from "@runelay-bots/protocol";
 import { host, port } from "../../../config/env";
 import type { Req } from "../../../shared/http";
@@ -31,7 +32,7 @@ import {
   hookRequestOf,
   runnerOf,
 } from "../../environments/services/runner-frames.service";
-import type { RunnerEnvironment, RunnerInfo } from "../../environments/types/environments.types";
+import type { EnvironmentStates, RunnerEnvironment, RunnerInfo } from "../../environments/types/environments.types";
 
 export const runnerConnectPath = "/runner/connect";
 export const revokedCloseCode = 4001;
@@ -137,6 +138,14 @@ function isBoxRunner({ hello }: Connection) {
   return capabilitiesOf(hello.capabilities).includes(boxesCapability);
 }
 
+function hasHost({ hello }: Connection) {
+  return capabilitiesOf(hello.capabilities).includes(hostCapability);
+}
+
+function isServiceRunner(connection: Connection) {
+  return connection.runner !== null || isBoxRunner(connection);
+}
+
 function connectionFor(key?: string) {
   if (key !== undefined) {
     const found = connections.get(key);
@@ -144,7 +153,7 @@ function connectionFor(key?: string) {
   }
   let best: Connection | null = null;
   for (const connection of connections.values()) {
-    if (!isOpen(connection) || !connection.owner || isBoxRunner(connection)) continue;
+    if (!isOpen(connection) || !connection.owner || isServiceRunner(connection)) continue;
     if (!best || connection.rank < best.rank) best = connection;
   }
   return best;
@@ -220,7 +229,7 @@ export function onRunnerEnvironmentsChange(listener: () => void) {
 
 export function runnerEnvironments(): RunnerEnvironment[] {
   return [...connections.values()]
-    .filter((connection) => isOpen(connection) && connection.owner && isBoxRunner(connection))
+    .filter((connection) => isOpen(connection) && connection.owner && isServiceRunner(connection))
     .map(({ key, name, hello, runner, capacity, boxes }) => ({
       key,
       name,
@@ -229,6 +238,18 @@ export function runnerEnvironments(): RunnerEnvironment[] {
       capacity,
       boxes,
     }));
+}
+
+export function environmentStates(): EnvironmentStates {
+  const vps =
+    [...connections.values()].find(
+      (connection) => isOpen(connection) && connection.owner && connection.runner !== null && hasHost(connection),
+    ) ?? null;
+  const mac = connectionFor();
+  return {
+    vps: { key: vps?.key ?? null, online: vps !== null, canRun: vps !== null },
+    mac: { key: mac?.key ?? null, online: mac !== null, canRun: mac !== null && hasHost(mac) },
+  };
 }
 
 export function useMcpForwarder(forwarder: McpForwarder | null) {
@@ -718,7 +739,7 @@ export function runRemoteTurn(
   emit: (event: ProviderEvent) => void,
 ) {
   const found = connectionFor(environmentId);
-  const target = found && isBoxRunner(found) ? found : null;
+  const target = found && (isServiceRunner(found) || hasHost(found)) ? found : null;
   return streamTurn({
     target,
     turnId: turn.turnId,

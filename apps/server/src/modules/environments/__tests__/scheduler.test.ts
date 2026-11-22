@@ -3,9 +3,26 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PlacementInput, TurnRequest } from "@runelay-bots/protocol";
-import { boxHello, capacity, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
+import {
+  boxHello,
+  capacity,
+  dropAllRunners,
+  fakeRunner,
+  hostHello,
+  runnerDevice,
+} from "../../../../test/runner-helpers";
 import { clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
-import { boxSpecFor, hostPathOf, toolCredentialMounts, workDirOf } from "../services/box-spec.service";
+import { updatePreferences } from "../../settings/services/preferences.service";
+import { macNoTurnsMessage, macOfflineMessage, vpsFallbackNotice } from "../constants/environments.constants";
+import {
+  boxSpecFor,
+  hostBoxSpec,
+  hostPathOf,
+  hostTurnOf,
+  toolCredentialMounts,
+  workDirOf,
+} from "../services/box-spec.service";
+import { onHost, runningOnHost } from "../services/host-turns.service";
 import { containsPath, decidePlacement } from "../services/placement.service";
 import { place } from "../services/scheduler.service";
 import type { RunnerEnvironment } from "../types/environments.types";
@@ -42,6 +59,7 @@ const docker = { sandbox: "docker" as const, codeCwd: null };
 afterEach(() => {
   dropAllRunners();
   env.BOTS_SANDBOX = "off";
+  env.BOTS_HOST_RUNNER = "off";
 });
 
 describe("decidePlacement", () => {
@@ -76,6 +94,32 @@ describe("decidePlacement", () => {
     expect(decidePlacement({ ...docker, environments: [] })).toEqual({ kind: "local" });
   });
 
+  test("prefers the host runner of the chosen environment over boxes and local", () => {
+    const hosts = {
+      vps: { key: "host-1", online: true, canRun: true },
+      mac: { key: null, online: false, canRun: false },
+    };
+    const environments = [environment("a", 9000)];
+    expect(decidePlacement({ ...docker, environments, hosts })).toEqual({
+      kind: "remote",
+      environmentId: "host-1",
+      host: true,
+    });
+    expect(decidePlacement({ ...docker, environments, hosts, environment: "mac" })).toEqual({
+      kind: "offline",
+      message: macOfflineMessage,
+    });
+    expect(decidePlacement({ ...docker, environments, environment: "mac" })).toEqual({
+      kind: "offline",
+      message: macOfflineMessage,
+    });
+    const offline = { ...hosts, vps: { key: null, online: false, canRun: false } };
+    expect(decidePlacement({ ...docker, environments, hosts: offline })).toEqual({
+      kind: "remote",
+      environmentId: "a",
+    });
+  });
+
   test("matches paths by whole segment", () => {
     expect(containsPath("/srv", "/srv")).toBe(true);
     expect(containsPath("/srv/", "/srv/a")).toBe(true);
@@ -84,17 +128,34 @@ describe("decidePlacement", () => {
 });
 
 describe("place", () => {
-  test("keeps everything local by default", () => {
+  test("keeps everything local by default", async () => {
     const box = fakeRunner(runnerDevice("box-1"));
     box.say(boxHello());
     expect(env.BOTS_SANDBOX).toBe("off");
-    expect(place(input)).toEqual({ kind: "local" });
+    expect(await place(input)).toEqual({ kind: "local" });
   });
 
-  test("sends turns to the owner box runner with docker and warns when there is none", () => {
+  test("runs on the host runner of the chosen environment and never falls back from the Mac", async () => {
+    await updatePreferences({ environment: "vps" });
+    env.BOTS_HOST_RUNNER = "on";
+    expect(await place(input)).toEqual({ kind: "local", notice: vpsFallbackNotice });
+    const host = fakeRunner(runnerDevice("host-1"));
+    host.say(hostHello());
+    expect(await place(input)).toEqual({ kind: "remote", environmentId: "host-1", host: true });
+    await updatePreferences({ environment: "mac" });
+    expect(await place(input)).toEqual({ kind: "offline", message: macOfflineMessage });
+    const mac = fakeRunner(runnerDevice("mac-1", 5));
+    mac.say({ type: "hello", version: "9", capabilities: ["computer"] });
+    expect(await place(input)).toEqual({ kind: "offline", message: macNoTurnsMessage });
+    mac.say({ type: "hello", version: "10", capabilities: ["computer", "host"] });
+    expect(await place(input)).toEqual({ kind: "remote", environmentId: "mac-1", host: true });
+    await updatePreferences({ environment: "vps" });
+  });
+
+  test("sends turns to the owner box runner with docker and warns when there is none", async () => {
     env.BOTS_SANDBOX = "docker";
     const warn = spyOn(console, "warn").mockImplementation(() => {});
-    expect(place(input)).toEqual({ kind: "local" });
+    expect(await place(input)).toEqual({ kind: "local" });
     expect(warn.mock.calls[0]?.[0]).toContain("sandbox: no box runner for bot b1, running local");
     const small = fakeRunner(runnerDevice("box-1"));
     small.say(boxHello({ memFreeMb: 5000 }));
@@ -102,10 +163,53 @@ describe("place", () => {
     bigger.say(boxHello({ memFreeMb: 50_000, workspaceRoots: ["/other"] }));
     const member = fakeRunner(runnerDevice("box-3", 3, { owner: false, userId: "u2" }));
     member.say(boxHello({ memFreeMb: 90_000 }));
-    expect(place(input)).toEqual({ kind: "remote", environmentId: "box-2" });
-    expect(place({ ...input, codeCwd: "/srv/repo" })).toEqual({ kind: "remote", environmentId: "box-1" });
+    expect(await place(input)).toEqual({ kind: "remote", environmentId: "box-2" });
+    expect(await place({ ...input, codeCwd: "/srv/repo" })).toEqual({ kind: "remote", environmentId: "box-1" });
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
+  });
+});
+
+describe("host turns", () => {
+  test("rewrites the server paths of a turn to the host ones", () => {
+    const base = {
+      turnId: "t1",
+      provider: "claude",
+      workKey: "b1/s1",
+      systemPrompt: `Anexo em ${dataDir}/bots/b1/uploads/a.png e https://x.com${dataDir}/y`,
+      prompt: `veja "${dataDir}/bots/b1/uploads/a.png"`,
+    } as unknown as TurnRequest;
+    const turn = hostTurnOf({
+      ...base,
+      images: [{ path: join(dataDir, "bots", "b1", "uploads", "a.png"), mime: "image/png", label: "a" }],
+      code: { cwd: join(dataDir, "workspaces", "b1"), readOnly: true },
+      configDir: "/home/app/.claude",
+    });
+    expect(turn.images?.[0]?.path).toBe(join(hostDataDir, "bots", "b1", "uploads", "a.png"));
+    expect(turn.code).toEqual({ cwd: join(hostDataDir, "workspaces", "b1"), readOnly: true });
+    expect(turn.configDir).toBe(`${hostHome}/.claude`);
+    expect(turn.systemPrompt).toBe(`Anexo em ${hostDataDir}/bots/b1/uploads/a.png e https://x.com${dataDir}/y`);
+    expect(turn.prompt).toBe(`veja "${hostDataDir}/bots/b1/uploads/a.png"`);
+    const bare = hostTurnOf(base);
+    expect([bare.images, bare.code, bare.configDir]).toEqual([undefined, undefined, undefined]);
+    expect(hostBoxSpec()).toEqual({ memMb: env.BOX_MEM_MB, cpus: env.BOX_CPUS, mounts: [] });
+  });
+
+  test("marks the hooks of a host turn", async () => {
+    const seen: boolean[] = [];
+    const hooks = onHost({
+      before: async () => {
+        seen.push(runningOnHost());
+        return { allow: true };
+      },
+      after: async () => {
+        seen.push(runningOnHost());
+      },
+    });
+    expect(await hooks.before("Bash", {}, "u1")).toEqual({ allow: true });
+    await hooks.after("Bash", {}, null, "u1", false);
+    expect(seen).toEqual([true, true]);
+    expect(runningOnHost()).toBe(false);
   });
 });
 

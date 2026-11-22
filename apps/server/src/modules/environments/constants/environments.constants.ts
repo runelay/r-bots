@@ -1,6 +1,9 @@
 export const localEnvironmentId = "local";
 export const localCapabilities = ["turns"];
 export const boxesCapability = "boxes";
+export const macOfflineMessage = "O Mac está desconectado. Abra o app no Mac ou troque para VPS em Onde roda.";
+export const macNoTurnsMessage = "O Mac ainda não roda turnos. Troque para VPS em Onde roda.";
+export const vpsFallbackNotice = "O runner da VPS está desconectado; este turno roda no container do servidor.";
 export const capacityRefusal = "box.capacity";
 export const boxHome = "/home/app";
 export const boxToolHome = "/home/runelaytool";

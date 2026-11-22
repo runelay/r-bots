@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, jest, test } from "bun:test";
 import type { BoxSpec, BoxStatus, NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
-import { boxHello, capacity, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
 import {
+  boxHello,
+  capacity,
+  dropAllRunners,
+  fakeRunner,
+  hostHello,
+  runnerDevice,
+} from "../../../../test/runner-helpers";
+import {
+  environmentStates,
   macRunnerConnected,
   macRunnerInfo,
   type RemoteTurnInput,
@@ -44,6 +52,27 @@ describe("box runners in the hub", () => {
     const mac = fakeRunner(runnerDevice("mac-1", 5));
     mac.say({ type: "hello", version: "9", capabilities: ["computer"] });
     expect(macRunnerInfo()).toMatchObject({ connected: true, version: "9" });
+  });
+
+  test("host runners stay out of the Mac operations and define the VPS environment", async () => {
+    const host = fakeRunner(runnerDevice("host-1"));
+    host.say(hostHello());
+    expect(macRunnerConnected()).toBe(false);
+    expect(runnerEnvironments().map(({ key }) => key)).toEqual(["host-1"]);
+    expect(environmentStates()).toEqual({
+      vps: { key: "host-1", online: true, canRun: true },
+      mac: { key: null, online: false, canRun: false },
+    });
+    const mac = fakeRunner(runnerDevice("mac-1", 5));
+    mac.say({ type: "hello", version: "9", capabilities: ["computer", "host"] });
+    expect(environmentStates().mac).toEqual({ key: "mac-1", online: true, canRun: true });
+    const events: ProviderEvent[] = [];
+    const finished = runRemoteTurn("mac-1", remote("m1"), new AbortController().signal, (e) => events.push(e));
+    expect(await mac.next("request")).toMatchObject({ op: "turn.start", turnId: "m1" });
+    mac.say({ type: "turn.event", id: "m1", event: { type: "done", ok: true } });
+    mac.say({ type: "turn.end", id: "m1" });
+    expect(await finished).toBe("ran");
+    expect(events).toEqual([{ type: "done", ok: true }]);
   });
 
   test("track capacity and boxes, keeping the last good value", () => {

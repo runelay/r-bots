@@ -37,6 +37,7 @@ beforeAll(async () => {
 afterEach(() => {
   useAuthModule(null);
   env.BOTS_SANDBOX = "off";
+  env.BOTS_HOST_RUNNER = "off";
 });
 
 afterAll(() => {
@@ -50,6 +51,9 @@ describe("local runner token", () => {
     env.BOTS_SANDBOX = "docker";
     expect(await ensureLocalRunnerToken()).toBe("no-auth");
     expect(await startLocalRunnerToken(1).settled).toBe("no-auth");
+    env.BOTS_SANDBOX = "off";
+    env.BOTS_HOST_RUNNER = "on";
+    expect(await ensureLocalRunnerToken()).toBe("no-auth");
   });
 
   test("waits for the owner, then writes a device key the redaction knows", async () => {

@@ -42,6 +42,22 @@ export function boxHello({
   };
 }
 
+export function hostHello({ memFreeMb = 8192, name = "vps" }: { memFreeMb?: number; name?: string } = {}) {
+  return {
+    type: "hello",
+    capabilities: ["turns", "host", "mcp-proxy", "hooks"],
+    runner: {
+      version: "1.0.0",
+      name,
+      kvm: false,
+      runtime: "host",
+      providers: ["claude"],
+      workspaceRoots: [],
+      capacity: capacity(memFreeMb),
+    },
+  };
+}
+
 export function fakeRunner(data: Record<string, unknown> = runnerDevice("box-1")) {
   const sent: RunnerFrame[] = [];
   const ws = {
@@ -67,13 +83,13 @@ export function fakeRunner(data: Record<string, unknown> = runnerDevice("box-1")
       runnerSocket.close(as, 1000, "");
     },
     async next(type: string) {
-      for (let tick = 0; tick < 20; tick++) {
+      for (let tick = 0; tick < 400; tick++) {
         const found = sent.find((frame) => frame.type === type);
         if (found) {
           sent.splice(sent.indexOf(found), 1);
           return found;
         }
-        await new Promise((resolve) => setImmediate(resolve));
+        await new Promise((resolve) => (tick < 20 ? setImmediate(resolve) : setTimeout(resolve, 5)));
       }
       throw new Error(`runner never received ${type}`);
     },
