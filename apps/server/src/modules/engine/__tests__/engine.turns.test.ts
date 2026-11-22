@@ -38,6 +38,8 @@ import {
   botStatus,
   botStatuses,
   conversationStatus,
+  finalReplyFallback,
+  finalReplyLead,
   isRunning,
   onStatus,
   reposGuide,
@@ -151,6 +153,43 @@ describe("a chat turn", () => {
     expect((await factsOfType(session, "model.started")).length).toBeGreaterThanOrEqual(3);
     expect(warn).toHaveBeenCalledWith("provider warning vps:claude: devagar");
     expect(await factsOfType(session, "usage.recorded")).toHaveLength(0);
+  });
+
+  test("asks for the final message when the turn ends on a tool call", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    fakeProviders.next(({ request, emit }) => {
+      emit({ type: "session", id: "prov-silent" });
+      if (request.prompt === finalReplyLead) {
+        emit({ type: "text", part: "z", text: "Terminei: corrigi o bug." });
+      } else {
+        emit({ type: "text", part: "a", text: "Vou corrigir." });
+        emit({ type: "tool", id: "t1", name: "Edit", phase: "start", input: { files: ["a.ts"] } });
+        emit({ type: "tool", id: "t1", name: "Edit", phase: "end", ok: true });
+      }
+      emit({ type: "done", ok: true });
+    });
+    await run(session, { text: "corrige" });
+    expect(lastRequest()).toMatchObject({ prompt: finalReplyLead, resume: "prov-silent" });
+    expect(await repliesOf(session, "narration")).toEqual(["Vou corrigir."]);
+    expect(await repliesOf(session)).toEqual(["Terminei: corrigi o bug."]);
+    expect(await settledOf(session)).toMatchObject({ outcome: "completed" });
+  });
+
+  test("falls back to a notice when the model still says nothing", async () => {
+    const bot = await makeBot();
+    const session = await newSession(bot.id);
+    let runs = 0;
+    fakeProviders.next(({ emit }) => {
+      runs++;
+      emit({ type: "session", id: "prov-mute" });
+      emit({ type: "tool", id: `t${runs}`, name: "Bash", phase: "start", input: { command: "ls" } });
+      emit({ type: "tool", id: `t${runs}`, name: "Bash", phase: "end", ok: true });
+      emit({ type: "done", ok: true });
+    });
+    await run(session, { text: "faz" });
+    expect(runs).toBe(2);
+    expect(await repliesOf(session)).toEqual([finalReplyFallback]);
   });
 
   test("attaches images the provider generated and skips paths outside generated_images", async () => {

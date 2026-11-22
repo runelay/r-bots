@@ -22,6 +22,17 @@
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
 	<string>0.1.15</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.runelay.bots.ios</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>rbots</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
@@ -34,6 +45,8 @@
 	<string>O r/bots usa o microfone para ditar mensagens, gravar áudios e falar com os bots.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>O r/bots transcreve sua fala no aparelho para escrever a mensagem.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

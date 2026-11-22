@@ -13,7 +13,7 @@ fi
 ./scripts/gen.sh
 xcodebuild -project RBots.xcodeproj -scheme RBots -configuration Debug \
   -destination "generic/platform=iOS" -derivedDataPath build/DerivedData \
-  -allowProvisioningUpdates DEVELOPMENT_TEAM="$RBOTS_TEAM" PRODUCT_BUNDLE_IDENTIFIER="$bundle" build -quiet
+  -allowProvisioningUpdates DEVELOPMENT_TEAM="$RBOTS_TEAM" RBOTS_BUNDLE_ID="$bundle" build -quiet
 
 app="build/DerivedData/Build/Products/Debug-iphoneos/RBots.app"
 xcrun devicectl device install app --device "$device" "$app"
