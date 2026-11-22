@@ -78,6 +78,7 @@ export function runnerOf(value: unknown): RunnerInfo | null {
     providers: installed.filter(isProvider),
     workspaceRoots: workspaceRoots.filter(isText),
     capacity,
+    ...(raw.environment === "mac" ? { environment: "mac" as const } : {}),
   };
 }
 

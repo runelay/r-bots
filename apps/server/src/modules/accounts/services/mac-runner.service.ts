@@ -4,6 +4,7 @@ import {
   type BoxSpec,
   type BoxStatus,
   type EnvironmentCapacity,
+  type EnvironmentId,
   type HookRequestFrame,
   type HookResponseFrame,
   hostCapability,
@@ -11,7 +12,9 @@ import {
   type NativeToolHooks,
   type ProviderEvent,
   type RemoteTurnStart,
+  type SyncResult,
   type TurnRequest,
+  type WorkspaceSync,
 } from "@runelay-bots/protocol";
 import { host, port } from "../../../config/env";
 import type { Req } from "../../../shared/http";
@@ -23,6 +26,7 @@ import {
   capacityRefusal,
   failedHookMessage,
   invalidHookMessage,
+  macDroppedMessage,
   missingHooksMessage,
   runnerDroppedMessage,
 } from "../../environments/constants/environments.constants";
@@ -33,10 +37,13 @@ import {
   hookRequestOf,
   runnerOf,
 } from "../../environments/services/runner-frames.service";
-import type { RunnerEnvironment, RunnerInfo } from "../../environments/types/environments.types";
+import type { EnvironmentStates, RunnerEnvironment, RunnerInfo } from "../../environments/types/environments.types";
 
 export const runnerConnectPath = "/runner/connect";
 export const revokedCloseCode = 4001;
+export const runnerRoleHeader = "x-rbots-role";
+export const runnerRole = "runner";
+export const runnerKeySuffix = ":runner";
 
 type Pending = {
   key: string;
@@ -51,6 +58,7 @@ type TurnStream = {
   finish: () => void;
   hooks?: NativeToolHooks;
   refuse?: () => void;
+  end?: (message: Record<string, unknown>) => void;
   started: boolean;
 };
 
@@ -61,11 +69,14 @@ export type RemoteTurnInput = {
   botId: string;
   box: BoxSpec;
   hooks?: NativeToolHooks;
+  sync?: WorkspaceSync;
+  onSync?: (result: SyncResult | null, error: string | null) => void;
 };
 
 export type RunnerSocketData = SocketData & {
   kind: "runner";
   deviceKey: string;
+  deviceId?: string;
   rank: number;
   deviceName: string | null;
   userId: string | null;
@@ -74,6 +85,7 @@ export type RunnerSocketData = SocketData & {
 
 type Connection = {
   key: string;
+  deviceId: string;
   socket: Socket;
   hello: Record<string, unknown>;
   connectedAt: string;
@@ -121,9 +133,11 @@ export function runnerUpgradeData(req: Req): RunnerSocketData | null {
   if (!principal?.device) return null;
   const registered = Date.parse(principal.device.registeredAt);
   if (principal.apiKeyId) void refreshDeviceKey(principal.apiKeyId);
+  const service = req.raw.headers.get(runnerRoleHeader) === runnerRole;
   return {
     kind: "runner",
-    deviceKey: principal.device.id,
+    deviceKey: service ? `${principal.device.id}${runnerKeySuffix}` : principal.device.id,
+    deviceId: principal.device.id,
     rank: Number.isFinite(registered) ? registered : 0,
     deviceName: principal.device.name || null,
     userId: principal.userId,
@@ -198,13 +212,14 @@ export function macDeviceLastSeen(key: string) {
 }
 
 export function disconnectMacDevice(key: string, code = revokedCloseCode, reason = "revoked") {
-  const connection = connections.get(key);
-  if (!connection) return false;
-  try {
-    connection.socket.close(code, reason);
-  } catch {}
-  dropConnection(connection.socket);
-  return true;
+  const found = [...connections.values()].filter((connection) => connection.key === key || connection.deviceId === key);
+  for (const connection of found) {
+    try {
+      connection.socket.close(code, reason);
+    } catch {}
+    dropConnection(connection.socket);
+  }
+  return found.length > 0;
 }
 
 export function disconnectMacUser(userId: string) {
@@ -241,11 +256,25 @@ export function runnerEnvironments(): RunnerEnvironment[] {
     }));
 }
 
-export function hostRunnerKey() {
+function hostRunnerOf(environment: EnvironmentId) {
   for (const connection of connections.values())
-    if (isOpen(connection) && connection.owner && connection.runner !== null && hasHost(connection))
-      return connection.key;
+    if (
+      isOpen(connection) &&
+      connection.owner &&
+      connection.runner !== null &&
+      hasHost(connection) &&
+      (connection.runner.environment ?? "vps") === environment
+    )
+      return connection;
   return null;
+}
+
+export function environmentStates(): EnvironmentStates {
+  const state = (environment: EnvironmentId) => {
+    const found = hostRunnerOf(environment);
+    return { key: found?.key ?? null, online: found !== null, canRun: found !== null };
+  };
+  return { vps: state("vps"), mac: state("mac") };
 }
 
 export function useMcpForwarder(forwarder: McpForwarder | null) {
@@ -282,6 +311,7 @@ function dataOf(ws: Socket): RunnerSocketData | null {
   return {
     kind: "runner",
     deviceKey: data.deviceKey,
+    deviceId: typeof data.deviceId === "string" && data.deviceId ? data.deviceId : data.deviceKey,
     rank: typeof data.rank === "number" ? data.rank : Number.MAX_SAFE_INTEGER,
     deviceName: typeof data.deviceName === "string" ? data.deviceName : null,
     userId: typeof data.userId === "string" ? data.userId : null,
@@ -300,7 +330,12 @@ function dropConnection(socket: Socket) {
   clearInterval(connection.beat.timer);
   connections.delete(connection.key);
   lastSeen.set(connection.key, new Date().toISOString());
-  const dropMessage = isServiceRunner(connection) ? runnerDroppedMessage : "O app r/bots fechou no meio do turno.";
+  const dropMessage =
+    connection.runner?.environment === "mac"
+      ? macDroppedMessage
+      : isServiceRunner(connection)
+        ? runnerDroppedMessage
+        : "O app r/bots fechou no meio do turno.";
   for (const [id, entry] of pending) {
     if (entry.key !== connection.key) continue;
     clearTimeout(entry.timer);
@@ -459,6 +494,7 @@ function onMessage(connection: Connection, raw: string) {
     const stream = turns.get(id);
     if (stream?.key !== connection.key) return;
     turns.delete(id);
+    stream.end?.(message);
     stream.finish();
     return;
   }
@@ -506,6 +542,7 @@ export const runnerSocket: SocketHandler = {
     };
     connections.set(data.deviceKey, {
       key: data.deviceKey,
+      deviceId: data.deviceId ?? data.deviceKey,
       socket: ws,
       hello: {},
       connectedAt: new Date().toISOString(),
@@ -577,6 +614,24 @@ export async function macDeviceCall(
   const response = await request(op, { body }, timeoutMs, signal);
   if (response.ok === false) throw new Error(String(response.error ?? "O Mac não conseguiu."));
   return (response.result ?? {}) as Record<string, unknown>;
+}
+
+export async function runnerSync(key: string, turnId: string): Promise<SyncResult> {
+  const response = await request("workspace.sync", { turnId }, 180_000, undefined, key);
+  const result = syncResultOf(response.result);
+  if (response.ok === false || !result) throw new Error(String(response.error ?? "O Mac não enviou o código."));
+  return result;
+}
+
+export function syncResultOf(value: unknown): SyncResult | null {
+  if (!value || typeof value !== "object") return null;
+  const { ref, commit } = value as Record<string, unknown>;
+  return typeof ref === "string" && ref && typeof commit === "string" && commit ? { ref, commit } : null;
+}
+
+function endSync(onSync: NonNullable<RemoteTurnInput["onSync"]>) {
+  return (message: Record<string, unknown>) =>
+    onSync(syncResultOf(message.sync), typeof message.syncError === "string" ? message.syncError : null);
 }
 
 export async function macAccounts(key?: string) {
@@ -661,9 +716,10 @@ type StreamOptions = {
   start: (target: Connection) => object;
   missing: string | null;
   hooks?: NativeToolHooks;
+  end?: (message: Record<string, unknown>) => void;
 };
 
-function streamTurn({ target, turnId, signal, emit, start, missing, hooks }: StreamOptions) {
+function streamTurn({ target, turnId, signal, emit, start, missing, hooks, end }: StreamOptions) {
   return new Promise<RemoteTurnOutcome>((resolve) => {
     let done = false;
     const onAbort = () => {
@@ -706,6 +762,7 @@ function streamTurn({ target, turnId, signal, emit, start, missing, hooks }: Str
       finish,
       started: false,
       ...(hooks ? { hooks } : {}),
+      ...(end ? { end } : {}),
       ...(missing === null ? { refuse: () => settle("refused") } : {}),
     };
     turns.set(turnId, stream);
@@ -731,7 +788,7 @@ export async function runMacTurn(
 
 export function runRemoteTurn(
   environmentId: string,
-  { turn, botId, box, hooks }: RemoteTurnInput,
+  { turn, botId, box, hooks, sync, onSync }: RemoteTurnInput,
   signal: AbortSignal,
   emit: (event: ProviderEvent) => void,
 ) {
@@ -744,6 +801,7 @@ export function runRemoteTurn(
     emit,
     missing: null,
     hooks,
+    ...(onSync ? { end: endSync(onSync) } : {}),
     start: ({ key }): RemoteTurnStart => ({
       type: "request",
       id: turn.turnId,
@@ -753,6 +811,7 @@ export function runRemoteTurn(
       request: throughProxy(turn, key),
       box,
       hooks: hooks !== undefined,
+      ...(sync ? { sync } : {}),
     }),
   });
 }

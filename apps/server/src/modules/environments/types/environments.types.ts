@@ -1,4 +1,4 @@
-import type { BoxStatus, EnvironmentCapacity, EnvironmentHello } from "@runelay-bots/protocol";
+import type { BoxStatus, EnvironmentCapacity, EnvironmentHello, EnvironmentId } from "@runelay-bots/protocol";
 import type { Env } from "../../../config/env";
 
 export type RunnerInfo = NonNullable<EnvironmentHello["runner"]>;
@@ -12,11 +12,20 @@ export interface RunnerEnvironment {
   boxes: BoxStatus[];
 }
 
+export interface EnvironmentState {
+  key: string | null;
+  online: boolean;
+  canRun: boolean;
+}
+
+export type EnvironmentStates = Record<EnvironmentId, EnvironmentState>;
+
 export interface PlacementContext {
   sandbox: Env["BOTS_SANDBOX"];
   codeCwd: string | null;
   environments: RunnerEnvironment[];
-  hostKey?: string | null;
+  environment?: EnvironmentId;
+  hosts?: EnvironmentStates;
 }
 
 export type LocalRunnerOutcome = "off" | "no-auth" | "waiting" | "kept" | "written" | "failed" | "stopped";

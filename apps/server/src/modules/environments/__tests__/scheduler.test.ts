@@ -12,7 +12,8 @@ import {
   runnerDevice,
 } from "../../../../test/runner-helpers";
 import { clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
-import { hostFallbackNotice } from "../constants/environments.constants";
+import { updatePreferences } from "../../settings/services/preferences.service";
+import { hostFallbackNotice, macOfflineMessage } from "../constants/environments.constants";
 import {
   boxSpecFor,
   hostBoxSpec,
@@ -21,7 +22,7 @@ import {
   toolCredentialMounts,
   workDirOf,
 } from "../services/box-spec.service";
-import { onHost, runningOnHost } from "../services/host-turns.service";
+import { onHost, runningOnHost, runningOnMac } from "../services/host-turns.service";
 import { containsPath, decidePlacement } from "../services/placement.service";
 import { place } from "../services/scheduler.service";
 import type { RunnerEnvironment } from "../types/environments.types";
@@ -93,16 +94,33 @@ describe("decidePlacement", () => {
     expect(decidePlacement({ ...docker, environments: [] })).toEqual({ kind: "local" });
   });
 
-  test("prefers the server's host runner over boxes and local", () => {
+  test("prefers the host runner of the chosen environment and never falls back from the Mac", () => {
+    const off = { key: null, online: false, canRun: false };
+    const hosts = { vps: { key: "host-1", online: true, canRun: true }, mac: off };
     const environments = [environment("a", 9000)];
-    expect(decidePlacement({ ...docker, environments, hostKey: "host-1" })).toEqual({
+    expect(decidePlacement({ ...docker, environments, hosts })).toEqual({
       kind: "remote",
       environmentId: "host-1",
       host: true,
     });
-    expect(decidePlacement({ ...docker, environments, hostKey: null })).toEqual({
+    expect(decidePlacement({ ...docker, environments, hosts: { vps: off, mac: off } })).toEqual({
       kind: "remote",
       environmentId: "a",
+    });
+    expect(decidePlacement({ ...docker, environments, hosts, environment: "mac" })).toEqual({
+      kind: "offline",
+      message: macOfflineMessage,
+    });
+    expect(decidePlacement({ ...docker, environments, environment: "mac" })).toEqual({
+      kind: "offline",
+      message: macOfflineMessage,
+    });
+    const mac = { key: "mac-1:runner", online: true, canRun: true };
+    expect(decidePlacement({ ...docker, environments, hosts: { ...hosts, mac }, environment: "mac" })).toEqual({
+      kind: "remote",
+      environmentId: "mac-1:runner",
+      host: true,
+      environment: "mac",
     });
   });
 
@@ -130,6 +148,16 @@ describe("place", () => {
     const host = fakeRunner(runnerDevice("host-1"));
     host.say(hostHello());
     expect(place(input)).toEqual({ kind: "remote", environmentId: "host-1", host: true });
+  });
+
+  test("runs on the Mac runner when the owner picked Este Mac", async () => {
+    await updatePreferences({ environment: "mac" });
+    expect(place(input)).toEqual({ kind: "offline", message: macOfflineMessage });
+    const runner = fakeRunner(runnerDevice("mac-1:runner", 5, { deviceId: "mac-1" }));
+    runner.say(hostHello({ environment: "mac" }));
+    expect(place(input)).toEqual({ kind: "remote", environmentId: "mac-1:runner", host: true, environment: "mac" });
+    await updatePreferences({ environment: "vps" });
+    expect(place(input)).toEqual({ kind: "local" });
   });
 
   test("sends turns to the owner box runner with docker and warns when there is none", () => {
@@ -190,6 +218,22 @@ describe("host turns", () => {
     await hooks.after("Bash", {}, null, "u1", false);
     expect(seen).toEqual([true, true]);
     expect(runningOnHost()).toBe(false);
+    const flags: boolean[] = [];
+    const mac = onHost(
+      {
+        before: async () => {
+          flags.push(runningOnMac());
+          return { allow: true };
+        },
+        after: async () => {},
+      },
+      "mac",
+    );
+    await mac.before("Bash", {}, "u2");
+    await hooks.before("Bash", {}, "u3");
+    expect(flags).toEqual([true]);
+    expect(seen.at(-1)).toBe(true);
+    expect(runningOnMac()).toBe(false);
   });
 });
 

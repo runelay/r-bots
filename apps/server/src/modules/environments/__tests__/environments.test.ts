@@ -3,9 +3,17 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { cpus, tmpdir } from "node:os";
 import { join } from "node:path";
 import { startTestServer, type TestServer } from "../../../../test/helpers";
-import { boxHello, capacity, dropAllRunners, fakeRunner, runnerDevice } from "../../../../test/runner-helpers";
+import {
+  boxHello,
+  capacity,
+  dropAllRunners,
+  fakeRunner,
+  hostHello,
+  runnerDevice,
+} from "../../../../test/runner-helpers";
 import type { AuthModule } from "../../auth";
 import { useAuthModule } from "../../auth/gate";
+import { updatePreferences } from "../../settings/services/preferences.service";
 import { listEnvironments, onEnvironmentsChange } from "../services/environments.service";
 import { meminfoMb, readLocalCapacity } from "../services/local-capacity.service";
 
@@ -105,11 +113,38 @@ describe("GET /environments", () => {
     return { status: response.status, body: (await response.json()) as Record<string, unknown> };
   }
 
-  test("answers anyone while auth is off", async () => {
-    const { status, body } = await call();
-    expect(status).toBe(200);
-    expect(body.ok).toBe(true);
-    expect((body.environments as Array<{ id: string }>).map(({ id }) => id)).toEqual(["local"]);
+  test("lists the VPS and this Mac with the owner's choice", async () => {
+    await updatePreferences({ environment: "vps" });
+    const empty = await call();
+    expect(empty.status).toBe(200);
+    expect(empty.body).toEqual({
+      selected: "vps",
+      environments: [
+        { id: "vps", label: "VPS", online: true, canRun: true },
+        { id: "mac", label: "Este Mac", online: false, canRun: false },
+      ],
+    });
+    const app = fakeRunner(runnerDevice("mac-1", 5));
+    app.say({ type: "hello", version: "9", capabilities: ["computer"] });
+    const runner = fakeRunner(runnerDevice("mac-1:runner", 5, { deviceId: "mac-1" }));
+    runner.say(hostHello({ name: "Mac", environment: "mac" }));
+    await updatePreferences({ environment: "mac" });
+    expect((await call()).body).toEqual({
+      selected: "mac",
+      environments: [
+        { id: "vps", label: "VPS", online: true, canRun: true },
+        { id: "mac", label: "Este Mac", online: true, canRun: true },
+      ],
+    });
+    runner.drop();
+    expect(((await call()).body.environments as unknown[])[1]).toEqual({
+      id: "mac",
+      label: "Este Mac",
+      online: false,
+      canRun: false,
+    });
+    app.drop();
+    await updatePreferences({ environment: "vps" });
   });
 
   test("serves only the owner once auth is on", async () => {
