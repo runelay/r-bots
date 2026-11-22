@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Server
+
+- A bot that delegates a task now sends it to the main conversation of the other bot instead of opening a new conversation for every request. The task still runs with the permission of the conversation that asked.
+- Bots can write in a group with the new `group_send` tool, so one instruction reaches every bot in the group at once. The group picks who answers (or the bot named with @), never the bot that wrote, and a message from a bot never grants commit, push or PR.
+
 ## v0.1.22
 
 ### Mac
