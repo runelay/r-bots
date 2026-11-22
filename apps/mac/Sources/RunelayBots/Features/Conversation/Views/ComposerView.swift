@@ -159,16 +159,22 @@ struct ComposerView: View {
         }
         .springAnimation(value: voice.showsNotice(for: store))
         .overlay(alignment: .topLeading) {
-            if !suggestions.isEmpty {
-                MentionList(members: suggestions) { member in
+            if showsEveryone || !suggestions.isEmpty {
+                MentionList(
+                    members: suggestions,
+                    everyone: showsEveryone ? mentionables : [],
+                    selectEveryone: insertEveryone
+                ) { member in
                     insertMention(member)
                 }
-                .alignmentGuide(.top) { dimensions in dimensions[.bottom] + Spacing.s }
                 .padding(.leading, Spacing.xl)
+                .padding(.bottom, Spacing.s)
+                .frame(height: 0, alignment: .bottomLeading)
                 .transition(.opacity.combined(with: .offset(y: 6)))
             }
         }
         .springAnimation(value: suggestions.map(\.id))
+        .springAnimation(value: showsEveryone)
         .overlay(alignment: .topLeading) {
             if slashQuery != nil {
                 SlashMenu(
@@ -252,6 +258,10 @@ struct ComposerView: View {
                 if slashItems.indices.contains(slashSelection) {
                     chooseSlash(slashItems[slashSelection])
                 }
+                return true
+            }
+            if showsEveryone {
+                insertEveryone()
                 return true
             }
             guard let first = suggestions.first else { return false }
@@ -402,12 +412,25 @@ struct ComposerView: View {
         return mentionables.filter { query.isEmpty || $0.name.lowercased().hasPrefix(query) || $0.id.hasPrefix(query) }
     }
 
+    private var showsEveryone: Bool {
+        guard mentionables.count > 1, let query = mentionQuery else { return false }
+        return query.isEmpty || tr("todos").lowercased().hasPrefix(query)
+    }
+
     private func insertMention(_ member: Bot) {
+        replaceMentionQuery(with: member.name)
+    }
+
+    private func insertEveryone() {
+        replaceMentionQuery(with: tr("todos"))
+    }
+
+    private func replaceMentionQuery(with name: String) {
         var parts = store.draft.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
         if !parts.isEmpty {
             parts.removeLast()
         }
-        parts.append("@\(member.name) ")
+        parts.append("@\(name) ")
         store.draft = parts.joined(separator: " ")
         focus()
     }
@@ -431,10 +454,38 @@ struct ComposerView: View {
 
 struct MentionList: View {
     let members: [Bot]
+    var everyone: [Bot] = []
+    var selectEveryone: () -> Void = {}
     let select: (Bot) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
+            if !everyone.isEmpty {
+                Button {
+                    selectEveryone()
+                } label: {
+                    HStack(spacing: Spacing.s) {
+                        HStack(spacing: -8) {
+                            ForEach(everyone.prefix(3)) { member in
+                                BotCharacter(bot: member, mood: .idle, size: 20)
+                            }
+                        }
+                        Text(tr("todos"))
+                            .font(TypeScale.rowTitle)
+                            .foregroundStyle(Theme.textPrimary)
+                        Text(tr("Todos do grupo respondem"))
+                            .font(TypeScale.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, Spacing.s)
+                    .frame(height: 32)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .clickable()
+            }
             ForEach(members) { member in
                 Button {
                     select(member)

@@ -882,7 +882,8 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
   }
   let turns = 0;
   let first = true;
-  while (turns < maxGroupTurns) {
+  const limit = Math.max(maxGroupTurns, queue.length + 1);
+  while (turns < limit) {
     const next = queue.shift();
     if (!next) break;
     turns++;

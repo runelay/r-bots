@@ -233,5 +233,9 @@ describe("groups service", () => {
     expect(mentionedMembers("ok, bia souza, pode ir", members)).toEqual(["bia"]);
     expect(mentionedMembers("ana: começa", members)).toEqual(["ana"]);
     expect(mentionedMembers("ninguém aqui", members)).toEqual([]);
+    expect(mentionedMembers("@todos estão trabalhando?", members)).toEqual(["ana", "bia", "caio"]);
+    expect(mentionedMembers("bom dia @All", members)).toEqual(["ana", "bia", "caio"]);
+    expect(mentionedMembers("todos estão bem?", members)).toEqual([]);
+    expect(mentionedMembers("mande para x@todos.com", members)).toEqual([]);
   });
 });

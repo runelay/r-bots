@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Server
+
+- `@todos` (also `@all` or `@everyone`) in a group calls every bot of the group, one after the other, instead of letting the router pick a single one.
+
+### Mac
+
+- The mention list of a group opens above the composer instead of being cut off at the bottom of the window, and starts with a "todos" row that calls everyone.
+
 ## v0.1.23
 
 ### Server

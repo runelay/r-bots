@@ -107,8 +107,11 @@ function normalize(value: string) {
   return value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
+const everyone = /(?:^|[^\p{L}\p{N}_])@(?:todos|all|everyone)\b/u;
+
 export function mentionedMembers(text: string, members: { id: string; name: string }[]) {
   const plain = normalize(text);
+  if (everyone.test(plain)) return members.map((member) => member.id);
   const hits: { id: string; index: number }[] = [];
   for (const member of members) {
     const names = [...new Set([member.id, normalize(member.name)])];
