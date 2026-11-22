@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.17
+
 ### Where turns run
 
 - Turns run directly on the host as the owner, like Claude Code in a terminal: the same user, home, `git`, `gh`, `supabase`, `wrangler`, Node and Docker as the machine. A new `rbots-runner.service` (systemd user unit) runs them; the Docker boxes are off by default.
