@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.19
+
 ### Install
 
 - The installer sets up the AppArmor profile for `bwrap` before it starts `rbots-runner.service`, so the runner hides the r/bots data from the first boot instead of after the next restart.
