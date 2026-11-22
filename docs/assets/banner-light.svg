@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420">
 <rect width="1280" height="420" rx="24" fill="#fcfcfc"/>
-<svg x="604" y="44" width="72" height="72" viewBox="0 0 1024 1024"><defs><linearGradient id="s" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9aa1ae"/></linearGradient></defs>
-<rect width="1024" height="1024" rx="230" fill="#0c0d0f"/><path d="M492 285A256 256 0 0 0 492 797Z" fill="url(#s)"/><path d="M532 226A256 256 0 0 1 532 738Z" fill="url(#s)"/></svg>
+<svg x="604" y="44" width="72" height="72" viewBox="0 0 1024 1024"><defs><linearGradient id="s" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#9aa1ae"/></linearGradient><linearGradient id="o" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fd923e"/><stop offset="1" stop-color="#e65909"/></linearGradient></defs>
+<rect width="1024" height="1024" rx="230" fill="#0c0d0f"/><path d="M295 732V422H385V467C410 437 450 420 495 420V504C447 504 410 520 385 562V732Z" fill="url(#s)"/><path d="M500 732H590L730 292H640Z" fill="url(#o)"/></svg>
 <text x="640" y="188" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Inter, Helvetica, Arial, sans-serif" font-size="58" font-weight="700" letter-spacing="-2" fill="#17181b">Your own team of bots.</text>
 <path d="M792 204c45-6 95-7 135-3" fill="none" stroke="#e2722a" stroke-width="4" stroke-linecap="round"/>
 <text x="640" y="248" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Inter, Helvetica, Arial, sans-serif" font-size="22" fill="#6b6d74">Claude Agent SDK on your server, a native Mac app in front, nothing open to the internet.</text>

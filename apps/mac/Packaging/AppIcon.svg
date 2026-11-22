@@ -3,7 +3,7 @@
     <linearGradient id="s" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#ffffff"/>
       <stop offset="1" stop-color="#9aa1ae"/>
-    </linearGradient>
+    </linearGradient><linearGradient id="o" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fd923e"/><stop offset="1" stop-color="#e65909"/></linearGradient>
     <linearGradient id="sheen" x1="0" y1="100" x2="0" y2="420" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.08"/>
       <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
@@ -13,7 +13,7 @@
   <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#sheen)"/>
   <rect x="101" y="101" width="822" height="822" rx="184" ry="184" fill="none" stroke="#FFFFFF" stroke-opacity="0.07" stroke-width="2"/>
   <g transform="translate(512 512) scale(0.74) translate(-512 -511.5)">
-    <path d="M492 285A256 256 0 0 0 492 797Z" fill="url(#s)"/>
-    <path d="M532 226A256 256 0 0 1 532 738Z" fill="url(#s)"/>
+    <path d="M295 732V422H385V467C410 437 450 420 495 420V504C447 504 410 520 385 562V732Z" fill="url(#s)"/>
+    <path d="M500 732H590L730 292H640Z" fill="url(#o)"/>
   </g>
 </svg>

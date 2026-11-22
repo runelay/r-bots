@@ -32,6 +32,8 @@ enum Theme {
     static let appIcon = Color.brand(light: 0x070708, dark: 0x070708)
     static let silverFrom = Color.brand(light: 0xFCFCFC, dark: 0xFFFFFF)
     static let silverTo = Color.brand(light: 0x9FA5AE, dark: 0x989FAA)
+    static let slashFrom = Color.brand(light: 0xFD923E, dark: 0xFD923E)
+    static let slashTo = Color.brand(light: 0xE65909, dark: 0xE65909)
 
     static let stripe1 = Color.brand(light: 0x4B4D50, dark: 0xC2C4C7)
     static let stripe2 = Color.brand(light: 0xBB3F00, dark: 0xFD923E)
