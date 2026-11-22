@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Your Mac
+
+- Bots ask far less often before running a command on your Mac. Reads (ls, cat, grep, rg, sed -n, find, git status/diff/log, screencapture) run straight away, pipes and quotes included. Other commands go to Jev, run directly in Acesso total, and "allow until the end of the task" now covers them. Only risky commands always ask: sudo, rm -r/-f, git push, curl sending data, ssh, a shell inside a shell, $(…) and credential paths.
+
 ### Updates
 
 - The server checks GitHub for a new release every 10 minutes instead of every 6 hours, so Versões offers the update soon after it is published.

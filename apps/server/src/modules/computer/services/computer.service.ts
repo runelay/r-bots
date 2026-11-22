@@ -5,6 +5,7 @@ import {
   macRunnerConnected,
   watchMacComputerEvents,
 } from "../../accounts/services/mac-runner.service";
+import { parseShell, type Segment } from "../../code/services/policy.service";
 
 const macOffline = "Mac desconectado: abra o app r/bots nele.";
 export class ComputerError extends Error {
@@ -66,22 +67,155 @@ export function watchComputerEvents(onStop: (event: { type: string; botId?: stri
   });
 }
 
-const shellMetacharacters = /[;&|`$()<>\n\r*?[\]{}\\'"!#~]/;
-const shellPrograms = new Set(["npm", "pnpm", "bun", "node", "swift", "xcodebuild", "ls", "cat", "mkdir"]);
-const gitReadWrite = new Set(["status", "diff", "add", "commit"]);
+const sensitiveShellPath =
+  /(^|[\s/'"=])(\.ssh|\.aws|\.gnupg|\.netrc|\.env(\.[\w-]+)?|id_(rsa|ed25519|ecdsa)[\w.-]*|Keychains|credentials?(\.json)?|\.config\/gh)($|[\s/'"])/;
+const alwaysHumanPrograms = new Set([
+  "sudo",
+  "su",
+  "doas",
+  "eval",
+  "exec",
+  "source",
+  ".",
+  "security",
+  "launchctl",
+  "diskutil",
+  "dd",
+  "mkfs",
+  "csrutil",
+  "spctl",
+  "tccutil",
+  "networksetup",
+  "shutdown",
+  "reboot",
+  "halt",
+  "killall",
+  "chown",
+  "ssh",
+  "scp",
+  "sftp",
+  "rsync",
+]);
+const shellInterpreters = new Set(["sh", "bash", "zsh", "fish", "dash", "ksh"]);
+const readPrograms = new Set([
+  "ls",
+  "cat",
+  "head",
+  "tail",
+  "grep",
+  "egrep",
+  "fgrep",
+  "rg",
+  "find",
+  "wc",
+  "sort",
+  "uniq",
+  "cut",
+  "tr",
+  "diff",
+  "file",
+  "stat",
+  "du",
+  "df",
+  "pwd",
+  "echo",
+  "printf",
+  "which",
+  "whereis",
+  "type",
+  "date",
+  "uname",
+  "sw_vers",
+  "ps",
+  "jq",
+  "tree",
+  "mdfind",
+  "mdls",
+  "sed",
+  "git",
+  "plutil",
+  "defaults",
+  "screencapture",
+  "true",
+]);
+const gitReads = new Set(["status", "diff", "log", "show", "branch", "rev-parse", "ls-files", "blame", "remote"]);
+const findWrites = new Set(["-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprintf", "-fls"]);
+const quietTargets = new Set(["/dev/null", "&1", "&2", "1", "2"]);
 
-export function shellArgv(command: string): string[] | null {
-  if (shellMetacharacters.test(command)) return null;
-  return command
-    .trim()
-    .split(/[ \t]+/)
-    .filter(Boolean);
+function shellSegments(command: string) {
+  try {
+    return parseShell(command);
+  } catch {
+    return null;
+  }
 }
 
-function shellAllowed(argv: string[]) {
-  const [program, sub] = argv;
-  if (program === "git") return gitReadWrite.has(sub ?? "");
-  return shellPrograms.has(program);
+function programOf(words: string[]) {
+  const first = words.findIndex((word) => !/^[A-Za-z_][\w]*=/.test(word));
+  return first < 0
+    ? { program: "", args: [] as string[] }
+    : { program: words[first] ?? "", args: words.slice(first + 1) };
+}
+
+function shellSegmentReason({ words }: Segment, piped: boolean): string | null {
+  const { program, args } = programOf(words);
+  const name = program.split("/").pop() ?? program;
+  if (alwaysHumanPrograms.has(name)) return `${name} sempre passa por uma pessoa.`;
+  if (shellInterpreters.has(name) && (piped || args.includes("-c")))
+    return "Comando que roda outro shell por dentro sempre passa por uma pessoa.";
+  if (name === "rm" && args.some((arg) => /^-[a-zA-Z]*[rRf]/.test(arg) || arg === "--recursive" || arg === "--force"))
+    return "Apagar pasta ou forçar apagamento sempre passa por uma pessoa.";
+  if (name === "git" && args.includes("push")) return "git push sempre passa por uma pessoa.";
+  if (
+    (name === "curl" || name === "wget") &&
+    args.some(
+      (arg) =>
+        /^(-d|--data.*|-F|--form.*|-T|--upload-file|--post-data|--post-file|--method)/.test(arg) || /^-X/.test(arg),
+    )
+  )
+    return "Enviar dados para a internet sempre passa por uma pessoa.";
+  if (name === "osascript" && /\b(do\s+shell\s+script|send|deliver|delete|purchase|buy|pay)\b/i.test(args.join(" ")))
+    return "AppleScript que roda comando, envia, apaga ou compra sempre passa por uma pessoa.";
+  if (name === "defaults" && args[0] !== "read") return "Mudar preferência do macOS sempre passa por uma pessoa.";
+  return null;
+}
+
+function shellHumanReason(command: string): string | null {
+  if (!command.trim()) return "Comando vazio.";
+  if (sensitiveShellPath.test(command))
+    return "Comando que mexe em chave, senha ou credencial sempre passa por uma pessoa.";
+  const segments = shellSegments(command);
+  if (!segments) return "Não deu para ler o comando: sempre passa por uma pessoa.";
+  if (/\$\(|`|[<>]\(/.test(command))
+    return "Comando montado na hora ($(…), crase ou disfarce) sempre passa por uma pessoa.";
+  for (const [index, segment] of segments.entries()) {
+    if (segment.opaque || segment.obfuscated)
+      return "Comando montado na hora ($(…), crase ou disfarce) sempre passa por uma pessoa.";
+    const reason = shellSegmentReason(segment, index > 0 && segment.piped);
+    if (reason) return reason;
+  }
+  return null;
+}
+
+function readOnlySegment({ words, redirects, background }: Segment) {
+  if (background) return false;
+  if (redirects.some(({ op, target }) => !quietTargets.has(target) || op.startsWith("<"))) return false;
+  const { program, args } = programOf(words);
+  if (!readPrograms.has(program)) return false;
+  if (program === "sed") return !args.some((arg) => /^(-i|--in-place)/.test(arg) || /(^|;)\s*w\s/.test(arg));
+  if (program === "find") return !args.some((arg) => findWrites.has(arg));
+  if (program === "git") return gitReads.has(args.find((arg) => !arg.startsWith("-")) ?? "");
+  if (program === "defaults") return args[0] === "read";
+  if (program === "plutil") return args[0] === "-p" || args[0] === "-lint";
+  return true;
+}
+
+export function computerShellReadOnly(tool: string, args: Record<string, unknown>) {
+  if (tool !== "shell_run") return false;
+  const command = String(args.cmd ?? "");
+  if (shellHumanReason(command)) return false;
+  const segments = shellSegments(command);
+  return Boolean(segments?.length) && (segments ?? []).every((segment) => !segment.dynamic && readOnlySegment(segment));
 }
 
 const doShellScript = /\bdo\s+shell\s+script\b/i;
@@ -98,12 +232,7 @@ export function computerHumanReason(tool: string, args: Record<string, unknown>)
   }
   if (tool === "files_trash" && Array.isArray(args.paths) && args.paths.length > 10)
     return "Mandar mais de 10 itens para a lixeira sempre passa por uma pessoa.";
-  if (tool === "shell_run") {
-    const argv = shellArgv(String(args.cmd ?? ""));
-    if (!argv)
-      return "Comando com caractere especial de shell (; & | $ ` ( ) < > aspas ou curinga) sempre passa por uma pessoa.";
-    if (!shellAllowed(argv)) return "Comando fora da lista permitida sempre passa por uma pessoa.";
-  }
+  if (tool === "shell_run") return shellHumanReason(String(args.cmd ?? ""));
   if (
     (tool === "computer_type" || tool === "computer_key") &&
     /(?:\d[ -]?){13,19}|\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/.test(text)
