@@ -14,32 +14,27 @@ Quando uma ferramenta falha, o modelo improvisa (conector, Mac, `md5sum`) em vez
 
 ## Proposta
 
-- O turno roda **direto na máquina, como o dono**: o mesmo usuário, o mesmo home, os mesmos `git`, `gh`, `supabase`, `wrangler`, Node e Docker do host.
-- Dois ambientes: **VPS** (padrão) e **Mac** (iOS e macOS: Xcode, simulador, aparelho).
-- O ambiente é escolhido no **seletor do topo do app**, o mesmo que hoje mostra o servidor ("Principal ●"). O ponto verde passa a dizer que o ambiente escolhido está no ar.
+- **O servidor é o ambiente.** "Principal" é o servidor na VPS, e os bots dele rodam na VPS. "Pessoal" é um servidor no Mac do dono, e os bots dele rodam no Mac (Xcode, simulador, iPhone). Trocar de ambiente é trocar de servidor no menu de perfis que o app já tem. Não existe outro seletor.
+- Cada servidor roda os turnos **direto na própria máquina, como o dono**: o mesmo usuário, o mesmo home, os mesmos `git`, `gh`, `supabase`, `wrangler`, Node e Docker do host.
+- De qualquer servidor, o bot continua alcançando o Mac pelas ferramentas de aparelho que já existem (`shell_run`, computador, simulador, Maestro), como os ambientes ligados do T3.
 - A caixa sai: primeiro desligada, depois apagada.
 
 O que não muda: worktree por tarefa, `workspace_deliver`, cards da lista dura (deploy, escrita em prod, dinheiro, mensagem para fora) e o Jev.
 
 ## Design
 
-### D1. Ambientes
+### D1. Ambiente = servidor
 
-| Ambiente | Onde roda | Usuário | Para quê |
+| Servidor | Onde roda | Usuário | Para quê |
 |---|---|---|---|
-| VPS | runner de host na VPS | o dono (`$USER`) | todo o resto; padrão |
-| Mac | runner do app Mac | o dono no Mac | build iOS/macOS, simulador, iPhone |
+| Principal | VPS, runner de host | o dono | o dia a dia |
+| Pessoal | Mac, servidor nativo com runner de host | o dono no Mac | iOS/macOS, simulador, iPhone |
 
-Um ambiente é um runner conectado em `/runner/connect` que anuncia a capacidade `host` no `hello`. O `local` (turno dentro do container do servidor) fica só como reserva enquanto o runner de host não sobe, com aviso no chat (D5).
+Cada servidor tem os próprios bots e conversas. O runner de host conecta no servidor da mesma máquina em `/runner/connect` e anuncia `host`. Sem ele no ar, o turno roda no container do servidor com uma linha de aviso no chat.
 
-### D2. Seletor no topo
+### D2. Sem seletor novo
 
-O menu do perfil de servidor ("Principal") ganha uma seção **Onde roda** com os ambientes do servidor ativo, cada um com o ponto de status.
-
-- A escolha é do dono, para todos os bots, e fica no servidor (`settings.environment`), não no aparelho. Mac e iPhone mostram a mesma.
-- Vale a partir do próximo turno. O turno em andamento termina onde começou.
-- Trocar entre ambientes da mesma máquina mantém a sessão do Claude, porque a pasta da conta é a mesma. Entre VPS e Mac entra o resumo de handoff que já existe.
-- Sem escolha por bot nem por conversa nesta versão. Se fizer falta, entra depois.
+O menu de perfis do app ("Principal ●") já troca de servidor. O ponto verde continua dizendo se o servidor responde. Nada de preferência de ambiente nem de `/environments`.
 
 ### D3. Runner de host
 
@@ -47,7 +42,7 @@ O mesmo `packages/runner`, com um provider `host` no lugar do Docker:
 
 - `exec` roda o `box-agent` direto, como o usuário do processo, com o `cwd` da worktree. Nada de `docker exec`, montagem, roots ou `specKey`.
 - Na VPS, sobe como serviço `systemd --user` (`rbots-runner.service`), instalado pelo `install.sh` e pelo `rbots update`. O container `runner` sai do compose.
-- No Mac, o app já conecta como runner (`mac-runner.service.ts`). Ele passa a anunciar `host` e atender `turn.start` quando houver checkout no Mac (Etapa 3).
+- No Mac (Etapa 3), o servidor Pessoal sobe o mesmo runner como agente do launchd, sem systemd nem `bwrap`.
 - Os CLIs vêm do PATH do host (`claude`, `codex`), com reserva em `<dados>/clis`.
 
 ### D4. O que continua escondido
@@ -62,7 +57,7 @@ O resto do home fica à vista, incluindo `~/.ssh`, `~/.claude*` e `~/.codex`, co
 ### D5. Limites e avisos
 
 - **Recurso:** cada turno roda em `systemd-run --user --scope -p MemoryMax=<BOX_MEM_MB>M -p CPUQuota=<BOX_CPUS*100>%`. Os comandos pesados mantêm `nice`, `timeout` e a fila de testes (`heavy-commands.service.ts`), agora com o lock no host.
-- **Ambiente fora do ar:** o turno não cai em outro lugar em silêncio. O chat mostra "O Mac está desconectado" com um botão para rodar na VPS.
+- **Runner fora do ar:** o turno roda no container do servidor e o chat mostra uma linha avisando.
 - **Ferramenta falhou:** o prompt de sistema passa a mandar o modelo parar e dizer, em uma linha, qual ferramenta falhou e o erro, em vez de buscar outro caminho.
 
 ### D6. Riscos
@@ -74,14 +69,14 @@ O resto do home fica à vista, incluindo `~/.ssh`, `~/.claude*` e `~/.codex`, co
 
 ## Etapas
 
-1. **VPS direto como padrão.** Runner de host, seletor no topo com VPS, `bwrap` sem troca de usuário, scope do systemd e aviso de ambiente fora do ar. A caixa continua no código, desligada (`BOTS_SANDBOX=off`). Release normal.
-2. **Remover a caixa** depois de alguns dias sem precisar dela: `docker.ts`, `box-spec.service.ts`, `rbbox-init`, `rb-sandbox-exec`, o usuário `runelaytool`, `BOTS_TOOL_SANDBOX`, as roots e o serviço `runner` do compose.
-3. **Mac como ambiente.** O runner do app Mac atende turnos e o seletor mostra Mac. O checkout no Mac sai da mesma branch por git. Nada de copiar arquivo com `sed`.
+1. **Runner de host na VPS** (PR #45). A caixa continua no código, desligada.
+2. **Remover a caixa** depois do deploy da etapa 1 e de um bot abrir PR de ponta a ponta: `docker.ts`, `box-spec.service.ts`, `rbbox-init`, `rb-sandbox-exec`, o usuário `runelaytool`, `BOTS_TOOL_SANDBOX`, as roots e o serviço `runner` do compose.
+3. **Servidor Pessoal no Mac**: instalação nativa (Homebrew `postgresql@17` e `redis`, blobs em disco, servidor e runner como agentes do launchd em `127.0.0.1`), login do `claude` no Mac e o perfil "Pessoal" no app.
 
 ## Tarefas da Etapa 1
 
 ### Trilha 1 · contrato
-- [ ] 1.1 `packages/protocol`: capacidade `host` no `hello`; `settings.environment` (`vps` | `mac`).
+- [ ] 1.1 `packages/protocol`: capacidade `host` no `hello`.
 
 ### Trilha 2 · runner de host
 - [ ] 2.1 `packages/runner`: provider `host` (exec direto, sem montagens), escolhido por `RBOTS_PROVIDER=host`.
@@ -90,13 +85,9 @@ O resto do home fica à vista, incluindo `~/.ssh`, `~/.claude*` e `~/.codex`, co
 - [ ] 2.4 `install.sh` e `rbots update`: instalar e reiniciar `rbots-runner.service`; tirar o `runner` do compose.
 
 ### Trilha 3 · servidor
-- [ ] 3.1 `decidePlacement` lê `settings.environment` e só escolhe runner `host` daquele ambiente.
-- [ ] 3.2 Ambiente fora do ar vira mensagem no chat com o botão de rodar na VPS, nunca fallback mudo.
+- [ ] 3.1 `decidePlacement` escolhe o runner `host` da própria máquina.
+- [ ] 3.2 Runner fora do ar: o turno roda no container do servidor com aviso no chat, nunca em silêncio.
 - [ ] 3.3 Prompt: parar e relatar quando uma ferramenta falhar; tirar as frases sobre sandbox e caixa.
-
-### Trilha 4 · apps
-- [ ] 4.1 Mac: seção "Onde roda" no menu do perfil, ponto de status do ambiente escolhido.
-- [ ] 4.2 iPhone: o mesmo menu.
 
 ### Trilha 5 · validação
 - [ ] 5.1 Teste de fumaça no CI: um turno real no runner de host roda `git status`, `gh auth status`, um teste com a trava e um push numa branch descartável.
