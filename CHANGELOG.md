@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.10
+
 ### Releases
 
 - A release is one run of the `release` workflow with the version: it bumps every package, the `bun.lock` and the iPhone app, moves these notes under the version, commits, tags and publishes. The GitHub release notes are now this CHANGELOG section.
