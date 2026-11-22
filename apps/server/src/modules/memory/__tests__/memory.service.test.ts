@@ -13,9 +13,11 @@ import {
   cheapCall,
   cheapModel,
   hasSecret,
+  pinnedRulesBlock,
   type RecallItem,
   recall,
   recallBlock,
+  resetRulesCache,
   summarizeForReset,
   teamLogBlock,
 } from "../services/memory.service";
@@ -95,6 +97,55 @@ describe("recall", () => {
     } finally {
       call.mockRestore();
     }
+  });
+});
+
+describe("pinnedRulesBlock", () => {
+  beforeEach(() => resetRulesCache());
+
+  test("lists the pinned memories as golden rules and caches them", async () => {
+    fakeRunelay.route("GET", "/memories", {
+      data: {
+        items: [
+          { slug: "no-useeffect", name: "**No** useEffect", description: "Nunca  usar useEffect." },
+          { slug: "sem-descricao" },
+          { name: "sem slug" },
+        ],
+      },
+    });
+    const block = await pinnedRulesBlock();
+    expect(block.split("\n")[0]).toBe("## Regras de ouro da pessoa");
+    expect(block).toContain("- No useEffect: Nunca usar useEffect. (`no-useeffect`)");
+    expect(block).toContain("- sem-descricao:  (`sem-descricao`)");
+    expect(block).not.toContain("sem slug");
+    expect(fakeRunelay.apiCalls.map((call) => call.path)).toEqual(["/memories?pinned=true&limit=100"]);
+    expect(await pinnedRulesBlock()).toBe(block);
+    expect(fakeRunelay.apiCalls).toHaveLength(1);
+  });
+
+  test("is empty with no pinned memories, and keeps the last block when runelay fails", async () => {
+    fakeRunelay.route("GET", "/memories", { data: {} });
+    expect(await pinnedRulesBlock()).toBe("");
+    resetRulesCache();
+    expect(await pinnedRulesBlock()).toBe("");
+    fakeRunelay.route("GET", "/memories", { data: { items: [{ slug: "regra", name: "Regra", description: "d" }] } });
+    resetRulesCache();
+    const block = await pinnedRulesBlock();
+    jest.useFakeTimers();
+    jest.setSystemTime(Date.now() + 11 * 60_000);
+    fakeRunelay.route("GET", "/memories", { status: 500, body: { error: { message: "down" } } });
+    expect(await pinnedRulesBlock()).toBe(block);
+  });
+
+  test("is empty when runelay is off or the list fails cold", async () => {
+    const enabled = spyOn(runelay, "runelayEnabled").mockReturnValue(false);
+    try {
+      expect(await pinnedRulesBlock()).toBe("");
+    } finally {
+      enabled.mockRestore();
+    }
+    expect(await pinnedRulesBlock()).toBe("");
+    expect(fakeRunelay.apiCalls).toHaveLength(1);
   });
 });
 
