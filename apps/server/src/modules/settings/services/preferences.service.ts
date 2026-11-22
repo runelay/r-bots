@@ -1,4 +1,3 @@
-import { type EnvironmentId, environmentIds } from "@runelay-bots/protocol";
 import { readSetting, writeSetting } from "../../../db/settings";
 import { ValidationError } from "../../../shared/errors";
 
@@ -16,43 +15,30 @@ export interface AppPreferences {
   notifications: Record<NotificationKind, boolean>;
   microphone: string | null;
   microphones: string[];
-  environment: EnvironmentId;
   updatedAt: string | null;
 }
 
 const preferencesKey = "app.preferences";
 const listeners = new Set<(preferences: AppPreferences) => void>();
-let environmentCache: EnvironmentId = "vps";
 
 export function defaultPreferences(): AppPreferences {
   return {
     notifications: { replies: true, approvals: true, routines: true, failures: true },
     microphone: null,
     microphones: [],
-    environment: "vps",
     updatedAt: null,
   };
-}
-
-function isEnvironment(value: unknown): value is EnvironmentId {
-  return environmentIds.some((id) => id === value);
 }
 
 export async function readPreferences(): Promise<AppPreferences> {
   const stored = await readSetting<Partial<AppPreferences>>(preferencesKey, {});
   const base = defaultPreferences();
-  environmentCache = isEnvironment(stored.environment) ? stored.environment : base.environment;
   return {
     notifications: { ...base.notifications, ...stored.notifications },
     microphone: stored.microphone ?? null,
     microphones: stored.microphones ?? [],
-    environment: environmentCache,
     updatedAt: stored.updatedAt ?? null,
   };
-}
-
-export function currentEnvironment() {
-  return environmentCache;
 }
 
 export function onPreferences(listener: (preferences: AppPreferences) => void) {
@@ -71,7 +57,7 @@ export async function updatePreferences(body: unknown) {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new ValidationError("Corpo inválido.", "body");
   const raw = body as Record<string, unknown>;
   for (const key of Object.keys(raw))
-    if (!["notifications", "microphone", "microphones", "environment"].includes(key))
+    if (!["notifications", "microphone", "microphones"].includes(key))
       throw new ValidationError(`Campo desconhecido: ${key}.`, key);
   const next = await readPreferences();
   if (raw.notifications !== undefined) {
@@ -93,14 +79,8 @@ export async function updatePreferences(body: unknown) {
     ];
   }
   if (raw.microphone !== undefined) next.microphone = microphoneName(raw.microphone);
-  if (raw.environment !== undefined) {
-    if (!isEnvironment(raw.environment))
-      throw new ValidationError(`environment precisa ser ${environmentIds.join(" ou ")}.`, "environment");
-    next.environment = raw.environment;
-  }
   next.updatedAt = new Date().toISOString();
   await writeSetting(preferencesKey, next);
-  environmentCache = next.environment;
   for (const listener of listeners) listener(next);
   return next;
 }

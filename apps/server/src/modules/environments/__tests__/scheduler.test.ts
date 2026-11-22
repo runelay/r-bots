@@ -12,8 +12,7 @@ import {
   runnerDevice,
 } from "../../../../test/runner-helpers";
 import { clisDir, dataDir, env, hostDataDir, hostHome, hostToolsDir, toolsDir } from "../../../config/env";
-import { updatePreferences } from "../../settings/services/preferences.service";
-import { macNoTurnsMessage, macOfflineMessage, vpsFallbackNotice } from "../constants/environments.constants";
+import { hostFallbackNotice } from "../constants/environments.constants";
 import {
   boxSpecFor,
   hostBoxSpec,
@@ -94,27 +93,14 @@ describe("decidePlacement", () => {
     expect(decidePlacement({ ...docker, environments: [] })).toEqual({ kind: "local" });
   });
 
-  test("prefers the host runner of the chosen environment over boxes and local", () => {
-    const hosts = {
-      vps: { key: "host-1", online: true, canRun: true },
-      mac: { key: null, online: false, canRun: false },
-    };
+  test("prefers the server's host runner over boxes and local", () => {
     const environments = [environment("a", 9000)];
-    expect(decidePlacement({ ...docker, environments, hosts })).toEqual({
+    expect(decidePlacement({ ...docker, environments, hostKey: "host-1" })).toEqual({
       kind: "remote",
       environmentId: "host-1",
       host: true,
     });
-    expect(decidePlacement({ ...docker, environments, hosts, environment: "mac" })).toEqual({
-      kind: "offline",
-      message: macOfflineMessage,
-    });
-    expect(decidePlacement({ ...docker, environments, environment: "mac" })).toEqual({
-      kind: "offline",
-      message: macOfflineMessage,
-    });
-    const offline = { ...hosts, vps: { key: null, online: false, canRun: false } };
-    expect(decidePlacement({ ...docker, environments, hosts: offline })).toEqual({
+    expect(decidePlacement({ ...docker, environments, hostKey: null })).toEqual({
       kind: "remote",
       environmentId: "a",
     });
@@ -128,31 +114,25 @@ describe("decidePlacement", () => {
 });
 
 describe("place", () => {
-  test("keeps everything local by default", async () => {
+  test("keeps everything local by default", () => {
     const box = fakeRunner(runnerDevice("box-1"));
     box.say(boxHello());
     expect(env.BOTS_SANDBOX).toBe("off");
     expect(place(input)).toEqual({ kind: "local" });
   });
 
-  test("runs on the host runner of the chosen environment and never falls back from the Mac", async () => {
-    await updatePreferences({ environment: "vps" });
+  test("runs on the server's own host runner and says so when it falls back to the container", () => {
     env.BOTS_HOST_RUNNER = "on";
-    expect(place(input)).toEqual({ kind: "local", notice: vpsFallbackNotice });
+    expect(place(input)).toEqual({ kind: "local", notice: hostFallbackNotice });
+    const mac = fakeRunner(runnerDevice("mac-1", 5));
+    mac.say({ type: "hello", version: "9", capabilities: ["computer", "host"] });
+    expect(place(input)).toEqual({ kind: "local", notice: hostFallbackNotice });
     const host = fakeRunner(runnerDevice("host-1"));
     host.say(hostHello());
     expect(place(input)).toEqual({ kind: "remote", environmentId: "host-1", host: true });
-    await updatePreferences({ environment: "mac" });
-    expect(place(input)).toEqual({ kind: "offline", message: macOfflineMessage });
-    const mac = fakeRunner(runnerDevice("mac-1", 5));
-    mac.say({ type: "hello", version: "9", capabilities: ["computer"] });
-    expect(place(input)).toEqual({ kind: "offline", message: macNoTurnsMessage });
-    mac.say({ type: "hello", version: "10", capabilities: ["computer", "host"] });
-    expect(place(input)).toEqual({ kind: "remote", environmentId: "mac-1", host: true });
-    await updatePreferences({ environment: "vps" });
   });
 
-  test("sends turns to the owner box runner with docker and warns when there is none", async () => {
+  test("sends turns to the owner box runner with docker and warns when there is none", () => {
     env.BOTS_SANDBOX = "docker";
     const warn = spyOn(console, "warn").mockImplementation(() => {});
     expect(place(input)).toEqual({ kind: "local" });

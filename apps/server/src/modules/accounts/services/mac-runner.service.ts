@@ -32,7 +32,7 @@ import {
   hookRequestOf,
   runnerOf,
 } from "../../environments/services/runner-frames.service";
-import type { EnvironmentStates, RunnerEnvironment, RunnerInfo } from "../../environments/types/environments.types";
+import type { RunnerEnvironment, RunnerInfo } from "../../environments/types/environments.types";
 
 export const runnerConnectPath = "/runner/connect";
 export const revokedCloseCode = 4001;
@@ -240,16 +240,11 @@ export function runnerEnvironments(): RunnerEnvironment[] {
     }));
 }
 
-export function environmentStates(): EnvironmentStates {
-  const vps =
-    [...connections.values()].find(
-      (connection) => isOpen(connection) && connection.owner && connection.runner !== null && hasHost(connection),
-    ) ?? null;
-  const mac = connectionFor();
-  return {
-    vps: { key: vps?.key ?? null, online: vps !== null, canRun: vps !== null },
-    mac: { key: mac?.key ?? null, online: mac !== null, canRun: mac !== null && hasHost(mac) },
-  };
+export function hostRunnerKey() {
+  for (const connection of connections.values())
+    if (isOpen(connection) && connection.owner && connection.runner !== null && hasHost(connection))
+      return connection.key;
+  return null;
 }
 
 export function useMcpForwarder(forwarder: McpForwarder | null) {
@@ -739,7 +734,7 @@ export function runRemoteTurn(
   emit: (event: ProviderEvent) => void,
 ) {
   const found = connectionFor(environmentId);
-  const target = found && (isServiceRunner(found) || hasHost(found)) ? found : null;
+  const target = found && isServiceRunner(found) ? found : null;
   return streamTurn({
     target,
     turnId: turn.turnId,

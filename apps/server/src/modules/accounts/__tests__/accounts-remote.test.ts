@@ -4,9 +4,8 @@ import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/
 import { fakeProviders } from "../../../../test/helpers";
 import { boxHello, dropAllRunners, fakeRunner, hostHello, runnerDevice } from "../../../../test/runner-helpers";
 import { env, hostDataDir } from "../../../config/env";
-import { macOfflineMessage, vpsFallbackNotice } from "../../environments/constants/environments.constants";
+import { hostFallbackNotice } from "../../environments/constants/environments.constants";
 import { workDirOf } from "../../environments/services/box-spec.service";
-import { updatePreferences } from "../../settings/services/preferences.service";
 import { accountDir, accountPath, botIdOf, refreshAccounts, runOnAccount } from "../services/accounts.service";
 
 const account = { id: "vps:claude", provider: "claude" as const };
@@ -27,12 +26,11 @@ function turnRequest(turnId: string): TurnRequest {
   };
 }
 
-afterEach(async () => {
+afterEach(() => {
   dropAllRunners();
   fakeProviders.reset();
   env.BOTS_SANDBOX = "off";
   env.BOTS_HOST_RUNNER = "off";
-  await updatePreferences({ environment: "vps" });
 });
 
 describe("runOnAccount placement", () => {
@@ -164,19 +162,11 @@ describe("runOnAccount placement", () => {
     expect(fakeProviders.turns).toEqual([]);
   });
 
-  test("never falls back when the Mac is the chosen environment and it is offline", async () => {
-    await updatePreferences({ environment: "mac" });
-    const events: ProviderEvent[] = [];
-    await runOnAccount(account, turnRequest("m1"), new AbortController().signal, (e) => events.push(e), hooks);
-    expect(events).toEqual([{ type: "done", ok: false, message: macOfflineMessage }]);
-    expect(fakeProviders.turns).toEqual([]);
-  });
-
-  test("says in the chat when the VPS runner is down and the turn runs in the server", async () => {
+  test("says in the chat when the host runner is down and the turn runs in the server", async () => {
     env.BOTS_HOST_RUNNER = "on";
     const events: ProviderEvent[] = [];
     await runOnAccount(account, turnRequest("n1"), new AbortController().signal, (e) => events.push(e), hooks);
-    expect(events[0]).toEqual({ type: "text", part: "environment-notice", text: vpsFallbackNotice });
+    expect(events[0]).toEqual({ type: "text", part: "environment-notice", text: hostFallbackNotice });
     expect(fakeProviders.turns.map(({ request }) => request.turnId)).toEqual(["n1"]);
   });
 });

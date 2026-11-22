@@ -4,23 +4,6 @@ export type BoxRuntime = "kata" | "runsc" | "runc" | "host";
 
 export const hostCapability = "host";
 
-export const environmentIds = ["vps", "mac"] as const;
-export type EnvironmentId = (typeof environmentIds)[number];
-
-export const environmentLabels: Record<EnvironmentId, string> = { vps: "VPS", mac: "Mac" };
-
-export interface EnvironmentOption {
-  id: EnvironmentId;
-  label: string;
-  online: boolean;
-  canRun: boolean;
-}
-
-export interface EnvironmentsResponse {
-  selected: EnvironmentId;
-  environments: EnvironmentOption[];
-}
-
 export interface EnvironmentCapacity {
   cpus: number;
   memTotalMb: number;
@@ -127,10 +110,7 @@ export interface PlacementInput {
   memMb: number;
 }
 
-export type Placement =
-  | { kind: "local"; notice?: string }
-  | { kind: "remote"; environmentId: string; host?: boolean }
-  | { kind: "offline"; message: string };
+export type Placement = { kind: "local"; notice?: string } | { kind: "remote"; environmentId: string; host?: boolean };
 
 export interface EnvironmentInfo {
   id: string;

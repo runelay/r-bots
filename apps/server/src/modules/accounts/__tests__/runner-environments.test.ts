@@ -9,7 +9,7 @@ import {
   runnerDevice,
 } from "../../../../test/runner-helpers";
 import {
-  environmentStates,
+  hostRunnerKey,
   macRunnerConnected,
   macRunnerInfo,
   type RemoteTurnInput,
@@ -54,23 +54,22 @@ describe("box runners in the hub", () => {
     expect(macRunnerInfo()).toMatchObject({ connected: true, version: "9" });
   });
 
-  test("host runners stay out of the Mac operations and define the VPS environment", async () => {
+  test("host runners stay out of the Mac operations and are the server's own runner", async () => {
+    expect(hostRunnerKey()).toBeNull();
     const host = fakeRunner(runnerDevice("host-1"));
     host.say(hostHello());
     expect(macRunnerConnected()).toBe(false);
     expect(runnerEnvironments().map(({ key }) => key)).toEqual(["host-1"]);
-    expect(environmentStates()).toEqual({
-      vps: { key: "host-1", online: true, canRun: true },
-      mac: { key: null, online: false, canRun: false },
-    });
+    expect(hostRunnerKey()).toBe("host-1");
     const mac = fakeRunner(runnerDevice("mac-1", 5));
     mac.say({ type: "hello", version: "9", capabilities: ["computer", "host"] });
-    expect(environmentStates().mac).toEqual({ key: "mac-1", online: true, canRun: true });
+    expect(hostRunnerKey()).toBe("host-1");
+    expect(await runRemoteTurn("mac-1", remote("m0"), new AbortController().signal, () => {})).toBe("refused");
     const events: ProviderEvent[] = [];
-    const finished = runRemoteTurn("mac-1", remote("m1"), new AbortController().signal, (e) => events.push(e));
-    expect(await mac.next("request")).toMatchObject({ op: "turn.start", turnId: "m1" });
-    mac.say({ type: "turn.event", id: "m1", event: { type: "done", ok: true } });
-    mac.say({ type: "turn.end", id: "m1" });
+    const finished = runRemoteTurn("host-1", remote("h1"), new AbortController().signal, (e) => events.push(e));
+    expect(await host.next("request")).toMatchObject({ op: "turn.start", turnId: "h1" });
+    host.say({ type: "turn.event", id: "h1", event: { type: "done", ok: true } });
+    host.say({ type: "turn.end", id: "h1" });
     expect(await finished).toBe("ran");
     expect(events).toEqual([{ type: "done", ok: true }]);
   });
