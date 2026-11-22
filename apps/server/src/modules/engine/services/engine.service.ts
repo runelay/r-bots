@@ -72,16 +72,11 @@ import {
 } from "../../code/services/workspace.service";
 import { watchComputerEvents } from "../../computer/services/computer.service";
 import { runelayEnabled } from "../../connectors/services/runelay.service";
-import {
-  autoTitle,
-  createConversation,
-  delegationConversation,
-} from "../../conversations/services/conversations.service";
 import { handoffBlock, refreshSummary } from "../../conversations/services/handoff.service";
 import { reactionGuide, reactionNote } from "../../conversations/services/reactions.service";
 import type { EventLog, Fact, StoredSession } from "../../conversations/services/sessions.service";
-import { titleFrom } from "../../conversations/services/sessions.service";
-import { recordThreadMessage } from "../../conversations/services/threads.service";
+import { getStoredSession, titleFrom } from "../../conversations/services/sessions.service";
+import { ensureThread, recordThreadMessage } from "../../conversations/services/threads.service";
 import { activeMembers, getGroup, mentionedMembers } from "../../groups/services/groups.service";
 import { queueCapture } from "../../memory/services/capture-jobs.service";
 import {
@@ -162,6 +157,8 @@ export interface Delivery {
   attachments?: UploadMeta[];
   asked?: DeliveryAsk;
   side?: { sessionId: string; title: string; outcome: DelegationResult["outcome"] };
+  permission?: PermissionMode;
+  author?: { botId: string; name: string };
 }
 
 export type RunStatus = "working" | "awaiting" | "idle";
@@ -252,6 +249,7 @@ interface Turn {
   priority: SlotPriority;
   received?: DelegatedFile[];
   promptChars?: { system: number; prompt: number };
+  permission?: PermissionMode;
 }
 
 interface Steer {
@@ -628,7 +626,7 @@ function deliveryNote(delivery: Delivery) {
 }
 
 function deliveryAskOf(delivery: Delivery) {
-  if (delivery.source === "schedule") return noDeliveryAsk;
+  if (delivery.source === "schedule" || delivery.author) return noDeliveryAsk;
   if (delivery.source === "delegate") return delivery.asked ?? noDeliveryAsk;
   return askedDelivery(delivery.text, delivery.skills ?? []);
 }
@@ -847,7 +845,8 @@ async function groupTranscript(session: StoredSession, limit: number) {
       for (const fact of JSON.parse(line).facts as Fact[]) {
         if (fact.type === "delivery.consumed") {
           const parts = fact.data.parts as Array<{ text?: string }>;
-          items.push(`Pessoa: ${clip(parts.map((part) => part.text ?? "").join(" "), 300)}`);
+          const author = (fact.data.from as { name?: string } | undefined)?.name;
+          items.push(`${author ?? "Pessoa"}: ${clip(parts.map((part) => part.text ?? "").join(" "), 300)}`);
         } else if (fact.type === "content.completed" && fact.data.phase === "reply") {
           const speaker = getBot(String(fact.data.botId ?? ""))?.name ?? "Bot";
           items.push(`${speaker}: ${clip(String(fact.data.value ?? ""), 400)}`);
@@ -862,23 +861,24 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
   const group = getGroup(session.meta.botId);
   if (!group || group.archivedAt) return;
   const members = activeMembers(group);
-  if (members.length === 0) return;
+  const candidates = members.filter((member) => member.id !== delivery.author?.botId);
+  if (candidates.length === 0) return;
   const before = await groupTranscript(session, 12);
-  const mentioned = mentionedMembers(delivery.text, members);
+  const mentioned = mentionedMembers(delivery.text, candidates);
   const queue: { bot: BotDefinition; note: string | null }[] = [];
   if (mentioned.length > 0) {
-    for (const bot of mentioned.flatMap((id) => members.filter((member) => member.id === id)))
+    for (const bot of mentioned.flatMap((id) => candidates.filter((member) => member.id === id)))
       queue.push({ bot, note: null });
   } else {
     const decision = await decideRoute(
       group.name,
-      members.map((member) => ({ id: member.id, name: member.name, role: member.role })),
+      candidates.map((member) => ({ id: member.id, name: member.name, role: member.role })),
       before,
       delivery.text,
     );
     session.log.emit({ type: "decision.made", data: { ...decision, groupId: group.id } });
-    const choice = String((decision.answer as { choice?: string } | null)?.choice ?? members[0].id);
-    queue.push({ bot: members.find((member) => member.id === choice) ?? members[0], note: null });
+    const choice = String((decision.answer as { choice?: string } | null)?.choice ?? candidates[0].id);
+    queue.push({ bot: candidates.find((member) => member.id === choice) ?? candidates[0], note: null });
   }
   let turns = 0;
   let first = true;
@@ -898,7 +898,7 @@ async function runGroup(session: StoredSession, runtime: Runtime, delivery: Deli
       (await groupTranscript(session, 12)) || "(início do grupo)",
       "",
       next.note ? `${next.note}` : "",
-      `Mensagem da pessoa: ${requestText(delivery)}`,
+      `${delivery.author ? `Mensagem de ${delivery.author.name} (bot do time)` : "Mensagem da pessoa"}: ${requestText(delivery)}`,
       skillPrompt(delivery, connectorsOf(next.bot).memory),
       deliveryNote(delivery),
       "",
@@ -1118,7 +1118,7 @@ async function executeProvider(run: ProviderRun) {
   const delegates = delegatesOf(bot);
   const tools = toolsFor(bot);
   const token = newToken();
-  const permission = effectivePermission(session.meta.permission, run.bot.permission);
+  const permission = effectivePermission(turn.permission ?? session.meta.permission, run.bot.permission);
   const runAbort = new AbortController();
   const forwardAbort = () => runAbort.abort();
   turn.abort.signal.addEventListener("abort", forwardAbort, { once: true });
@@ -1161,6 +1161,7 @@ async function executeProvider(run: ProviderRun) {
     requestApproval: (prompt, callId, origin, details) => requestApproval(log, turn, prompt, callId, origin, details),
     askUser: (request, callId, origin) => askQuestion(log, turn, request, callId, origin),
     delegate: (targetId, message, callId) => delegateTo(run, targetId, message, callId),
+    postGroup: (groupId, message) => postToGroup({ botId: run.bot.id, name: run.bot.name }, groupId, message),
     bot,
     request: run.request,
     asked: turn.asked,
@@ -1469,19 +1470,16 @@ function filesBlock(targetName: string, lines: string[]) {
   ].join("\n");
 }
 
-async function delegationSession(parent: ProviderRun, target: BotDefinition, message: string, callId: string) {
-  const delegatedBy = { botId: parent.bot.id, name: parent.bot.name, sessionId: parent.session.meta.sessionId, callId };
-  const existing = delegationConversation(target.id, parent.bot.id, parent.session.meta.sessionId);
-  if (!existing)
-    return createConversation(target.id, {
-      title: autoTitle(`${parent.bot.name} pediu: ${message}`),
-      permission: effectivePermission(parent.session.meta.permission, parent.bot.permission),
-      delegatedBy,
-    });
-  existing.meta.permission = effectivePermission(parent.session.meta.permission, parent.bot.permission);
-  if (existing.meta.conversation) existing.meta.conversation.delegatedBy = delegatedBy;
-  await existing.save();
-  return existing;
+async function mainSession(botId: string, kind: "thread" | "group" = "thread") {
+  const thread = await ensureThread(botId, kind);
+  const session = getStoredSession(thread.sessionId);
+  if (!session) throw new Error("Não achei a conversa principal desse destino.");
+  return session;
+}
+
+export async function postToGroup(author: { botId: string; name: string }, groupId: string, text: string) {
+  const session = await mainSession(groupId, "group");
+  await deliver(session, { deliveryId: randomUUID(), text, source: "chat", author });
 }
 
 async function delegateTo(parent: ProviderRun, targetId: string, message: string, callId: string) {
@@ -1494,7 +1492,7 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
   const account = await findAccount(engine.account);
   if (account?.status !== "ready") throw new Error(unavailableMessage(engine.account, account));
   const deliveryId = randomUUID();
-  const session = await delegationSession(parent, target, message, callId);
+  const session = await mainSession(target.id);
   const scope = { runId: parent.runIdRef(), turnId: parent.turn.turnId };
   let turnId: string | null = null;
   const update = (status: string, extra: Record<string, unknown> = {}) =>
@@ -1545,6 +1543,7 @@ async function delegateTo(parent: ProviderRun, targetId: string, message: string
           sessionId: parent.session.meta.sessionId,
           callId,
         },
+        permission: effectivePermission(parent.session.meta.permission, parent.bot.permission),
         delegation: hooks,
       });
     });
@@ -1604,6 +1603,7 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
     guardBusy: false,
     guardStop: false,
     ...(delivery.delegation ? { delegation: delivery.delegation } : {}),
+    ...(delivery.permission ? { permission: delivery.permission } : {}),
     owner: { sessionId: session.meta.sessionId, botId: session.meta.botId },
     accepting: true,
     priority: delivery.voice
@@ -1658,7 +1658,9 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
         source: delivery.source,
         ...(from
           ? { from: { botId: from.botId, name: from.name, sessionId: from.sessionId, callId: from.callId } }
-          : {}),
+          : delivery.author
+            ? { from: { botId: delivery.author.botId, name: delivery.author.name } }
+            : {}),
         ...(delivery.scheduleId ? { scheduleId: delivery.scheduleId } : {}),
         ...(delivery.voice ? { voice: true } : {}),
         ...(delivery.side ? { side: delivery.side } : {}),
@@ -1698,7 +1700,13 @@ async function runTurn(session: StoredSession, runtime: Runtime, delivery: Deliv
       (meta.kind === "thread" || meta.kind === "group" || meta.kind === "conversation") &&
       showDelivery
     ) {
-      await recordThreadMessage(meta.botId, meta.sessionId, { role: "user", text: titleFrom(shownText), at: now() });
+      await recordThreadMessage(
+        meta.botId,
+        meta.sessionId,
+        delivery.author
+          ? { role: "bot", text: titleFrom(shownText), at: now(), botId: delivery.author.botId }
+          : { role: "user", text: titleFrom(shownText), at: now() },
+      );
     }
     if (!bot) {
       settle("failed", { error: { code: "BOT_NOT_FOUND", message: engineText("botGone") } });
