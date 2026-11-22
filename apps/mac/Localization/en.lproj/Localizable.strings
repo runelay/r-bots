@@ -1599,6 +1599,7 @@
 "Permitir gravação de tela" = "Allow screen recording";
 "Permitir todos" = "Allow all";
 "Período" = "Period";
+"Pessoal" = "Personal";
 "Peça a um bot para rodar algo todo dia, ou crie a rotina no perfil dele." = "Ask a bot to run something every day, or create the routine in its profile.";
 "Peça ao bot para anotar algo ou crie uma nota." = "Ask the bot to write something down or create a note.";
 "Peça ao bot para mexer num repositório ou use “Trabalhar num repositório…” no +." = "Ask the bot to work on a repository or use “Work on a repository…” in the + menu.";
@@ -1630,7 +1631,6 @@
 "Presets de review" = "Review presets";
 "Primeiro bot" = "First bot";
 "Primeiros passos" = "Getting started";
-"Pessoal" = "Personal";
 "Principal" = "Main";
 "Print" = "Screenshot";
 "Print para a conversa" = "Screenshot to conversation";
@@ -1937,6 +1937,7 @@
 "Todas" = "All";
 "Todas as etiquetas" = "All labels";
 "Todos" = "All";
+"Todos do grupo respondem" = "Everyone in the group answers";
 "Todos os arquivos" = "All files";
 "Todos os bots" = "All bots";
 "Todos os projetos" = "All projects";
@@ -2281,6 +2282,7 @@
 "todo %@ às %@" = "every %@ at %@";
 "todo dia %lld do mês às %@" = "on day %lld of every month at %@";
 "todo dia às %@" = "every day at %@";
+"todos" = "all";
 "um botão" = "a button";
 "um campo" = "a field";
 "um check" = "a check";
