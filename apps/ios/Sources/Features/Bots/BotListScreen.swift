@@ -49,8 +49,7 @@ struct BotListScreen: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    RunelaySymbol()
-                        .fill(LinearGradient(colors: [Theme.silverFrom, Theme.silverTo], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RbotsGlyph()
                         .frame(width: 28 * 572 / 592, height: 28)
                         .padding(.trailing, 2)
                         .accessibilityLabel("r/bots")
