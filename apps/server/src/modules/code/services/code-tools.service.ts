@@ -21,7 +21,7 @@ import {
   stopReasons,
 } from "./dev-server.service";
 import { beginCall, endCall } from "./hooks.service";
-import { cleanSyncAfterDeliver, syncBeforeDeliver } from "./mac-sync.service";
+import { syncBeforeDeliver } from "./mac-sync.service";
 import { type Gate, gateCommand, protectedPath } from "./policy.service";
 import { kickPr } from "./pull-request.service";
 import { addAllowedRepo, allowedRepoFor, gitRepoAt, repoRootProblem } from "./repos.service";
@@ -429,7 +429,6 @@ export function registerCodeTools(server: McpServer, context: ToolContext, runne
       if (!start.allowed) return text(start.message ?? "Negado.", true);
       try {
         const result = await deliverWorkspace(workspace, input);
-        if (input.action !== "commit") await cleanSyncAfterDeliver(workspace.path).catch(() => undefined);
         const owner = session();
         owner?.log.emit({ type: "code.delivered", data: { workspaceId: workspace.id, ...result } });
         if (owner && result.prUrl) kickPr(owner, result.prUrl, workspace);

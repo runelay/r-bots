@@ -22,7 +22,6 @@ export type MacSyncPlan =
 
 const pending = new Map<string, SyncResult>();
 const running = new Map<string, { key: string; turnId: string }>();
-const used = new Set<string>();
 const cleanupAfterTurn = new Set<string>();
 
 function clip(text: string) {
@@ -72,7 +71,7 @@ export async function prepareMacSync(cwd: string): Promise<MacSyncPlan> {
   const pushed = await git(cwd, ["push", "--no-verify", "--quiet", "--force", "origin", `${commit}:${ref}`], 180_000);
   if (pushed.code !== 0)
     return { kind: "refused", message: `Não consegui mandar o código para o GitHub: ${clip(pushed.stderr)}` };
-  used.add(cwd);
+  await git(cwd, ["update-ref", ref, commit]);
   const [, name = repo] = repo.split("/");
   return {
     kind: "sync",
@@ -119,11 +118,11 @@ export async function dropSyncRef(cwd: string) {
   const ref = syncRefOf(branch);
   await git(cwd, ["push", "--no-verify", "--quiet", "origin", "--delete", ref], 120_000);
   await git(cwd, ["update-ref", "-d", ref]);
-  used.delete(cwd);
 }
 
 export async function cleanSyncAfterDeliver(cwd: string) {
-  if (!used.has(cwd)) return;
+  const branch = await output(cwd, ["symbolic-ref", "--short", "HEAD"]);
+  if (!branch || !(await output(cwd, ["rev-parse", "--verify", "-q", syncRefOf(branch)]))) return;
   if (running.has(cwd)) {
     cleanupAfterTurn.add(cwd);
     return;
@@ -134,6 +133,5 @@ export async function cleanSyncAfterDeliver(cwd: string) {
 export function resetMacSync() {
   pending.clear();
   running.clear();
-  used.clear();
   cleanupAfterTurn.clear();
 }

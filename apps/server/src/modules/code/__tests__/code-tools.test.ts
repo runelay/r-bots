@@ -505,9 +505,8 @@ describe("with an open workspace", () => {
       expect(kick).not.toHaveBeenCalled();
     });
 
-    test("brings the Mac work first and never fails the delivery over the hidden ref", async () => {
+    test("brings the Mac work first and refuses the delivery when that fails", async () => {
       const pull = stub(macSync, "syncBeforeDeliver").mockRejectedValueOnce(new Error("Mac fora"));
-      const clean = stub(macSync, "cleanSyncAfterDeliver").mockRejectedValue(new Error("sem rede"));
       const { call, deliver, current } = setup(delivered({ action: "push", prUrl: "https://gh/pr/2" }));
       const refused = await call("workspace_deliver", { action: "push" });
       expect(refused.isError).toBe(true);
@@ -515,7 +514,6 @@ describe("with an open workspace", () => {
       expect(deliver).not.toHaveBeenCalled();
       expect(textOf(await call("workspace_deliver", { action: "push" }))).toContain("push da branch feat/task feito");
       expect(pull).toHaveBeenCalledWith(current.path);
-      expect(clean).toHaveBeenCalledWith(current.path);
     });
 
     test("commit with nothing pending", async () => {

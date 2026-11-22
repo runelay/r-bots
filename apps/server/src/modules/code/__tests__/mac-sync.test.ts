@@ -150,7 +150,9 @@ describe("Mac workspace sync", () => {
     await expect(applySync(repo.path, { ref: "refs/rbots/sync/none", commit: later })).rejects.toThrow(
       "Não consegui baixar o código do Mac",
     );
+    resetMacSync();
     await cleanSyncAfterDeliver(repo.path);
+    expect(gitSync(repo.path, ["for-each-ref", "refs/rbots"]).stdout).toBe("");
     expect(gitSync(repo.origin, ["show-ref"], { ...process.env } as Record<string, string>).stdout).not.toContain(
       "refs/rbots",
     );
