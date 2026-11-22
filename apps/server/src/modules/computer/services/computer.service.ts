@@ -153,7 +153,9 @@ function shellSegments(command: string) {
 
 function programOf(words: string[]) {
   const first = words.findIndex((word) => !/^[A-Za-z_][\w]*=/.test(word));
-  return first < 0 ? { program: "", args: [] as string[] } : { program: words[first] ?? "", args: words.slice(first + 1) };
+  return first < 0
+    ? { program: "", args: [] as string[] }
+    : { program: words[first] ?? "", args: words.slice(first + 1) };
 }
 
 function shellSegmentReason({ words }: Segment, piped: boolean): string | null {
@@ -167,7 +169,10 @@ function shellSegmentReason({ words }: Segment, piped: boolean): string | null {
   if (name === "git" && args.includes("push")) return "git push sempre passa por uma pessoa.";
   if (
     (name === "curl" || name === "wget") &&
-    args.some((arg) => /^(-d|--data.*|-F|--form.*|-T|--upload-file|--post-data|--post-file|--method)/.test(arg) || /^-X/.test(arg))
+    args.some(
+      (arg) =>
+        /^(-d|--data.*|-F|--form.*|-T|--upload-file|--post-data|--post-file|--method)/.test(arg) || /^-X/.test(arg),
+    )
   )
     return "Enviar dados para a internet sempre passa por uma pessoa.";
   if (name === "osascript" && /\b(do\s+shell\s+script|send|deliver|delete|purchase|buy|pay)\b/i.test(args.join(" ")))
@@ -178,7 +183,8 @@ function shellSegmentReason({ words }: Segment, piped: boolean): string | null {
 
 function shellHumanReason(command: string): string | null {
   if (!command.trim()) return "Comando vazio.";
-  if (sensitiveShellPath.test(command)) return "Comando que mexe em chave, senha ou credencial sempre passa por uma pessoa.";
+  if (sensitiveShellPath.test(command))
+    return "Comando que mexe em chave, senha ou credencial sempre passa por uma pessoa.";
   const segments = shellSegments(command);
   if (!segments) return "Não deu para ler o comando: sempre passa por uma pessoa.";
   if (/\$\(|`|[<>]\(/.test(command))

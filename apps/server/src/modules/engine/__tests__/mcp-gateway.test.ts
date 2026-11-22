@@ -686,10 +686,16 @@ describe("computer tools", () => {
       return { choice: "approve" as const, interactionId: `int_shell_${asked.length}`, always: true };
     };
     const reader = await open({ requestApproval, turnId: "turn_shell" });
-    await reader.call("shell_run", { cmd: "sed -n 1,40p Sources/App.swift | grep -n busy", cwd: "~/runelay-bots-workspace" });
+    await reader.call("shell_run", {
+      cmd: "sed -n 1,40p Sources/App.swift | grep -n busy",
+      cwd: "~/runelay-bots-workspace",
+    });
     expect(await startedOf()).toMatchObject({ clearedBy: { readOnly: true } });
     expect(asked).toHaveLength(0);
-    await reader.call("shell_run", { cmd: "swiftc -O probe.swift -o probe 2>&1 | tail -5", cwd: "~/runelay-bots-workspace" });
+    await reader.call("shell_run", {
+      cmd: "swiftc -O probe.swift -o probe 2>&1 | tail -5",
+      cwd: "~/runelay-bots-workspace",
+    });
     expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_shell_1" } });
     await reader.call("shell_run", { cmd: "./probe && echo ok", cwd: "~/runelay-bots-workspace" });
     expect(await startedOf()).toMatchObject({ clearedBy: { turnGrant: true } });
