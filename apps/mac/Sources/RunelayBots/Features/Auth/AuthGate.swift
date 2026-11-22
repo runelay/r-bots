@@ -39,6 +39,7 @@ struct AuthGate: ViewModifier {
         .task(id: serverURL) {
             session.onSignIn {
                 RunnerConnection.shared.restart()
+                HostRunner.shared.restart()
                 Task { await model.reloadAfterSignIn() }
             }
             await session.bootstrap()
