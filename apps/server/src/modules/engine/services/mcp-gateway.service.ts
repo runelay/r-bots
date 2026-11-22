@@ -32,6 +32,7 @@ import {
   ComputerError,
   callComputer,
   computerHumanReason,
+  computerShellReadOnly,
   defaultRoots,
 } from "../../computer/services/computer.service";
 import {
@@ -902,7 +903,7 @@ const computerSpecs: ComputerSpec[] = [
   {
     name: "shell_run",
     description:
-      "Roda um comando com cwd dentro de ~/runelay-bots-workspace (npm, pnpm, bun, node, swift, xcodebuild, git local, ls, cat, mkdir).",
+      "Roda um comando no zsh do Mac com cwd numa pasta liberada (padrão ~/runelay-bots-workspace). Leitura (ls, cat, grep, rg, sed -n, find, git status/diff/log, screencapture) roda direto, com pipe e aspas. O resto passa pelo Jev ou pela pessoa. sudo, rm -r/-f, git push, curl enviando dados, ssh, shell dentro de shell, $(…) e caminhos de credencial sempre passam pela pessoa.",
     shape: { cmd: z.string().min(1).max(2000), cwd: z.string() },
     act: true,
     label: (a) => `$ ${String(a.cmd).slice(0, 60)}`,
@@ -965,6 +966,8 @@ async function runComputerTool(context: ToolContext, spec: ComputerSpec, input: 
     const hard = spec.act ? computerHumanReason(spec.name, args) : null;
     if (spec.act && !hard && computerTypeSecretsOnly(spec.name, args)) {
       cleared = { vault: true };
+    } else if (spec.act && !hard && computerShellReadOnly(spec.name, args)) {
+      cleared = { readOnly: true };
     } else if (spec.act && !hard && context.permission === "full") {
       cleared = { permission: "full" };
     } else if (spec.act && !hard && computerTurnGrants.has(computerGrantKey(context))) {
