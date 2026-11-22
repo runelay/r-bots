@@ -10,6 +10,7 @@ import { type ProcessCall, request, resetData, startTestServer, type TestServer 
 import * as macRunner from "../../accounts/services/mac-runner.service";
 import type { BotDefinition } from "../../bots/services/bots.service";
 import { forgetServer, getServer, listServers, stopAllDevServers } from "../../code/services/dev-server.service";
+import * as workspaces from "../../code/services/workspace.service";
 import type { EventLog } from "../../conversations/services/sessions.service";
 import * as sessions from "../../conversations/services/sessions.service";
 import type { ToolContext } from "../../engine/services/mcp-gateway.service";
@@ -559,6 +560,12 @@ describe("tools", () => {
       baseUrl: "https://app.example.com",
     });
     expect(tools.prompts.at(-1)).toContain("https://app.example.com");
+    spy(workspaces, "activeWorkspace").mockImplementation((() => ({ path: project.path })) as never);
+    const relative = await harness("approve", "turn-relative").call("test_playwright", {
+      path: "e2e/login.spec.ts",
+      baseUrl: "http://localhost:9",
+    });
+    expect(relative.content[0].text).toContain("Passou");
     expect(tools.events.some((event) => event.type === "call.settled")).toBe(true);
 
     for (const item of spies.splice(0)) item.mockRestore();
