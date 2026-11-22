@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test";
 import type { BoxSpec } from "@runelay-bots/protocol";
 import { boxAgentArgv } from "../constants";
 import { BoxError } from "../lifecycle";
-import { TurnManager } from "../turns";
+import { type TurnDeps, TurnManager } from "../turns";
 import type { ExecOptions, JsonRecord } from "../types";
 import { boxSpec, boxStatus, FakeClock, FakeExec, turnRequest, until } from "./helpers";
 
-function setup(acquire?: (botId: string, spec: BoxSpec) => Promise<ReturnType<typeof boxStatus>>) {
+function setup(
+  acquire?: (botId: string, spec: BoxSpec) => Promise<ReturnType<typeof boxStatus>>,
+  agent?: TurnDeps["agent"],
+) {
   const sent: JsonRecord[] = [];
   const logs: string[] = [];
   const execs: FakeExec[] = [];
@@ -29,6 +32,7 @@ function setup(acquire?: (botId: string, spec: BoxSpec) => Promise<ReturnType<ty
     workspaceRoots: ["/srv/rb"],
     accountRoots: ["/home/u/.claude"],
     forbiddenMounts: ["/srv/rb/home"],
+    ...(agent ? { agent } : {}),
     log: (line) => logs.push(line),
   });
   return { sent, logs, execs, released, clock, manager };
@@ -249,5 +253,24 @@ describe("TurnManager", () => {
     });
     await manager.start(startFrame());
     expect(sent).toEqual([{ type: "response", id: "turn-1", ok: false, code: "box.start", error: "boom" }]);
+  });
+
+  test("runs a custom agent command with its own cwd and env", async () => {
+    const seen: unknown[] = [];
+    const { execs, manager } = setup(undefined, {
+      argv: (botId, request, box) => {
+        seen.push([botId, request.turnId, box.memMb]);
+        return ["bun", "/opt/agent.js"];
+      },
+      cwd: "/home/u",
+      env: { BOTS_DATA_DIR: "/home/u/data" },
+    });
+    manager.handle(startFrame({ box: boxSpec({ mounts: [] }) }));
+    await until(() => execs.length === 1, "exec");
+    expect(execs[0]?.argv).toEqual(["bun", "/opt/agent.js"]);
+    expect(execs[0]?.options).toMatchObject({ cwd: "/home/u", env: { BOTS_DATA_DIR: "/home/u/data" } });
+    expect(seen).toEqual([["bot-1", "turn-1", 512]]);
+    execs[0]?.exit(0);
+    await until(() => manager.active === 0, "settled");
   });
 });

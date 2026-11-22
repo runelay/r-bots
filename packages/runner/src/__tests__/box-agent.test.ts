@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { NativeToolHooks, ProviderEvent, TurnRequest } from "@runelay-bots/protocol";
-import { proxiedMcp, runBoxAgent } from "../box-agent";
+import { agentDataDir, proxiedMcp, runBoxAgent } from "../box-agent";
 import type { JsonRecord, RunTurnFn } from "../types";
 import { FakeClock, turnRequest, until } from "./helpers";
 
@@ -35,6 +35,14 @@ function harness(runTurn: RunTurnFn) {
   };
   return { out, clock, send, close, done, waitFor };
 }
+
+describe("agentDataDir", () => {
+  test("uses the host data dir when the runner passes one", () => {
+    expect(agentDataDir({ BOTS_DATA_DIR: "/home/u/data" }, "/data")).toBe("/home/u/data");
+    expect(agentDataDir({ BOTS_DATA_DIR: " " }, "/data")).toBe("/data");
+    expect(agentDataDir({}, "/data")).toBe("/data");
+  });
+});
 
 describe("proxiedMcp", () => {
   test("points the MCP url at the local proxy", () => {

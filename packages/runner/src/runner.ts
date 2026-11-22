@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { cpus, homedir, hostname } from "node:os";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import type { EnvironmentCapacity, EnvironmentHello } from "@runelay-bots/protocol";
 import pkg from "../package.json" with { type: "json" };
 import { connectUrl } from "./backoff";
@@ -24,6 +24,7 @@ import {
   meminfoPath,
   runnerCapabilities,
   runnerConnectPath,
+  runnerProviders,
 } from "./constants";
 import { DockerSandboxProvider, detectRuntime, imageProviders } from "./docker";
 import { DockerApi } from "./docker-api";
@@ -32,7 +33,7 @@ import { parseImageRef, registryAuth } from "./image";
 import { BoxLifecycle } from "./lifecycle";
 import { readMeminfo } from "./meminfo";
 import { TurnManager } from "./turns";
-import type { Clock, RunnerEnv } from "./types";
+import type { Clock, RunnerEnv, RunnerProvider } from "./types";
 
 export interface RunnerDeps {
   clock: Clock;
@@ -67,6 +68,13 @@ function accountRootsOf(value: string | undefined) {
   return roots;
 }
 
+function providerOf(value: string | undefined): RunnerProvider {
+  if (!value) return "docker";
+  const found = runnerProviders.find((name) => name === value);
+  if (!found) throw new Error(`RBOTS_PROVIDER inválido: ${value} (use ${runnerProviders.join(", ")}).`);
+  return found;
+}
+
 function runtimeOf(value: string | undefined) {
   if (!value) return null;
   const found = boxRuntimes.find((name) => name === value);
@@ -90,6 +98,9 @@ export function readEnv(env: Record<string, string | undefined>): RunnerEnv {
   if (!url) throw new Error("Falta RBOTS_URL.");
   if (!token && !tokenFile) throw new Error("Falta RBOTS_DEVICE_TOKEN_FILE ou RBOTS_DEVICE_TOKEN.");
   return {
+    provider: providerOf(env.RBOTS_PROVIDER),
+    dataDir: env.BOTS_DATA_DIR || join(homedir(), ".local", "share", "runelay-bots"),
+    boxAgent: env.RBOTS_BOX_AGENT || null,
     url,
     token: token || null,
     tokenFile: tokenFile || null,

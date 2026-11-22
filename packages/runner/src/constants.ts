@@ -1,6 +1,12 @@
 import type { BoxRuntime } from "@runelay-bots/protocol";
 
 export const runnerCapabilities = ["turns", "boxes", "mcp-proxy", "hooks"];
+export const hostCapabilities = ["turns", "host", "mcp-proxy", "hooks"];
+export const runnerProviders = ["docker", "host"] as const;
+export const hostAgentFile = "box-agent.js";
+export const hostAgentSource = "box-agent-main.ts";
+export const hostProbeMemory = "64M";
+export const hostProviderBinaries = { claude: ["claude"], codex: ["codex"] };
 export const runnerConnectPath = "/runner/connect";
 export const revokedCloseCode = 4001;
 export const fatalUpgradeStatuses = [401, 403];

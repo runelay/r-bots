@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BoxSpec, BoxStatus } from "@runelay-bots/protocol";
+import type { BoxSpec, BoxStatus, TurnRequest } from "@runelay-bots/protocol";
 import {
   boxAgentArgv,
   boxAgentCwd,
@@ -24,6 +24,11 @@ export interface TurnDeps {
   workspaceRoots: string[];
   accountRoots: string[];
   forbiddenMounts: string[];
+  agent?: {
+    argv: (botId: string, request: TurnRequest, box: BoxSpec) => string[];
+    cwd: string;
+    env: Record<string, string>;
+  };
   log: (line: string) => void;
 }
 
@@ -116,7 +121,12 @@ export class TurnManager {
       return;
     }
     const controller = new AbortController();
-    const handle = provider.exec(botId, boxAgentArgv, { cwd: boxAgentCwd, env: {}, signal: controller.signal });
+    const { agent } = this.deps;
+    const handle = provider.exec(botId, agent ? agent.argv(botId, request, box) : boxAgentArgv, {
+      cwd: agent?.cwd ?? boxAgentCwd,
+      env: agent?.env ?? {},
+      signal: controller.signal,
+    });
     const turn: ActiveTurn = { turnId, botId, handle, cancelled: false, ended: false, killTimer: null };
     this.turns.set(turnId, turn);
     handle.write(line({ type: "start", request, hooks: hooks === true }));

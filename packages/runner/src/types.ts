@@ -181,7 +181,12 @@ export interface DockerProviderOptions {
   log: (line: string) => void;
 }
 
+export type RunnerProvider = "docker" | "host";
+
 export interface RunnerEnv {
+  provider: RunnerProvider;
+  dataDir: string;
+  boxAgent: string | null;
   url: string;
   token: string | null;
   tokenFile: string | null;

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { hostname } from "node:os";
+import { homedir, hostname } from "node:os";
+import { join } from "node:path";
 import { checkHealth } from "../health";
 import { readEnv, runnerVersion, startRunner, tokenReader } from "../runner";
 import type { RunnerEnv } from "../types";
@@ -24,6 +25,9 @@ describe("readEnv", () => {
       runtime: "kata",
     });
     expect(readEnv({ RBOTS_URL: "http://x", RBOTS_DEVICE_TOKEN: "t", BOX_PAUSE_AFTER_MS: "nope" })).toEqual({
+      provider: "docker",
+      dataDir: join(homedir(), ".local", "share", "runelay-bots"),
+      boxAgent: null,
       url: "http://x",
       token: "t",
       tokenFile: null,
@@ -71,6 +75,18 @@ describe("readEnv", () => {
       reserveMb: 30,
       maxBoxes: 4,
     });
+    expect(() => readEnv({ RBOTS_URL: "http://x", RBOTS_DEVICE_TOKEN: "t", RBOTS_PROVIDER: "vm" })).toThrow(
+      "RBOTS_PROVIDER inválido: vm (use docker, host).",
+    );
+    expect(
+      readEnv({
+        RBOTS_URL: "http://x",
+        RBOTS_DEVICE_TOKEN: "t",
+        RBOTS_PROVIDER: "host",
+        BOTS_DATA_DIR: "/srv/data",
+        RBOTS_BOX_AGENT: "/opt/agent.js",
+      }),
+    ).toMatchObject({ provider: "host", dataDir: "/srv/data", boxAgent: "/opt/agent.js" });
     expect(readEnv({ RBOTS_URL: "http://x", RBOTS_DEVICE_TOKEN: "t", RBOTS_VERSION: "0.3.1" }).image).toBe(
       "ghcr.io/runelay/r-bots:0.3.1",
     );
@@ -120,6 +136,9 @@ describe("startRunner", () => {
 
   function config(overrides: Partial<RunnerEnv> = {}): RunnerEnv {
     return {
+      provider: "docker",
+      dataDir: temp.dir,
+      boxAgent: null,
       url: server.url,
       token: "rbk_device",
       tokenFile: null,
