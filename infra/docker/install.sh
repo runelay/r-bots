@@ -454,6 +454,7 @@ host_runner_install() {
   port="${port:-2000}"
   mkdir -p "$runner_unit_dir"
   host_runner_env
+  bwrap_profile
   cat >"$runner_unit_dir/rbots-runner.service" <<UNIT
 [Unit]
 Description=r/bots: runner que roda os turnos direto na máquina, como $app_user
@@ -481,7 +482,6 @@ UNIT
     say "Aviso: não deu para ligar o rbots-runner.service; veja journalctl --user -u rbots-runner"
     return 1
   fi
-  bwrap_profile
 }
 
 host_runner_switch() {
