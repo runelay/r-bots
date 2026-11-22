@@ -27,7 +27,7 @@ import * as blockTools from "../../blocks/services/block-tools.service";
 import { setKnownConnectors, updateBot } from "../../bots/services/bots.service";
 import * as canvas from "../../canvas/services/canvas.service";
 import { botHomePath } from "../../code/services/bot-home.service";
-import { addAllowedRepo, removeAllowedRepo, worktreesRoot } from "../../code/services/repos.service";
+import { addAllowedRepo, allowedRepos, removeAllowedRepo, worktreesRoot } from "../../code/services/repos.service";
 import * as computer from "../../computer/services/computer.service";
 import * as handoff from "../../conversations/services/handoff.service";
 import * as reactions from "../../conversations/services/reactions.service";
@@ -566,6 +566,7 @@ describe("the user prompt", () => {
 
 describe("schedules", () => {
   test("tells chat and routine turns where the allowed repos are", async () => {
+    for (const repo of allowedRepos()) await removeAllowedRepo(repo.path);
     expect(reposGuide()).toContain("Nenhum repositório liberado ainda");
     const path = join(tmpdir(), "rb-guide-repo");
     await addAllowedRepo(path, "teste", null);
