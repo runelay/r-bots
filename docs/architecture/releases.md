@@ -47,7 +47,7 @@ Disparo: `workflow_dispatch` com a versão (`vX.Y.Z`), o caminho normal, ou push
 
 1. Confere tag × `package.json`, exige a seção `## vX.Y.Z` no `CHANGELOG.md` e roda os testes de `scripts/release`.
 2. Build e push da imagem (R2) por digest, com SBOM e proveniência (`mode=max`). Trivy: relatório de HIGH/CRITICAL no resumo e falha com CRITICAL que tem correção. Confere que toda camada é zstd e escreve no resumo o número de camadas e o tamanho comprimido. Depois aplica as tags (`<versão>`, e `<major>.<minor>` e `latest` no stable) e confere que todas apontam para o digest.
-3. **cosign só com o repo público** (`if: github.event.repository.private == false`): a assinatura keyless grava o nome do repo e do workflow no Rekor, que é público. Vale para a imagem e para o `SHA256SUMS`. Com o repo privado, as notas dizem que não há assinatura e mostram só o `sha256sum -c`.
+3. **cosign só no `SHA256SUMS` e só com o repo público** (`if: github.event.repository.private == false`): a assinatura keyless grava o nome do repo e do workflow no Rekor, que é público. A imagem não é assinada: `cosign sign` cria no pacote do GHCR uma versão extra com a tag `sha256-<digest>` a cada release. Com o repo privado, as notas dizem que não há assinatura e mostram só o `sha256sum -c`.
 4. Monta `r-bots-<versão>.tar.gz` com:
    - `compose.yaml` renderizado por `scripts/release/render-compose.ts`: tira todo `build:` e troca o padrão `${RBOTS_VERSION:-dev}` por `${RBOTS_VERSION:-<versão>}`;
    - `deploy/` inteiro (secrets, postgres, redis, garage, observability);
