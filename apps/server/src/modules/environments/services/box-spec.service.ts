@@ -88,7 +88,7 @@ export function boxSpecFor({ request, accountPath }: { request: TurnRequest; acc
     ...(existsSync(uploads) ? [mountOf(uploads, true)] : []),
     ...(accountPath ? [mountOf(accountPath, false), ...linkedDirsOf(accountPath)] : []),
     ...(code ? [mountOf(code.cwd, code.readOnly === true)] : []),
-    ...(gitCommon ? [{ ...mountOf(gitCommon, code.readOnly === true), optional: true }] : []),
+    ...(gitCommon ? [{ ...mountOf(gitCommon, code?.readOnly === true), optional: true }] : []),
     ...(code ? [mountOf(locks, false)] : []),
     ...(existsSync(clisDir) ? [mountOf(clisDir, true)] : []),
     ...(existsSync(toolsDir) ? [mountOf(toolsDir, true)] : []),
