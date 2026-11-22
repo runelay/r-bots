@@ -61,7 +61,7 @@ struct ServerSettings: View {
                 SettingsRow(title: tr("Servidor"), icon: SettingsIcon("dot.radiowaves.left.and.right", SettingsTint.green)) {
                     ConnectionPill(status: model.connection)
                 }
-                SettingsRow(title: tr("Este Mac"), icon: SettingsIcon("laptopcomputer", SettingsTint.graphite)) {
+                SettingsRow(title: tr("Pessoal"), icon: SettingsIcon("laptopcomputer", SettingsTint.graphite)) {
                     MacLinkStatus(state: RunnerConnection.shared.state)
                 }
                 SettingsRow(title: tr("Motor"), icon: SettingsIcon("cpu", SettingsTint.purple)) {

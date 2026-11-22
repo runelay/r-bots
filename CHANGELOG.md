@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Mac
+
+- The server menu no longer lists "VPS" next to the server that is already in the list, and "Este Mac" is now called "Pessoal" ("Personal" in English). Picking a server goes back to running on it.
+
 ## v0.1.21
 
 ### Server
