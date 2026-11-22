@@ -403,15 +403,24 @@ host_runner_ready() {
   fi
 }
 
+apparmor_parser_path() {
+  local candidate
+  for candidate in "$(command -v apparmor_parser || true)" /usr/sbin/apparmor_parser /sbin/apparmor_parser; do
+    [ -n "$candidate" ] && [ -x "$candidate" ] && printf '%s\n' "$candidate" && return 0
+  done
+  return 1
+}
+
 bwrap_profile() {
-  local bin profile=/etc/apparmor.d/rbots-bwrap
+  local bin parser profile=/etc/apparmor.d/rbots-bwrap
   bin="$(command -v bwrap || true)"
   if [ -z "$bin" ]; then
     say "Aviso: sem bwrap, os comandos dos bots enxergam a pasta de dados do r/bots; instale com sudo apt-get install bubblewrap"
     return
   fi
   "$bin" --dev-bind / / true >/dev/null 2>&1 && return
-  if [ ! -d /etc/apparmor.d ] || ! command -v apparmor_parser >/dev/null; then
+  parser="$(apparmor_parser_path || true)"
+  if [ ! -d /etc/apparmor.d ] || [ -z "$parser" ]; then
     say "Aviso: o bwrap não roda aqui; os comandos dos bots enxergam a pasta de dados do r/bots"
     return
   fi
@@ -423,7 +432,7 @@ bwrap_profile() {
   fi
   printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile rbots-bwrap %s flags=(unconfined) {\n  userns,\n  include if exists <local/rbots-bwrap>\n}\n' "$bin" \
     | "${sudo_cmd[@]}" tee "$profile" >/dev/null
-  if "${sudo_cmd[@]}" apparmor_parser -r "$profile" && "$bin" --dev-bind / / true >/dev/null 2>&1; then
+  if "${sudo_cmd[@]}" "$parser" -r "$profile" && "$bin" --dev-bind / / true >/dev/null 2>&1; then
     say "AppArmor: perfil rbots-bwrap instalado; os comandos dos bots não veem a pasta de dados"
   else
     say "Aviso: instalei $profile, mas o bwrap ainda não roda; os comandos dos bots enxergam a pasta de dados"
