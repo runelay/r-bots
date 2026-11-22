@@ -10,6 +10,11 @@
 - Bash on the host never goes through `sudo runelaytool`; the test lock and heavy-command limits still apply.
 - The system prompt tells the model to stop and say which tool failed and why, instead of trying another route.
 
+### Apps
+
+- The server menu at the top of the sidebar (Mac) and of the bot list (iPhone) lists "VPS" and "Este Mac" next to the servers, each with its status dot and a check on the one in use. Picking one switches it for every bot on that server, and the dot on the closed menu shows whether it is online. Servers that do not list environments keep the menu as before.
+- New "Rodar agentes neste Mac" in Mac Settings › Bots: on, the app starts and watches a runner on this Mac (bun and the runner ship inside the app) and shows Conectado, Desconectado or Falta login no claude; off, the bots run only on the VPS.
+
 ### Upgrading
 
 - Run `rbots update` (or the installer): it installs and starts `rbots-runner.service`, sets `BOTS_HOST_RUNNER=on` and `BOTS_SANDBOX=off`, and removes the `runner` container. The host needs `bun`. On Ubuntu 24.04, `bwrap` needs the AppArmor profile in `docs/hosting.md`; the installer adds it when `sudo` works without a password.
