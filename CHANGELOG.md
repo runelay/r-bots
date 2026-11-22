@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Server
+
+- Bots get the person's golden rules on every turn: the pinned runelay memories go into the system prompt, with a pointer to read each rule in full before acting on its subject.
+- In code mode, the worktree's `AGENTS.md` (or a `CLAUDE.md` that includes another file with `@file`) goes into the prompt, cut at 20,000 characters with a pointer to read the rest.
+- Captured memories get a type (`feedback`, `project`, `reference` or `user`, `project` when unsure) instead of always `user`, and the capture compares against 10 more similar memories so it updates an existing one instead of creating another `rb-*` slug.
+
 ## v0.1.19
 
 ### Install
