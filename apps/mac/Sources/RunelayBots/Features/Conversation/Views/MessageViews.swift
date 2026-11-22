@@ -123,7 +123,7 @@ struct UserBubble: View {
                     .background(Theme.userBubble, in: BubbleShape.make(meta: meta, trailing: true))
                     .overlay(alignment: .bottomLeading) {
                         if canReact {
-                            ReactionPickerButton(edge: .trailing, isOpen: $pickerOpen, pick: react)
+                            ReactionPickerButton(edge: .trailing, isOpen: $pickerOpen, showsMore: false, pick: react)
                                 .alignmentGuide(.leading) { $0[.trailing] + Spacing.xs }
                                 .opacity(isHovered || pickerOpen ? 1 : 0)
                                 .allowsHitTesting(isHovered || pickerOpen)
