@@ -196,11 +196,15 @@ final class LinkTextView: NSTextView {
     func fittingSize(width: CGFloat?) -> CGSize {
         guard let layout = layoutManager, let container = textContainer else { return .zero }
         let target = width.map { $0.isFinite ? max($0, 1) : CGFloat.greatestFiniteMagnitude } ?? CGFloat.greatestFiniteMagnitude
-        if container.size.width != target {
+        let live = container.size
+        if live.width != target {
             container.size = NSSize(width: target, height: CGFloat.greatestFiniteMagnitude)
         }
         layout.ensureLayout(for: container)
         let used = layout.usedRect(for: container)
+        if container.size != live {
+            container.size = live
+        }
         let measured = ceil(used.width) + 1
         let resolved = target == CGFloat.greatestFiniteMagnitude ? measured : min(measured, target)
         return CGSize(width: resolved, height: ceil(used.height))
