@@ -1,6 +1,6 @@
 import type { BoxSpec, BoxState, BoxStatus } from "@runelay-bots/protocol";
-import { busyErrorCode, capacityErrorCode } from "./constants";
-import { specKey } from "./mounts";
+import { capacityErrorCode } from "./constants";
+import { bindsOf, specKey } from "./mounts";
 import type { BoxCounts, LifecycleOptions, TimerHandle } from "./types";
 
 export class BoxError extends Error {
@@ -17,7 +17,15 @@ interface Tracked {
   lastUsedAt: number;
   busy: number;
   key: string | null;
+  spec: BoxSpec | null;
   timer: TimerHandle | null;
+  waiters: (() => void)[];
+}
+
+function covers(current: BoxSpec | null, wanted: BoxSpec) {
+  if (!current || current.memMb !== wanted.memMb || current.cpus !== wanted.cpus) return false;
+  const binds = new Set(bindsOf(current.mounts));
+  return bindsOf(wanted.mounts).every((bind) => binds.has(bind));
 }
 
 export class BoxLifecycle {
@@ -34,7 +42,9 @@ export class BoxLifecycle {
         lastUsedAt: Number.isFinite(parsed) ? parsed : Date.now(),
         busy: 0,
         key: null,
+        spec: null,
         timer: null,
+        waiters: [],
       });
       this.schedule(botId);
     }
@@ -51,7 +61,15 @@ export class BoxLifecycle {
   private entry(botId: string) {
     const existing = this.boxes.get(botId);
     if (existing) return existing;
-    const created: Tracked = { state: "stopped", lastUsedAt: Date.now(), busy: 0, key: null, timer: null };
+    const created: Tracked = {
+      state: "stopped",
+      lastUsedAt: Date.now(),
+      busy: 0,
+      key: null,
+      spec: null,
+      timer: null,
+      waiters: [],
+    };
     this.boxes.set(botId, created);
     return created;
   }
@@ -81,21 +99,24 @@ export class BoxLifecycle {
   }
 
   async acquire(botId: string, spec: BoxSpec): Promise<BoxStatus> {
-    const key = specKey(spec);
     const box = this.entry(botId);
-    if (box.busy > 0 && box.key !== key)
-      throw new BoxError(busyErrorCode, "A caixa deste bot está ocupada com outras montagens.");
+    while (box.busy > 0 && !covers(box.spec, spec)) await new Promise<void>((wake) => box.waiters.push(wake));
+    const shared = box.busy > 0;
+    const target = shared && box.spec ? box.spec : spec;
+    const key = specKey(target);
+    const warm = box.key === key && box.state !== "stopped";
     box.timer?.cancel();
     box.timer = null;
     box.busy += 1;
+    Object.assign(box, { key, spec: target });
     try {
-      const warm = box.key === key && box.state !== "stopped";
-      if (!warm) await this.admit(botId, spec.memMb);
-      const status = await this.options.provider.ensure(botId, spec, { idle: box.busy === 1 });
-      Object.assign(box, { state: "running", key, lastUsedAt: Date.now() });
+      if (!warm) await this.admit(botId, target.memMb);
+      const status = await this.options.provider.ensure(botId, target, { idle: box.busy === 1 });
+      Object.assign(box, { state: "running", lastUsedAt: Date.now() });
       this.publish();
       return status;
     } catch (error) {
+      if (box.busy === 1) Object.assign(box, { key: null, spec: null });
       this.release(botId);
       throw error;
     }
@@ -110,6 +131,7 @@ export class BoxLifecycle {
     if (!box) return;
     box.busy = Math.max(0, box.busy - 1);
     box.lastUsedAt = Date.now();
+    if (box.busy === 0) for (const wake of box.waiters.splice(0)) wake();
     this.schedule(botId);
   }
 

@@ -55,7 +55,6 @@ export const kvmPath = "/dev/kvm";
 
 export const capacityErrorCode = "box.capacity";
 export const mountErrorCode = "box.mount";
-export const busyErrorCode = "box.busy";
 export const startErrorCode = "box.start";
 
 export const defaultRegistry = "docker.io";

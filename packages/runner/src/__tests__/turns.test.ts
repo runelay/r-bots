@@ -150,6 +150,25 @@ describe("TurnManager", () => {
     expect(clock.delays()).toEqual([]);
   });
 
+  test("drops a turn cancelled while it waits for the box", async () => {
+    const gates: Array<() => void> = [];
+    const { sent, execs, released, manager } = setup(
+      (botId) => new Promise((done) => gates.push(() => done(boxStatus(botId)))),
+    );
+    manager.handle(startFrame());
+    manager.handle(startFrame({ id: "turn-2", turnId: "turn-2" }));
+    await until(() => gates.length === 2, "waiting");
+    manager.handle({ type: "turn.cancel", id: "turn-1" });
+    manager.cancelAll();
+    for (const open of gates) open();
+    await until(() => released.length === 2, "release");
+    expect(execs).toHaveLength(0);
+    expect(sent).toEqual([
+      { type: "response", id: "turn-1", ok: false, code: "turn.cancelled", error: "cancelled" },
+      { type: "response", id: "turn-2", ok: false, code: "turn.cancelled", error: "cancelled" },
+    ]);
+  });
+
   test("cancelAll cancels every running turn", async () => {
     const { execs, manager } = setup();
     manager.handle(startFrame());

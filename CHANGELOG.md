@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Boxes
+
+- Two conversations with the same bot no longer fail with "A caixa deste bot está ocupada com outras montagens." Every conversation of a bot mounts the bot's work folder, so they share one box. A turn that needs other mounts (another code workspace) waits for the box to free up instead of failing.
+
 ## v0.1.11
 
 ### Brand

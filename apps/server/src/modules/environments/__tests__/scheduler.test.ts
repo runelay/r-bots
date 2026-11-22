@@ -125,16 +125,21 @@ describe("box spec", () => {
     expect(boxSpecFor({ request, accountPath: null })).toEqual({
       memMb: env.BOX_MEM_MB,
       cpus: env.BOX_CPUS,
-      mounts: [{ host: join(hostDataDir, "work", "b1/s_1"), box: join(dataDir, "work", "b1/s_1"), readOnly: false }],
+      mounts: [{ host: join(hostDataDir, "work", "b1"), box: join(dataDir, "work", "b1"), readOnly: false }],
     });
     const coding = { ...request, code: { cwd: "/srv/repo", readOnly: true } };
     expect(boxSpecFor({ request: coding, accountPath: "/home/app/.claude" }).mounts).toEqual([
-      { host: join(hostDataDir, "work", "b1/s_1"), box: join(dataDir, "work", "b1/s_1"), readOnly: false },
+      { host: join(hostDataDir, "work", "b1"), box: join(dataDir, "work", "b1"), readOnly: false },
       { host: `${hostHome}/.claude`, box: "/home/app/.claude", readOnly: false },
       { host: "/srv/repo", box: "/srv/repo", readOnly: true },
     ]);
     const home = { ...request, code: { cwd: "/home/app/.claude" } };
     expect(boxSpecFor({ request: home, accountPath: "/home/app/.claude" }).mounts).toHaveLength(2);
+  });
+
+  test("gives every conversation of a bot the same mounts, so they share one box", () => {
+    const other = { ...request, workKey: "b1/s 2" };
+    expect(boxSpecFor({ request: other, accountPath: null })).toEqual(boxSpecFor({ request, accountPath: null }));
   });
 
   test("mounts folders the account links to outside itself, so sessions survive a new box", () => {
@@ -164,7 +169,7 @@ describe("box spec", () => {
     mkdirSync(clisDir, { recursive: true });
     try {
       expect(boxSpecFor({ request, accountPath: null }).mounts).toEqual([
-        { host: join(hostDataDir, "work", "b1/s_1"), box: join(dataDir, "work", "b1/s_1"), readOnly: false },
+        { host: join(hostDataDir, "work", "b1"), box: join(dataDir, "work", "b1"), readOnly: false },
         { host: join(hostDataDir, "clis"), box: join(dataDir, "clis"), readOnly: true },
       ]);
     } finally {
@@ -177,7 +182,7 @@ describe("box spec", () => {
     mkdirSync(toolsDir, { recursive: true });
     try {
       expect(boxSpecFor({ request, accountPath: null }).mounts).toEqual([
-        { host: join(hostDataDir, "work", "b1/s_1"), box: join(dataDir, "work", "b1/s_1"), readOnly: false },
+        { host: join(hostDataDir, "work", "b1"), box: join(dataDir, "work", "b1"), readOnly: false },
         { host: hostToolsDir, box: toolsDir, readOnly: true },
       ]);
     } finally {
