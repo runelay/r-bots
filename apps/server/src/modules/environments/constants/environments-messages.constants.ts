@@ -15,7 +15,8 @@ export const environmentsText = defineMessages({
     mac: "Personal",
     runnerDropped: "This machine's runner disconnected in the middle of the turn.",
     hostFallback: "This machine's runner is disconnected; this turn runs in the server's container.",
-    macDropped: "The Personal environment disconnected in the middle of the turn; open the app on the Mac or switch to VPS.",
+    macDropped:
+      "The Personal environment disconnected in the middle of the turn; open the app on the Mac or switch to VPS.",
     macOffline: "The Personal environment is disconnected; open the app on the Mac or switch to VPS.",
     macPrepareFailed: "Couldn't prepare the code for the Mac: {reason}",
   },
