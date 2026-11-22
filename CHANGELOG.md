@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.1.23
+
 ### Server
 
 - A bot that delegates a task now sends it to the main conversation of the other bot instead of opening a new conversation for every request. The task still runs with the permission of the conversation that asked.
