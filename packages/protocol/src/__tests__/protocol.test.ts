@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { emptyUsage, providerLabels, providers } from "../index";
+import { emptyUsage, environmentIds, environmentLabels, hostCapability, providerLabels, providers } from "../index";
 
 describe("protocol", () => {
   test("lists every provider with a label", () => {
@@ -13,5 +13,11 @@ describe("protocol", () => {
     expect(first).toEqual({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 });
     first.inputTokens = 5;
     expect(emptyUsage().inputTokens).toBe(0);
+  });
+
+  test("names the environments a turn can run in", () => {
+    expect([...environmentIds]).toEqual(["vps", "mac"]);
+    expect(environmentLabels).toEqual({ vps: "VPS", mac: "Mac" });
+    expect(hostCapability).toBe("host");
   });
 });
